@@ -72,14 +72,6 @@ const config = {
       layout: "us",
     },
 
-    identity: {
-      hostname: "bes-server",
-      username: "ubuntu",
-      password:
-        "$y$j9T$Kh7z7p6FH3zn9r4HAMB1i0$dgY1wDtDbL4do748v9q32AV2qE5kgz0vqW8rUHQFox9",
-      // bes (will be expired on first login)
-    },
-
     ssh: {
       "install-server": true,
       "allow-pw": false,
@@ -200,6 +192,21 @@ const config = {
       disable_root: true,
       package_update: true,
       package_upgrade: true,
+      create_hostname_file: false, // provided by DHCP
+      users: [
+        {
+          name: "ubuntu",
+          gecos: "Default Login User",
+          groups: "adm, cdrom, dip, lxd, plugdev, sudo",
+          shell: "/bin/bash",
+          lock_passwd: false,
+          expiredate: "2020-01-01",
+          sudo: "ALL=(ALL) NOPASSWD:ALL",
+          passwd:
+            "$y$j9T$Kh7z7p6FH3zn9r4HAMB1i0$dgY1wDtDbL4do748v9q32AV2qE5kgz0vqW8rUHQFox9",
+          // bes (will be expired on first login)
+        },
+      ],
     },
 
     "late-commands": [
@@ -215,7 +222,6 @@ const config = {
       "curtin in-target --target=/target -- bash /tmp/setup-tailscale.sh",
       "curtin in-target --target=/target -- systemctl enable tailscale-first-boot.service",
       "curtin in-target --target=/target -- systemctl enable ssh",
-      "curtin in-target --target=/target -- passwd --expire ubuntu",
       "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
       "curtin in-target --target=/target -- bash /tmp/migrate-to-btrfs.sh",
     ],
