@@ -65,7 +65,6 @@ locals {
 
 # QEMU builder for bare metal images
 # Note: Uses Packer's built-in HTTP server to serve autoinstall config during boot
-# For standalone ISOs, use autoinstall/remaster-iso.sh to embed config in ISO
 source "qemu" "bare-metal" {
   vm_name          = "${local.image_name}.raw"
   output_directory = "${var.output_directory}/bare-metal-${var.architecture}"

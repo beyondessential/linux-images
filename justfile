@@ -2,7 +2,7 @@
 
 packer_dir := "packer"
 output_dir := "output"
-autoinstall_dir := "autoinstall"
+autoinstall_dir := "iso"
 
 # Show available recipes
 default:
@@ -12,7 +12,7 @@ default:
 generate-autoinstall:
     @echo "Generating autoinstall user-data..."
     cd {{autoinstall_dir}} && node generate-user-data.js user-data
-    @echo "Generated autoinstall/user-data"
+    @echo "Generated iso/user-data"
 
 # Initialize and install dependencies
 init:
@@ -77,12 +77,12 @@ build-aws-arm64:
 
 # Create custom ISO with embedded autoinstall config
 create-iso-amd64: generate-autoinstall
-    @echo "Creating AMD64 autoinstall ISO..."
+    @echo "Creating AMD64 ISO..."
     cd {{autoinstall_dir}} && ./remaster-iso.sh --arch amd64
 
 # Create custom ISO with embedded autoinstall config
 create-iso-arm64: generate-autoinstall
-    @echo "Creating ARM64 autoinstall ISO..."
+    @echo "Creating ARM64 ISO..."
     cd {{autoinstall_dir}} && ./remaster-iso.sh --arch arm64
 
 # Remove build artifacts

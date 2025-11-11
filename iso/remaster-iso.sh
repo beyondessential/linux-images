@@ -81,7 +81,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Set defaults
-OUTPUT_ISO="${OUTPUT_ISO:-ubuntu-${UBUNTU_VERSION}-autoinstall-${ARCH}.iso}"
+OUTPUT_ISO="${OUTPUT_ISO:-ubuntu-${UBUNTU_VERSION}-bes-server-${ARCH}.iso}"
 ISO_EXTRACT="$WORK_DIR/extract"
 ISO_BUILD="$WORK_DIR/build"
 
@@ -207,8 +207,8 @@ docker run --rm \
     -v "$ISO_EXTRACT_ABS:/output:rw" \
     ubuntu:24.04 \
     bash -c "apt-get update -qq && apt-get install -y -qq xorriso > /dev/null 2>&1 && \
-             xorriso -osirrox on -indev /input.iso -extract / /output && \
-             xorriso -indev /input.iso -osirrox on -extract_boot_images /output/ && \
+             xorriso -abort_on NEVER -osirrox on -indev /input.iso -extract / /output && \
+             xorriso -abort_on NEVER -indev /input.iso -osirrox on -extract_boot_images /output/ && \
              chown -R $(id -u):$(id -g) /output && \
              chmod -R u+w /output"
 
@@ -286,7 +286,7 @@ TEMP_ISO="$WORK_DIR/$(basename "$OUTPUT_ISO")"
 
 if [ "$ARCH" = "amd64" ]; then
     xorriso -as mkisofs \
-        -r -V "Ubuntu ${UBUNTU_VERSION} Autoinstall" \
+        -r -V "Ubuntu ${UBUNTU_VERSION} BES Server" \
         -J -joliet-long -l \
         -b boot/grub/i386-pc/eltorito.img \
         -c boot.catalog \
@@ -302,7 +302,7 @@ if [ "$ARCH" = "amd64" ]; then
 else
     # ARM64 ISO creation
     xorriso -as mkisofs \
-        -r -V "Ubuntu ${UBUNTU_VERSION} Autoinstall ARM64" \
+        -r -V "Ubuntu ${UBUNTU_VERSION} BES Server ARM64" \
         -J -joliet-long -l \
         -e boot/grub/efi.img \
         -no-emul-boot \
