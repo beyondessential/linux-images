@@ -171,16 +171,6 @@ chroot /mnt/newroot/@ update-grub
 echo "Installing GRUB..."
 chroot /mnt/newroot/@ grub-install --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck
 
-# Unmount everything
-echo "Unmounting filesystems..."
-umount /mnt/newroot/@/boot/efi || true
-umount /mnt/newroot/@/boot || true
-umount /mnt/newroot/@/sys || true
-umount /mnt/newroot/@/proc || true
-umount /mnt/newroot/@/dev || true
-umount /mnt/newroot || true
-rmdir /mnt/newroot || true
-
 # Save passphrase to user's home directory
 DEFAULT_USER=$(ls /mnt/newroot/@home 2>/dev/null | head -1)
 if [ -n "$DEFAULT_USER" ]; then
@@ -200,31 +190,25 @@ KEYFILE="/boot/luks-keyfile.key"
 
 if [ -e /dev/tpmrm0 ] || [ -e /dev/tpm0 ]; then
   echo "TPM2 device found, enrolling for automatic unlock..."
-  if [ -f /tmp/luks-passphrase ]; then
-    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-uuid/\$LUKS_UUID < /tmp/luks-passphrase
-    echo "TPM2 enrolled successfully with PCR 7!"
+  if [ -f \$KEYFILE ]; then
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-uuid/\$LUKS_UUID --unlock-key-file=\$KEYFILE
+    echo "TPM2 enrolled successfully!"
 
-    # Remove keyfile from LUKS and securely delete it
     echo "Removing keyfile from LUKS..."
     cryptsetup luksRemoveKey /dev/disk/by-uuid/\$LUKS_UUID \$KEYFILE
 
-    # Secure delete keyfile
     echo "Securely deleting keyfile..."
     shred -vfz -n 3 \$KEYFILE
     rm -f \$KEYFILE
 
     # Update crypttab to remove keyfile reference
-    sed -i "s|root-crypt UUID=\$LUKS_UUID /boot/luks-keyfile.key luks,discard,keyscript=/bin/cat|root-crypt UUID=\$LUKS_UUID none luks,discard|" /etc/crypttab
-
-    echo "Keyfile removed. System will auto-unlock via TPM on next boot."
-    rm -f /tmp/luks-passphrase
+    sed -i "s|root-crypt UUID=\$LUKS_UUID \$KEYFILE luks,discard,keyscript=/bin/cat|root-crypt UUID=\$LUKS_UUID none luks,discard|" /etc/crypttab
   else
-    echo "WARNING: Could not find passphrase file, skipping TPM enrollment"
+    echo "WARNING: Could not find keyfile, skipping TPM enrollment"
   fi
 else
   echo "No TPM2 device found. System will use keyfile at \$KEYFILE for auto-unlock."
   echo "Passphrase fallback available if keyfile is unavailable."
-  rm -f /tmp/luks-passphrase
 fi
 EOFTPM
 
@@ -250,6 +234,3 @@ EOFTPMSVC
 
 # Enable TPM enrollment service
 chroot /mnt/newroot/@ systemctl enable setup-tpm-unlock.service
-
-# Copy passphrase for TPM enrollment on first boot
-cp /tmp/luks-passphrase /mnt/newroot/@/tmp/luks-passphrase 2>/dev/null || true
