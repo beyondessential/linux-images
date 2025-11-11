@@ -87,7 +87,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Set defaults
-OUTPUT_ISO="${OUTPUT_ISO:-ubuntu-${UBUNTU_VERSION}-bes-server-${ARCH}.iso}"
+BUILD_DATE="$(date +%Y%m%d)"
+BUILD_DATE_DISPLAY="$(date +%Y-%m-%d)"
+OUTPUT_ISO="${OUTPUT_ISO:-ubuntu-${UBUNTU_VERSION}-bes-server-${ARCH}-${BUILD_DATE}.iso}"
 USER_DATA="${USER_DATA:-user-data-${ARCH}}"
 ISO_EXTRACT="$WORK_DIR/extract"
 ISO_BUILD="$WORK_DIR/build"
@@ -248,6 +250,9 @@ GRUB_CFG="$ISO_BUILD/boot/grub/grub.cfg"
 if [ -f "$GRUB_CFG" ]; then
     # Backup original
     cp "$GRUB_CFG" "$GRUB_CFG.orig"
+
+    # Add menu title with generation date
+    sed -i '/^set timeout=/a\set menu_title="Ubuntu BES Server - Generated: '"$BUILD_DATE_DISPLAY"'"' "$GRUB_CFG"
 
     # Rewrite menu entries for BES Server autoinstall
     # Replace the menu entries section with custom entries
