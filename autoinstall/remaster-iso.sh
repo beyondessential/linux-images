@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UBUNTU_VERSION="24.04.3"
 WORK_DIR="${WORK_DIR:-/tmp/ubuntu-remaster}"
+ORIGINAL_DIR="$(pwd)"
 
 usage() {
     cat <<EOF
@@ -33,10 +34,9 @@ EXAMPLES:
     $0 --arch arm64
 
 REQUIREMENTS:
+    - docker
     - xorriso or genisoimage
-    - 7z or bsdtar
     - wget or curl
-    - sudo access (for mounting)
 
 EOF
     exit 0
@@ -83,7 +83,6 @@ done
 # Set defaults
 OUTPUT_ISO="${OUTPUT_ISO:-ubuntu-${UBUNTU_VERSION}-autoinstall-${ARCH}.iso}"
 ISO_EXTRACT="$WORK_DIR/extract"
-ISO_MOUNT="$WORK_DIR/mount"
 ISO_BUILD="$WORK_DIR/build"
 
 # Validate architecture
@@ -91,6 +90,15 @@ if [[ "$ARCH" != "amd64" && "$ARCH" != "arm64" ]]; then
     echo "ERROR: Architecture must be amd64 or arm64"
     exit 1
 fi
+
+# Check for docker
+if ! command -v docker &> /dev/null; then
+    echo "ERROR: docker not found"
+    echo "Install with: sudo apt-get install docker.io"
+    exit 1
+fi
+
+echo "Using docker for ISO extraction"
 
 # Check dependencies
 check_deps() {
@@ -114,6 +122,7 @@ if [ -z "$INPUT_ISO" ]; then
     echo "No input ISO specified, downloading Ubuntu ${UBUNTU_VERSION} ${ARCH}..."
     ISO_NAME="ubuntu-${UBUNTU_VERSION}-live-server-${ARCH}.iso"
     INPUT_ISO="/tmp/${ISO_NAME}"
+    CHECKSUM_FILE="/tmp/SHA256SUMS-${UBUNTU_VERSION}"
 
     # Check if cached ISO exists and is non-zero
     if [ -f "$INPUT_ISO" ]; then
@@ -129,6 +138,32 @@ if [ -z "$INPUT_ISO" ]; then
     if [ ! -f "$INPUT_ISO" ]; then
         wget -O "$INPUT_ISO" "https://releases.ubuntu.com/${UBUNTU_VERSION}/${ISO_NAME}"
     fi
+
+    # Download and verify checksum
+    echo "Downloading checksums..."
+    wget -q -O "$CHECKSUM_FILE" "https://releases.ubuntu.com/${UBUNTU_VERSION}/SHA256SUMS"
+
+    echo "Verifying ISO checksum..."
+    EXPECTED_CHECKSUM=$(grep "${ISO_NAME}" "$CHECKSUM_FILE" | awk '{print $1}')
+
+    if [ -z "$EXPECTED_CHECKSUM" ]; then
+        echo "ERROR: Could not find checksum for ${ISO_NAME} in SHA256SUMS"
+        rm -f "$INPUT_ISO" "$CHECKSUM_FILE"
+        exit 1
+    fi
+
+    ACTUAL_CHECKSUM=$(sha256sum "$INPUT_ISO" | awk '{print $1}')
+
+    if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+        echo "ERROR: Checksum verification failed!"
+        echo "Expected: $EXPECTED_CHECKSUM"
+        echo "Got:      $ACTUAL_CHECKSUM"
+        rm -f "$INPUT_ISO" "$CHECKSUM_FILE"
+        exit 1
+    fi
+
+    echo "Checksum verification passed"
+    rm -f "$CHECKSUM_FILE"
 fi
 
 if [ ! -f "$INPUT_ISO" ]; then
@@ -149,7 +184,6 @@ echo ""
 # Cleanup function
 cleanup() {
     echo "Cleaning up..."
-    sudo umount "$ISO_MOUNT" 2>/dev/null || true
     if [ $KEEP_WORK -eq 0 ]; then
         rm -rf "$WORK_DIR"
     else
@@ -161,13 +195,21 @@ trap cleanup EXIT
 
 # Create working directories
 rm -rf "$WORK_DIR"
-mkdir -p "$ISO_EXTRACT" "$ISO_MOUNT" "$ISO_BUILD"
+mkdir -p "$ISO_EXTRACT" "$ISO_BUILD"
 
-# Extract ISO
+# Extract ISO using container (no sudo needed)
 echo "Extracting ISO..."
-sudo mount -o loop "$INPUT_ISO" "$ISO_MOUNT"
-rsync -a "$ISO_MOUNT/" "$ISO_EXTRACT/"
-sudo umount "$ISO_MOUNT"
+INPUT_ISO_ABS="$(readlink -f "$INPUT_ISO")"
+ISO_EXTRACT_ABS="$(readlink -f "$ISO_EXTRACT")"
+
+docker run --rm \
+    -v "$INPUT_ISO_ABS:/input.iso:ro" \
+    -v "$ISO_EXTRACT_ABS:/output:rw" \
+    ubuntu:24.04 \
+    bash -c "apt-get update -qq && apt-get install -y -qq xorriso > /dev/null 2>&1 && \
+             xorriso -osirrox on -indev /input.iso -extract / /output && \
+             chown -R $(id -u):$(id -g) /output && \
+             chmod -R u+w /output"
 
 # Copy ISO contents to build directory
 echo "Preparing build directory..."
@@ -181,16 +223,31 @@ echo "Adding autoinstall configuration..."
 cp "$SCRIPT_DIR/user-data" "$ISO_BUILD/autoinstall/"
 cp "$SCRIPT_DIR/meta-data" "$ISO_BUILD/autoinstall/"
 
-# Download and embed Tailscale package
+# Download and embed Tailscale package using docker
 echo "Downloading Tailscale package..."
 mkdir -p "$ISO_BUILD/pool/extras"
-if [ "$ARCH" = "amd64" ]; then
-    TAILSCALE_DEB="tailscale_latest_amd64.deb"
-    wget -O "$ISO_BUILD/pool/extras/tailscale.deb" "https://pkgs.tailscale.com/stable/ubuntu/pool/tailscale_amd64.deb" || echo "WARNING: Failed to download Tailscale package"
+
+TAILSCALE_DOWNLOAD_DIR="$(mktemp -d)"
+docker run --rm \
+    -v "$TAILSCALE_DOWNLOAD_DIR:/download:rw" \
+    ubuntu:24.04 \
+    bash -c "
+        apt-get update -qq && \
+        apt-get install -y -qq curl gnupg && \
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg && \
+        echo 'deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu noble main' > /etc/apt/sources.list.d/tailscale.list && \
+        apt-get update -qq && \
+        cd /download && \
+        apt-get download tailscale 2>/dev/null
+    " > /dev/null 2>&1
+
+if [ -f "$TAILSCALE_DOWNLOAD_DIR"/tailscale_*.deb ]; then
+    mv "$TAILSCALE_DOWNLOAD_DIR"/tailscale_*.deb "$ISO_BUILD/pool/extras/tailscale.deb"
+    echo "Downloaded Tailscale package"
 else
-    TAILSCALE_DEB="tailscale_latest_arm64.deb"
-    wget -O "$ISO_BUILD/pool/extras/tailscale.deb" "https://pkgs.tailscale.com/stable/ubuntu/pool/tailscale_arm64.deb" || echo "WARNING: Failed to download Tailscale package"
+    echo "WARNING: Failed to download Tailscale package"
 fi
+rm -rf "$TAILSCALE_DOWNLOAD_DIR"
 
 # Modify GRUB configuration for autoinstall
 echo "Modifying GRUB configuration..."
@@ -209,47 +266,44 @@ else
     echo "WARNING: GRUB config not found at expected location"
 fi
 
-# Also modify isolinux config if present
-ISOLINUX_CFG="$ISO_BUILD/isolinux/txt.cfg"
-if [ -f "$ISOLINUX_CFG" ]; then
-    cp "$ISOLINUX_CFG" "$ISOLINUX_CFG.orig"
-    sed -i 's/---/ autoinstall ds=nocloud\;s=\/cdrom\/autoinstall\/ ---/' "$ISOLINUX_CFG"
-fi
-
 # Update MD5 checksums
 echo "Updating checksums..."
 cd "$ISO_BUILD"
-find . -type f -not -path './isolinux/*' -not -path './boot/grub/*' -print0 | xargs -0 md5sum > md5sum.txt
+find . -type f -not -path './boot/grub/*' -not -path './EFI/*' -print0 | xargs -0 md5sum > md5sum.txt
 
 # Repack ISO
 echo "Creating new ISO..."
 cd "$ISO_BUILD"
 
+# Create ISO in temp location first
+TEMP_ISO="$WORK_DIR/$(basename "$OUTPUT_ISO")"
+
 if [ "$ARCH" = "amd64" ]; then
     xorriso -as mkisofs \
         -r -V "Ubuntu ${UBUNTU_VERSION} Autoinstall" \
         -J -joliet-long -l \
-        -b isolinux/isolinux.bin \
-        -c isolinux/boot.cat \
+        -b boot/grub/i386-pc/eltorito.img \
+        -c boot.catalog \
         -no-emul-boot -boot-load-size 4 -boot-info-table \
-        -eltorito-alt-boot \
-        -e boot/grub/efi.img \
-        -no-emul-boot \
-        -isohybrid-gpt-basdat \
-        -isohybrid-apm-hfsplus \
-        -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-        -o "$OUTPUT_ISO" \
+        --grub2-boot-info --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
+        -append_partition 2 0xef EFI/boot/bootx64.efi \
+        -appended_part_as_gpt \
+        -o "$TEMP_ISO" \
         .
 else
     # ARM64 ISO creation
     xorriso -as mkisofs \
         -r -V "Ubuntu ${UBUNTU_VERSION} Autoinstall ARM64" \
         -J -joliet-long -l \
-        -e boot/grub/efi.img \
-        -no-emul-boot \
-        -o "$OUTPUT_ISO" \
+        -append_partition 2 0xef EFI/boot/bootaa64.efi \
+        -appended_part_as_gpt \
+        -o "$TEMP_ISO" \
         .
 fi
+
+# Move ISO to original directory
+cd "$ORIGINAL_DIR"
+mv "$TEMP_ISO" "$OUTPUT_ISO"
 
 echo ""
 echo "==================================="
@@ -259,11 +313,10 @@ echo "Output: $OUTPUT_ISO"
 echo "Size: $(du -h "$OUTPUT_ISO" | cut -f1)"
 echo ""
 echo "To use:"
-echo "  1. Write to USB: sudo dd if=$OUTPUT_ISO of=/dev/sdX bs=4M status=progress"
+echo "  1. Write to USB: dd if=$OUTPUT_ISO of=/dev/sdX bs=4M status=progress"
 echo "  2. Or burn to DVD"
 echo "  3. Boot and installation will proceed automatically"
 echo ""
 echo "Default login after install:"
 echo "  Username: ubuntu"
-echo "  Password: ubuntu (change immediately!)"
 echo "==================================="
