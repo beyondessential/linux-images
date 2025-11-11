@@ -273,12 +273,28 @@ if [ -f "$GRUB_CFG" ]; then
     # Backup original
     cp "$GRUB_CFG" "$GRUB_CFG.orig"
 
-    # Add autoinstall parameter to default menu entry
-    # Just use 'autoinstall' - subiquity will look for autoinstall config automatically
-    sed -i 's/---/ autoinstall ---/' "$GRUB_CFG"
+    # Rewrite menu entries for BES Server autoinstall
+    # Replace the menu entries section with custom entries
+    sed -i '/^menuentry "Try or Install Ubuntu Server"/,/^menuentry "Ubuntu Server with the HWE kernel"/c\
+menuentry "Auto install Ubuntu BES Server" {\
+\tset gfxpayload=keep\
+\tlinux\t/casper/vmlinuz autoinstall ---\
+\tinitrd\t/casper/initrd\
+}\
+menuentry "Auto install Ubuntu BES Server (HWE kernel)" {\
+\tset gfxpayload=keep\
+\tlinux\t/casper/hwe-vmlinuz autoinstall ---\
+\tinitrd\t/casper/hwe-initrd\
+}\
+menuentry "Manual Ubuntu Server install" {\
+\tset gfxpayload=keep\
+\tlinux\t/casper/vmlinuz ---\
+\tinitrd\t/casper/initrd\
+}\
+menuentry "Manual Ubuntu Server install (HWE kernel)" {' "$GRUB_CFG"
 
-    # Set timeout to 1 second for faster boot
-    sed -i 's/set timeout=.*/set timeout=1/' "$GRUB_CFG"
+    # Set timeout to 5 seconds
+    sed -i 's/set timeout=.*/set timeout=5/' "$GRUB_CFG"
 else
     echo "WARNING: GRUB config not found at expected location"
 fi
