@@ -70,7 +70,7 @@ LUKS_DEV="/dev/mapper/root-crypt"
 
 # Format LUKS container as BTRFS with features enabled
 echo "Creating BTRFS filesystem with features..."
-mkfs.btrfs -f -L ROOT --features block-group-tree,squota $LUKS_DEV
+mkfs.btrfs --label ROOT --checksum xxhash --features block-group-tree,squota $LUKS_DEV
 
 # Mount and create subvolumes
 mkdir -p /mnt/newroot
