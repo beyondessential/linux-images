@@ -3,6 +3,57 @@
 const fs = require("fs");
 const path = require("path");
 
+// Simple YAML generator for autoinstall config
+function toYAML(obj, indent = 0) {
+  const spaces = "  ".repeat(indent);
+  let yaml = "";
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) {
+      yaml += `${spaces}${key}: null\n`;
+    } else if (typeof value === "boolean") {
+      yaml += `${spaces}${key}: ${value}\n`;
+    } else if (typeof value === "number") {
+      yaml += `${spaces}${key}: ${value}\n`;
+    } else if (typeof value === "string") {
+      // Escape strings with special characters or newlines
+      if (value.includes("\n") || value.includes(":") || value.includes("#")) {
+        const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        yaml += `${spaces}${key}: "${escaped}"\n`;
+      } else {
+        yaml += `${spaces}${key}: ${value}\n`;
+      }
+    } else if (Array.isArray(value)) {
+      yaml += `${spaces}${key}:\n`;
+      for (const item of value) {
+        if (typeof item === "object" && item !== null) {
+          yaml += `${spaces}- \n`;
+          yaml +=
+            toYAML(item, indent + 1)
+              .split("\n")
+              .filter((line) => line)
+              .map((line) => `  ${line}`)
+              .join("\n") + "\n";
+        } else if (typeof item === "string") {
+          if (item.includes("\n") || item.includes(":") || item.includes("#")) {
+            const escaped = item.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+            yaml += `${spaces}- "${escaped}"\n`;
+          } else {
+            yaml += `${spaces}- ${item}\n`;
+          }
+        } else {
+          yaml += `${spaces}- ${item}\n`;
+        }
+      }
+    } else if (typeof value === "object") {
+      yaml += `${spaces}${key}:\n`;
+      yaml += toYAML(value, indent + 1);
+    }
+  }
+
+  return yaml;
+}
+
 // Read the migration script
 const migrateScript = fs.readFileSync(
   path.join(__dirname, "migrate-to-btrfs.sh"),
@@ -54,9 +105,12 @@ const firewallSetupScript = fs.readFileSync(
 const config = {
   autoinstall: {
     version: 1,
+    source: {
+      id: "ubuntu-server-minimal",
+    },
 
     interactive: {
-      sections: ["network", "identity", "ssh"],
+      sections: ["network", "identity"],
     },
 
     locale: "en_US.UTF-8",
@@ -66,9 +120,6 @@ const config = {
     },
 
     timezone: "Etc/UTC",
-    identity: {
-      username: "ubuntu",
-    },
 
     ssh: {
       "install-server": true,
@@ -176,8 +227,9 @@ const config = {
   },
 };
 
-// Convert to compact JSON (which is valid YAML)
-const output = "#cloud-config\n" + JSON.stringify(config.autoinstall);
+// Convert to YAML
+const output = "#cloud-config\nautoinstall:\n" + toYAML(config.autoinstall, 1);
+
 
 // Write to stdout or file
 if (process.argv[2]) {

@@ -223,13 +223,10 @@ if [ -f "$ISO_EXTRACT/eltorito_img2_uefi.img" ]; then
     echo "Preserved EFI boot image"
 fi
 
-# Create autoinstall directory in ISO
-mkdir -p "$ISO_BUILD/autoinstall"
-
-# Copy autoinstall files
+# Copy autoinstall configuration to root of ISO
+# Subiquity looks for /autoinstall.yaml when 'autoinstall' kernel parameter is present
 echo "Adding autoinstall configuration..."
-cp "$SCRIPT_DIR/user-data" "$ISO_BUILD/autoinstall/"
-cp "$SCRIPT_DIR/meta-data" "$ISO_BUILD/autoinstall/"
+cp "$SCRIPT_DIR/user-data" "$ISO_BUILD/autoinstall.yaml"
 
 # Download and embed Tailscale package using docker
 echo "Downloading Tailscale package..."
@@ -266,7 +263,8 @@ if [ -f "$GRUB_CFG" ]; then
     cp "$GRUB_CFG" "$GRUB_CFG.orig"
 
     # Add autoinstall parameter to default menu entry
-    sed -i 's/---/ autoinstall ds=nocloud\;s=\/cdrom\/autoinstall\/ ---/' "$GRUB_CFG"
+    # Just use 'autoinstall' - subiquity will look for autoinstall config automatically
+    sed -i 's/---/ autoinstall ---/' "$GRUB_CFG"
 
     # Set timeout to 1 second for faster boot
     sed -i 's/set timeout=.*/set timeout=1/' "$GRUB_CFG"
@@ -274,10 +272,10 @@ else
     echo "WARNING: GRUB config not found at expected location"
 fi
 
-# Update MD5 checksums
+# Update checksums
 echo "Updating checksums..."
 cd "$ISO_BUILD"
-find . -type f -not -path './boot/grub/*' -not -path './EFI/*' -print0 | xargs -0 md5sum > md5sum.txt
+find . -type f -not -path './boot/grub/*' -not -path './EFI/*' -print0 | xargs -0 sha256sum > sha256sum.txt
 
 # Repack ISO
 echo "Creating new ISO..."
