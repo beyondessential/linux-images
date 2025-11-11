@@ -89,6 +89,7 @@ done
 # Set defaults
 BUILD_DATE="$(date +%Y%m%d)"
 BUILD_DATE_DISPLAY="$(date +%Y-%m-%d)"
+GIT_SHORT_HASH="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 OUTPUT_ISO="${OUTPUT_ISO:-ubuntu-${UBUNTU_VERSION}-bes-server-${ARCH}-${BUILD_DATE}.iso}"
 USER_DATA="${USER_DATA:-user-data-${ARCH}}"
 ISO_EXTRACT="$WORK_DIR/extract"
@@ -274,9 +275,9 @@ menuentry "Manual Ubuntu Server install (HWE kernel)" {' "$GRUB_CFG"
     # Set timeout to 5 seconds
     sed -i 's/set timeout=.*/set timeout=5/' "$GRUB_CFG"
 
-    # Add generation date info entry at the end (before the closing brace)
+    # Add build info entry at the end (before the closing brace)
     sed -i '/^if \[ "$grub_platform" = "efi" \]; then/i\
-menuentry "--- Generated: '"$BUILD_DATE_DISPLAY"' ---" {\
+menuentry "--- Built by BES at '"$BUILD_DATE_DISPLAY"' from '"$GIT_SHORT_HASH"' ---" {\
 \treboot\
 }' "$GRUB_CFG"
 else
