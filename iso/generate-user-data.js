@@ -91,12 +91,16 @@ const config = {
       swap: {
         size: 0,
       },
+      grub: {
+        reorder_uefi: false,
+      },
       config: [
         {
           type: "disk",
           id: "disk0",
           ptable: "gpt",
-          grub_device: true,
+          wipe: "superblock-recursive",
+          preserve: false,
           match: [
             {
               size: "largest",
@@ -115,6 +119,9 @@ const config = {
           flag: "boot",
           partition_name: "efi",
           partition_type: "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+          grub_device: true,
+          wipe: "superblock",
+          preserve: false,
         },
         {
           type: "partition",
@@ -123,6 +130,8 @@ const config = {
           size: "1G",
           partition_name: "boot",
           partition_type: "bc13c2ff-59e6-4262-a352-b275fd6f7172",
+          wipe: "superblock",
+          preserve: false,
         },
         {
           type: "partition",
@@ -131,6 +140,8 @@ const config = {
           size: "4G",
           partition_name: "swap",
           partition_type: "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f",
+          wipe: "superblock",
+          preserve: false,
         },
         {
           type: "partition",
@@ -142,6 +153,8 @@ const config = {
             arch == "amd64"
               ? "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"
               : "b921b045-1df0-41c3-af44-4c6f280d3fae",
+          wipe: "superblock",
+          preserve: false,
         },
         {
           type: "format",
