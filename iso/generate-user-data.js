@@ -111,10 +111,18 @@ const config = {
           type: "partition",
           id: "efi",
           device: "disk0",
-          size: "1G",
+          size: "512M",
           flag: "boot",
-          partition_name: "boot",
+          partition_name: "efi",
           partition_type: "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        },
+        {
+          type: "partition",
+          id: "xboot",
+          device: "disk0",
+          size: "1G",
+          partition_name: "boot",
+          partition_type: "bc13c2ff-59e6-4262-a352-b275fd6f7172",
         },
         {
           type: "partition",
@@ -143,8 +151,8 @@ const config = {
         },
         {
           type: "format",
-          id: "boot-fmt",
-          volume: "boot",
+          id: "xboot-fmt",
+          volume: "xboot",
           fstype: "ext4",
         },
         {
@@ -161,8 +169,8 @@ const config = {
         },
         {
           type: "mount",
-          id: "boot-mnt",
-          device: "boot-fmt",
+          id: "xboot-mnt",
+          device: "xboot-fmt",
           path: "/boot",
         },
         {
