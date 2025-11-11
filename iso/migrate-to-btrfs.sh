@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ex
+set -e
 
 # Migration script to move installed system from staging partition to BTRFS root
 # This runs in the autoinstall late-commands phase
@@ -28,8 +28,6 @@ fi
 echo "$LUKS_PASSPHRASE" > /tmp/luks-passphrase
 
 # Display passphrase to user
-chvt 1
-clear
 echo ""
 echo "=========================================="
 echo "DISK ENCRYPTION PASSPHRASE"
@@ -42,9 +40,6 @@ echo ""
 echo "This will be saved to ~/luks-passphrase.txt"
 echo "IMPORTANT: Keep this safe! You may need it if disk unlock fails."
 echo ""
-echo "Press Enter to continue installation..."
-read
-chvt 2
 
 # Setup LUKS encryption on root partition
 echo "Setting up LUKS encryption..."
@@ -77,12 +72,14 @@ mkdir -p /mnt/newroot
 mount $LUKS_DEV /mnt/newroot
 
 echo "Creating BTRFS subvolumes..."
+set -x
 btrfs subvolume create /mnt/newroot/@
 btrfs subvolume create /mnt/newroot/@home
 btrfs subvolume create /mnt/newroot/@logs
 btrfs subvolume create /mnt/newroot/@postgres
 btrfs subvolume create /mnt/newroot/@containers
 btrfs subvolume create /mnt/newroot/snapshots
+set +x
 
 # Enable quotas
 echo "Enabling quotas..."

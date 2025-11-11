@@ -75,7 +75,7 @@ const config = {
     },
 
     identity: {
-      hostname: "ubuntu-server",
+      hostname: "bes-server",
       username: "ubuntu",
       password:
         "$y$j9T$C9MpXNEcjdAu20JYDtSNy.$XbgglEtgFBA5s5/k865cGsPGOVG1Cdrk.OGZzH5fDKC",
@@ -179,11 +179,11 @@ const config = {
       `cat > /target/etc/systemd/system/tailscale-first-boot.service << 'EOFTSSERVICE'\n${tailscaleFirstBootService}\nEOFTSSERVICE`,
       `cat > /target/usr/local/bin/tailscale-first-boot << 'EOFTSBOOT'\n${tailscaleFirstBootScript}\nEOFTSBOOT`,
       "chmod +x /target/usr/local/bin/tailscale-first-boot",
-      "curtin in-target -- bash /tmp/migrate-to-btrfs.sh",
-      "curtin in-target -- bash /tmp/setup-firewall.sh",
-      "curtin in-target -- bash /tmp/setup-tailscale.sh",
-      "curtin in-target -- systemctl enable tailscale-first-boot.service",
-      "curtin in-target -- systemctl enable ssh",
+      "curtin in-target --target=/target -- bash /tmp/migrate-to-btrfs.sh",
+      "curtin in-target --target=/target -- bash /tmp/setup-firewall.sh",
+      "curtin in-target --target=/target -- bash /tmp/setup-tailscale.sh",
+      "curtin in-target --target=/target -- systemctl enable tailscale-first-boot.service",
+      "curtin in-target --target=/target -- systemctl enable ssh",
     ],
   },
 };
