@@ -23,9 +23,5 @@ ufw allow 80/tcp comment 'HTTP'
 ufw allow 443/tcp comment 'TCP HTTPS'
 ufw allow 443/udp comment 'UDP HTTPS (HTTP/3)'
 
-# Allow ICMP (ping) for IPv4 and IPv6
-ufw allow in to any proto icmp comment 'ICMP ping'
-ufw allow in to any proto ipv6-icmp comment 'ICMPv6 ping'
-
 # Enable UFW
 ufw --force enable
