@@ -58,17 +58,19 @@ const config = {
       id: "ubuntu-server-minimal",
     },
 
-    interactive: {
-      sections: ["network", "identity"],
-    },
-
     locale: "en_US.UTF-8",
-
+    timezone: "Etc/UTC",
     keyboard: {
       layout: "us",
     },
 
-    timezone: "Etc/UTC",
+    identity: {
+      hostname: "ubuntu-server",
+      username: "ubuntu",
+      password:
+        "$y$j9T$C9MpXNEcjdAu20JYDtSNy.$XbgglEtgFBA5s5/k865cGsPGOVG1Cdrk.OGZzH5fDKC",
+      // forest-bridge-window-laptop-garden-summer
+    },
 
     ssh: {
       "install-server": true,
