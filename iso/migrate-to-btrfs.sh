@@ -115,8 +115,7 @@ mkdir -p /mnt/newroot/@/var/lib/containers
 
 # Set @ as default subvolume
 echo "Setting default subvolume..."
-DEFAULT_ID=$(btrfs subvolume list /mnt/newroot | grep '@$' | awk '{print $2}')
-btrfs subvolume set-default $DEFAULT_ID /mnt/newroot
+btrfs subvolume set-default /mnt/newroot/@
 
 # Get UUIDs
 LUKS_UUID=$(blkid -s UUID -o value $ROOT_PART)
