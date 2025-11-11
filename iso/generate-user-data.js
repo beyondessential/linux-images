@@ -88,6 +88,7 @@ const config = {
     },
 
     storage: {
+      version: 2,
       swap: {
         size: 0,
       },
