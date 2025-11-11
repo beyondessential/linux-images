@@ -1,0 +1,16 @@
+[Unit]
+Description=Tailscale first boot configuration
+After=tailscaled.service network-online.target
+Wants=network-online.target
+ConditionPathExists=!/etc/tailscale-configured
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tailscale-first-boot
+StandardInput=tty
+StandardOutput=tty
+RemainAfterExit=yes
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

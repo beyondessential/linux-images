@@ -38,3 +38,6 @@ id_rsa*
 *.credentials
 *.tfstate
 *.tfstate.backup
+
+# Generated files
+autoinstall/user-data

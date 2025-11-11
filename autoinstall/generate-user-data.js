@@ -9,6 +9,17 @@ const migrateScript = fs.readFileSync(
   "utf8",
 );
 
+// Read Tailscale first-boot script and service
+const tailscaleFirstBootScript = fs.readFileSync(
+  path.join(__dirname, "..", "common", "tailscale-first-boot.sh"),
+  "utf8",
+);
+
+const tailscaleFirstBootService = fs.readFileSync(
+  path.join(__dirname, "..", "common", "tailscale-first-boot.service"),
+  "utf8",
+);
+
 // Read Tailscale GPG key
 const tailscaleGpgKey = fs.readFileSync(
   path.join(
@@ -148,6 +159,10 @@ const config = {
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
       "curtin in-target -- bash /tmp/setup-tailscale.sh",
       `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "..", "common", "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
+      `cat > /target/etc/systemd/system/tailscale-first-boot.service << 'EOFTSSERVICE'\n${tailscaleFirstBootService}\nEOFTSSERVICE`,
+      `cat > /target/usr/local/bin/tailscale-first-boot << 'EOFTSBOOT'\n${tailscaleFirstBootScript}\nEOFTSBOOT`,
+      "chmod +x /target/usr/local/bin/tailscale-first-boot",
+      "curtin in-target -- systemctl enable tailscale-first-boot.service",
       "curtin in-target -- systemctl enable ssh",
     ],
   },
