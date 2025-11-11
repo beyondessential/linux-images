@@ -275,7 +275,7 @@ fi
 # Update checksums
 echo "Updating checksums..."
 cd "$ISO_BUILD"
-find . -type f -not -path './boot/grub/*' -not -path './EFI/*' -print0 | xargs -0 sha256sum > sha256sum.txt
+find . -type f -not -path './boot/grub/*' -not -path './EFI/*' -print0 | xargs -0 md5sum > md5sum.txt
 
 # Repack ISO
 echo "Creating new ISO..."
@@ -316,12 +316,17 @@ fi
 cd "$ORIGINAL_DIR"
 mv "$TEMP_ISO" "$OUTPUT_ISO"
 
+# Generate SHA256 checksum for the ISO
+echo "Generating SHA256 checksum for ISO..."
+sha256sum "$OUTPUT_ISO" > "$OUTPUT_ISO.sha256"
+
 echo ""
 echo "==================================="
 echo "ISO created successfully!"
 echo "==================================="
 echo "Output: $OUTPUT_ISO"
 echo "Size: $(du -h "$OUTPUT_ISO" | cut -f1)"
+echo "SHA256: $(cat "$OUTPUT_ISO.sha256" | awk '{print $1}')"
 echo ""
 echo "To use:"
 echo "  1. Write to USB: dd if=$OUTPUT_ISO of=/dev/sdX bs=4M status=progress"
