@@ -76,8 +76,8 @@ const config = {
       hostname: "bes-server",
       username: "ubuntu",
       password:
-        "$y$j9T$C9MpXNEcjdAu20JYDtSNy.$XbgglEtgFBA5s5/k865cGsPGOVG1Cdrk.OGZzH5fDKC",
-      // forest-bridge-window-laptop-garden-summer
+        "$y$j9T$Kh7z7p6FH3zn9r4HAMB1i0$dgY1wDtDbL4do748v9q32AV2qE5kgz0vqW8rUHQFox9",
+      // bes (will be expired on first login)
     },
 
     ssh: {
@@ -215,6 +215,7 @@ const config = {
       "curtin in-target --target=/target -- bash /tmp/setup-tailscale.sh",
       "curtin in-target --target=/target -- systemctl enable tailscale-first-boot.service",
       "curtin in-target --target=/target -- systemctl enable ssh",
+      "curtin in-target --target=/target -- passwd --expire ubuntu",
       "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
       "curtin in-target --target=/target -- bash /tmp/migrate-to-btrfs.sh",
     ],
