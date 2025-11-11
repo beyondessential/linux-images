@@ -77,7 +77,6 @@ mkdir -p /mnt/newroot
 mount $LUKS_DEV /mnt/newroot
 
 echo "Creating BTRFS subvolumes..."
-set x
 btrfs subvolume create /mnt/newroot/@
 btrfs subvolume create /mnt/newroot/@home
 btrfs subvolume create /mnt/newroot/@logs
