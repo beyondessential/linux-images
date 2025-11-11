@@ -5,6 +5,7 @@ set -euo pipefail
 # Sets up basic firewall rules for web services and SSH
 
 echo "Configuring UFW firewall..."
+set -x
 
 # Reset UFW to clean state
 ufw --force reset
@@ -23,8 +24,8 @@ ufw allow 443/tcp comment 'TCP HTTPS'
 ufw allow 443/udp comment 'UDP HTTPS (HTTP/3)'
 
 # Allow ICMP (ping) for IPv4 and IPv6
-ufw allow proto icmp comment 'ICMP ping'
-ufw allow proto ipv6-icmp comment 'ICMPv6 ping'
+ufw allow in proto icmp comment 'ICMP ping'
+ufw allow in proto ipv6-icmp comment 'ICMPv6 ping'
 
 # Enable UFW
 ufw --force enable
