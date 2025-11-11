@@ -56,7 +56,7 @@ echo "Creating keyfile for automatic unlock..."
 KEYFILE_PATH="/mnt/boot-keyfile"
 mkdir -p $KEYFILE_PATH
 mount $BOOT_PART $KEYFILE_PATH
-echo -n "$LUKS_PASSPHRASE" > $KEYFILE_PATH/luks-keyfile.key
+dd if=/dev/urandom of=$KEYFILE_PATH/luks-keyfile.key bs=1 count=64
 chmod 000 $KEYFILE_PATH/luks-keyfile.key
 
 # Add keyfile to LUKS
@@ -174,7 +174,7 @@ echo "Running update-grub..."
 chroot /mnt/newroot/@ update-grub
 
 echo "Installing GRUB..."
-chroot /mnt/newroot/@ grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck || echo "WARNING: grub-install failed"
+chroot /mnt/newroot/@ grub-install --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck
 
 # Unmount everything
 echo "Unmounting filesystems..."
@@ -258,5 +258,3 @@ chroot /mnt/newroot/@ systemctl enable setup-tpm-unlock.service
 
 # Copy passphrase for TPM enrollment on first boot
 cp /tmp/luks-passphrase /mnt/newroot/@/tmp/luks-passphrase 2>/dev/null || true
-
-echo "Migration complete! System will boot from encrypted BTRFS root with TPM unlock."
