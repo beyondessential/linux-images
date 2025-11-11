@@ -24,15 +24,8 @@ ufw allow 443/tcp comment 'TCP HTTPS'
 ufw allow 443/udp comment 'UDP HTTPS (HTTP/3)'
 
 # Allow ICMP (ping) for IPv4 and IPv6
-ufw allow in proto icmp comment 'ICMP ping'
-ufw allow in proto ipv6-icmp comment 'ICMPv6 ping'
+ufw allow in to any proto icmp comment 'ICMP ping'
+ufw allow in to any proto ipv6-icmp comment 'ICMPv6 ping'
 
 # Enable UFW
 ufw --force enable
-
-echo "UFW firewall configured"
-echo "Rules:"
-echo "  - SSH (22/tcp): allowed from anywhere"
-echo "  - HTTP (80/tcp): allowed"
-echo "  - HTTPS (443/tcp+udp): allowed"
-echo "  - ICMP ping: allowed"
