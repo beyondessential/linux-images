@@ -51,15 +51,7 @@ const packagesContent = fs.readFileSync(
 const packages = packagesContent
   .split("\n")
   .map((line) => line.trim())
-  .filter((line) => line && !line.startsWith("#"))
-  .filter((line) => {
-    // Filter out GRUB packages for other architectures
-    if (arch === "amd64" && line === "grub-efi-arm64") return false;
-    if (arch === "arm64" && line === "grub-efi-amd64") return false;
-    if (arch === "arm64" && line === "grub-pc") return false;
-    return true;
-  });
-
+  .filter((line) => line && !line.startsWith("#"));
 // Read firewall setup script
 const firewallSetupScript = fs.readFileSync(
   path.join(__dirname, "..", "common", "setup-firewall.sh"),

@@ -2,9 +2,7 @@
 # Used by both Packer builds and autoinstall configs
 
 linux-generic
-grub-pc
-grub-efi-amd64
-grub-efi-arm64
+grub-efi
 btrfs-progs
 cryptsetup
 cloud-init
