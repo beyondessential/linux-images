@@ -12,3 +12,5 @@ openssh-server
 curl
 wget
 ufw
+rsync
+cron
