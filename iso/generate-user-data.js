@@ -219,6 +219,11 @@ const config = {
       "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
       "curtin in-target --target=/target -- bash /tmp/migrate-to-btrfs.sh",
     ],
+
+    "error-commands": [
+      "tar -czf /target/installer-logs.tar.gz /var/log/installer/",
+      "journalctl -b > /target/installer-journal.log",
+    ],
   },
 };
 
