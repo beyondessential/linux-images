@@ -1,0 +1,40 @@
+# Build outputs
+output/
+packer_cache/
+*.raw
+*.raw.zst
+*.qcow2
+*.vdi
+*.vmdk
+*.sha256
+*.iso
+
+# Packer temporary files
+packer/output-*/
+packer/packer_cache/
+packer/*.box
+packer/crash.log
+
+# Temporary files
+*.log
+*.tmp
+.DS_Store
+*.swp
+*.swo
+*~
+
+# SSH keys (if accidentally placed here)
+*.pem
+*.key
+id_rsa*
+
+# Compressed archives
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+
+# Cloud credentials
+*.credentials
+*.tfstate
+*.tfstate.backup

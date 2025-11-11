@@ -1,0 +1,57 @@
+# Base packages for Ubuntu 24.04 minimal server installation
+# Used by both Packer builds and autoinstall configs
+
+# Essential system tools
+btrfs-progs
+cryptsetup
+cloud-init
+cloud-initramfs-growroot
+
+# Kernel and boot
+linux-generic
+grub-pc
+grub-efi-amd64
+grub-efi-arm64
+
+# Network tools
+openssh-server
+netplan.io
+curl
+wget
+bind9-dnsutils
+
+# System utilities
+vim
+tmux
+htop
+ncdu
+jq
+tree
+ripgrep
+
+# Monitoring and logging
+systemd-journal-remote
+rsyslog
+
+# Security
+ufw
+fail2ban
+unattended-upgrades
+
+# Development tools (optional, remove if too heavy)
+git
+build-essential
+
+# Container support
+podman
+buildah
+skopeo
+
+# Database (PostgreSQL will be installed separately when needed)
+
+# AWS utilities (for AMI builds)
+awscli
+ec2-instance-connect
+
+# Compression
+zstd
