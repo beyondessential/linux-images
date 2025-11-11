@@ -40,4 +40,4 @@ id_rsa*
 *.tfstate.backup
 
 # Generated files
-iso/user-data
+iso/user-data-*

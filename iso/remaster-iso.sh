@@ -18,7 +18,8 @@ Create a custom Ubuntu ISO with embedded autoinstall configuration
 OPTIONS:
     -a, --arch ARCH          Architecture: amd64 or arm64 (default: amd64)
     -i, --input ISO          Input ISO file (if not provided, will download)
-    -o, --output ISO         Output ISO file (default: ubuntu-24.04-autoinstall-ARCH.iso)
+    -o, --output ISO         Output ISO file (default: ubuntu-24.04-bes-server-ARCH.iso)
+    -u, --user-data FILE     User data file (default: user-data-ARCH)
     -w, --work-dir DIR       Working directory (default: /tmp/ubuntu-remaster)
     -k, --keep-work          Keep working directory after completion
     -h, --help               Show this help
@@ -46,6 +47,7 @@ EOF
 ARCH="amd64"
 INPUT_ISO=""
 OUTPUT_ISO=""
+USER_DATA=""
 KEEP_WORK=0
 
 while [[ $# -gt 0 ]]; do
@@ -56,6 +58,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -i|--input)
             INPUT_ISO="$2"
+            shift 2
+            ;;
+        -u|--user-data)
+            USER_DATA="$2"
             shift 2
             ;;
         -o|--output)
@@ -82,6 +88,7 @@ done
 
 # Set defaults
 OUTPUT_ISO="${OUTPUT_ISO:-ubuntu-${UBUNTU_VERSION}-bes-server-${ARCH}.iso}"
+USER_DATA="${USER_DATA:-user-data-${ARCH}}"
 ISO_EXTRACT="$WORK_DIR/extract"
 ISO_BUILD="$WORK_DIR/build"
 
@@ -226,7 +233,11 @@ fi
 # Copy autoinstall configuration to root of ISO
 # Subiquity looks for /autoinstall.yaml when 'autoinstall' kernel parameter is present
 echo "Adding autoinstall configuration..."
-cp "$SCRIPT_DIR/user-data" "$ISO_BUILD/autoinstall.yaml"
+if [ ! -f "$SCRIPT_DIR/$USER_DATA" ]; then
+    echo "ERROR: User data file not found: $SCRIPT_DIR/$USER_DATA"
+    exit 1
+fi
+cp "$SCRIPT_DIR/$USER_DATA" "$ISO_BUILD/autoinstall.yaml"
 
 # Download and embed Tailscale package using docker
 echo "Downloading Tailscale package..."

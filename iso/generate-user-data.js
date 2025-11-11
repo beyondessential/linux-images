@@ -34,6 +34,9 @@ const tailscaleGpgKey = fs.readFileSync(
   ),
 );
 
+// Get architecture from command line (defaults to amd64)
+const arch = process.argv[3] || "amd64";
+
 // Read packages from packages.txt
 const packagesContent = fs.readFileSync(
   path.join(__dirname, "..", "common", "packages.txt"),
@@ -42,7 +45,14 @@ const packagesContent = fs.readFileSync(
 const packages = packagesContent
   .split("\n")
   .map((line) => line.trim())
-  .filter((line) => line && !line.startsWith("#"));
+  .filter((line) => line && !line.startsWith("#"))
+  .filter((line) => {
+    // Filter out GRUB packages for other architectures
+    if (arch === "amd64" && line === "grub-efi-arm64") return false;
+    if (arch === "arm64" && line === "grub-efi-amd64") return false;
+    if (arch === "arm64" && line === "grub-pc") return false;
+    return true;
+  });
 
 // Read firewall setup script
 const firewallSetupScript = fs.readFileSync(
@@ -184,7 +194,7 @@ const output = "#cloud-config\n" + JSON.stringify(config.autoinstall);
 // Write to stdout or file
 if (process.argv[2]) {
   fs.writeFileSync(process.argv[2], output + "\n");
-  console.error(`Generated ${process.argv[2]}`);
+  console.error(`Generated ${process.argv[2]} for ${arch}`);
 } else {
   console.log(output);
 }

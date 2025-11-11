@@ -9,10 +9,10 @@ default:
     @just --list
 
 # Generate autoinstall user-data from scripts
-generate-autoinstall:
-    @echo "Generating autoinstall user-data..."
-    cd {{autoinstall_dir}} && node generate-user-data.js user-data
-    @echo "Generated iso/user-data"
+generate-autoinstall arch="amd64":
+    @echo "Generating autoinstall user-data for {{arch}}..."
+    cd {{autoinstall_dir}} && node generate-user-data.js user-data-{{arch}} {{arch}}
+    @echo "Generated iso/user-data-{{arch}} for {{arch}}"
 
 # Initialize and install dependencies
 init:
@@ -51,12 +51,12 @@ build-all:
     just build-arm64
 
 # Build only bare metal image for AMD64
-build-bare-metal-amd64: generate-autoinstall
+build-bare-metal-amd64: (generate-autoinstall "amd64")
     @echo "Building bare metal image for AMD64..."
     cd {{packer_dir}} && packer build -only='qemu.bare-metal' -var-file=amd64.pkrvars.hcl ubuntu-24.04.pkr.hcl
 
 # Build only bare metal image for ARM64
-build-bare-metal-arm64: generate-autoinstall
+build-bare-metal-arm64: (generate-autoinstall "arm64")
     @echo "Building bare metal image for ARM64..."
     @echo "NOTE: This will be slow on AMD64 host (uses emulation)"
     cd {{packer_dir}} && packer build -only='qemu.bare-metal' -var-file=arm64.pkrvars.hcl ubuntu-24.04.pkr.hcl
@@ -76,14 +76,14 @@ build-aws-arm64:
     cd {{packer_dir}} && aws-sso exec -p _BES_Primary:ReadAccess -- packer build -only='amazon-ebs.aws' -var-file=arm64.pkrvars.hcl ubuntu-24.04.pkr.hcl
 
 # Create custom ISO with embedded autoinstall config
-create-iso-amd64: generate-autoinstall
+create-iso-amd64: (generate-autoinstall "amd64")
     @echo "Creating AMD64 ISO..."
-    cd {{autoinstall_dir}} && ./remaster-iso.sh --arch amd64
+    cd {{autoinstall_dir}} && ./remaster-iso.sh --arch amd64 --user-data user-data-amd64
 
 # Create custom ISO with embedded autoinstall config
-create-iso-arm64: generate-autoinstall
+create-iso-arm64: (generate-autoinstall "arm64")
     @echo "Creating ARM64 ISO..."
-    cd {{autoinstall_dir}} && ./remaster-iso.sh --arch arm64
+    cd {{autoinstall_dir}} && ./remaster-iso.sh --arch arm64 --user-data user-data-arm64
 
 # Remove build artifacts
 clean:
