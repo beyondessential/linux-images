@@ -42,9 +42,5 @@ unattended-upgrades
 git
 build-essential
 
-# AWS utilities (for AMI builds)
-awscli
-ec2-instance-connect
-
 # Compression
 zstd
