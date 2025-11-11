@@ -9,6 +9,7 @@ btrfs-progs
 cryptsetup
 cloud-init
 wcanadian
+gdisk
 openssh-server
 curl
 wget
