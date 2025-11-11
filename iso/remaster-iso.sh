@@ -251,9 +251,6 @@ if [ -f "$GRUB_CFG" ]; then
     # Backup original
     cp "$GRUB_CFG" "$GRUB_CFG.orig"
 
-    # Add menu title with generation date
-    sed -i '/^set timeout=/a\set menu_title="Ubuntu BES Server - Generated: '"$BUILD_DATE_DISPLAY"'"' "$GRUB_CFG"
-
     # Rewrite menu entries for BES Server autoinstall
     # Replace the menu entries section with custom entries
     sed -i '/^menuentry "Try or Install Ubuntu Server"/,/^menuentry "Ubuntu Server with the HWE kernel"/c\
@@ -276,6 +273,12 @@ menuentry "Manual Ubuntu Server install (HWE kernel)" {' "$GRUB_CFG"
 
     # Set timeout to 5 seconds
     sed -i 's/set timeout=.*/set timeout=5/' "$GRUB_CFG"
+
+    # Add generation date info entry at the end (before the closing brace)
+    sed -i '/^if \[ "$grub_platform" = "efi" \]; then/i\
+menuentry "--- Generated: '"$BUILD_DATE_DISPLAY"' ---" {\
+\treboot\
+}' "$GRUB_CFG"
 else
     echo "WARNING: GRUB config not found at expected location"
 fi
