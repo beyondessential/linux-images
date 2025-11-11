@@ -42,13 +42,6 @@ unattended-upgrades
 git
 build-essential
 
-# Container support
-podman
-buildah
-skopeo
-
-# Database (PostgreSQL will be installed separately when needed)
-
 # AWS utilities (for AMI builds)
 awscli
 ec2-instance-connect
