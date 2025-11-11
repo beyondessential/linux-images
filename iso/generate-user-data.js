@@ -88,78 +88,87 @@ const config = {
     },
 
     storage: {
-      layout: {
-        name: "custom",
-        config: [
-          {
-            type: "disk",
-            id: "disk0",
-            ptable: "gpt",
-            grub_device: true,
-          },
-          {
-            type: "partition",
-            id: "efi",
-            device: "disk0",
-            size: "512M",
-            flag: "boot",
-          },
-          {
-            type: "partition",
-            id: "boot",
-            device: "disk0",
-            size: "1G",
-          },
-          {
-            type: "partition",
-            id: "staging",
-            device: "disk0",
-            size: "4G",
-          },
-          {
-            type: "partition",
-            id: "root",
-            device: "disk0",
-            size: -1,
-          },
-          {
-            type: "format",
-            id: "efi-fmt",
-            volume: "efi",
-            fstype: "fat32",
-          },
-          {
-            type: "format",
-            id: "boot-fmt",
-            volume: "boot",
-            fstype: "ext4",
-          },
-          {
-            type: "format",
-            id: "staging-fmt",
-            volume: "staging",
-            fstype: "ext4",
-          },
-          {
-            type: "mount",
-            id: "efi-mnt",
-            device: "efi-fmt",
-            path: "/boot/efi",
-          },
-          {
-            type: "mount",
-            id: "boot-mnt",
-            device: "boot-fmt",
-            path: "/boot",
-          },
-          {
-            type: "mount",
-            id: "staging-mnt",
-            device: "staging-fmt",
-            path: "/",
-          },
-        ],
-      },
+      version: 2,
+      config: [
+        {
+          type: "disk",
+          id: "disk0",
+          ptable: "gpt",
+          grub_device: true,
+        },
+        {
+          type: "partition",
+          id: "efi",
+          device: "disk0",
+          size: "512M",
+          flag: "boot",
+          partition_name: "efi",
+          partition_type: "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        },
+        {
+          type: "partition",
+          id: "boot",
+          device: "disk0",
+          size: "1G",
+          partition_name: "xboot",
+          partition_type: "bc13c2ff-59e6-4262-a352-b275fd6f7172",
+        },
+        {
+          type: "partition",
+          id: "staging",
+          device: "disk0",
+          size: "4G",
+          partition_name: "swap",
+          partition_type: "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f",
+        },
+        {
+          type: "partition",
+          id: "root",
+          device: "disk0",
+          size: -1,
+          partition_name: "root",
+          partition_type:
+            arch == "amd64"
+              ? "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"
+              : "b921b045-1df0-41c3-af44-4c6f280d3fae",
+        },
+        {
+          type: "format",
+          id: "efi-fmt",
+          volume: "efi",
+          fstype: "fat32",
+        },
+        {
+          type: "format",
+          id: "boot-fmt",
+          volume: "boot",
+          fstype: "ext4",
+        },
+        {
+          type: "format",
+          id: "staging-fmt",
+          volume: "staging",
+          fstype: "ext4",
+        },
+        {
+          type: "mount",
+          id: "efi-mnt",
+          device: "efi-fmt",
+          path: "/boot/efi",
+        },
+        {
+          type: "mount",
+          id: "boot-mnt",
+          device: "boot-fmt",
+          path: "/boot",
+        },
+        {
+          type: "mount",
+          id: "staging-mnt",
+          device: "staging-fmt",
+          path: "/",
+        },
+      ],
     },
 
     packages: packages,

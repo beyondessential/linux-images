@@ -8,8 +8,13 @@ set -e
 DISK=$(lsblk -ndo PKNAME $(findmnt -n -o SOURCE /))
 ROOT_PART="/dev/$(lsblk -ln -o NAME,PARTLABEL | grep 'root' | awk '{print $1}')"
 STAGING_PART=$(findmnt -n -o SOURCE /)
-BOOT_PART="/dev/$(lsblk -ln -o NAME,PARTLABEL | grep 'boot' | awk '{print $1}' | head -1)"
+BOOT_PART="/dev/$(lsblk -ln -o NAME,PARTLABEL | grep 'xboot' | awk '{print $1}' | head -1)"
 EFI_PART="/dev/$(lsblk -ln -o NAME,PARTLABEL | grep 'efi' | awk '{print $1}')"
+
+if [ "$ROOT_PART" = "/dev/" ]; then
+  echo "Partitioning failed"
+  exit 1
+fi
 
 echo "Disk: $DISK"
 echo "Root partition: $ROOT_PART"
@@ -72,14 +77,13 @@ mkdir -p /mnt/newroot
 mount $LUKS_DEV /mnt/newroot
 
 echo "Creating BTRFS subvolumes..."
-set -x
+set x
 btrfs subvolume create /mnt/newroot/@
 btrfs subvolume create /mnt/newroot/@home
 btrfs subvolume create /mnt/newroot/@logs
 btrfs subvolume create /mnt/newroot/@postgres
 btrfs subvolume create /mnt/newroot/@containers
 btrfs subvolume create /mnt/newroot/snapshots
-set +x
 
 # Enable quotas
 echo "Enabling quotas..."
