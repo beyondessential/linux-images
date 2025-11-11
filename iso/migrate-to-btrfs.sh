@@ -75,6 +75,7 @@ mkfs.btrfs --label ROOT --checksum xxhash --features block-group-tree,squota $LU
 # Mount and create subvolumes
 mkdir -p /mnt/newroot
 mount $LUKS_DEV /mnt/newroot
+btrfs quota enable --simple /mnt/newroot
 
 echo "Creating BTRFS subvolumes..."
 btrfs subvolume create /mnt/newroot/@
@@ -83,10 +84,6 @@ btrfs subvolume create /mnt/newroot/@logs
 btrfs subvolume create /mnt/newroot/@postgres
 btrfs subvolume create /mnt/newroot/@containers
 btrfs subvolume create /mnt/newroot/snapshots
-
-# Enable quotas
-echo "Enabling quotas..."
-btrfs quota enable /mnt/newroot
 
 # Copy system from staging to BTRFS subvolumes
 echo "Copying system to BTRFS subvolumes..."
