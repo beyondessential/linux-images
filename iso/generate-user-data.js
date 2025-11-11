@@ -204,19 +204,9 @@ const config = {
       package_upgrade: true,
     },
 
-    apt: {
-      sources: {
-        "cdrom-extras": {
-          source: "deb [trusted=yes] file:///cdrom noble extras",
-        },
-      },
-    },
-
     "late-commands": [
       `cat > /target/tmp/migrate-to-btrfs.sh << 'EOFMIGRATE'\n${migrateScript}\nEOFMIGRATE`,
       `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
-
-      "cp /cdrom/pool/extras/tailscale.deb /target/tmp/tailscale.deb || true",
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
       `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "..", "common", "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
       `cat > /target/etc/systemd/system/tailscale-first-boot.service << 'EOFTSSERVICE'\n${tailscaleFirstBootService}\nEOFTSSERVICE`,
