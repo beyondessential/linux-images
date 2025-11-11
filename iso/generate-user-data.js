@@ -207,6 +207,8 @@ const config = {
     "late-commands": [
       `cat > /target/tmp/migrate-to-btrfs.sh << 'EOFMIGRATE'\n${migrateScript}\nEOFMIGRATE`,
       `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
+      "cp /cdrom/pool/extras/wcanadian.deb /target/tmp/wcanadian.deb || true",
+      "curtin in-target --target=/target -- dpkg -i /tmp/wcanadian.deb || true",
       "cp /cdrom/pool/extras/tailscale.deb /target/tmp/tailscale.deb || true",
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
       `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "..", "common", "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,

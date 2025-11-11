@@ -9,7 +9,6 @@ btrfs-progs
 cryptsetup
 cloud-init
 cloud-initramfs-growroot
-wcanadian
 
 openssh-server
 curl

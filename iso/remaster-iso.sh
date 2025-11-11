@@ -239,10 +239,11 @@ if [ ! -f "$SCRIPT_DIR/$USER_DATA" ]; then
 fi
 cp "$SCRIPT_DIR/$USER_DATA" "$ISO_BUILD/autoinstall.yaml"
 
-# Download and embed Tailscale package using docker
-echo "Downloading Tailscale package..."
+# Download and embed packages using docker
+echo "Downloading extra packages..."
 mkdir -p "$ISO_BUILD/pool/extras"
 
+# Download Tailscale
 TAILSCALE_DOWNLOAD_DIR="$(mktemp -d)"
 docker run --rm \
     -v "$TAILSCALE_DOWNLOAD_DIR:/download:rw" \
@@ -264,6 +265,25 @@ else
     echo "WARNING: Failed to download Tailscale package"
 fi
 rm -rf "$TAILSCALE_DOWNLOAD_DIR"
+
+# Download wcanadian dictionary package
+DICT_DOWNLOAD_DIR="$(mktemp -d)"
+docker run --rm \
+    -v "$DICT_DOWNLOAD_DIR:/download:rw" \
+    ubuntu:24.04 \
+    bash -c "
+        apt-get update -qq && \
+        cd /download && \
+        apt-get download wcanadian 2>/dev/null
+    " > /dev/null 2>&1
+
+if [ -f "$DICT_DOWNLOAD_DIR"/wcanadian_*.deb ]; then
+    mv "$DICT_DOWNLOAD_DIR"/wcanadian_*.deb "$ISO_BUILD/pool/extras/wcanadian.deb"
+    echo "Downloaded wcanadian package"
+else
+    echo "WARNING: Failed to download wcanadian package"
+fi
+rm -rf "$DICT_DOWNLOAD_DIR"
 
 # Modify GRUB configuration for autoinstall
 echo "Modifying GRUB configuration..."
