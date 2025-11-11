@@ -5,7 +5,7 @@ set -euo pipefail
 # Creates a custom ISO that automatically installs with our BTRFS + encrypted swap config
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UBUNTU_VERSION="24.04"
+UBUNTU_VERSION="24.04.3"
 WORK_DIR="${WORK_DIR:-/tmp/ubuntu-remaster}"
 
 usage() {
@@ -115,10 +115,19 @@ if [ -z "$INPUT_ISO" ]; then
     ISO_NAME="ubuntu-${UBUNTU_VERSION}-live-server-${ARCH}.iso"
     INPUT_ISO="/tmp/${ISO_NAME}"
 
+    # Check if cached ISO exists and is non-zero
+    if [ -f "$INPUT_ISO" ]; then
+        if [ ! -s "$INPUT_ISO" ]; then
+            echo "Found zero-sized cached ISO, removing: $INPUT_ISO"
+            rm -f "$INPUT_ISO"
+        else
+            echo "Using cached ISO: $INPUT_ISO"
+        fi
+    fi
+
+    # Download if not present
     if [ ! -f "$INPUT_ISO" ]; then
         wget -O "$INPUT_ISO" "https://releases.ubuntu.com/${UBUNTU_VERSION}/${ISO_NAME}"
-    else
-        echo "Using cached ISO: $INPUT_ISO"
     fi
 fi
 
