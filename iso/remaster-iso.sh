@@ -266,24 +266,60 @@ else
 fi
 rm -rf "$TAILSCALE_DOWNLOAD_DIR"
 
-# Download wcanadian dictionary package
-DICT_DOWNLOAD_DIR="$(mktemp -d)"
+# Download additional packages needed for offline installation
+# These packages are critical for system setup and aren't on the base ISO
+EXTRA_PACKAGES="wcanadian btrfs-progs cryptsetup cloud-init curl ufw"
+EXTRAS_DOWNLOAD_DIR="$(mktemp -d)"
+
+echo "Downloading additional packages..."
 docker run --rm \
-    -v "$DICT_DOWNLOAD_DIR:/download:rw" \
+    -v "$EXTRAS_DOWNLOAD_DIR:/download:rw" \
     ubuntu:24.04 \
     bash -c "
         apt-get update -qq && \
         cd /download && \
-        apt-get download wcanadian 2>/dev/null
+        apt-get download $EXTRA_PACKAGES 2>/dev/null
     " > /dev/null 2>&1
 
-if [ -f "$DICT_DOWNLOAD_DIR"/wcanadian_*.deb ]; then
-    mv "$DICT_DOWNLOAD_DIR"/wcanadian_*.deb "$ISO_BUILD/pool/extras/wcanadian.deb"
-    echo "Downloaded wcanadian package"
+# Move all downloaded packages to pool/extras
+DOWNLOADED_COUNT=0
+for deb in "$EXTRAS_DOWNLOAD_DIR"/*.deb; do
+    if [ -f "$deb" ]; then
+        cp "$deb" "$ISO_BUILD/pool/extras/"
+        DOWNLOADED_COUNT=$((DOWNLOADED_COUNT + 1))
+    fi
+done
+
+if [ $DOWNLOADED_COUNT -gt 0 ]; then
+    echo "Downloaded $DOWNLOADED_COUNT packages to pool/extras"
 else
-    echo "WARNING: Failed to download wcanadian package"
+    echo "WARNING: Failed to download extra packages"
 fi
-rm -rf "$DICT_DOWNLOAD_DIR"
+rm -rf "$EXTRAS_DOWNLOAD_DIR"
+
+# Integrate pool/extras into ISO's dists structure
+echo "Integrating pool/extras into dists structure..."
+mkdir -p "$ISO_BUILD/dists/noble/extras/binary-$ARCH"
+
+# Generate Packages index for the extras component
+docker run --rm \
+    -v "$ISO_BUILD:/iso:rw" \
+    -w /iso \
+    ubuntu:24.04 \
+    bash -c "
+        apt-get update -qq && \
+        apt-get install -y -qq dpkg-dev > /dev/null 2>&1 && \
+        cd /iso && \
+        dpkg-scanpackages pool/extras /dev/null > dists/noble/extras/binary-$ARCH/Packages && \
+        gzip -9c dists/noble/extras/binary-$ARCH/Packages > dists/noble/extras/binary-$ARCH/Packages.gz && \
+        chown -R $(id -u):$(id -g) dists/noble/extras
+    " > /dev/null 2>&1
+
+if [ -f "$ISO_BUILD/dists/noble/extras/binary-$ARCH/Packages.gz" ]; then
+    echo "Created dists/noble/extras component with $DOWNLOADED_COUNT packages"
+else
+    echo "WARNING: Failed to create extras component index"
+fi
 
 # Modify GRUB configuration for autoinstall
 echo "Modifying GRUB configuration..."
