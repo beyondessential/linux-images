@@ -44,6 +44,12 @@ const packages = packagesContent
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith("#"));
 
+// Read firewall setup script
+const firewallSetupScript = fs.readFileSync(
+  path.join(__dirname, "..", "common", "setup-firewall.sh"),
+  "utf8",
+);
+
 // Generate the autoinstall configuration as a plain object
 const config = {
   autoinstall: {
@@ -155,6 +161,8 @@ const config = {
     "late-commands": [
       "curtin in-target -- bash /tmp/migrate-to-btrfs.sh",
       `cat > /target/tmp/migrate-to-btrfs.sh << 'EOFMIGRATE'\n${migrateScript}\nEOFMIGRATE`,
+      "curtin in-target -- bash /tmp/setup-firewall.sh",
+      `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
       "cp /cdrom/pool/extras/tailscale.deb /target/tmp/tailscale.deb || true",
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
       "curtin in-target -- bash /tmp/setup-tailscale.sh",

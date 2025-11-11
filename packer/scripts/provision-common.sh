@@ -25,6 +25,10 @@ sudo timedatectl set-timezone UTC
 sudo apt-get install -y unattended-upgrades
 sudo dpkg-reconfigure -plow unattended-upgrades
 
+# Configure firewall
+echo "=== Configuring firewall ==="
+sudo bash /tmp/setup-firewall.sh
+
 # Install Tailscale
 echo "=== Installing Tailscale ==="
 sudo bash /tmp/setup-tailscale.sh

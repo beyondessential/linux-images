@@ -182,6 +182,11 @@ build {
   }
 
   provisioner "file" {
+    source      = "../common/setup-firewall.sh"
+    destination = "/tmp/setup-firewall.sh"
+  }
+
+  provisioner "file" {
     source      = "../common/setup-tailscale.sh"
     destination = "/tmp/setup-tailscale.sh"
   }
@@ -196,6 +201,7 @@ build {
     inline = [
       "chmod +x /tmp/setup-btrfs.sh",
       "chmod +x /tmp/setup-swap.sh",
+      "chmod +x /tmp/setup-firewall.sh",
       "chmod +x /tmp/setup-tailscale.sh"
     ]
   }
