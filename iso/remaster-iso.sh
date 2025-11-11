@@ -1,16 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# ISO remastering script to create Ubuntu installation media with embedded autoinstall
-# Creates a custom ISO that automatically installs with our BTRFS + encrypted swap config
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UBUNTU_VERSION="24.04.3"
 WORK_DIR="${WORK_DIR:-/tmp/ubuntu-remaster}"
 ORIGINAL_DIR="$(pwd)"
 
 usage() {
-    cat <<EOF
+  cat <<EOF
 Usage: $0 [OPTIONS]
 
 Create a custom Ubuntu ISO with embedded autoinstall configuration
@@ -40,7 +37,7 @@ REQUIREMENTS:
     - wget or curl
 
 EOF
-    exit 0
+  exit 0
 }
 
 # Parse arguments
@@ -51,39 +48,39 @@ USER_DATA=""
 KEEP_WORK=0
 
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        -a|--arch)
-            ARCH="$2"
-            shift 2
-            ;;
-        -i|--input)
-            INPUT_ISO="$2"
-            shift 2
-            ;;
-        -u|--user-data)
-            USER_DATA="$2"
-            shift 2
-            ;;
-        -o|--output)
-            OUTPUT_ISO="$2"
-            shift 2
-            ;;
-        -w|--work-dir)
-            WORK_DIR="$2"
-            shift 2
-            ;;
-        -k|--keep-work)
-            KEEP_WORK=1
-            shift
-            ;;
-        -h|--help)
-            usage
-            ;;
-        *)
-            echo "Unknown option: $1"
-            usage
-            ;;
-    esac
+  case $1 in
+    -a|--arch)
+      ARCH="$2"
+      shift 2
+      ;;
+    -i|--input)
+      INPUT_ISO="$2"
+      shift 2
+      ;;
+    -u|--user-data)
+      USER_DATA="$2"
+      shift 2
+      ;;
+    -o|--output)
+      OUTPUT_ISO="$2"
+      shift 2
+      ;;
+    -w|--work-dir)
+      WORK_DIR="$2"
+      shift 2
+      ;;
+    -k|--keep-work)
+      KEEP_WORK=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      ;;
+  esac
 done
 
 # Set defaults
@@ -97,88 +94,98 @@ ISO_BUILD="$WORK_DIR/build"
 
 # Validate architecture
 if [[ "$ARCH" != "amd64" && "$ARCH" != "arm64" ]]; then
-    echo "ERROR: Architecture must be amd64 or arm64"
-    exit 1
+  echo "ERROR: Architecture must be amd64 or arm64"
+  exit 1
 fi
 
 # Check for docker
 if ! command -v docker &> /dev/null; then
-    echo "ERROR: docker not found"
-    echo "Install with: sudo apt-get install docker.io"
-    exit 1
+  echo "ERROR: docker not found"
+  echo "Install with: sudo apt-get install docker.io"
+  exit 1
 fi
 
 echo "Using docker for ISO extraction"
 
 # Check dependencies
 check_deps() {
-    local missing=0
-    for cmd in xorriso wget; do
-        if ! command -v "$cmd" &> /dev/null; then
-            echo "ERROR: $cmd not found"
-            missing=1
-        fi
-    done
-    if [ $missing -eq 1 ]; then
-        echo "Install with: sudo apt-get install xorriso wget"
-        exit 1
+  local missing=0
+  for cmd in xorriso wget; do
+    if ! command -v "$cmd" &> /dev/null; then
+      echo "ERROR: $cmd not found"
+      missing=1
     fi
+  done
+  if [ $missing -eq 1 ]; then
+    echo "Install with: sudo apt-get install xorriso wget"
+    exit 1
+  fi
 }
 
 check_deps
 
 # Download ISO if not provided
 if [ -z "$INPUT_ISO" ]; then
-    echo "No input ISO specified, downloading Ubuntu ${UBUNTU_VERSION} ${ARCH}..."
-    ISO_NAME="ubuntu-${UBUNTU_VERSION}-live-server-${ARCH}.iso"
-    INPUT_ISO="/tmp/${ISO_NAME}"
-    CHECKSUM_FILE="/tmp/SHA256SUMS-${UBUNTU_VERSION}"
+  echo "No input ISO specified, downloading Ubuntu ${UBUNTU_VERSION} ${ARCH}..."
+  ISO_NAME="ubuntu-${UBUNTU_VERSION}-live-server-${ARCH}.iso"
+  INPUT_ISO="/tmp/${ISO_NAME}"
+  CHECKSUM_FILE="/tmp/SHA256SUMS-${UBUNTU_VERSION}"
 
-    # Check if cached ISO exists and is non-zero
-    if [ -f "$INPUT_ISO" ]; then
-        if [ ! -s "$INPUT_ISO" ]; then
-            echo "Found zero-sized cached ISO, removing: $INPUT_ISO"
-            rm -f "$INPUT_ISO"
-        else
-            echo "Using cached ISO: $INPUT_ISO"
-        fi
+  if [ "$ARCH" = "amd64" ]; then
+    ISO_URL="https://releases.ubuntu.com/${UBUNTU_VERSION}/${ISO_NAME}"
+    SUM_URL="https://releases.ubuntu.com/${UBUNTU_VERSION}/SHA256SUMS"
+  else
+    ISO_URL="https://cdimage.ubuntu.com/releases/${UBUNTU_VERSION}/release/${ISO_NAME}"
+    SUM_URL="https://cdimage.ubuntu.com/releases/${UBUNTU_VERSION}/release/SHA256SUMS"
+  fi
+
+  # Check if cached ISO exists and is non-zero
+  if [ -f "$INPUT_ISO" ]; then
+    if [ ! -s "$INPUT_ISO" ]; then
+      echo "Found zero-sized cached ISO, removing: $INPUT_ISO"
+      rm -f "$INPUT_ISO"
+    else
+      echo "Using cached ISO: $INPUT_ISO"
     fi
+  fi
 
-    # Download if not present
-    if [ ! -f "$INPUT_ISO" ]; then
-        wget -O "$INPUT_ISO" "https://releases.ubuntu.com/${UBUNTU_VERSION}/${ISO_NAME}"
-    fi
+  # Download if not present
+  if [ ! -f "$INPUT_ISO" ]; then
+    echo "from $ISO_URL"
+    wget -O "$INPUT_ISO" "$ISO_URL"
+  fi
 
-    # Download and verify checksum
-    echo "Downloading checksums..."
-    wget -q -O "$CHECKSUM_FILE" "https://releases.ubuntu.com/${UBUNTU_VERSION}/SHA256SUMS"
+  # Download and verify checksum
+  echo "Downloading checksums..."
+  echo "from $SUM_URL"
+  wget -q -O "$CHECKSUM_FILE" "$SUM_URL"
 
-    echo "Verifying ISO checksum..."
-    EXPECTED_CHECKSUM=$(grep "${ISO_NAME}" "$CHECKSUM_FILE" | awk '{print $1}')
+  echo "Verifying ISO checksum..."
+  EXPECTED_CHECKSUM=$(grep "${ISO_NAME}" "$CHECKSUM_FILE" | awk '{print $1}')
 
-    if [ -z "$EXPECTED_CHECKSUM" ]; then
-        echo "ERROR: Could not find checksum for ${ISO_NAME} in SHA256SUMS"
-        rm -f "$INPUT_ISO" "$CHECKSUM_FILE"
-        exit 1
-    fi
+  if [ -z "$EXPECTED_CHECKSUM" ]; then
+    echo "ERROR: Could not find checksum for ${ISO_NAME} in SHA256SUMS"
+    rm -f "$INPUT_ISO" "$CHECKSUM_FILE"
+    exit 1
+  fi
 
-    ACTUAL_CHECKSUM=$(sha256sum "$INPUT_ISO" | awk '{print $1}')
+  ACTUAL_CHECKSUM=$(sha256sum "$INPUT_ISO" | awk '{print $1}')
 
-    if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
-        echo "ERROR: Checksum verification failed!"
-        echo "Expected: $EXPECTED_CHECKSUM"
-        echo "Got:      $ACTUAL_CHECKSUM"
-        rm -f "$INPUT_ISO" "$CHECKSUM_FILE"
-        exit 1
-    fi
+  if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+    echo "ERROR: Checksum verification failed!"
+    echo "Expected: $EXPECTED_CHECKSUM"
+    echo "Got:      $ACTUAL_CHECKSUM"
+    rm -f "$INPUT_ISO" "$CHECKSUM_FILE"
+    exit 1
+  fi
 
-    echo "Checksum verification passed"
-    rm -f "$CHECKSUM_FILE"
+  echo "Checksum verification passed"
+  rm -f "$CHECKSUM_FILE"
 fi
 
 if [ ! -f "$INPUT_ISO" ]; then
-    echo "ERROR: Input ISO not found: $INPUT_ISO"
-    exit 1
+  echo "ERROR: Input ISO not found: $INPUT_ISO"
+  exit 1
 fi
 
 echo "==================================="
@@ -193,12 +200,12 @@ echo ""
 
 # Cleanup function
 cleanup() {
-    echo "Cleaning up..."
-    if [ $KEEP_WORK -eq 0 ]; then
-        rm -rf "$WORK_DIR"
-    else
-        echo "Keeping work directory: $WORK_DIR"
-    fi
+  echo "Cleaning up..."
+  if [ $KEEP_WORK -eq 0 ]; then
+    rm -rf "$WORK_DIR"
+  else
+    echo "Keeping work directory: $WORK_DIR"
+  fi
 }
 
 trap cleanup EXIT
@@ -213,14 +220,14 @@ INPUT_ISO_ABS="$(readlink -f "$INPUT_ISO")"
 ISO_EXTRACT_ABS="$(readlink -f "$ISO_EXTRACT")"
 
 docker run --rm \
-    -v "$INPUT_ISO_ABS:/input.iso:ro" \
-    -v "$ISO_EXTRACT_ABS:/output:rw" \
-    ubuntu:24.04 \
-    bash -c "apt-get update -qq && apt-get install -y -qq xorriso > /dev/null 2>&1 && \
-             xorriso -abort_on NEVER -osirrox on -indev /input.iso -extract / /output && \
-             xorriso -abort_on NEVER -indev /input.iso -osirrox on -extract_boot_images /output/ && \
-             chown -R $(id -u):$(id -g) /output && \
-             chmod -R u+w /output"
+  -v "$INPUT_ISO_ABS:/input.iso:ro" \
+  -v "$ISO_EXTRACT_ABS:/output:rw" \
+  ubuntu:24.04 \
+  bash -c "apt-get update -qq && apt-get install -y -qq xorriso > /dev/null 2>&1 && \
+          xorriso -abort_on NEVER -osirrox on -indev /input.iso -extract / /output && \
+          xorriso -abort_on NEVER -indev /input.iso -osirrox on -extract_boot_images /output/ && \
+          chown -R $(id -u):$(id -g) /output && \
+          chmod -R u+w /output"
 
 # Copy ISO contents to build directory
 echo "Preparing build directory..."
@@ -228,33 +235,31 @@ cp -rT "$ISO_EXTRACT" "$ISO_BUILD"
 
 # Move EFI boot image to boot directory
 if [ -f "$ISO_EXTRACT/eltorito_img2_uefi.img" ]; then
-    mkdir -p "$ISO_BUILD/boot/grub"
-    mv "$ISO_EXTRACT/eltorito_img2_uefi.img" "$ISO_BUILD/boot/grub/efi.img"
-    echo "Preserved EFI boot image"
+  mkdir -p "$ISO_BUILD/boot/grub"
+  mv "$ISO_EXTRACT/eltorito_img2_uefi.img" "$ISO_BUILD/boot/grub/efi.img"
+  echo "Preserved EFI boot image"
 fi
 
 # Copy autoinstall configuration to root of ISO
 # Subiquity looks for /autoinstall.yaml when 'autoinstall' kernel parameter is present
 echo "Adding autoinstall configuration..."
 if [ ! -f "$SCRIPT_DIR/$USER_DATA" ]; then
-    echo "ERROR: User data file not found: $SCRIPT_DIR/$USER_DATA"
-    exit 1
+  echo "ERROR: User data file not found: $SCRIPT_DIR/$USER_DATA"
+  exit 1
 fi
 cp "$SCRIPT_DIR/$USER_DATA" "$ISO_BUILD/autoinstall.yaml"
-
-
 
 # Modify GRUB configuration for autoinstall
 echo "Modifying GRUB configuration..."
 GRUB_CFG="$ISO_BUILD/boot/grub/grub.cfg"
 
 if [ -f "$GRUB_CFG" ]; then
-    # Backup original
-    cp "$GRUB_CFG" "$GRUB_CFG.orig"
+  # Backup original
+  cp "$GRUB_CFG" "$GRUB_CFG.orig"
 
-    # Rewrite menu entries for BES Server autoinstall
-    # Replace the menu entries section with custom entries
-    sed -i '/^menuentry "Try or Install Ubuntu Server"/,/^menuentry "Ubuntu Server with the HWE kernel"/c\
+  # Rewrite menu entries for BES Server autoinstall
+  # Replace the menu entries section with custom entries
+  sed -i '/^menuentry "Try or Install Ubuntu Server"/,/^menuentry "Ubuntu Server with the HWE kernel"/c\
 menuentry "Auto install Ubuntu BES Server" {\
 \tset gfxpayload=keep\
 \tlinux\t/casper/vmlinuz autoinstall ---\
@@ -272,16 +277,16 @@ menuentry "Manual Ubuntu Server install" {\
 }\
 menuentry "Manual Ubuntu Server install (HWE kernel)" {' "$GRUB_CFG"
 
-    # Set timeout to 5 seconds
-    sed -i 's/set timeout=.*/set timeout=5/' "$GRUB_CFG"
+  # Set timeout to 5 seconds
+  sed -i 's/set timeout=.*/set timeout=5/' "$GRUB_CFG"
 
-    # Add build info entry at the end (before the closing brace)
-    sed -i '/^if \[ "$grub_platform" = "efi" \]; then/i\
+  # Add build info entry at the end (before the closing brace)
+  sed -i '/^if \[ "$grub_platform" = "efi" \]; then/i\
 menuentry "--- Built by BES at '"$BUILD_DATE_DISPLAY"' from '"$GIT_SHORT_HASH"' ---" {\
 \treboot\
 }' "$GRUB_CFG"
 else
-    echo "WARNING: GRUB config not found at expected location"
+  echo "WARNING: GRUB config not found at expected location"
 fi
 
 # Update checksums
@@ -297,31 +302,30 @@ cd "$ISO_BUILD"
 TEMP_ISO="$WORK_DIR/$(basename "$OUTPUT_ISO")"
 
 if [ "$ARCH" = "amd64" ]; then
-    xorriso -as mkisofs \
-        -r -V "Ubuntu ${UBUNTU_VERSION} BES Server" \
-        -J -joliet-long -l \
-        -b boot/grub/i386-pc/eltorito.img \
-        -c boot.catalog \
-        -no-emul-boot -boot-load-size 4 -boot-info-table \
-        --grub2-boot-info --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
-        -eltorito-alt-boot \
-        -e boot/grub/efi.img \
-        -no-emul-boot \
-        -append_partition 2 0xef boot/grub/efi.img \
-        -appended_part_as_gpt \
-        -o "$TEMP_ISO" \
-        .
+  xorriso -as mkisofs \
+    -r -V "Ubuntu ${UBUNTU_VERSION} BES Server AMD64" \
+    -J -joliet-long -l \
+    -b boot/grub/i386-pc/eltorito.img \
+    -c boot.catalog \
+    -no-emul-boot -boot-load-size 4 -boot-info-table \
+    --grub2-boot-info --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
+    -eltorito-alt-boot \
+    -e boot/grub/efi.img \
+    -no-emul-boot \
+    -append_partition 2 0xef boot/grub/efi.img \
+    -appended_part_as_gpt \
+    -o "$TEMP_ISO" \
+    .
 else
-    # ARM64 ISO creation
-    xorriso -as mkisofs \
-        -r -V "Ubuntu ${UBUNTU_VERSION} BES Server ARM64" \
-        -J -joliet-long -l \
-        -e boot/grub/efi.img \
-        -no-emul-boot \
-        -append_partition 2 0xef boot/grub/efi.img \
-        -appended_part_as_gpt \
-        -o "$TEMP_ISO" \
-        .
+  xorriso -as mkisofs \
+    -r -V "Ubuntu ${UBUNTU_VERSION} BES Server ARM64" \
+    -J -joliet-long -l \
+    -e boot/grub/efi.img \
+    -no-emul-boot \
+    -append_partition 2 0xef boot/grub/efi.img \
+    -appended_part_as_gpt \
+    -o "$TEMP_ISO" \
+    .
 fi
 
 # Move ISO to original directory
@@ -342,8 +346,7 @@ echo "SHA256: $(cat "$OUTPUT_ISO.sha256" | awk '{print $1}')"
 echo ""
 echo "To use:"
 echo "  1. Write to USB: dd if=$OUTPUT_ISO of=/dev/sdX bs=4M status=progress"
-echo "  2. Or burn to DVD"
-echo "  3. Boot and installation will proceed automatically"
+echo "  2. Boot and installation will proceed automatically"
 echo ""
 echo "Default login after install:"
 echo "  Username: ubuntu"

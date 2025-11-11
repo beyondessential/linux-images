@@ -23,7 +23,7 @@ apt-get install -y tailscale
 
 systemctl enable tailscaled
 
-mkdir /etc/cron.weekly
+mkdir -p /etc/cron.weekly
 cat > /etc/cron.weekly/apt-upgrade-tailscale << 'EOF'
 #!/bin/sh
 apt install -y tailscale
