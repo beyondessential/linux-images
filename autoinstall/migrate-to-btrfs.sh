@@ -17,13 +17,64 @@ echo "Staging partition: $STAGING_PART"
 echo "Boot partition: $BOOT_PART"
 echo "EFI partition: $EFI_PART"
 
-# Format root partition as BTRFS with features enabled
+# Generate LUKS passphrase (6 words from /usr/share/dict/words)
+echo "Generating LUKS encryption passphrase..."
+if [ -f /usr/share/dict/words ]; then
+  LUKS_PASSPHRASE=$(grep -E '^[a-z]{4,8}$' /usr/share/dict/words | shuf -n 6 | tr '\n' '-' | sed 's/-$//')
+else
+  # Fallback if wordlist not available
+  LUKS_PASSPHRASE=$(openssl rand -base64 32)
+fi
+echo "$LUKS_PASSPHRASE" > /tmp/luks-passphrase
+
+# Display passphrase to user
+chvt 1
+clear
+echo ""
+echo "=========================================="
+echo "DISK ENCRYPTION PASSPHRASE"
+echo "=========================================="
+echo ""
+echo "Your disk encryption passphrase:"
+echo ""
+echo "$LUKS_PASSPHRASE"
+echo ""
+echo "This will be saved to ~/luks-passphrase.txt"
+echo "IMPORTANT: Keep this safe! You may need it if disk unlock fails."
+echo ""
+echo "Press Enter to continue installation..."
+read
+chvt 2
+
+# Setup LUKS encryption on root partition
+echo "Setting up LUKS encryption..."
+echo -n "$LUKS_PASSPHRASE" | cryptsetup luksFormat --type luks2 $ROOT_PART -
+echo -n "$LUKS_PASSPHRASE" | cryptsetup open $ROOT_PART root-crypt -
+
+# Create keyfile on boot partition for automatic unlock
+echo "Creating keyfile for automatic unlock..."
+KEYFILE_PATH="/mnt/boot-keyfile"
+mkdir -p $KEYFILE_PATH
+mount $BOOT_PART $KEYFILE_PATH
+echo -n "$LUKS_PASSPHRASE" > $KEYFILE_PATH/luks-keyfile.key
+chmod 000 $KEYFILE_PATH/luks-keyfile.key
+
+# Add keyfile to LUKS
+echo -n "$LUKS_PASSPHRASE" | cryptsetup luksAddKey $ROOT_PART $KEYFILE_PATH/luks-keyfile.key -
+
+umount $KEYFILE_PATH
+rmdir $KEYFILE_PATH
+
+# Use the opened LUKS device
+LUKS_DEV="/dev/mapper/root-crypt"
+
+# Format LUKS container as BTRFS with features enabled
 echo "Creating BTRFS filesystem with features..."
-mkfs.btrfs -f -L ROOT --features block-group-tree,squota $ROOT_PART
+mkfs.btrfs -f -L ROOT --features block-group-tree,squota $LUKS_DEV
 
 # Mount and create subvolumes
 mkdir -p /mnt/newroot
-mount $ROOT_PART /mnt/newroot
+mount $LUKS_DEV /mnt/newroot
 
 echo "Creating BTRFS subvolumes..."
 btrfs subvolume create /mnt/newroot/@
@@ -71,12 +122,14 @@ DEFAULT_ID=$(btrfs subvolume list /mnt/newroot | grep '@$' | awk '{print $2}')
 btrfs subvolume set-default $DEFAULT_ID /mnt/newroot
 
 # Get UUIDs
-ROOT_UUID=$(blkid -s UUID -o value $ROOT_PART)
+LUKS_UUID=$(blkid -s UUID -o value $ROOT_PART)
+ROOT_UUID=$(blkid -s UUID -o value $LUKS_DEV)
 BOOT_UUID=$(blkid -s UUID -o value $BOOT_PART)
 EFI_UUID=$(blkid -s UUID -o value $EFI_PART)
 STAGING_UUID=$(blkid -s UUID -o value $STAGING_PART)
 
 echo "UUIDs:"
+echo "  LUKS: $LUKS_UUID"
 echo "  Root: $ROOT_UUID"
 echo "  Boot: $BOOT_UUID"
 echo "  EFI: $EFI_UUID"
@@ -100,6 +153,7 @@ EOF
 echo "Configuring encrypted swap..."
 cat > /mnt/newroot/@/etc/crypttab << EOF
 # /etc/crypttab: mappings for encrypted partitions
+root-crypt UUID=$LUKS_UUID /boot/luks-keyfile.key luks,discard,keyscript=/bin/cat
 swap UUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64,size=256
 EOF
 
@@ -131,4 +185,77 @@ umount /mnt/newroot/@/dev || true
 umount /mnt/newroot || true
 rmdir /mnt/newroot || true
 
-echo "Migration complete! System will boot from BTRFS root with encrypted swap."
+# Save passphrase to user's home directory
+DEFAULT_USER=$(ls /mnt/newroot/@home 2>/dev/null | head -1)
+if [ -n "$DEFAULT_USER" ]; then
+  echo "Saving passphrase to /home/$DEFAULT_USER/luks-passphrase.txt..."
+  cp /tmp/luks-passphrase /mnt/newroot/@home/$DEFAULT_USER/luks-passphrase.txt
+  chroot /mnt/newroot/@ chown $DEFAULT_USER:$DEFAULT_USER /home/$DEFAULT_USER/luks-passphrase.txt
+  chroot /mnt/newroot/@ chmod 600 /home/$DEFAULT_USER/luks-passphrase.txt
+fi
+
+# Setup TPM enrollment script
+cat > /mnt/newroot/@/usr/local/bin/setup-tpm-unlock << EOFTPM
+#!/bin/bash
+set -e
+
+LUKS_UUID="$LUKS_UUID"
+KEYFILE="/boot/luks-keyfile.key"
+
+if [ -e /dev/tpmrm0 ] || [ -e /dev/tpm0 ]; then
+  echo "TPM2 device found, enrolling for automatic unlock..."
+  if [ -f /tmp/luks-passphrase ]; then
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-uuid/\$LUKS_UUID < /tmp/luks-passphrase
+    echo "TPM2 enrolled successfully with PCR 7!"
+
+    # Remove keyfile from LUKS and securely delete it
+    echo "Removing keyfile from LUKS..."
+    cryptsetup luksRemoveKey /dev/disk/by-uuid/\$LUKS_UUID \$KEYFILE
+
+    # Secure delete keyfile
+    echo "Securely deleting keyfile..."
+    shred -vfz -n 3 \$KEYFILE
+    rm -f \$KEYFILE
+
+    # Update crypttab to remove keyfile reference
+    sed -i "s|root-crypt UUID=\$LUKS_UUID /boot/luks-keyfile.key luks,discard,keyscript=/bin/cat|root-crypt UUID=\$LUKS_UUID none luks,discard|" /etc/crypttab
+
+    echo "Keyfile removed. System will auto-unlock via TPM on next boot."
+    rm -f /tmp/luks-passphrase
+  else
+    echo "WARNING: Could not find passphrase file, skipping TPM enrollment"
+  fi
+else
+  echo "No TPM2 device found. System will use keyfile at \$KEYFILE for auto-unlock."
+  echo "Passphrase fallback available if keyfile is unavailable."
+  rm -f /tmp/luks-passphrase
+fi
+EOFTPM
+
+chmod +x /mnt/newroot/@/usr/local/bin/setup-tpm-unlock
+
+# Create systemd service for TPM enrollment
+cat > /mnt/newroot/@/etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
+[Unit]
+Description=Setup TPM2 auto-unlock for LUKS
+After=local-fs.target
+Before=tailscale-first-boot.service
+ConditionPathExists=!/etc/tpm-enrolled
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/setup-tpm-unlock
+ExecStartPost=/usr/bin/touch /etc/tpm-enrolled
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOFTPMSVC
+
+# Enable TPM enrollment service
+chroot /mnt/newroot/@ systemctl enable setup-tpm-unlock.service
+
+# Copy passphrase for TPM enrollment on first boot
+cp /tmp/luks-passphrase /mnt/newroot/@/tmp/luks-passphrase 2>/dev/null || true
+
+echo "Migration complete! System will boot from encrypted BTRFS root with TPM unlock."
