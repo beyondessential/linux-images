@@ -208,12 +208,20 @@ docker run --rm \
     ubuntu:24.04 \
     bash -c "apt-get update -qq && apt-get install -y -qq xorriso > /dev/null 2>&1 && \
              xorriso -osirrox on -indev /input.iso -extract / /output && \
+             xorriso -indev /input.iso -osirrox on -extract_boot_images /output/ && \
              chown -R $(id -u):$(id -g) /output && \
              chmod -R u+w /output"
 
 # Copy ISO contents to build directory
 echo "Preparing build directory..."
 cp -rT "$ISO_EXTRACT" "$ISO_BUILD"
+
+# Move EFI boot image to boot directory
+if [ -f "$ISO_EXTRACT/eltorito_img2_uefi.img" ]; then
+    mkdir -p "$ISO_BUILD/boot/grub"
+    mv "$ISO_EXTRACT/eltorito_img2_uefi.img" "$ISO_BUILD/boot/grub/efi.img"
+    echo "Preserved EFI boot image"
+fi
 
 # Create autoinstall directory in ISO
 mkdir -p "$ISO_BUILD/autoinstall"
@@ -286,7 +294,10 @@ if [ "$ARCH" = "amd64" ]; then
         -c boot.catalog \
         -no-emul-boot -boot-load-size 4 -boot-info-table \
         --grub2-boot-info --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img \
-        -append_partition 2 0xef EFI/boot/bootx64.efi \
+        -eltorito-alt-boot \
+        -e boot/grub/efi.img \
+        -no-emul-boot \
+        -append_partition 2 0xef boot/grub/efi.img \
         -appended_part_as_gpt \
         -o "$TEMP_ISO" \
         .
@@ -295,7 +306,9 @@ else
     xorriso -as mkisofs \
         -r -V "Ubuntu ${UBUNTU_VERSION} Autoinstall ARM64" \
         -J -joliet-long -l \
-        -append_partition 2 0xef EFI/boot/bootaa64.efi \
+        -e boot/grub/efi.img \
+        -no-emul-boot \
+        -append_partition 2 0xef boot/grub/efi.img \
         -appended_part_as_gpt \
         -o "$TEMP_ISO" \
         .
