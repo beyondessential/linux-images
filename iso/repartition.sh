@@ -86,11 +86,11 @@ mkdir -p /mnt/newroot/@snapshots/{root,home,logs,postgres,containers}
 : Save passphrase to real root
 install -m600 /tmp/luks-passphrase /mnt/newroot/@/root/luks-passphrase.txt
 
-LUKS_UUID=$(blkid -s UUID -o value $ROOT_PART)
-ROOT_UUID=$(blkid -s UUID -o value $LUKS_DEV)
-BOOT_UUID=$(blkid -s UUID -o value $BOOT_PART)
-EFI_UUID=$(blkid -s UUID -o value $EFI_PART)
-STAGING_UUID=$(blkid -s UUID -o value $STAGING_PART)
+LUKS_UUID=$(blkid -s PARTUUID -o value $ROOT_PART)
+ROOT_UUID=$(blkid -s PARTUUID -o value $LUKS_DEV)
+BOOT_UUID=$(blkid -s PARTUUID -o value $BOOT_PART)
+EFI_UUID=$(blkid -s PARTUUID -o value $EFI_PART)
+STAGING_UUID=$(blkid -s PARTUUID -o value $STAGING_PART)
 
 echo "UUIDs:"
 echo "  LUKS: $LUKS_UUID"
@@ -101,8 +101,8 @@ echo "  Staging: $STAGING_UUID"
 
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
-root UUID=$LUKS_UUID /dev/disk/by-uuid/$BOOT_UUID:/.luks.key luks,discard,keyscript=/lib/cryptsetup/scripts/passdev
-swap UUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64,size=256
+root PARTUUID=$LUKS_UUID /dev/disk/by-partuuid/$BOOT_UUID:/.luks.key luks,discard,keyscript=/lib/cryptsetup/scripts/passdev
+swap PARTUUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64
 EOF
 
 : Write fstab
@@ -113,9 +113,9 @@ cat > /mnt/newroot/@/etc/fstab << EOF
 /dev/mapper/root /var/lib/postgresql     btrfs subvol=@postgres,compress=zstd:6 0 2
 /dev/mapper/root /var/lib/containers     btrfs subvol=@containers,compress=zstd:6 0 2
 /dev/mapper/root /.snapshots             btrfs subvol=@.snapshots,compress=zstd:6 0 2
-UUID=$BOOT_UUID /boot                   ext4 defaults 0 2
-UUID=$EFI_UUID /boot/efi                vfat umask=0077 0 1
-/dev/mapper/swap none                   swap sw 0 0
+PARTUUID=$BOOT_UUID /boot                ext4 defaults 0 2
+PARTUUID=$EFI_UUID /boot/efi             vfat umask=0077 0 1
+/dev/mapper/swap none                    swap sw 0 0
 EOF
 
 : Setup TPM enrollment script
@@ -123,24 +123,23 @@ cat > /mnt/newroot/@/usr/local/bin/setup-tpm-unlock << EOFTPM
 #!/bin/bash
 set -e
 
-LUKS_UUID="$LUKS_UUID"
 KEYFILE="/boot/.luks.key"
 
 if [ -e /dev/tpmrm0 ] || [ -e /dev/tpm0 ]; then
   echo "TPM2 device found, enrolling for automatic unlock..."
   if [ -f \$KEYFILE ]; then
-    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-uuid/\$LUKS_UUID --unlock-key-file=\$KEYFILE
+    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partuuid/$LUKS_UUID --unlock-key-file=\$KEYFILE
     echo "TPM2 enrolled successfully!"
 
     echo "Removing keyfile from LUKS..."
-    cryptsetup luksRemoveKey /dev/disk/by-uuid/\$LUKS_UUID \$KEYFILE
+    cryptsetup luksRemoveKey /dev/disk/by-partuuid/$LUKS_UUID \$KEYFILE
 
     echo "Securely deleting keyfile..."
     shred -vfz -n 3 \$KEYFILE
     rm -f \$KEYFILE
 
     # Update crypttab to remove keyfile reference
-    sed -i "s|root .+|root UUID=\$LUKS_UUID none luks,discard|" /etc/crypttab
+    sed -i "s|root .+|root PARTUUID=$LUKS_UUID none luks,discard|" /etc/crypttab
   else
     echo "WARNING: Could not find keyfile, skipping TPM enrollment"
   fi
