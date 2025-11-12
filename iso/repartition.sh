@@ -101,7 +101,7 @@ echo "  Staging: $STAGING_UUID"
 
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
-root PARTUUID=$LUKS_UUID /dev/disk/by-partuuid/$BOOT_UUID:/.luks.key luks,discard,keyscript=/lib/cryptsetup/scripts/passdev
+root PARTUUID=$LUKS_UUID /.luks.key:PARTUUID=$BOOT_UUID luks,discard
 swap PARTUUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64
 EOF
 
