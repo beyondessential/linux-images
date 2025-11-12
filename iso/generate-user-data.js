@@ -214,7 +214,7 @@ const config = {
 
     "late-commands": [
       // helper to wipe the disk if needed (on error)
-      `echo 'dd if=/dev/zero of=/dev/$(lsblk -ndo PKNAME $(findmnt -no SOURCE /target)) bs=1M status=progress' > wipe-target.sh`,
+      `echo "dd if=/dev/zero of=/dev/$(lsblk -ndo PKNAME $(findmnt -no SOURCE /target)) bs=1M status=progress" > wipe-target.sh`,
       // network configuration (in original /target)
       `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,

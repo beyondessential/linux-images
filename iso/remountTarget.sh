@@ -17,7 +17,7 @@ umount /target/cdrom
 umount /target
 
 : Wiping staging
-dd if=/dev/zero of=$SWAP_PART bs=1M status=progress
+dd if=/dev/zero of=$SWAP_PART bs=1M status=progress || true
 
 : Remaking staging into encrypted swap
 dd if=/dev/random of=/var/run/swapkey bs=1 count=64
