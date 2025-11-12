@@ -29,5 +29,5 @@ swapon /dev/mapper/swap-crypt
 mount /dev/mapper/root-crypt /target -o subvol=@
 mount /dev/mapper/root-crypt /target/home -o subvol=@home
 mount /dev/mapper/root-crypt /target/var/log -o subvol=@logs
-mount $BOOT_PART /mnt/newroot/@/boot
-mount $EFI_PART /mnt/newroot/@/boot/efi
+mount $BOOT_PART /target/boot
+mount $EFI_PART /target/boot/efi
