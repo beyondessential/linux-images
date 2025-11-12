@@ -6,6 +6,7 @@ sed -i 's/GRUB_TIMEOUT_STYLE=.+/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub
 echo GRUB_DISABLE_LINUX_UUID=true >> /etc/default/grub
 echo GRUB_DISABLE_LINUX_PARTUUID=false >> /etc/default/grub
 
+rm -rf /boot/grub || true
 update-initramfs -u -k all
 update-grub
-grub-install --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck
+grub-install --bootloader-id=ubuntu
