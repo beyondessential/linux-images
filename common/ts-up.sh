@@ -5,9 +5,7 @@ set -e
 # Prompts user to provide Tailscale auth key and connects to network
 
 if [ "$(id -u)" -ne 0 ]; then
-  echo "This script must be run as root."
-  echo "Try again with: sudo ts-up"
-  exit 1
+  exec sudo "$0" "$@"
 fi
 
 if tailscale status > /dev/null; then
