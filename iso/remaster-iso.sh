@@ -270,7 +270,7 @@ menuentry "Auto install Ubuntu BES Server" {
 }
 menuentry "Rescue (live)" {
   set gfxpayload=keep
-  linux   /casper/vmlinuz boot=casper interactive systemd.mask=snap.subiquity.subiquity-service.service ---
+  linux   /casper/vmlinuz boot=casper interactive systemd.unit=rescue.target ---
   initrd  /casper/initrd
 }
 menuentry "--- Built by BES at $BUILD_DATE_DISPLAY from $GIT_SHORT_HASH ---" {
