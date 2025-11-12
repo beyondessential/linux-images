@@ -109,9 +109,7 @@ if [ -d /var/log ] && [ "$(ls -A /var/log 2>/dev/null)" ]; then
 fi
 
 # Create directories for other subvolumes
-mkdir -p /mnt/newroot/@/var/lib/postgresql
-mkdir -p /mnt/newroot/@/var/lib/containers
-mkdir -p /mnt/newroot/@/.snapshots
+mkdir -p /mnt/newroot/@/{.snapshots,home,mnt,var/{lib/{postgresql,containers},log}}
 mkdir -p /mnt/newroot/@snapshots/{root,home,logs,postgres,containers}
 
 # Get UUIDs
