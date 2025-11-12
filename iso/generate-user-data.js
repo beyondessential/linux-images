@@ -203,13 +203,16 @@ const config = {
           groups: "adm, cdrom, dip, lxd, plugdev, sudo",
           shell: "/bin/bash",
           lock_passwd: false,
-          expiredate: "2020-01-01",
           sudo: "ALL=(ALL) NOPASSWD:ALL",
           passwd:
             "$y$j9T$Kh7z7p6FH3zn9r4HAMB1i0$dgY1wDtDbL4do748v9q32AV2qE5kgz0vqW8rUHQFox9",
           // bes (will be expired on first login)
         },
       ],
+      ssh_pwauth: false,
+      chpasswd: {
+        expire: true,
+      },
     },
 
     "late-commands": [
