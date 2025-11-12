@@ -71,7 +71,6 @@ mkdir -p /mnt/newroot/@/{.snapshots,boot,dev,home,mnt,proc,root,run,sys,tmp,var/
 : Pre-create directories for snapshots
 mkdir -p /mnt/newroot/@snapshots/{root,home,logs,postgres,containers}
 : Save passphrase to real root
-install -m600 /tmp/luks-passphrase /mnt/newroot/@/root/luks-passphrase.txt
 
 LUKS_UUID=$(blkid -s PARTUUID -o value $ROOT_PART)
 ROOT_UUID=$(blkid -s PARTUUID -o value $LUKS_DEV)
