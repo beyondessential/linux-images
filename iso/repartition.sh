@@ -29,7 +29,7 @@ fi
 echo "$LUKS_PASSPHRASE" > /tmp/luks-passphrase
 
 : Setup LUKS volume on real root
-KEYFILE=/boot/luks-keyfile.key
+KEYFILE=/boot/.luks.key
 dd if=/dev/random of=$KEYFILE bs=1 count=64
 chmod 000 $KEYFILE
 cryptsetup luksFormat --type luks2 $ROOT_PART --key-file=$KEYFILE
@@ -101,7 +101,7 @@ echo "  Staging: $STAGING_UUID"
 
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
-root UUID=$LUKS_UUID /dev/disk/by-uuid/$BOOT_UUID:/luks-keyfile.key luks,discard,keyscript=/lib/cryptsetup/scripts/passdev
+root UUID=$LUKS_UUID /dev/disk/by-uuid/$BOOT_UUID:/.luks.key luks,discard,keyscript=/lib/cryptsetup/scripts/passdev
 swap UUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64,size=256
 EOF
 
@@ -124,7 +124,7 @@ cat > /mnt/newroot/@/usr/local/bin/setup-tpm-unlock << EOFTPM
 set -e
 
 LUKS_UUID="$LUKS_UUID"
-KEYFILE="/boot/luks-keyfile.key"
+KEYFILE="/boot/.luks.key"
 
 if [ -e /dev/tpmrm0 ] || [ -e /dev/tpm0 ]; then
   echo "TPM2 device found, enrolling for automatic unlock..."
