@@ -15,3 +15,10 @@ wget
 ufw
 rsync
 cron
+
+# for dracut modules
+tpm2-tools
+nvme-cli
+busybox
+rng-tools5
+jq

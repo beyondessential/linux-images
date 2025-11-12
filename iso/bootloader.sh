@@ -2,7 +2,7 @@
 set -ex
 
 apt install -y dracut # removes initramfs-tools
-dracut -H --hostonly-mode=sloppy --force
+dracut -H --hostonly-mode=sloppy --force --kver $(ls /lib/modules | head -n1)
 
 sed -i 's/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/' /etc/default/grub
 sed -i 's/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub
