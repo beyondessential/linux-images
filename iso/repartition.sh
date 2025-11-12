@@ -38,8 +38,8 @@ cryptsetup luksFormat --type luks2 $ROOT_PART --key-file=$KEYFILE
 echo -n "$LUKS_PASSPHRASE" | cryptsetup luksAddKey $ROOT_PART --key-file=$KEYFILE -
 
 : Open LUKS device
-cryptsetup open $ROOT_PART root-crypt --key-file=$KEYFILE
-LUKS_DEV="/dev/mapper/root-crypt"
+cryptsetup open $ROOT_PART root --key-file=$KEYFILE
+LUKS_DEV="/dev/mapper/root"
 
 : Create filesystem
 mkfs.btrfs --label ROOT --checksum xxhash --features block-group-tree,squota $LUKS_DEV
@@ -101,13 +101,12 @@ echo "  Staging: $STAGING_UUID"
 
 : Writing /etc/fstab
 cat > /mnt/newroot/@/etc/fstab << EOF
-# /etc/fstab: static file system information
-UUID=$ROOT_UUID /                       btrfs subvol=@,compress=zstd:6 0 1
-UUID=$ROOT_UUID /home                   btrfs subvol=@home,compress=zstd:6 0 2
-UUID=$ROOT_UUID /var/log                btrfs subvol=@logs,compress=zstd:6 0 2
-UUID=$ROOT_UUID /var/lib/postgresql     btrfs subvol=@postgres,compress=zstd:6 0 2
-UUID=$ROOT_UUID /var/lib/containers     btrfs subvol=@containers,compress=zstd:6 0 2
-UUID=$ROOT_UUID /.snapshots             btrfs subvol=@.snapshots,compress=zstd:6 0 2
+/dev/mapper/root /                       btrfs subvol=@,compress=zstd:6 0 1
+/dev/mapper/root /home                   btrfs subvol=@home,compress=zstd:6 0 2
+/dev/mapper/root /var/log                btrfs subvol=@logs,compress=zstd:6 0 2
+/dev/mapper/root /var/lib/postgresql     btrfs subvol=@postgres,compress=zstd:6 0 2
+/dev/mapper/root /var/lib/containers     btrfs subvol=@containers,compress=zstd:6 0 2
+/dev/mapper/root /.snapshots             btrfs subvol=@.snapshots,compress=zstd:6 0 2
 UUID=$BOOT_UUID /boot                   ext4 defaults 0 2
 UUID=$EFI_UUID /boot/efi                vfat umask=0077 0 1
 /dev/mapper/swap none                   swap sw 0 0
@@ -142,7 +141,7 @@ if [ -e /dev/tpmrm0 ] || [ -e /dev/tpm0 ]; then
     rm -f \$KEYFILE
 
     # Update crypttab to remove keyfile reference
-    sed -i "s|root-crypt UUID=\$LUKS_UUID \$KEYFILE luks,discard,keyscript=/bin/cat|root-crypt UUID=\$LUKS_UUID none luks,discard|" /etc/crypttab
+    sed -i "s|root .+|root UUID=\$LUKS_UUID none luks,discard|" /etc/crypttab
   else
     echo "WARNING: Could not find keyfile, skipping TPM enrollment"
   fi

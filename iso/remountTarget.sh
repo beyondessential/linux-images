@@ -26,8 +26,8 @@ mkswap /dev/mapper/swap-crypt
 swapon /dev/mapper/swap-crypt
 
 : Mounting real root
-mount /dev/mapper/root-crypt /target -o subvol=@
-mount /dev/mapper/root-crypt /target/home -o subvol=@home
-mount /dev/mapper/root-crypt /target/var/log -o subvol=@logs
+mount /dev/mapper/root /target -o subvol=@
+mount /dev/mapper/root /target/home -o subvol=@home
+mount /dev/mapper/root /target/var/log -o subvol=@logs
 mount $BOOT_PART /target/boot
 mount $EFI_PART /target/boot/efi
