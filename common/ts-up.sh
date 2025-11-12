@@ -1,9 +1,13 @@
 #!/bin/bash
-chvt 3
 set -e
 
 # Tailscale first boot configuration script
 # Prompts user to provide Tailscale auth key and connects to network
+
+if tailscale status > /dev/null; then
+  echo "Tailscale is already configured."
+  exit
+fi
 
 echo ""
 echo "=========================================="
@@ -19,11 +23,10 @@ if [ -n "$TS_AUTH_KEY" ]; then
   echo "Connecting to Tailscale with auth key..."
   if tailscale up --auth-key="$TS_AUTH_KEY" --ssh; then
     echo "Tailscale configured successfully!"
-    touch /etc/tailscale-configured
     TAILSCALE_CONNECTED=1
   else
     echo "WARNING: Failed to connect to Tailscale"
-    echo "You can try again later with: tailscale up --ssh --qr"
+    echo "You can try again later with: ts-up"
   fi
 else
   echo ""
@@ -33,12 +36,11 @@ else
   if tailscale up --ssh --qr; then
     echo ""
     echo "Tailscale configured successfully!"
-    touch /etc/tailscale-configured
     TAILSCALE_CONNECTED=1
   else
     echo ""
     echo "WARNING: Failed to connect to Tailscale"
-    echo "You can try again later with: tailscale up --ssh --qr"
+    echo "You can try again later with: ts-up"
   fi
 fi
 
@@ -65,6 +67,3 @@ if [ $TAILSCALE_CONNECTED -eq 1 ]; then
 
   echo "SSH access restricted to LAN and Tailscale networks."
 fi
-
-# Disable this service after first run
-systemctl disable tailscale-first-boot.service

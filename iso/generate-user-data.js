@@ -23,13 +23,8 @@ const bootloaderScript = fs.readFileSync(
   "utf8",
 );
 
-const tailscaleFirstBootScript = fs.readFileSync(
-  path.join(__dirname, "..", "common", "tailscale-first-boot.sh"),
-  "utf8",
-);
-
-const tailscaleFirstBootService = fs.readFileSync(
-  path.join(__dirname, "..", "common", "tailscale-first-boot.service"),
+const tailscaleUpScript = fs.readFileSync(
+  path.join(__dirname, "..", "common", "ts-up.sh"),
   "utf8",
 );
 
@@ -229,12 +224,10 @@ const config = {
       `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
       `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "..", "common", "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
-      `cat > /target/etc/systemd/system/tailscale-first-boot.service << 'EOFTSSERVICE'\n${tailscaleFirstBootService}\nEOFTSSERVICE`,
-      `cat > /target/usr/local/bin/tailscale-first-boot << 'EOFTSBOOT'\n${tailscaleFirstBootScript}\nEOFTSBOOT`,
-      "chmod +x /target/usr/local/bin/tailscale-first-boot",
+      `cat > /target/usr/local/bin/ts-up << 'EOFTSUP'\n${tailscaleUpScript}\nEOFTSUP`,
+      "chmod +x /target/usr/local/bin/ts-up",
       "curtin in-target --target=/target -- bash /tmp/setup-firewall.sh",
       "curtin in-target --target=/target -- bash /tmp/setup-tailscale.sh",
-      "curtin in-target --target=/target -- systemctl enable tailscale-first-boot.service",
       "curtin in-target --target=/target -- systemctl enable ssh",
       // subiquity doesn't set labels and type uuids correctly, so fix that
       `cat > /target/tmp/fix-partitions.sh << 'EOFFIX'\n${fixPartitionsScript}\nEOFFIX`,
