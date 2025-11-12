@@ -196,6 +196,7 @@ const config = {
       package_update: true,
       package_upgrade: true,
       create_hostname_file: false, // provided by DHCP
+      ssh_pwauth: false,
       users: [
         {
           name: "ubuntu",
@@ -209,10 +210,7 @@ const config = {
           // bes (will be expired on first login)
         },
       ],
-      ssh_pwauth: false,
-      chpasswd: {
-        expire: true,
-      },
+      runcmd: [["passwd", "--expire", "ubuntu"]],
     },
 
     "late-commands": [
