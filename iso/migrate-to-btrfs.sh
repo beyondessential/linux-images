@@ -89,10 +89,12 @@ btrfs subvolume create /mnt/newroot/snapshots
 echo "Copying system to BTRFS subvolumes..."
 rsync -aAX \
   --exclude=/mnt \
-  --exclude=/tmp/* \
-  --exclude=/proc/* \
-  --exclude=/sys/* \
-  --exclude=/dev/* \
+  --exclude=/cdrom \
+  --exclude=/boot/\* \
+  --exclude=/tmp/\* \
+  --exclude=/proc/\* \
+  --exclude=/sys/\* \
+  --exclude=/dev/\* \
   --exclude=/home \
   --exclude=/var/log \
   / /mnt/newroot/@/
