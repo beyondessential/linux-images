@@ -94,16 +94,16 @@ EOF
 
 : Write fstab
 cat > /mnt/newroot/@/etc/fstab << EOF
-# <device>       <mountpoint>            <fs>  <options>                     <dump> <pass>
-/dev/mapper/root /                       btrfs subvol=@,compress=zstd:6           0 1
-/dev/mapper/root /home                   btrfs subvol=@home,compress=zstd:6       0 2
-/dev/mapper/root /var/log                btrfs subvol=@logs,compress=zstd:6       0 2
-/dev/mapper/root /var/lib/postgresql     btrfs subvol=@postgres,compress=zstd:6   0 2
-/dev/mapper/root /var/lib/containers     btrfs subvol=@containers,compress=zstd:6 0 2
-/dev/mapper/root /.snapshots             btrfs subvol=@.snapshots,compress=zstd:6 0 2
-PARTLABEL=xboot  /boot                   ext4  defaults                           0 2
-PARTLABEL=efi    /boot/efi               vfat  umask=0077                         0 1
-/dev/mapper/swap none                    swap  sw                                 0 0
+# <device>       <mountpoint>        <fs>  <options>                     <dump> <pass>
+/dev/mapper/root /                   btrfs subvol=@,compress=zstd:6           0 1
+/dev/mapper/root /home               btrfs subvol=@home,compress=zstd:6       0 2
+/dev/mapper/root /var/log            btrfs subvol=@logs,compress=zstd:6       0 2
+/dev/mapper/root /var/lib/postgresql btrfs subvol=@postgres,compress=zstd:6   0 2
+/dev/mapper/root /var/lib/containers btrfs subvol=@containers,compress=zstd:6 0 2
+/dev/mapper/root /.snapshots         btrfs subvol=@.snapshots,compress=zstd:6 0 2
+PARTLABEL=xboot  /boot               ext4  defaults                           0 2
+PARTLABEL=efi    /boot/efi           vfat  umask=0077                         0 1
+/dev/mapper/swap none                swap  sw                                 0 0
 EOF
 
 : Setup TPM enrollment script
