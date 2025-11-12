@@ -42,7 +42,7 @@ echo "Your disk encryption passphrase:"
 echo ""
 echo "$LUKS_PASSPHRASE"
 echo ""
-echo "This will be saved to ~/luks-passphrase.txt"
+echo "This will be saved to /luks-passphrase.txt"
 echo "IMPORTANT: Keep this safe! You may need it if disk unlock fails."
 echo ""
 
@@ -172,13 +172,12 @@ chroot /mnt/newroot/@ update-grub --output=/boot/grub/grub.cfg
 echo "Installing GRUB..."
 chroot /mnt/newroot/@ grub-install --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck
 
-# Save passphrase to user's home directory
+# Save passphrase to disk so the enduser can access it
 DEFAULT_USER=$(ls /mnt/newroot/@home 2>/dev/null | head -1)
 if [ -n "$DEFAULT_USER" ]; then
-  echo "Saving passphrase to /home/$DEFAULT_USER/luks-passphrase.txt..."
-  cp /tmp/luks-passphrase /mnt/newroot/@home/$DEFAULT_USER/luks-passphrase.txt
-  chroot /mnt/newroot/@ chown $DEFAULT_USER:$DEFAULT_USER /home/$DEFAULT_USER/luks-passphrase.txt
-  chroot /mnt/newroot/@ chmod 600 /home/$DEFAULT_USER/luks-passphrase.txt
+  echo "Saving passphrase to /luks-passphrase.txt..."
+  cp /tmp/luks-passphrase /mnt/newroot/@/luks-passphrase.txt
+  chroot /mnt/newroot/@ chmod 600 /luks-passphrase.txt
 fi
 
 # Setup TPM enrollment script
