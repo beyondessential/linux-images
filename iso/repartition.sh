@@ -19,26 +19,13 @@ echo "Staging partition: $STAGING_PART"
 echo "Boot partition: $BOOT_PART"
 echo "EFI partition: $EFI_PART"
 
-: Generating LUKS encryption passphrase
-if [ -f /usr/share/dict/words ]; then
-  LUKS_PASSPHRASE=$(grep -E '^[a-z]{4,8}$' /usr/share/dict/words | shuf -n 6 | tr '\n' '-' | sed 's/-$//')
-else
-  # Fallback if wordlist not available
-  LUKS_PASSPHRASE=$(openssl rand -base64 32)
-fi
-echo "$LUKS_PASSPHRASE" > /tmp/luks-passphrase
-
 : Setup LUKS volume on real root
-KEYFILE=/boot/.luks.key
-dd if=/dev/random of=$KEYFILE bs=1 count=64
-chmod 000 $KEYFILE
-cryptsetup luksFormat --type luks2 $ROOT_PART --key-file=$KEYFILE
-
-: Setup passphrase
-echo -n "$LUKS_PASSPHRASE" | cryptsetup luksAddKey $ROOT_PART --key-file=$KEYFILE -
+KEYFILE=/tmp/empty-passphrase
+touch /tmp/empty-passphrase
+cryptsetup luksFormat --type luks2 $ROOT_PART --key-file $KEYFILE --key-slot 10
 
 : Open LUKS device
-cryptsetup open $ROOT_PART root --key-file=$KEYFILE
+cryptsetup open $ROOT_PART root --key-file $KEYFILE
 LUKS_DEV="/dev/mapper/root"
 
 : Create filesystem
@@ -101,9 +88,9 @@ echo "  Staging: $STAGING_UUID"
 
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
-# <name> <device>               <keyfile>                  <options>
-root     PARTUUID=$LUKS_UUID    /.luks.key:PARTLABEL=xboot luks,discard
-swap     PARTUUID=$STAGING_UUID /dev/urandom               swap,cipher=aes-xts-plain64
+# <name> <device>       <keyfile>    <options>
+root     PARTLABEL=root /dev/null    luks,discard,headless=true,try-empty-password=true
+swap     PARTLABEL=swap /dev/urandom swap,cipher=aes-xts-plain64
 EOF
 
 : Write fstab
@@ -125,25 +112,14 @@ cat > /mnt/newroot/@/usr/local/bin/setup-tpm-unlock << EOFTPM
 #!/bin/bash
 set -e
 
-KEYFILE="/boot/.luks.key"
-
 if [ -e /dev/tpm* ]; then
   echo "TPM2 device found, enrolling for automatic unlock..."
-  systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partuuid/$LUKS_UUID --unlock-key-file=\$KEYFILE
+  touch /tmp/empty-passphrase
+  systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty-passphrase
+  sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
   echo "TPM2 enrolled successfully!"
-
-  echo "Removing keyfile from LUKS..."
-  cryptsetup luksRemoveKey /dev/disk/by-partuuid/$LUKS_UUID \$KEYFILE
-
-  echo "Securely deleting keyfile..."
-  shred -vfz -n 3 \$KEYFILE
-  rm -f \$KEYFILE
-
-  # Update crypttab to remove keyfile reference
-  sed -i "s|root .+|root PARTUUID=$LUKS_UUID none luks,discard,tpm2-device=auto|" /etc/crypttab
 else
-  echo "No TPM2 device found. System will use keyfile at \$KEYFILE for auto-unlock."
-  echo "Passphrase fallback available if keyfile is unavailable."
+  echo "No TPM2 device found."
 fi
 EOFTPM
 
