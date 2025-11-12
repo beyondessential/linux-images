@@ -16,12 +16,8 @@ umount /target/boot
 umount /target/cdrom
 umount /target
 
-: Mounting real root
-mount $ROOT_PART /target -o subvol=@
-mount $ROOT_PART /target/home -o subvol=@home
-mount $ROOT_PART /target/var/log -o subvol=@logs
-mount $BOOT_PART /mnt/newroot/@/boot
-mount $EFI_PART /mnt/newroot/@/boot/efi
+: Wiping staging
+dd if=/dev/zero of=$SWAP_PART bs=1M status=progress
 
 : Remaking staging into encrypted swap
 dd if=/dev/random of=/var/run/swapkey bs=1 count=64
@@ -29,3 +25,10 @@ cryptsetup luksFormat --type luks2 $SWAP_PART --key-file=/var/run/swapkey
 cryptsetup open $SWAP_PART swap-crypt --key-file=/var/run/swapkey
 mkswap /dev/mapper/swap-crypt
 swapon /dev/mapper/swap-crypt
+
+: Mounting real root
+mount $ROOT_PART /target -o subvol=@
+mount $ROOT_PART /target/home -o subvol=@home
+mount $ROOT_PART /target/var/log -o subvol=@logs
+mount $BOOT_PART /mnt/newroot/@/boot
+mount $EFI_PART /mnt/newroot/@/boot/efi
