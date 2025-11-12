@@ -127,22 +127,18 @@ KEYFILE="/boot/.luks.key"
 
 if [ -e /dev/tpmrm0 ] || [ -e /dev/tpm0 ]; then
   echo "TPM2 device found, enrolling for automatic unlock..."
-  if [ -f \$KEYFILE ]; then
-    systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partuuid/$LUKS_UUID --unlock-key-file=\$KEYFILE
-    echo "TPM2 enrolled successfully!"
+  systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partuuid/$LUKS_UUID --unlock-key-file=\$KEYFILE
+  echo "TPM2 enrolled successfully!"
 
-    echo "Removing keyfile from LUKS..."
-    cryptsetup luksRemoveKey /dev/disk/by-partuuid/$LUKS_UUID \$KEYFILE
+  echo "Removing keyfile from LUKS..."
+  cryptsetup luksRemoveKey /dev/disk/by-partuuid/$LUKS_UUID \$KEYFILE
 
-    echo "Securely deleting keyfile..."
-    shred -vfz -n 3 \$KEYFILE
-    rm -f \$KEYFILE
+  echo "Securely deleting keyfile..."
+  shred -vfz -n 3 \$KEYFILE
+  rm -f \$KEYFILE
 
-    # Update crypttab to remove keyfile reference
-    sed -i "s|root .+|root PARTUUID=$LUKS_UUID none luks,discard|" /etc/crypttab
-  else
-    echo "WARNING: Could not find keyfile, skipping TPM enrollment"
-  fi
+  # Update crypttab to remove keyfile reference
+  sed -i "s|root .+|root PARTUUID=$LUKS_UUID none luks,discard|" /etc/crypttab
 else
   echo "No TPM2 device found. System will use keyfile at \$KEYFILE for auto-unlock."
   echo "Passphrase fallback available if keyfile is unavailable."
@@ -157,12 +153,11 @@ cat > /mnt/newroot/@/etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
 Description=Setup TPM2 auto-unlock for LUKS
 After=local-fs.target
 Before=tailscale-first-boot.service
-ConditionPathExists=!/etc/tpm-enrolled
+ConditionPathExists=/boot/.luks.key
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/setup-tpm-unlock
-ExecStartPost=/usr/bin/touch /etc/tpm-enrolled
 RemainAfterExit=yes
 
 [Install]
