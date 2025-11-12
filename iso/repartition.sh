@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -ex
 
 # Find partitions
 DISK=$(lsblk -ndo PKNAME $(findmnt -n -o SOURCE /))
@@ -35,7 +35,7 @@ chmod 000 $KEYFILE
 cryptsetup luksFormat --type luks2 $ROOT_PART --key-file=$KEYFILE
 
 : Setup passphrase
-echo -n "$LUKS_PASSPHRASE" | cryptsetup luksAddKey $ROOT_PART --volume-key-file=$KEYFILE -
+echo -n "$LUKS_PASSPHRASE" | cryptsetup luksAddKey $ROOT_PART --key-file=$KEYFILE -
 
 : Open LUKS device
 cryptsetup open $ROOT_PART root-crypt --key-file=$KEYFILE
