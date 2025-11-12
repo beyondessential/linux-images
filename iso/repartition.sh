@@ -117,6 +117,7 @@ if [ -e /dev/tpm* ]; then
   touch /tmp/empty-passphrase
   systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty-passphrase
   sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
+  touch /etc/tpm-enrolled
   echo "TPM2 enrolled successfully!"
 else
   echo "No TPM2 device found."
@@ -131,7 +132,7 @@ cat > /mnt/newroot/@/etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
 Description=Setup TPM2 auto-unlock for LUKS
 After=local-fs.target
 Before=tailscale-first-boot.service
-ConditionPathExists=/boot/.luks.key
+ConditionPathExists=!/etc/tpm-enrolled
 
 [Service]
 Type=oneshot
