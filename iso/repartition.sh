@@ -101,21 +101,23 @@ echo "  Staging: $STAGING_UUID"
 
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
-root PARTUUID=$LUKS_UUID /.luks.key:PARTUUID=$BOOT_UUID luks,discard
-swap PARTUUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64
+# <name> <device>               <keyfile>                  <options>
+root     PARTUUID=$LUKS_UUID    /.luks.key:PARTLABEL=xboot luks,discard
+swap     PARTUUID=$STAGING_UUID /dev/urandom               swap,cipher=aes-xts-plain64
 EOF
 
 : Write fstab
 cat > /mnt/newroot/@/etc/fstab << EOF
-/dev/mapper/root /                       btrfs subvol=@,compress=zstd:6 0 1
-/dev/mapper/root /home                   btrfs subvol=@home,compress=zstd:6 0 2
-/dev/mapper/root /var/log                btrfs subvol=@logs,compress=zstd:6 0 2
-/dev/mapper/root /var/lib/postgresql     btrfs subvol=@postgres,compress=zstd:6 0 2
+# <device>       <mountpoint>            <fs>  <options>                     <dump> <pass>
+/dev/mapper/root /                       btrfs subvol=@,compress=zstd:6           0 1
+/dev/mapper/root /home                   btrfs subvol=@home,compress=zstd:6       0 2
+/dev/mapper/root /var/log                btrfs subvol=@logs,compress=zstd:6       0 2
+/dev/mapper/root /var/lib/postgresql     btrfs subvol=@postgres,compress=zstd:6   0 2
 /dev/mapper/root /var/lib/containers     btrfs subvol=@containers,compress=zstd:6 0 2
 /dev/mapper/root /.snapshots             btrfs subvol=@.snapshots,compress=zstd:6 0 2
-PARTUUID=$BOOT_UUID /boot                ext4 defaults 0 2
-PARTUUID=$EFI_UUID /boot/efi             vfat umask=0077 0 1
-/dev/mapper/swap none                    swap sw 0 0
+PARTLABEL=xboot  /boot                   ext4  defaults                           0 2
+PARTLABEL=efi    /boot/efi               vfat  umask=0077                         0 1
+/dev/mapper/swap none                    swap  sw                                 0 0
 EOF
 
 : Setup TPM enrollment script
@@ -138,7 +140,7 @@ if [ -e /dev/tpmrm0 ] || [ -e /dev/tpm0 ]; then
   rm -f \$KEYFILE
 
   # Update crypttab to remove keyfile reference
-  sed -i "s|root .+|root PARTUUID=$LUKS_UUID none luks,discard|" /etc/crypttab
+  sed -i "s|root .+|root PARTUUID=$LUKS_UUID none luks,discard,tpm2-device=auto|" /etc/crypttab
 else
   echo "No TPM2 device found. System will use keyfile at \$KEYFILE for auto-unlock."
   echo "Passphrase fallback available if keyfile is unavailable."

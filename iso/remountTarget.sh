@@ -21,9 +21,9 @@ dd if=/dev/zero of=$SWAP_PART bs=1M status=progress || true
 : Remaking staging into encrypted swap
 dd if=/dev/random of=/var/run/swapkey bs=1 count=64
 cryptsetup luksFormat --type luks2 $SWAP_PART --key-file=/var/run/swapkey
-cryptsetup open $SWAP_PART swap-crypt --key-file=/var/run/swapkey
-mkswap /dev/mapper/swap-crypt
-swapon /dev/mapper/swap-crypt
+cryptsetup open $SWAP_PART swap --key-file=/var/run/swapkey
+mkswap /dev/mapper/swap
+swapon /dev/mapper/swap
 
 : Mounting real root
 mount /dev/mapper/root /target -o subvol=@
