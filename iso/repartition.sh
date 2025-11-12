@@ -167,7 +167,7 @@ echo "Running update-initramfs..."
 chroot /mnt/newroot/@ update-initramfs -u -k all
 
 echo "Running update-grub..."
-chroot /mnt/newroot/@ update-grub
+chroot /mnt/newroot/@ update-grub --output=/boot/grub/grub.cfg
 
 echo "Installing GRUB..."
 chroot /mnt/newroot/@ grub-install --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck
