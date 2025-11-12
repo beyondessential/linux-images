@@ -254,31 +254,43 @@ echo "Modifying GRUB configuration..."
 GRUB_CFG="$ISO_BUILD/boot/grub/grub.cfg"
 
 if [ -f "$GRUB_CFG" ]; then
-  # Backup original
-  cp "$GRUB_CFG" "$GRUB_CFG.orig"
+  mv "$GRUB_CFG" "$GRUB_CFG.orig"
+  cat > "$GRUB_CFG" <<EOF
+set timeout=5
 
-  # Rewrite menu entries for BES Server autoinstall
-  # Replace the menu entries section with custom entries
-  sed -i '/^menuentry "Try or Install Ubuntu Server"/,/^menuentry "Ubuntu Server with the HWE kernel"/c\
-menuentry "Auto install Ubuntu BES Server" {\
-\tset gfxpayload=keep\
-\tlinux\t/casper/vmlinuz autoinstall ---\
-\tinitrd\t/casper/initrd\
-}\
-menuentry "Rescue (live)" {\
-\tset gfxpayload=keep\
-\tlinux\t/casper/vmlinuz boot=casper interactive ---\
-\tinitrd\t/casper/initrd\
-}' "$GRUB_CFG"
+loadfont unicode
 
-    # Set timeout to 5 seconds
-  sed -i 's/set timeout=.*/set timeout=5/' "$GRUB_CFG"
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
 
-  # Add build info entry at the end (before the closing brace)
-  sed -i '/^if \[ "$grub_platform" = "efi" \]; then/i\
-menuentry "--- Built by BES at '"$BUILD_DATE_DISPLAY"' from '"$GIT_SHORT_HASH"' ---" {\
-\treboot\
-}' "$GRUB_CFG"
+menuentry "Auto install Ubuntu BES Server" {
+  set gfxpayload=keep
+  linux   /casper/vmlinuz autoinstall ---
+  initrd  /casper/initrd
+}
+menuentry "Rescue (live)" {
+  set gfxpayload=keep
+  linux   /casper/vmlinuz boot=casper interactive ---
+  initrd  /casper/initrd
+}
+menuentry "--- Built by BES at $BUILD_DATE_DISPLAY from $GIT_SHORT_HASH ---" {
+  reboot
+}
+
+grub_platform
+if [ "\$grub_platform" = "efi" ]; then
+menuentry 'Boot from next volume' {
+  exit 1
+}
+menuentry 'UEFI Firmware Settings' {
+  fwsetup
+}
+else
+menuentry 'Test memory' {
+  linux16 /boot/memtest86+x64.bin
+}
+fi
+EOF
 else
   echo "WARNING: GRUB config not found at expected location"
 fi
