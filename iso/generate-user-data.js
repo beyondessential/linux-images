@@ -11,7 +11,7 @@ const fixPartitionsScript = fs.readFileSync(
 
 // Read the migration script
 const migrateScript = fs.readFileSync(
-  path.join(__dirname, "migrate-to-btrfs.sh"),
+  path.join(__dirname, "repartition.sh"),
   "utf8",
 );
 
@@ -211,7 +211,7 @@ const config = {
 
     "late-commands": [
       `cat > /target/tmp/fix-partitions.sh << 'EOFFIX'\n${fixPartitionsScript}\nEOFFIX`,
-      `cat > /target/tmp/migrate-to-btrfs.sh << 'EOFMIGRATE'\n${migrateScript}\nEOFMIGRATE`,
+      `cat > /target/tmp/repartition.sh << 'EOFMIGRATE'\n${migrateScript}\nEOFMIGRATE`,
       `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
       `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "..", "common", "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
@@ -223,7 +223,7 @@ const config = {
       "curtin in-target --target=/target -- systemctl enable tailscale-first-boot.service",
       "curtin in-target --target=/target -- systemctl enable ssh",
       "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
-      "curtin in-target --target=/target -- bash /tmp/migrate-to-btrfs.sh",
+      "curtin in-target --target=/target -- bash /tmp/repartition.sh",
     ],
 
     "error-commands": [

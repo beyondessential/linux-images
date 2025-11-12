@@ -2,7 +2,7 @@
 set -e
 
 # Fix partition labels and type UUIDs that subiquity may not set correctly
-# This runs before migrate-to-btrfs.sh to ensure partitions are properly configured
+# This runs before repartition.sh to ensure starting partitions are properly configured
 
 echo "Fixing partition labels and type UUIDs..."
 

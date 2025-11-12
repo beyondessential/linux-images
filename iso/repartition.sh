@@ -83,7 +83,7 @@ btrfs subvolume create /mnt/newroot/@home
 btrfs subvolume create /mnt/newroot/@logs
 btrfs subvolume create /mnt/newroot/@postgres
 btrfs subvolume create /mnt/newroot/@containers
-btrfs subvolume create /mnt/newroot/snapshots
+btrfs subvolume create /mnt/newroot/@.snapshots
 
 # Copy system from staging to BTRFS subvolumes
 echo "Copying system to BTRFS subvolumes..."
@@ -114,10 +114,7 @@ fi
 # Create directories for other subvolumes
 mkdir -p /mnt/newroot/@/var/lib/postgresql
 mkdir -p /mnt/newroot/@/var/lib/containers
-
-# Set @ as default subvolume
-echo "Setting default subvolume..."
-btrfs subvolume set-default /mnt/newroot/@
+mkdir -p /mnt/newroot/@/.snapshots
 
 # Get UUIDs
 LUKS_UUID=$(blkid -s UUID -o value $ROOT_PART)
@@ -142,6 +139,7 @@ UUID=$ROOT_UUID /home                   btrfs subvol=@home,compress=zstd:6 0 2
 UUID=$ROOT_UUID /var/log                btrfs subvol=@logs,compress=zstd:6 0 2
 UUID=$ROOT_UUID /var/lib/postgresql     btrfs subvol=@postgres,compress=zstd:6 0 2
 UUID=$ROOT_UUID /var/lib/containers     btrfs subvol=@containers,compress=zstd:6 0 2
+UUID=$ROOT_UUID /.snapshots             btrfs subvol=@.snapshots,compress=zstd:6 0 2
 UUID=$BOOT_UUID /boot                   ext4 defaults 0 2
 UUID=$EFI_UUID /boot/efi                vfat umask=0077 0 1
 /dev/mapper/swap none                   swap sw 0 0
