@@ -5,6 +5,8 @@ linux-generic
 grub-efi
 btrfs-progs
 cryptsetup
+cryptsetup-initramfs
+systemd-cryptsetup
 cloud-init
 wcanadian
 gdisk
