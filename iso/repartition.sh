@@ -1,9 +1,6 @@
 #!/bin/bash
 set -e
 
-# Migration script to move installed system from staging partition to BTRFS root
-# This runs in the autoinstall late-commands phase
-
 # Find partitions
 DISK=$(lsblk -ndo PKNAME $(findmnt -n -o SOURCE /))
 ROOT_PART="/dev/$(lsblk -ln -o NAME,PARTLABEL | grep 'root' | awk '{print $1}')"
@@ -153,24 +150,6 @@ cat > /mnt/newroot/@/etc/crypttab << EOF
 root-crypt UUID=$LUKS_UUID /boot/luks-keyfile.key luks,discard,keyscript=/bin/cat
 swap UUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64,size=256
 EOF
-
-# Update grub to boot from new root
-echo "Updating bootloader..."
-mount --bind /dev /mnt/newroot/@/dev
-mount --bind /proc /mnt/newroot/@/proc
-mount --bind /sys /mnt/newroot/@/sys
-mount $BOOT_PART /mnt/newroot/@/boot
-mount $EFI_PART /mnt/newroot/@/boot/efi
-
-# Update initramfs and grub
-echo "Running update-initramfs..."
-chroot /mnt/newroot/@ update-initramfs -u -k all
-
-echo "Running update-grub..."
-chroot /mnt/newroot/@ update-grub --output=/boot/grub/grub.cfg
-
-echo "Installing GRUB..."
-chroot /mnt/newroot/@ grub-install --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck
 
 # Save passphrase to disk so the enduser can access it
 DEFAULT_USER=$(ls /mnt/newroot/@home 2>/dev/null | head -1)

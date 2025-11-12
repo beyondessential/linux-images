@@ -3,19 +3,26 @@
 const fs = require("fs");
 const path = require("path");
 
-// Read the partition fix script
 const fixPartitionsScript = fs.readFileSync(
   path.join(__dirname, "fix-partitions.sh"),
   "utf8",
 );
 
-// Read the migration script
-const migrateScript = fs.readFileSync(
+const repartitionScript = fs.readFileSync(
   path.join(__dirname, "repartition.sh"),
   "utf8",
 );
 
-// Read Tailscale first-boot script and service
+const remountTargetScript = fs.readFileSync(
+  path.join(__dirname, "remountTarget.sh"),
+  "utf8",
+);
+
+const bootloaderScript = fs.readFileSync(
+  path.join(__dirname, "bootloader.sh"),
+  "utf8",
+);
+
 const tailscaleFirstBootScript = fs.readFileSync(
   path.join(__dirname, "..", "common", "tailscale-first-boot.sh"),
   "utf8",
@@ -26,7 +33,6 @@ const tailscaleFirstBootService = fs.readFileSync(
   "utf8",
 );
 
-// Read Tailscale GPG key
 const tailscaleGpgKey = fs.readFileSync(
   path.join(
     __dirname,
@@ -40,10 +46,8 @@ const tailscaleGpgKey = fs.readFileSync(
   ),
 );
 
-// Get architecture from command line (defaults to amd64)
-const arch = process.argv[3] || "amd64";
+const arch = process.argv?.[3] ?? "amd64";
 
-// Read packages from packages.txt
 const packagesContent = fs.readFileSync(
   path.join(__dirname, "..", "common", "packages.txt"),
   "utf8",
@@ -52,13 +56,12 @@ const packages = packagesContent
   .split("\n")
   .map((line) => line.trim())
   .filter((line) => line && !line.startsWith("#"));
-// Read firewall setup script
+
 const firewallSetupScript = fs.readFileSync(
   path.join(__dirname, "..", "common", "setup-firewall.sh"),
   "utf8",
 );
 
-// Generate the autoinstall configuration as a plain object
 const config = {
   autoinstall: {
     version: 1,
@@ -211,7 +214,9 @@ const config = {
 
     "late-commands": [
       `cat > /target/tmp/fix-partitions.sh << 'EOFFIX'\n${fixPartitionsScript}\nEOFFIX`,
-      `cat > /target/tmp/repartition.sh << 'EOFMIGRATE'\n${migrateScript}\nEOFMIGRATE`,
+      `cat > /target/tmp/repartition.sh << 'EOFMIGRATE'\n${repartitionScript}\nEOFMIGRATE`,
+      `cat > /target/tmp/remountTarget.sh << 'EOFMIGRATE'\n${remountTargetScript}\nEOFMIGRATE`,
+      `cat > /target/tmp/bootloader.sh << 'EOFMIGRATE'\n${bootloaderScript}\nEOFMIGRATE`,
       `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
       `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "..", "common", "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
@@ -224,6 +229,8 @@ const config = {
       "curtin in-target --target=/target -- systemctl enable ssh",
       "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
       "curtin in-target --target=/target -- bash /tmp/repartition.sh",
+      "bash /tmp/remountTarget.sh",
+      "curtin in-target --target=/target -- bash /tmp/bootloader.sh",
     ],
 
     "error-commands": [
@@ -233,10 +240,8 @@ const config = {
   },
 };
 
-// Convert to compact JSON (which is valid YAML)
 const output = "#cloud-config\n" + JSON.stringify(config.autoinstall);
 
-// Write to stdout or file
 if (process.argv[2]) {
   fs.writeFileSync(process.argv[2], output + "\n");
   console.error(`Generated ${process.argv[2]} for ${arch}`);
