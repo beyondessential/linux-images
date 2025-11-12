@@ -213,10 +213,9 @@ const config = {
     },
 
     "late-commands": [
-      `cat > /target/tmp/fix-partitions.sh << 'EOFFIX'\n${fixPartitionsScript}\nEOFFIX`,
-      `cat > /target/tmp/repartition.sh << 'EOFMIGRATE'\n${repartitionScript}\nEOFMIGRATE`,
-      `cat > /target/tmp/remountTarget.sh << 'EOFMIGRATE'\n${remountTargetScript}\nEOFMIGRATE`,
-      `cat > /target/tmp/bootloader.sh << 'EOFMIGRATE'\n${bootloaderScript}\nEOFMIGRATE`,
+      // helper to wipe the disk if needed (on error)
+      `echo 'dd if=/dev/zero of=/dev/$(lsblk -ndo PKNAME $(findmnt -no SOURCE /target)) bs=1M status=progress' > wipe-target.sh`,
+      // network configuration (in original /target)
       `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
       `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "..", "common", "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
@@ -227,9 +226,17 @@ const config = {
       "curtin in-target --target=/target -- bash /tmp/setup-tailscale.sh",
       "curtin in-target --target=/target -- systemctl enable tailscale-first-boot.service",
       "curtin in-target --target=/target -- systemctl enable ssh",
+      // subiquity doesn't set labels and type uuids correctly, so fix that
+      `cat > /target/tmp/fix-partitions.sh << 'EOFFIX'\n${fixPartitionsScript}\nEOFFIX`,
       "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
+      // setup the real root as encrypted btrfs with subvolumes and copy data into it
+      `cat > /target/tmp/repartition.sh << 'EOFMIGRATE'\n${repartitionScript}\nEOFMIGRATE`,
       "curtin in-target --target=/target -- bash /tmp/repartition.sh",
+      // unmount /target, wipe staging, make it into encrypted swap, mount the real root to /target
+      `cat > /tmp/remountTarget.sh << 'EOFMIGRATE'\n${remountTargetScript}\nEOFMIGRATE`,
       "bash /tmp/remountTarget.sh",
+      // re-install the bootloader from the real root
+      `cat > /target/tmp/bootloader.sh << 'EOFMIGRATE'\n${bootloaderScript}\nEOFMIGRATE`,
       "curtin in-target --target=/target -- bash /tmp/bootloader.sh",
     ],
 
