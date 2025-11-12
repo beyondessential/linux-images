@@ -1,6 +1,9 @@
 #!/bin/bash
 set -ex
 
+sed -i 's/GRUB_TIMEOUT=.+/GRUB_TIMEOUT=5/' /etc/default/grub
+sed -i 's/GRUB_TIMEOUT_STYLE=.+/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub
+
 update-initramfs -u -k all
 update-grub
 grub-install --efi-directory=/boot/efi --bootloader-id=ubuntu --recheck
