@@ -99,7 +99,13 @@ echo "  Boot: $BOOT_UUID"
 echo "  EFI: $EFI_UUID"
 echo "  Staging: $STAGING_UUID"
 
-: Writing /etc/fstab
+: Write crypttab
+cat > /mnt/newroot/@/etc/crypttab << EOF
+root UUID=$LUKS_UUID /dev/disk/by-uuid/$BOOT_UUID:/luks-keyfile.key luks,discard,keyscript=/lib/cryptsetup/scripts/passdev
+swap UUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64,size=256
+EOF
+
+: Write fstab
 cat > /mnt/newroot/@/etc/fstab << EOF
 /dev/mapper/root /                       btrfs subvol=@,compress=zstd:6 0 1
 /dev/mapper/root /home                   btrfs subvol=@home,compress=zstd:6 0 2
@@ -110,13 +116,6 @@ cat > /mnt/newroot/@/etc/fstab << EOF
 UUID=$BOOT_UUID /boot                   ext4 defaults 0 2
 UUID=$EFI_UUID /boot/efi                vfat umask=0077 0 1
 /dev/mapper/swap none                   swap sw 0 0
-EOF
-
-: Configure encrypted swap
-cat > /mnt/newroot/@/etc/crypttab << EOF
-# /etc/crypttab: mappings for encrypted partitions
-root-crypt UUID=$LUKS_UUID /boot/luks-keyfile.key luks,discard,keyscript=/bin/cat
-swap UUID=$STAGING_UUID /dev/urandom swap,cipher=aes-xts-plain64,size=256
 EOF
 
 : Setup TPM enrollment script
