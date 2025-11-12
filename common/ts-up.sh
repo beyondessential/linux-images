@@ -4,6 +4,12 @@ set -e
 # Tailscale first boot configuration script
 # Prompts user to provide Tailscale auth key and connects to network
 
+if [ "$(id -u)" -ne 0 ]; then
+  echo "This script must be run as root."
+  echo "Try again with: sudo ts-up"
+  exit 1
+fi
+
 if tailscale status > /dev/null; then
   echo "Tailscale is already configured."
   exit
@@ -26,7 +32,7 @@ if [ -n "$TS_AUTH_KEY" ]; then
     TAILSCALE_CONNECTED=1
   else
     echo "WARNING: Failed to connect to Tailscale"
-    echo "You can try again later with: ts-up"
+    echo "You can try again later with: sudo ts-up"
   fi
 else
   echo ""
@@ -40,7 +46,7 @@ else
   else
     echo ""
     echo "WARNING: Failed to connect to Tailscale"
-    echo "You can try again later with: ts-up"
+    echo "You can try again later with: sudo ts-up"
   fi
 fi
 
