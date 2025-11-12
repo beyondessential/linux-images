@@ -115,6 +115,7 @@ fi
 mkdir -p /mnt/newroot/@/var/lib/postgresql
 mkdir -p /mnt/newroot/@/var/lib/containers
 mkdir -p /mnt/newroot/@/.snapshots
+mkdir -p /mnt/newroot/@snapshots/{root,home,logs,postgres,containers}
 
 # Get UUIDs
 LUKS_UUID=$(blkid -s UUID -o value $ROOT_PART)
