@@ -265,19 +265,13 @@ menuentry "Auto install Ubuntu BES Server" {\
 \tlinux\t/casper/vmlinuz autoinstall ---\
 \tinitrd\t/casper/initrd\
 }\
-menuentry "Auto install Ubuntu BES Server (HWE kernel)" {\
+menuentry "Rescue (live)" {\
 \tset gfxpayload=keep\
-\tlinux\t/casper/hwe-vmlinuz autoinstall ---\
-\tinitrd\t/casper/hwe-initrd\
-}\
-menuentry "Manual Ubuntu Server install" {\
-\tset gfxpayload=keep\
-\tlinux\t/casper/vmlinuz ---\
+\tlinux\t/casper/vmlinuz boot=casper interactive ---\
 \tinitrd\t/casper/initrd\
-}\
-menuentry "Manual Ubuntu Server install (HWE kernel)" {' "$GRUB_CFG"
+}' "$GRUB_CFG"
 
-  # Set timeout to 5 seconds
+    # Set timeout to 5 seconds
   sed -i 's/set timeout=.*/set timeout=5/' "$GRUB_CFG"
 
   # Add build info entry at the end (before the closing brace)
