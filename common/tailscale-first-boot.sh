@@ -1,4 +1,5 @@
 #!/bin/bash
+chvt 3
 set -e
 
 # Tailscale first boot configuration script

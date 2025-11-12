@@ -5,10 +5,13 @@ Wants=network-online.target
 ConditionPathExists=!/etc/tailscale-configured
 
 [Service]
-Type=oneshot
+Type=idle
 ExecStart=/usr/local/bin/tailscale-first-boot
 StandardInput=tty
 StandardOutput=tty
+TTYPath=/dev/tty3
+TTYReset=yes
+TTYVHangup=yes
 RemainAfterExit=yes
 TimeoutStartSec=300
 
