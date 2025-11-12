@@ -62,6 +62,11 @@ const firewallSetupScript = fs.readFileSync(
   "utf8",
 );
 
+// "bes"
+// passwords are not allowed for SSH so this is purely a console-based login thing
+const password =
+  "$y$j9T$Kh7z7p6FH3zn9r4HAMB1i0$dgY1wDtDbL4do748v9q32AV2qE5kgz0vqW8rUHQFox9";
+
 const config = {
   autoinstall: {
     version: 1,
@@ -205,12 +210,16 @@ const config = {
           shell: "/bin/bash",
           lock_passwd: false,
           sudo: "ALL=(ALL) NOPASSWD:ALL",
-          passwd:
-            "$y$j9T$Kh7z7p6FH3zn9r4HAMB1i0$dgY1wDtDbL4do748v9q32AV2qE5kgz0vqW8rUHQFox9",
-          // bes (will be expired on first login)
+          passwd: password,
         },
       ],
-      runcmd: [["passwd", "--expire", "ubuntu"]],
+      chpasswd: {
+        users: [{ name: "root", password }],
+      },
+      runcmd: [
+        ["passwd", "--expire", "ubuntu"],
+        ["passwd", "--expire", "root"],
+      ],
     },
 
     "late-commands": [
