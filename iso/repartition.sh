@@ -127,7 +127,7 @@ set -e
 
 KEYFILE="/boot/.luks.key"
 
-if [ -e /dev/tpmrm0 ] || [ -e /dev/tpm0 ]; then
+if [ -e /dev/tpm* ]; then
   echo "TPM2 device found, enrolling for automatic unlock..."
   systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partuuid/$LUKS_UUID --unlock-key-file=\$KEYFILE
   echo "TPM2 enrolled successfully!"
