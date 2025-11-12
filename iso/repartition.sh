@@ -116,6 +116,7 @@ if [ -e /dev/tpm* ]; then
   touch /tmp/empty-passphrase
   systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty-passphrase
   sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
+  rm /etc/dracut.conf.d/99-luks-empty-password.conf || true
   touch /etc/tpm-enrolled
   echo "TPM2 enrolled successfully!"
 else
