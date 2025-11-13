@@ -1,0 +1,17 @@
+[Unit]
+Description=LUKS Master Key Rotation (First Boot)
+DefaultDependencies=no
+After=local-fs.target systemd-remount-fs.service
+Before=systemd-user-sessions.service setup-tpm-unlock.service
+ConditionPathExists=!/etc/luks/rotated
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/truncate -s0 /run/luks-reencrypt-key
+ExecStart=/usr/bin/cryptsetup reencrypt /dev/disk/by-partlabel/root --key-file /run/luks-reencrypt-key --resilience checksum --force-offline-reencrypt=no
+ExecStartPost=/usr/bin/touch /etc/luks/rotated
+RemainAfterExit=yes
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=sysinit.target

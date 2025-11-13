@@ -115,12 +115,13 @@ set -euxo pipefail
 touch /tmp/empty
 systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty
 sed -i "s|root.+try-empty-password=true|root     PARTLABEL=root none         force,luks,discard,headless=true,tpm2-device=auto|" /etc/crypttab
-touch /etc/tpm-enrolled
+touch /etc/luks/tpm-enrolled
 rm /tmp/empty
 dracut -f
 EOFTPM
 
 chmod +x /mnt/newroot/@/usr/local/bin/setup-tpm-unlock
+mkdir -p /mnt/newroot/@/etc/luks
 
 : Create systemd service for TPM enrollment
 cat > /mnt/newroot/@/etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
@@ -130,7 +131,7 @@ After=local-fs.target
 Before=tailscale-first-boot.service
 ConditionPathExists=/dev/tpm0
 ConditionPathExists=/dev/tpmrm0
-ConditionPathExists=!/etc/tpm-enrolled
+ConditionPathExists=!/etc/luks/tpm-enrolled
 
 [Service]
 Type=oneshot

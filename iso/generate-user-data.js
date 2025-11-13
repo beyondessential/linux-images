@@ -23,6 +23,11 @@ const bootloaderScript = fs.readFileSync(
   "utf8",
 );
 
+const luksReencryptService = fs.readFileSync(
+  path.join(__dirname, "..", "common", "luks-reencrypt.service"),
+  "utf8",
+);
+
 const tailscaleUpScript = fs.readFileSync(
   path.join(__dirname, "..", "common", "ts-up.sh"),
   "utf8",
@@ -241,6 +246,9 @@ const config = {
       // re-install the bootloader from the real root
       `cat > /target/tmp/bootloader.sh << 'EOFMIGRATE'\n${bootloaderScript}\nEOFMIGRATE`,
       "curtin in-target --target=/target -- bash /tmp/bootloader.sh",
+      // setup LUKS key rotation service
+      `cat > /target/etc/systemd/system/luks-reencrypt.service << 'EOFLUKSREENCRYPT'\n${luksReencryptService}\nEOFLUKSREENCRYPT`,
+      "curtin in-target --target=/target -- systemctl enable luks-reencrypt.service",
     ],
 
     "error-commands": [

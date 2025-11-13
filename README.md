@@ -70,10 +70,6 @@ The system partition can be grown or shrunk while online. Shrinking is a manual 
 which may involve data loss, but growing is performed automatically if more space is
 available at boot.
 
-When using a disk image (as opposed to the ISO described further on), every machine imaged
-with a given image will have the same "master key". As such, it is recommended to rotate
-this key once a TPM2 is configured, using `cryptsetup-reencrypt`.
-
 ### The ISO image
 
 The ISO is a standard Ubuntu Server install ISO "CD" image that has been customized to
