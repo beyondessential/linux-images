@@ -92,7 +92,7 @@ qemu-direct-amd64: create-iso-amd64
 
     # Find OVMF firmware files
     OVMF_CODE=""
-    for path in /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/ovmf/x64/OVMF_CODE.fd; do
+    for path in /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/ovmf/x64/OVMF_CODE.fd; do
         if [ -f "$path" ]; then
             OVMF_CODE="$path"
             break
@@ -105,7 +105,7 @@ qemu-direct-amd64: create-iso-amd64
     fi
 
     OVMF_VARS_TEMPLATE=""
-    for path in /usr/share/OVMF/OVMF_VARS.fd /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/ovmf/x64/OVMF_VARS.fd; do
+    for path in /usr/share/edk2/x64/OVMF_VARS.4m.fd /usr/share/OVMF/OVMF_VARS.fd /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/ovmf/x64/OVMF_VARS.fd; do
         if [ -f "$path" ]; then
             OVMF_VARS_TEMPLATE="$path"
             break
@@ -165,7 +165,7 @@ qemu-direct-arm64: create-iso-arm64
 
     # Find AAVMF firmware files for ARM64
     AAVMF_CODE=""
-    for path in /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd /usr/share/edk2/aarch64/QEMU_EFI-pflash.raw; do
+    for path in /usr/share/edk2/aarch64/QEMU_CODE.fd /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd /usr/share/edk2/aarch64/QEMU_EFI-pflash.raw; do
         if [ -f "$path" ]; then
             AAVMF_CODE="$path"
             break
@@ -178,7 +178,7 @@ qemu-direct-arm64: create-iso-arm64
     fi
 
     AAVMF_VARS_TEMPLATE=""
-    for path in /usr/share/AAVMF/AAVMF_VARS.fd /usr/share/qemu-efi-aarch64/QEMU_VARS.fd /usr/share/edk2/aarch64/vars-template-pflash.raw; do
+    for path in /usr/share/edk2/aarch64/QEMU_VARS.fd /usr/share/AAVMF/AAVMF_VARS.fd /usr/share/qemu-efi-aarch64/QEMU_VARS.fd /usr/share/edk2/aarch64/vars-template-pflash.raw; do
         if [ -f "$path" ]; then
             AAVMF_VARS_TEMPLATE="$path"
             break
