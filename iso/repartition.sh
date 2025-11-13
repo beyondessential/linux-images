@@ -94,9 +94,11 @@ EOF
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
 # <name> <device>       <keyfile>    <options>
-root     PARTLABEL=root $KEYFILE    luks,discard,headless=true,try-empty-password=true
+root     PARTLABEL=root $KEYFILE    force,luks,discard,headless=true,try-empty-password=true
 swap     PARTLABEL=swap /dev/urandom swap,cipher=aes-xts-plain64
 EOF
+# the "force" is needed for dracut to pickup the entry as it skips keyfile'd entries by default
+# why? nobody knows. https://github.com/dracutdevs/dracut/issues/2128#issuecomment-1353362957
 
 : Write fstab
 cat > /mnt/newroot/@/etc/fstab << EOF
