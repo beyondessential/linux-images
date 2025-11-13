@@ -20,7 +20,7 @@ echo "Boot partition: $BOOT_PART"
 echo "EFI partition: $EFI_PART"
 
 : Setup LUKS volume on real root
-KEYFILE=/etc/luks.keyfile
+KEYFILE=/tmp/empty-passphrase
 touch $KEYFILE
 cryptsetup luksFormat --type luks2 $ROOT_PART --key-file $KEYFILE --key-slot 10
 
@@ -85,16 +85,10 @@ echo "  Boot: $BOOT_UUID"
 echo "  EFI: $EFI_UUID"
 echo "  Staging: $STAGING_UUID"
 
-: Write keyfile
-cat > /etc/dracut.conf.d/99-luks-password.conf <<EOF
-install_items+=" $KEYFILE "
-kernel_cmdline+=" rd.luks.options=discard,try-empty-password=true rd.luks.keyfile=$KEYFILE "
-EOF
-
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
 # <name> <device>       <keyfile>    <options>
-root     PARTLABEL=root $KEYFILE    force,luks,discard,headless=true,try-empty-password=true
+root     PARTLABEL=root /dev/null    force,luks,discard,headless=true,try-empty-password=true
 swap     PARTLABEL=swap /dev/urandom swap,cipher=aes-xts-plain64
 EOF
 # the "force" is needed for dracut to pickup the entry as it skips keyfile'd entries by default
@@ -123,7 +117,7 @@ if [ -e /dev/tpm* ]; then
   echo "TPM2 device found, enrolling for automatic unlock..."
   systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/etc/luks.keyfile
   sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
-  rm /etc/luks.keyfile
+  touch /etc/tpm-enrolled
   echo "TPM2 enrolled successfully!"
 else
   echo "No TPM2 device found."
@@ -138,7 +132,7 @@ cat > /mnt/newroot/@/etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
 Description=Setup TPM2 auto-unlock for LUKS
 After=local-fs.target
 Before=tailscale-first-boot.service
-ConditionPathExists=/etc/luks.keyfile
+ConditionPathExists=!/etc/tpm-enrolled
 
 [Service]
 Type=oneshot
