@@ -7,7 +7,6 @@ btrfs-progs
 cryptsetup
 dracut-core
 cloud-init
-cloud-utils-generic
 wcanadian
 gdisk
 openssh-server
@@ -16,6 +15,9 @@ wget
 ufw
 rsync
 cron
+
+# for growpart
+cloud-guest-utils
 
 # for dracut modules
 tpm2-tools
