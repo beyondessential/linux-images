@@ -88,17 +88,51 @@ qemu-direct-amd64: create-iso-amd64
 
     TIMESTAMP=$(date +%Y%m%d%H%M%S)
     DISK_IMAGE="$OUTPUT_DIR/ubuntu-24.04-amd64-${TIMESTAMP}.raw"
+    OVMF_VARS="$OUTPUT_DIR/OVMF_VARS-${TIMESTAMP}.fd"
+
+    # Find OVMF firmware files
+    OVMF_CODE=""
+    for path in /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/ovmf/x64/OVMF_CODE.fd; do
+        if [ -f "$path" ]; then
+            OVMF_CODE="$path"
+            break
+        fi
+    done
+
+    if [ -z "$OVMF_CODE" ]; then
+        echo "ERROR: OVMF_CODE.fd not found. Install ovmf package."
+        exit 1
+    fi
+
+    OVMF_VARS_TEMPLATE=""
+    for path in /usr/share/OVMF/OVMF_VARS.fd /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/ovmf/x64/OVMF_VARS.fd; do
+        if [ -f "$path" ]; then
+            OVMF_VARS_TEMPLATE="$path"
+            break
+        fi
+    done
+
+    if [ -z "$OVMF_VARS_TEMPLATE" ]; then
+        echo "ERROR: OVMF_VARS.fd not found. Install ovmf package."
+        exit 1
+    fi
+
+    echo "Using OVMF_CODE: $OVMF_CODE"
+    echo "Copying OVMF_VARS to: $OVMF_VARS"
+    cp "$OVMF_VARS_TEMPLATE" "$OVMF_VARS"
 
     echo "Creating disk image: $DISK_IMAGE"
     qemu-img create -f raw "$DISK_IMAGE" 8G
 
-    echo "Starting QEMU installation..."
+    echo "Starting QEMU installation with UEFI..."
     echo "This will run the automated installer. Wait for it to complete and shut down."
 
     qemu-system-x86_64 \
         -enable-kvm \
         -m 4096 \
         -smp 2 \
+        -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+        -drive if=pflash,format=raw,file="$OVMF_VARS" \
         -drive file="$DISK_IMAGE",format=raw,if=virtio \
         -cdrom "$ISO_FILE" \
         -boot d
@@ -127,11 +161,43 @@ qemu-direct-arm64: create-iso-arm64
 
     TIMESTAMP=$(date +%Y%m%d%H%M%S)
     DISK_IMAGE="$OUTPUT_DIR/ubuntu-24.04-arm64-${TIMESTAMP}.raw"
+    AAVMF_VARS="$OUTPUT_DIR/AAVMF_VARS-${TIMESTAMP}.fd"
+
+    # Find AAVMF firmware files for ARM64
+    AAVMF_CODE=""
+    for path in /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd /usr/share/edk2/aarch64/QEMU_EFI-pflash.raw; do
+        if [ -f "$path" ]; then
+            AAVMF_CODE="$path"
+            break
+        fi
+    done
+
+    if [ -z "$AAVMF_CODE" ]; then
+        echo "ERROR: AAVMF/QEMU_EFI firmware not found. Install qemu-efi-aarch64 package."
+        exit 1
+    fi
+
+    AAVMF_VARS_TEMPLATE=""
+    for path in /usr/share/AAVMF/AAVMF_VARS.fd /usr/share/qemu-efi-aarch64/QEMU_VARS.fd /usr/share/edk2/aarch64/vars-template-pflash.raw; do
+        if [ -f "$path" ]; then
+            AAVMF_VARS_TEMPLATE="$path"
+            break
+        fi
+    done
+
+    if [ -z "$AAVMF_VARS_TEMPLATE" ]; then
+        echo "ERROR: AAVMF_VARS firmware not found. Install qemu-efi-aarch64 package."
+        exit 1
+    fi
+
+    echo "Using AAVMF_CODE: $AAVMF_CODE"
+    echo "Copying AAVMF_VARS to: $AAVMF_VARS"
+    cp "$AAVMF_VARS_TEMPLATE" "$AAVMF_VARS"
 
     echo "Creating disk image: $DISK_IMAGE"
     qemu-img create -f raw "$DISK_IMAGE" 8G
 
-    echo "Starting QEMU installation..."
+    echo "Starting QEMU installation with UEFI..."
     echo "This will run the automated installer. Wait for it to complete and shut down."
 
     qemu-system-aarch64 \
@@ -139,6 +205,8 @@ qemu-direct-arm64: create-iso-arm64
         -cpu cortex-a57 \
         -m 4096 \
         -smp 2 \
+        -drive if=pflash,format=raw,readonly=on,file="$AAVMF_CODE" \
+        -drive if=pflash,format=raw,file="$AAVMF_VARS" \
         -drive file="$DISK_IMAGE",format=raw,if=virtio \
         -cdrom "$ISO_FILE" \
         -boot d
