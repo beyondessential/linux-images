@@ -6,7 +6,10 @@ qemu_memory := "4096"
 qemu_cores := "2"
 
 _default:
+  @echo "{{BOLD}}You probably want to run {{INVERT}}just build{{NORMAL}}"
+  @echo ""
   @just --list
+  @echo ""
   @echo "Variable: arch={{arch}} (amd64, arm64)"
   @echo "Variable: ubuntu_version={{ubuntu_version}}"
   @echo "Variable: qemu_memory={{qemu_memory}}"
@@ -56,10 +59,10 @@ clean:
   mkdir -p "{{work_dir}}" "{{output_dir}}"
   rm -rf "{{work_dir}}"/* "{{output_dir}}"/* || true
 
-generate-autoinstall: clean
+_generate-autoinstall: clean
   node iso/generate-user-data.js "{{arch}}" > "{{autoinstall}}"
 
-create-iso: generate-autoinstall
+iso: _generate-autoinstall
   iso/remaster-iso.sh \
     --arch "{{arch}}" \
     --version "{{ubuntu_version}}" \
@@ -137,7 +140,7 @@ _prepare-firmware: clean
     exit 1
   fi
 
-qemu: _prepare-firmware create-iso clean
+raw: _prepare-firmware iso
   qemu-img create -f raw "{{output_raw}}" 8G
   {{qemu_command}} {{qemu_options}} \
     -m {{qemu_memory}} \
@@ -149,19 +152,17 @@ qemu: _prepare-firmware create-iso clean
     -cdrom "{{output_iso}}" \
     -boot d
 
-vmdk: qemu
+vmdk: raw
   qemu-img convert -f raw -O vmdk -o subformat=streamOptimized "{{output_raw}}" "{{output_vmdk}}"
 
-qcow: qemu
+qcow: raw
   qemu-img convert -f raw -O qcow2 -o compression_type=zstd "{{output_raw}}" "{{output_qcow}}"
 
-build: qemu vmdk qcow
-  #!/usr/bin/env bash
-  set -euxo pipefail
+build: iso raw vmdk qcow && compress checksum
+
+compress:
+  zstd -T0 -19 -o '{{output_raw + ".zst"}}' '{{output_raw}}'
+
+checksum:
   cd "{{output_dir}}"
-
-  for file in *; do
-      zstd -T0 -19 "$file"
-  done
-
   sha256sum * | tee SHA256SUMS
