@@ -1,0 +1,13 @@
+[Unit]
+Description=Grow root partition
+DefaultDependencies=no
+After=local-fs.target systemd-remount-fs.service
+Before=systemd-user-sessions.service luks-reencrypt.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/grow-root-filesystem
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

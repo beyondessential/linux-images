@@ -28,6 +28,16 @@ const luksReencryptService = fs.readFileSync(
   "utf8",
 );
 
+const diskGrowthService = fs.readFileSync(
+  path.join(__dirname, "..", "common", "grow-root-filesystem.service"),
+  "utf8",
+);
+
+const diskGrowthScript = fs.readFileSync(
+  path.join(__dirname, "..", "common", "grow-root-filesystem"),
+  "utf8",
+);
+
 const tailscaleUpScript = fs.readFileSync(
   path.join(__dirname, "..", "common", "ts-up.sh"),
   "utf8",
@@ -249,6 +259,11 @@ const config = {
       // setup LUKS key rotation service
       `cat > /target/etc/systemd/system/luks-reencrypt.service << 'EOFLUKSREENCRYPT'\n${luksReencryptService}\nEOFLUKSREENCRYPT`,
       "curtin in-target --target=/target -- systemctl enable luks-reencrypt.service",
+      // setup disk growth service and script
+      `cat > /target/usr/local/bin/grow-root-filesystem << 'EOFDISKGROWTH'\n${diskGrowthScript}\nEOFDISKGROWTH`,
+      "chmod +x /target/usr/local/bin/grow-root-filesystem",
+      `cat > /target/etc/systemd/system/grow-root-filesystem.service << 'EOFDISKGROWTHSVC'\n${diskGrowthService}\nEOFDISKGROWTHSVC`,
+      "curtin in-target --target=/target -- systemctl enable grow-root-filesystem.service",
     ],
 
     "error-commands": [
