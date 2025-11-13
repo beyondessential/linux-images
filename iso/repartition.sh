@@ -114,9 +114,10 @@ cat > /mnt/newroot/@/usr/local/bin/setup-tpm-unlock << EOFTPM
 set -euxo pipefail
 touch /tmp/empty
 systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty
-sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
+sed -i "s|root.+try-empty-password=true|root     PARTLABEL=root none         force,luks,discard,headless=true,tpm2-device=auto|" /etc/crypttab
 touch /etc/tpm-enrolled
 rm /tmp/empty
+dracut -f
 EOFTPM
 
 chmod +x /mnt/newroot/@/usr/local/bin/setup-tpm-unlock
