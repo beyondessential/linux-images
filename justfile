@@ -76,7 +76,7 @@ qemu-direct-amd64: create-iso-amd64
     set -euo pipefail
     echo "Building bare metal image directly with QEMU for AMD64..."
 
-    ISO_FILE=$(ls -1 {{autoinstall_dir}}/ubuntu-*-bes-server-amd64-*.iso | head -1)
+    ISO_FILE=$(ls -1t {{autoinstall_dir}}/ubuntu-*-bes-server-amd64-*.iso | head -1)
     if [ -z "$ISO_FILE" ]; then
         echo "ERROR: No AMD64 ISO found in {{autoinstall_dir}}"
         exit 1
@@ -149,7 +149,7 @@ qemu-direct-arm64: create-iso-arm64
     echo "Building bare metal image directly with QEMU for ARM64..."
     echo "NOTE: This will be slow on AMD64 host (uses emulation)"
 
-    ISO_FILE=$(ls -1 {{autoinstall_dir}}/ubuntu-*-bes-server-arm64-*.iso | head -1)
+    ISO_FILE=$(ls -1t {{autoinstall_dir}}/ubuntu-*-bes-server-arm64-*.iso | head -1)
     if [ -z "$ISO_FILE" ]; then
         echo "ERROR: No ARM64 ISO found in {{autoinstall_dir}}"
         exit 1
