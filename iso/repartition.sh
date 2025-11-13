@@ -111,17 +111,12 @@ EOF
 : Setup TPM enrollment script
 cat > /mnt/newroot/@/usr/local/bin/setup-tpm-unlock << EOFTPM
 #!/bin/bash
-set -e
-
-if [ -e /dev/tpm* ]; then
-  echo "TPM2 device found, enrolling for automatic unlock..."
-  systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/etc/luks.keyfile
-  sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
-  touch /etc/tpm-enrolled
-  echo "TPM2 enrolled successfully!"
-else
-  echo "No TPM2 device found."
-fi
+set -euxo pipefail
+touch /tmp/empty
+systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty
+sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
+touch /etc/tpm-enrolled
+rm /tmp/empty
 EOFTPM
 
 chmod +x /mnt/newroot/@/usr/local/bin/setup-tpm-unlock
@@ -132,6 +127,8 @@ cat > /mnt/newroot/@/etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
 Description=Setup TPM2 auto-unlock for LUKS
 After=local-fs.target
 Before=tailscale-first-boot.service
+ConditionPathExists=/dev/tpm0
+ConditionPathExists=/dev/tpmrm0
 ConditionPathExists=!/etc/tpm-enrolled
 
 [Service]
