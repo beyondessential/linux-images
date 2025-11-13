@@ -7,9 +7,9 @@
 # 4. Import to AWS: just import-aws-amd64
 # 5. Register AMI: cd scripts && ./register-ami.sh <import-task-id>
 
-packer_dir := "packer"
-output_dir := "output"
 autoinstall_dir := "iso"
+work_dir := "working"
+output_dir := "output"
 
 # Show available recipes
 default:
@@ -29,24 +29,12 @@ create-iso-arm64: (generate-autoinstall "arm64")
     @echo "Creating ARM64 ISO..."
     cd {{autoinstall_dir}} && ./remaster-iso.sh --arch arm64 --user-data user-data-arm64
 
-qemu-amd64: create-iso-amd64
+prepare-firmware-amd64:
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "Building bare metal image directly with QEMU for AMD64..."
 
-    ISO_FILE=$(ls -1t {{autoinstall_dir}}/ubuntu-*-bes-server-amd64-*.iso | head -1)
-    if [ -z "$ISO_FILE" ]; then
-        echo "ERROR: No AMD64 ISO found in {{autoinstall_dir}}"
-        exit 1
-    fi
-    echo "Using ISO: $ISO_FILE"
-
-    OUTPUT_DIR="{{output_dir}}/qemu-amd64"
-    mkdir -p "$OUTPUT_DIR"
-
-    TIMESTAMP=$(date +%Y%m%d%H%M%S)
-    DISK_IMAGE="$OUTPUT_DIR/ubuntu-24.04-amd64-${TIMESTAMP}.raw"
-    OVMF_VARS="$OUTPUT_DIR/OVMF_VARS-${TIMESTAMP}.fd"
+    WORK_DIR="{{work_dir}}/qemu-amd64"
+    mkdir -p "$WORK_DIR"
 
     # Find OVMF firmware files
     OVMF_CODE=""
@@ -75,7 +63,36 @@ qemu-amd64: create-iso-amd64
         exit 1
     fi
 
-    cp "$OVMF_VARS_TEMPLATE" "$OVMF_VARS"
+    ln -sf "$OVMF_CODE" "$WORK_DIR/OVMF_CODE.fd"
+    cp "$OVMF_VARS_TEMPLATE" "$WORK_DIR/OVMF_VARS.fd"
+    echo "Prepared firmware in $WORK_DIR"
+
+prepare-iso-amd64: create-iso-amd64
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    WORK_DIR="{{work_dir}}/qemu-amd64"
+    mkdir -p "$WORK_DIR"
+
+    ISO_FILE=$(ls -1t {{autoinstall_dir}}/ubuntu-*-bes-server-amd64-*.iso | head -1)
+    if [ -z "$ISO_FILE" ]; then
+        echo "ERROR: No AMD64 ISO found in {{autoinstall_dir}}"
+        exit 1
+    fi
+
+    ln -sf "$(realpath "$ISO_FILE")" "$WORK_DIR/installer.iso"
+    echo "Prepared ISO: $ISO_FILE"
+
+qemu-amd64: prepare-firmware-amd64 prepare-iso-amd64
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    WORK_DIR="{{work_dir}}/qemu-amd64"
+    OUTPUT_DIR="{{output_dir}}/qemu-amd64"
+    mkdir -p "$OUTPUT_DIR"
+
+    TIMESTAMP=$(date +%Y%m%d%H%M%S)
+    DISK_IMAGE="$WORK_DIR/ubuntu-24.04-amd64-${TIMESTAMP}.raw"
 
     qemu-img create -f raw "$DISK_IMAGE" 8G
 
@@ -87,34 +104,26 @@ qemu-amd64: create-iso-amd64
         -enable-kvm \
         -m 4096 \
         -smp 2 \
-        -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-        -drive if=pflash,format=raw,file="$OVMF_VARS" \
+        -drive if=pflash,format=raw,readonly=on,file="$WORK_DIR/OVMF_CODE.fd" \
+        -drive if=pflash,format=raw,file="$WORK_DIR/OVMF_VARS.fd" \
         -drive file="$DISK_IMAGE",format=raw,if=virtio \
-        -cdrom "$ISO_FILE" \
+        -cdrom "$WORK_DIR/installer.iso" \
         -boot d
 
-    echo "Installation complete! Disk image at: $DISK_IMAGE"
+    echo "Installation complete!"
+    echo "Moving disk image to output directory..."
+    FINAL_IMAGE="$OUTPUT_DIR/$(basename "$DISK_IMAGE")"
+    mv "$DISK_IMAGE" "$FINAL_IMAGE"
     echo "Generating checksum..."
-    sha256sum "$DISK_IMAGE" > "${DISK_IMAGE}.sha256"
-    echo "Done!"
+    sha256sum "$FINAL_IMAGE" > "${FINAL_IMAGE}.sha256"
+    echo "Done! Disk image at: $FINAL_IMAGE"
 
-qemu-arm64: create-iso-arm64
+prepare-firmware-arm64:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    ISO_FILE=$(ls -1t {{autoinstall_dir}}/ubuntu-*-bes-server-arm64-*.iso | head -1)
-    if [ -z "$ISO_FILE" ]; then
-        echo "ERROR: No ARM64 ISO found in {{autoinstall_dir}}"
-        exit 1
-    fi
-    echo "Using ISO: $ISO_FILE"
-
-    OUTPUT_DIR="{{output_dir}}/qemu-arm64"
-    mkdir -p "$OUTPUT_DIR"
-
-    TIMESTAMP=$(date +%Y%m%d%H%M%S)
-    DISK_IMAGE="$OUTPUT_DIR/ubuntu-24.04-arm64-${TIMESTAMP}.raw"
-    AAVMF_VARS="$OUTPUT_DIR/AAVMF_VARS-${TIMESTAMP}.fd"
+    WORK_DIR="{{work_dir}}/qemu-arm64"
+    mkdir -p "$WORK_DIR"
 
     # Find AAVMF firmware files for ARM64
     AAVMF_CODE=""
@@ -143,7 +152,36 @@ qemu-arm64: create-iso-arm64
         exit 1
     fi
 
-    cp "$AAVMF_VARS_TEMPLATE" "$AAVMF_VARS"
+    ln -sf "$AAVMF_CODE" "$WORK_DIR/AAVMF_CODE.fd"
+    cp "$AAVMF_VARS_TEMPLATE" "$WORK_DIR/AAVMF_VARS.fd"
+    echo "Prepared firmware in $WORK_DIR"
+
+prepare-iso-arm64: create-iso-arm64
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    WORK_DIR="{{work_dir}}/qemu-arm64"
+    mkdir -p "$WORK_DIR"
+
+    ISO_FILE=$(ls -1t {{autoinstall_dir}}/ubuntu-*-bes-server-arm64-*.iso | head -1)
+    if [ -z "$ISO_FILE" ]; then
+        echo "ERROR: No ARM64 ISO found in {{autoinstall_dir}}"
+        exit 1
+    fi
+
+    ln -sf "$(realpath "$ISO_FILE")" "$WORK_DIR/installer.iso"
+    echo "Prepared ISO: $ISO_FILE"
+
+qemu-arm64: prepare-firmware-arm64 prepare-iso-arm64
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    WORK_DIR="{{work_dir}}/qemu-arm64"
+    OUTPUT_DIR="{{output_dir}}/qemu-arm64"
+    mkdir -p "$OUTPUT_DIR"
+
+    TIMESTAMP=$(date +%Y%m%d%H%M%S)
+    DISK_IMAGE="$WORK_DIR/ubuntu-24.04-arm64-${TIMESTAMP}.raw"
 
     qemu-img create -f raw "$DISK_IMAGE" 8G
 
@@ -156,13 +194,16 @@ qemu-arm64: create-iso-arm64
         -cpu cortex-a57 \
         -m 4096 \
         -smp 2 \
-        -drive if=pflash,format=raw,readonly=on,file="$AAVMF_CODE" \
-        -drive if=pflash,format=raw,file="$AAVMF_VARS" \
+        -drive if=pflash,format=raw,readonly=on,file="$WORK_DIR/AAVMF_CODE.fd" \
+        -drive if=pflash,format=raw,file="$WORK_DIR/AAVMF_VARS.fd" \
         -drive file="$DISK_IMAGE",format=raw,if=virtio \
-        -cdrom "$ISO_FILE" \
+        -cdrom "$WORK_DIR/installer.iso" \
         -boot d
 
-    echo "Installation complete! Disk image at: $DISK_IMAGE"
+    echo "Installation complete!"
+    echo "Moving disk image to output directory..."
+    FINAL_IMAGE="$OUTPUT_DIR/$(basename "$DISK_IMAGE")"
+    mv "$DISK_IMAGE" "$FINAL_IMAGE"
     echo "Generating checksum..."
-    sha256sum "$DISK_IMAGE" > "${DISK_IMAGE}.sha256"
-    echo "Done!"
+    sha256sum "$FINAL_IMAGE" > "${FINAL_IMAGE}.sha256"
+    echo "Done! Disk image at: $FINAL_IMAGE"
