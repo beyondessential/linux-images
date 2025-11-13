@@ -11,11 +11,6 @@ hostonly="yes"
 hostonly_mode="sloppy"
 EOF
 
-# without this, dracut doesn't include the luks empty password option
-cat > /etc/dracut.conf.d/99-luks-empty-password.conf <<EOF
-kernel_cmdline+=" rd.luks.options=discard,try-empty-password=true "
-EOF
-
 dracut --force --kver $(ls /lib/modules | head -n1)
 
 sed -i 's/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/' /etc/default/grub
