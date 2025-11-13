@@ -20,8 +20,8 @@ echo "Boot partition: $BOOT_PART"
 echo "EFI partition: $EFI_PART"
 
 : Setup LUKS volume on real root
-KEYFILE=/tmp/empty-passphrase
-touch /tmp/empty-passphrase
+KEYFILE=/etc/luks.keyfile
+touch $KEYFILE
 cryptsetup luksFormat --type luks2 $ROOT_PART --key-file $KEYFILE --key-slot 10
 
 : Open LUKS device
@@ -86,15 +86,15 @@ echo "  EFI: $EFI_UUID"
 echo "  Staging: $STAGING_UUID"
 
 : Write keyfile
-touch /etc/luks.keyfile
 cat > /etc/dracut.conf.d/99-luks-password.conf <<EOF
-install_items+=" /etc/luks.keyfile "
+install_items+=" $KEYFILE "
+kernel_cmdline+=" rd.luks.options=discard,try-empty-password=true rd.luks.keyfile=$KEYFILE "
 EOF
 
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
 # <name> <device>       <keyfile>    <options>
-root     PARTLABEL=root /etc/luks.keyfile    luks,discard,headless=true,try-empty-password=true
+root     PARTLABEL=root $KEYFILE    luks,discard,headless=true,try-empty-password=true
 swap     PARTLABEL=swap /dev/urandom swap,cipher=aes-xts-plain64
 EOF
 
