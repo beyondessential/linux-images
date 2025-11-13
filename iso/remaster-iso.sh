@@ -2,34 +2,23 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UBUNTU_VERSION="24.04.3"
 WORK_DIR="${WORK_DIR:-/tmp/ubuntu-remaster}"
 ORIGINAL_DIR="$(pwd)"
 
 usage() {
   cat <<EOF
-Usage: $0 [OPTIONS]
+Usage: $0 ARGUMENTS [OPTIONS]
 
-Create a custom Ubuntu ISO with embedded autoinstall configuration
+ARGUMENTS:
+    --arch ARCH          Architecture: amd64 or arm64
+    --version VERSION    Ubuntu version
+    --output ISO         Output ISO file
+    --config FILE        autoinstall.yml file
 
 OPTIONS:
-    -a, --arch ARCH          Architecture: amd64 or arm64 (default: amd64)
-    -i, --input ISO          Input ISO file (if not provided, will download)
-    -o, --output ISO         Output ISO file (default: ubuntu-24.04-bes-server-ARCH.iso)
-    -u, --user-data FILE     User data file (default: user-data-ARCH)
-    -w, --work-dir DIR       Working directory (default: /tmp/ubuntu-remaster)
-    -k, --keep-work          Keep working directory after completion
-    -h, --help               Show this help
-
-EXAMPLES:
-    # Create AMD64 ISO (will download Ubuntu ISO)
-    $0 --arch amd64
-
-    # Use existing ISO
-    $0 --input ubuntu-24.04-server-amd64.iso --output custom.iso
-
-    # Create ARM64 ISO
-    $0 --arch arm64
+    --work-dir DIR       Working directory (default: /tmp/ubuntu-remaster)
+    --keep-work          Keep working directory after completion
+    --help               Show this help
 
 REQUIREMENTS:
     - docker
@@ -41,7 +30,8 @@ EOF
 }
 
 # Parse arguments
-ARCH="amd64"
+ARCH=""
+UBUNTU_VERSION=""
 INPUT_ISO=""
 OUTPUT_ISO=""
 USER_DATA=""
@@ -49,27 +39,31 @@ KEEP_WORK=0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    -a|--arch)
+    --arch)
       ARCH="$2"
       shift 2
       ;;
-    -i|--input)
+    --version)
+      UBUNTU_VERSION="$2"
+      shift 2
+      ;;
+    --input)
       INPUT_ISO="$2"
       shift 2
       ;;
-    -u|--user-data)
+    --config)
       USER_DATA="$2"
       shift 2
       ;;
-    -o|--output)
+    --output)
       OUTPUT_ISO="$2"
       shift 2
       ;;
-    -w|--work-dir)
+    --work-dir)
       WORK_DIR="$2"
       shift 2
       ;;
-    -k|--keep-work)
+    --keep-work)
       KEEP_WORK=1
       shift
       ;;
@@ -83,12 +77,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Set defaults
-BUILD_DATE="$(date +%Y%m%d)"
 BUILD_DATE_DISPLAY="$(date +%Y-%m-%d)"
 GIT_SHORT_HASH="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-OUTPUT_ISO="${OUTPUT_ISO:-ubuntu-${UBUNTU_VERSION}-bes-server-${ARCH}-${BUILD_DATE}.iso}"
-USER_DATA="${USER_DATA:-user-data-${ARCH}}"
 ISO_EXTRACT="$WORK_DIR/extract"
 ISO_BUILD="$WORK_DIR/build"
 
@@ -243,11 +233,11 @@ fi
 # Copy autoinstall configuration to root of ISO
 # Subiquity looks for /autoinstall.yaml when 'autoinstall' kernel parameter is present
 echo "Adding autoinstall configuration..."
-if [ ! -f "$SCRIPT_DIR/$USER_DATA" ]; then
-  echo "ERROR: User data file not found: $SCRIPT_DIR/$USER_DATA"
+if [ ! -f "$USER_DATA" ]; then
+  echo "ERROR: User data file not found: $USER_DATA"
   exit 1
 fi
-cp "$SCRIPT_DIR/$USER_DATA" "$ISO_BUILD/autoinstall.yaml"
+cp "$USER_DATA" "$ISO_BUILD/autoinstall.yaml"
 
 # Modify GRUB configuration for autoinstall
 echo "Modifying GRUB configuration..."
@@ -338,17 +328,13 @@ fi
 cd "$ORIGINAL_DIR"
 mv "$TEMP_ISO" "$OUTPUT_ISO"
 
-# Generate SHA256 checksum for the ISO
-echo "Generating SHA256 checksum for ISO..."
-sha256sum "$OUTPUT_ISO" > "$OUTPUT_ISO.sha256"
-
 echo ""
 echo "==================================="
 echo "ISO created successfully!"
 echo "==================================="
 echo "Output: $OUTPUT_ISO"
 echo "Size: $(du -h "$OUTPUT_ISO" | cut -f1)"
-echo "SHA256: $(cat "$OUTPUT_ISO.sha256" | awk '{print $1}')"
+echo "SHA256: $(sha256sum "$OUTPUT_ISO" | awk '{print $1}')"
 echo ""
 echo "To use:"
 echo "  1. Write to USB: dd if=$OUTPUT_ISO of=/dev/sdX bs=4M status=progress"

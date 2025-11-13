@@ -41,7 +41,7 @@ const tailscaleGpgKey = fs.readFileSync(
   ),
 );
 
-const arch = process.argv?.[3] ?? "amd64";
+const arch = process.argv?.[2] ?? "amd64";
 
 const packagesContent = fs.readFileSync(
   path.join(__dirname, "..", "common", "packages.txt"),
@@ -251,10 +251,4 @@ const config = {
 };
 
 const output = "#cloud-config\n" + JSON.stringify(config.autoinstall);
-
-if (process.argv[2]) {
-  fs.writeFileSync(process.argv[2], output + "\n");
-  console.error(`Generated ${process.argv[2]} for ${arch}`);
-} else {
-  console.log(output);
-}
+console.log(output);
