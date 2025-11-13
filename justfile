@@ -71,7 +71,7 @@ build-bare-metal-arm64: (generate-autoinstall "arm64")
     cd {{packer_dir}} && packer build -only='ubuntu-bare-metal.qemu.bare-metal' -var-file=arm64.pkrvars.hcl -var="custom_iso_path=$(ls -1 ../iso/ubuntu-*-bes-server-arm64-*.iso | head -1)" ubuntu-24.04.pkr.hcl
 
 # Build bare metal image directly with QEMU (no Packer) for AMD64
-qemu-direct-amd64: (generate-autoinstall "amd64")
+qemu-direct-amd64: create-iso-amd64
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Building bare metal image directly with QEMU for AMD64..."
@@ -101,10 +101,7 @@ qemu-direct-amd64: (generate-autoinstall "amd64")
         -smp 2 \
         -drive file="$DISK_IMAGE",format=raw,if=virtio \
         -cdrom "$ISO_FILE" \
-        -boot d \
-        -nographic \
-        -serial stdio \
-        -monitor none
+        -boot d
 
     echo "Installation complete! Disk image at: $DISK_IMAGE"
     echo "Generating checksum..."
@@ -112,7 +109,7 @@ qemu-direct-amd64: (generate-autoinstall "amd64")
     echo "Done!"
 
 # Build bare metal image directly with QEMU (no Packer) for ARM64
-qemu-direct-arm64: (generate-autoinstall "arm64")
+qemu-direct-arm64: create-iso-arm64
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Building bare metal image directly with QEMU for ARM64..."
@@ -144,10 +141,7 @@ qemu-direct-arm64: (generate-autoinstall "arm64")
         -smp 2 \
         -drive file="$DISK_IMAGE",format=raw,if=virtio \
         -cdrom "$ISO_FILE" \
-        -boot d \
-        -nographic \
-        -serial stdio \
-        -monitor none
+        -boot d
 
     echo "Installation complete! Disk image at: $DISK_IMAGE"
     echo "Generating checksum..."
