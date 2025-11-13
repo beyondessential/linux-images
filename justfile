@@ -70,6 +70,90 @@ build-bare-metal-arm64: (generate-autoinstall "arm64")
     @echo "NOTE: This will be slow on AMD64 host (uses emulation)"
     cd {{packer_dir}} && packer build -only='ubuntu-bare-metal.qemu.bare-metal' -var-file=arm64.pkrvars.hcl -var="custom_iso_path=$(ls -1 ../iso/ubuntu-*-bes-server-arm64-*.iso | head -1)" ubuntu-24.04.pkr.hcl
 
+# Build bare metal image directly with QEMU (no Packer) for AMD64
+qemu-direct-amd64: (generate-autoinstall "amd64")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building bare metal image directly with QEMU for AMD64..."
+
+    ISO_FILE=$(ls -1 {{autoinstall_dir}}/ubuntu-*-bes-server-amd64-*.iso | head -1)
+    if [ -z "$ISO_FILE" ]; then
+        echo "ERROR: No AMD64 ISO found in {{autoinstall_dir}}"
+        exit 1
+    fi
+    echo "Using ISO: $ISO_FILE"
+
+    OUTPUT_DIR="{{output_dir}}/qemu-direct-amd64"
+    mkdir -p "$OUTPUT_DIR"
+
+    TIMESTAMP=$(date +%Y%m%d%H%M%S)
+    DISK_IMAGE="$OUTPUT_DIR/ubuntu-24.04-amd64-${TIMESTAMP}.raw"
+
+    echo "Creating disk image: $DISK_IMAGE"
+    qemu-img create -f raw "$DISK_IMAGE" 8G
+
+    echo "Starting QEMU installation..."
+    echo "This will run the automated installer. Wait for it to complete and shut down."
+
+    qemu-system-x86_64 \
+        -enable-kvm \
+        -m 4096 \
+        -smp 2 \
+        -drive file="$DISK_IMAGE",format=raw,if=virtio \
+        -cdrom "$ISO_FILE" \
+        -boot d \
+        -nographic \
+        -serial stdio \
+        -monitor none
+
+    echo "Installation complete! Disk image at: $DISK_IMAGE"
+    echo "Generating checksum..."
+    sha256sum "$DISK_IMAGE" > "${DISK_IMAGE}.sha256"
+    echo "Done!"
+
+# Build bare metal image directly with QEMU (no Packer) for ARM64
+qemu-direct-arm64: (generate-autoinstall "arm64")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Building bare metal image directly with QEMU for ARM64..."
+    echo "NOTE: This will be slow on AMD64 host (uses emulation)"
+
+    ISO_FILE=$(ls -1 {{autoinstall_dir}}/ubuntu-*-bes-server-arm64-*.iso | head -1)
+    if [ -z "$ISO_FILE" ]; then
+        echo "ERROR: No ARM64 ISO found in {{autoinstall_dir}}"
+        exit 1
+    fi
+    echo "Using ISO: $ISO_FILE"
+
+    OUTPUT_DIR="{{output_dir}}/qemu-direct-arm64"
+    mkdir -p "$OUTPUT_DIR"
+
+    TIMESTAMP=$(date +%Y%m%d%H%M%S)
+    DISK_IMAGE="$OUTPUT_DIR/ubuntu-24.04-arm64-${TIMESTAMP}.raw"
+
+    echo "Creating disk image: $DISK_IMAGE"
+    qemu-img create -f raw "$DISK_IMAGE" 8G
+
+    echo "Starting QEMU installation..."
+    echo "This will run the automated installer. Wait for it to complete and shut down."
+
+    qemu-system-aarch64 \
+        -machine virt \
+        -cpu cortex-a57 \
+        -m 4096 \
+        -smp 2 \
+        -drive file="$DISK_IMAGE",format=raw,if=virtio \
+        -cdrom "$ISO_FILE" \
+        -boot d \
+        -nographic \
+        -serial stdio \
+        -monitor none
+
+    echo "Installation complete! Disk image at: $DISK_IMAGE"
+    echo "Generating checksum..."
+    sha256sum "$DISK_IMAGE" > "${DISK_IMAGE}.sha256"
+    echo "Done!"
+
 # === AWS Import ===
 
 # Import bare metal image to AWS as AMI for AMD64
