@@ -161,8 +161,7 @@ qcow: raw
 build: iso raw vmdk qcow && compress checksum
 
 compress:
-  zstd -T0 -19 -o '{{output_raw + ".zst"}}' '{{output_raw}}'
+  zstd -6 --rm -o '{{output_raw + ".zst"}}' '{{output_raw}}'
 
 checksum:
-  cd "{{output_dir}}"
-  sha256sum * | tee SHA256SUMS
+  cd "{{output_dir}}" && sha256sum * | tee SHA256SUMS
