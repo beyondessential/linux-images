@@ -2,11 +2,15 @@ linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
 
 ubuntu_version := "24.04.3"
 arch := "amd64"
+qemu_memory := "4096"
+qemu_cores := "2"
 
 _default:
   @just --list
   @echo "Variable: arch={{arch}} (amd64, arm64)"
   @echo "Variable: ubuntu_version={{ubuntu_version}}"
+  @echo "Variable: qemu_memory={{qemu_memory}}"
+  @echo "Variable: qemu_cores={{qemu_cores}}"
 
 filestem := "ubuntu-" + ubuntu_version + "-bes-server-" + arch + "-" + datetime_utc("%Y%m%d")
 
@@ -19,12 +23,34 @@ output_raw := output_dir / filestem + ".raw"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
 
-qemu_command := if arch == "amd64" { "qemu-system-x86_64" } else if arch == "arm64" { "qemu-system-aarch64" } else { error("Unsupported architecture") }
-qemu_options := if arch == "amd64" { if arch() == "x86_64" { "-enable-kvm" } else { "-machine virt" } } else if arch == "arm64" { if arch() == "aarch64" { "-enable-kvm" } else { "-machine virt -cpu cortex-a57" } } else { error("Unsupported architecture") }
-qemu_firmware := if arch == "amd64" { work_dir / "OVMF_CODE.fd" } else if arch == "arm64" { work_dir / "AAVMF_CODE.fd" } else { error("Unsupported architecture") }
-qemu_firmvars := if arch == "amd64" { work_dir / "OVMF_VARS.fd" } else if arch == "arm64" { work_dir / "AAVMF_VARS.fd" } else { error("Unsupported architecture") }
-qemu_memory := "4096"
-qemu_cores := "2"
+qemu_command := (if arch == "amd64" {
+    "qemu-system-x86_64"
+  } else if arch == "arm64" {
+    "qemu-system-aarch64"
+  } else {
+    error("Unsupported architecture")
+  })
+qemu_options := (if arch == "amd64" {
+    if arch() == "x86_64" { "-enable-kvm" } else { "-machine virt" }
+  } else if arch == "arm64" {
+    if arch() == "aarch64" { "-enable-kvm" } else { "-machine virt -cpu cortex-a57" }
+  } else {
+    error("Unsupported architecture")
+  })
+qemu_firmware := (if arch == "amd64" {
+    work_dir / "OVMF_CODE.fd"
+  } else if arch == "arm64" {
+    work_dir / "AAVMF_CODE.fd"
+  } else {
+    error("Unsupported architecture")
+  })
+qemu_firmvars := (if arch == "amd64" {
+    work_dir / "OVMF_VARS.fd"
+  } else if arch == "arm64" {
+    work_dir / "AAVMF_VARS.fd"
+  } else {
+    error("Unsupported architecture")
+  })
 
 clean:
   mkdir -p "{{work_dir}}" "{{output_dir}}"
@@ -113,13 +139,10 @@ _prepare-firmware: clean
 
 qemu: _prepare-firmware create-iso clean
   qemu-img create -f raw "{{output_raw}}" 8G
-  @echo ""
-  @echo "This will run the automated installer. Wait for it to complete fully,"
-  @echo "until you see the message '[  OK  ] Finished cloud-final.service',"
-  @echo "then power down the machine from the menu."
-  "{{qemu_command}}" {{qemu_options}} \
-    -m "{{qemu_memory}}" \
-    -smp "{{qemu_cores}}" \
+  {{qemu_command}} {{qemu_options}} \
+    -m {{qemu_memory}} \
+    -smp {{qemu_cores}} \
+    -no-reboot \
     -drive if=pflash,format=raw,readonly=on,file="{{qemu_firmware}}" \
     -drive if=pflash,format=raw,file="{{qemu_firmvars}}" \
     -drive file="{{output_raw}}",format=raw,if=virtio \
