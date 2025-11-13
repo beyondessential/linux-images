@@ -215,15 +215,6 @@ const config = {
         ["passwd", "--expire", "ubuntu"],
         ["passwd", "--expire", "root"],
       ],
-      network: {
-        version: 2,
-        ethernets: {
-          en: {
-            match: { name: "en*" },
-            dhcp4: true,
-          },
-        },
-      },
     },
 
     "late-commands": [
