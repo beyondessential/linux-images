@@ -20,7 +20,7 @@ variable "architecture" {
 
 variable "ubuntu_version" {
   type    = string
-  default = "24.04"
+  default = "24.04.3"
 }
 
 variable "disk_size" {
@@ -48,7 +48,7 @@ locals {
 
   image_name = "ubuntu-${var.ubuntu_version}-${var.architecture}-${local.timestamp}"
 
-  iso_path = var.custom_iso_path != "" ? var.custom_iso_path : "../iso/ubuntu-${var.ubuntu_version}.3-bes-server-${var.architecture}-*.iso"
+  iso_path = var.custom_iso_path != "" ? var.custom_iso_path : "../iso/ubuntu-${var.ubuntu_version}-bes-server-${var.architecture}-*.iso"
 }
 
 source "qemu" "bare-metal" {

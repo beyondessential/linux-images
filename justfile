@@ -62,13 +62,13 @@ build-all: (create-iso-amd64) (create-iso-arm64)
 # Build only bare metal image for AMD64
 build-bare-metal-amd64: (generate-autoinstall "amd64")
     @echo "Building bare metal image for AMD64..."
-    cd {{packer_dir}} && packer build -only='qemu.bare-metal' -var-file=amd64.pkrvars.hcl ubuntu-24.04.pkr.hcl
+    cd {{packer_dir}} && packer build -only='ubuntu-bare-metal.qemu.bare-metal' -var-file=amd64.pkrvars.hcl -var="custom_iso_path=$(ls -1 ../iso/ubuntu-*-bes-server-amd64-*.iso | head -1)" ubuntu-24.04.pkr.hcl
 
 # Build only bare metal image for ARM64
 build-bare-metal-arm64: (generate-autoinstall "arm64")
     @echo "Building bare metal image for ARM64..."
     @echo "NOTE: This will be slow on AMD64 host (uses emulation)"
-    cd {{packer_dir}} && packer build -only='qemu.bare-metal' -var-file=arm64.pkrvars.hcl ubuntu-24.04.pkr.hcl
+    cd {{packer_dir}} && packer build -only='ubuntu-bare-metal.qemu.bare-metal' -var-file=arm64.pkrvars.hcl -var="custom_iso_path=$(ls -1 ../iso/ubuntu-*-bes-server-arm64-*.iso | head -1)" ubuntu-24.04.pkr.hcl
 
 # === AWS Import ===
 
