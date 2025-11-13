@@ -24,22 +24,22 @@ const bootloaderScript = fs.readFileSync(
 );
 
 const luksReencryptService = fs.readFileSync(
-  path.join(__dirname, "..", "common", "luks-reencrypt.service"),
+  path.join(__dirname, "luks-reencrypt.service"),
   "utf8",
 );
 
 const diskGrowthService = fs.readFileSync(
-  path.join(__dirname, "..", "common", "grow-root-filesystem.service"),
+  path.join(__dirname, "grow-root-filesystem.service"),
   "utf8",
 );
 
 const diskGrowthScript = fs.readFileSync(
-  path.join(__dirname, "..", "common", "grow-root-filesystem"),
+  path.join(__dirname, "grow-root-filesystem"),
   "utf8",
 );
 
 const tailscaleUpScript = fs.readFileSync(
-  path.join(__dirname, "..", "common", "ts-up.sh"),
+  path.join(__dirname, "ts-up.sh"),
   "utf8",
 );
 
@@ -59,7 +59,7 @@ const tailscaleGpgKey = fs.readFileSync(
 const arch = process.argv?.[2] ?? "amd64";
 
 const packagesContent = fs.readFileSync(
-  path.join(__dirname, "..", "common", "packages.txt"),
+  path.join(__dirname, "packages.txt"),
   "utf8",
 );
 const packages = packagesContent
@@ -68,7 +68,7 @@ const packages = packagesContent
   .filter((line) => line && !line.startsWith("#"));
 
 const firewallSetupScript = fs.readFileSync(
-  path.join(__dirname, "..", "common", "setup-firewall.sh"),
+  path.join(__dirname, "setup-firewall.sh"),
   "utf8",
 );
 
@@ -238,7 +238,7 @@ const config = {
       // network configuration (in original /target)
       `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
       `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
-      `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "..", "common", "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
+      `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
       `cat > /target/usr/local/bin/ts-up << 'EOFTSUP'\n${tailscaleUpScript}\nEOFTSUP`,
       "chmod +x /target/usr/local/bin/ts-up",
       "curtin in-target --target=/target -- bash /tmp/setup-firewall.sh",
