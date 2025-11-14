@@ -4,7 +4,8 @@ set -euxo pipefail
 DISK=/dev/$(lsblk -ndo PKNAME /dev/disk/by-partlabel/root)
 PART_NUM=$(lsblk -ndo KNAME /dev/disk/by-partlabel/root | grep -o '[0-9]*$')
 
-if growpart "$DISK" "$PART_NUM"; then
+sgdisk --move-second-header "$DISK"
+if growpart --free-percent=1 "$DISK" "$PART_NUM"; then
   echo "Partition grown successfully"
 elif [ $? -eq 1 ]; then
   echo "No change needed"
