@@ -31,3 +31,5 @@ mount /dev/mapper/root /target/home -o subvol=@home
 mount /dev/mapper/root /target/var/log -o subvol=@logs
 mount $BOOT_PART /target/boot
 mount $EFI_PART /target/boot/efi
+mount -t tmpfs tmpfs /target/run
+mount -t tmpfs tmpfs /target/tmp
