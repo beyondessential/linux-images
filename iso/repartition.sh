@@ -88,7 +88,7 @@ echo "  Staging: $STAGING_UUID"
 : Write crypttab
 cat > /mnt/newroot/@/etc/crypttab << EOF
 # <name> <device>       <keyfile>    <options>
-root     PARTLABEL=root /dev/null    force,luks,discard,headless=true,try-empty-password=true
+root     PARTLABEL=root -            luks,discard,headless=true,try-empty-password=true
 swap     PARTLABEL=swap /dev/urandom swap,cipher=aes-xts-plain64
 EOF
 # the "force" is needed for dracut to pickup the entry as it skips keyfile'd entries by default
@@ -114,7 +114,7 @@ cat > /mnt/newroot/@/usr/local/bin/setup-tpm-unlock << EOFTPM
 set -euxo pipefail
 touch /tmp/empty
 systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty
-sed -i "s|root.+try-empty-password=true|root     PARTLABEL=root none         force,luks,discard,headless=true,tpm2-device=auto|" /etc/crypttab
+sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
 touch /etc/luks/tpm-enrolled
 rm /tmp/empty
 dracut -f
