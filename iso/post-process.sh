@@ -34,6 +34,7 @@ mkdir -p /mnt/image-root
 mount -o subvol=@ /dev/mapper/image-root /mnt/image-root
 
 rm -rvf /mnt/image-root/etc/cloud/cloud.cfg.d/90-installer-network.cfg
+rm -rvf /mnt/image-root/etc/update-motd.d/60-unminimize
 truncate -s0 /mnt/image-root/etc/machine-id
 
 btrfs fi df /mnt/image-root
