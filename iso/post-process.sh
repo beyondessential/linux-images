@@ -36,10 +36,13 @@ mount -o subvol=@ /dev/mapper/image-root /mnt/image-root
 rm -rvf /mnt/image-root/etc/cloud/cloud.cfg.d/90-installer-network.cfg
 truncate -s0 /mnt/image-root/etc/machine-id
 
+btrfs fi df /mnt/image-root
 compsize -x /mnt/image-root
-btrfs filesystem defragment -r -czstd --level 15 /mnt/image-root
+btrfs fi defrag -r -czstd --level 15 /mnt/image-root
+btrfs fi df /mnt/image-root
 compsize -x /mnt/image-root
 duperemove --hashfile=/tmp/dupes --dedupe-options=same --lookup-extents=yes -r -d /mnt/image-root || true
+btrfs fi df /mnt/image-root
 compsize -x /mnt/image-root
 
 umount /mnt/image-root
