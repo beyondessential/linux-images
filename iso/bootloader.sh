@@ -40,25 +40,25 @@ echo GRUB_RECORDFAIL_TIMEOUT=5 >> /etc/default/grub
 
 : Write crypttab
 cat > /etc/crypttab << EOF
-# <name> <device>       <keyfile>                 <options>
-root     PARTLABEL=root /etc/luks/empty-keyfile  force,luks,discard,headless=true,try-empty-password=true
-swap     PARTLABEL=swap /dev/urandom             swap,cipher=aes-xts-plain64
+# <name> <device>                    <keyfile>                 <options>
+root     /dev/disk/by-partlabel/root /etc/luks/empty-keyfile  force,luks,discard,headless=true,try-empty-password=true
+swap     /dev/disk/by-partlabel/swap /dev/urandom             swap,cipher=aes-xts-plain64
 EOF
 # the "force" is needed for dracut to pickup the entry as it skips keyfile'd entries by default
 # why? nobody knows. https://github.com/dracutdevs/dracut/issues/2128#issuecomment-1353362957
 
 : Write fstab
 cat > /etc/fstab << EOF
-# <device>       <mountpoint>        <fs>  <options>                     <dump> <pass>
-/dev/mapper/root /                   btrfs subvol=@,compress=zstd:6           0 1
-/dev/mapper/root /home               btrfs subvol=@home,compress=zstd:6       0 2
-/dev/mapper/root /var/log            btrfs subvol=@logs,compress=zstd:6       0 2
-/dev/mapper/root /var/lib/postgresql btrfs subvol=@postgres,compress=zstd:6   0 2
-/dev/mapper/root /var/lib/containers btrfs subvol=@containers,compress=zstd:6 0 2
-/dev/mapper/root /.snapshots         btrfs subvol=@.snapshots,compress=zstd:6 0 2
-PARTLABEL=xboot  /boot               ext4  defaults                           0 2
-PARTLABEL=efi    /boot/efi           vfat  umask=0077                         0 1
-/dev/mapper/swap none                swap  sw                                 0 0
+# <device>                   <mountpoint>        <fs>  <options>                     <dump> <pass>
+/dev/mapper/root             /                   btrfs subvol=@,compress=zstd:6           0 1
+/dev/mapper/root             /home               btrfs subvol=@home,compress=zstd:6       0 2
+/dev/mapper/root             /var/log            btrfs subvol=@logs,compress=zstd:6       0 2
+/dev/mapper/root             /var/lib/postgresql btrfs subvol=@postgres,compress=zstd:6   0 2
+/dev/mapper/root             /var/lib/containers btrfs subvol=@containers,compress=zstd:6 0 2
+/dev/mapper/root             /.snapshots         btrfs subvol=@.snapshots,compress=zstd:6 0 2
+/dev/disk/by-partlabel/xboot /boot               ext4  defaults                           0 2
+/dev/disk/by-partlabel/efi   /boot/efi           vfat  umask=0077                         0 1
+/dev/mapper/swap             none                swap  sw                                 0 0
 EOF
 
 : Setup TPM enrollment script
