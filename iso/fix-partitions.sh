@@ -53,15 +53,3 @@ else
   echo "WARNING: Unknown architecture $ARCH, using generic Linux filesystem type"
   sgdisk -t 4:0FC63DAF-8483-4772-8E79-3D69D8477DE4 -c 4:root "$DISK" || true
 fi
-
-# Inform kernel of partition table changes
-partprobe "$DISK" || true
-sleep 2
-
-# Display updated partition table
-echo ""
-echo "Updated partition table:"
-sgdisk -p "$DISK" || fdisk -l "$DISK"
-
-echo ""
-echo "Partition labels and type UUIDs fixed successfully"

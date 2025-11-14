@@ -237,9 +237,11 @@ const config = {
       // subiquity doesn't set labels and type uuids correctly, so fix that
       `cat > /target/tmp/fix-partitions.sh << 'EOFFIX'\n${fixPartitionsScript}\nEOFFIX`,
       "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
+      "partprobe /dev/$(lsblk -no PKNAME /dev/disk/by-partlabel/xboot)",
       // setup the real root as encrypted btrfs with subvolumes and copy data into it
       `cat > /target/tmp/repartition.sh << 'EOFMIGRATE'\n${repartitionScript}\nEOFMIGRATE`,
       "curtin in-target --target=/target -- bash /tmp/repartition.sh",
+      "partprobe /dev/$(lsblk -no PKNAME /dev/disk/by-partlabel/xboot)",
       // unmount /target, wipe staging, make it into encrypted swap, mount the real root to /target
       `cat > /tmp/remountTarget.sh << 'EOFMIGRATE'\n${remountTargetScript}\nEOFMIGRATE`,
       "bash /tmp/remountTarget.sh",

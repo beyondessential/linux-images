@@ -17,6 +17,7 @@ cron
 
 # for growpart
 cloud-guest-utils
+parted
 
 # for dracut modules
 tpm2-tools

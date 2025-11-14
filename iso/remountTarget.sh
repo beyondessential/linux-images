@@ -9,16 +9,16 @@ BOOT_PART="/dev/$(lsblk -lno NAME,PARTLABEL $DISK | grep 'xboot' | awk '{print $
 EFI_PART="/dev/$(lsblk -lno NAME,PARTLABEL $DISK | grep 'efi' | awk '{print $1}')"
 SWAP_PART="/dev/$(lsblk -lno NAME,PARTLABEL $DISK | grep 'swap' | awk '{print $1}')"
 
-: Unmounting staging
+: Unmount staging
 umount /target/boot/efi
 umount /target/boot
 umount /target/cdrom
 umount /target
 
-: Wiping staging
+: Wipe staging
 dd if=/dev/zero of=$SWAP_PART bs=1M status=progress || true
 
-: Remaking staging into encrypted swap
+: Remake staging into encrypted swap
 dd if=/dev/random of=/var/run/swapkey bs=1 count=64
 cryptsetup luksFormat --type luks2 $SWAP_PART --key-file=/var/run/swapkey
 cryptsetup open $SWAP_PART swap --key-file=/var/run/swapkey
