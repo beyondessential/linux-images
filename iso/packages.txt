@@ -7,6 +7,8 @@ btrfs-progs
 cryptsetup
 dracut-core
 cloud-init
+console-setup
+xfonts-terminus
 wcanadian
 gdisk
 openssh-server

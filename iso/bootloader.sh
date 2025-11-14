@@ -11,6 +11,16 @@ hostonly="yes"
 hostonly_mode="sloppy"
 EOF
 
+: Configure console font for QR code support
+cat > /etc/default/console-setup << EOF
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="Uni2"
+FONTFACE="Terminus"
+FONTSIZE="16"
+EOF
+setupcon --save-only
+
 : Create empty keyfile for LUKS
 KEYFILE_PATH="/etc/luks/empty-keyfile"
 mkdir -p /etc/luks
