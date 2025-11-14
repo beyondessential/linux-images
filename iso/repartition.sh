@@ -68,7 +68,7 @@ fi
 
 : Fix resolv.conf symlink
 rm -f /mnt/newroot/@/etc/resolv.conf
-ln -snf /run/systemd/resolve/stuf-resolv.conf /mnt/newroot/@/etc/resolv.conf
+ln -snf /run/systemd/resolve/stub-resolv.conf /mnt/newroot/@/etc/resolv.conf
 
 : Create mountpoints
 mkdir -p /mnt/newroot/@/{.snapshots,boot,dev,home,mnt,proc,root,run,sys,tmp,var/{lib/{postgresql,containers},log}}
