@@ -7,9 +7,6 @@ btrfs-progs
 cryptsetup
 dracut-core
 cloud-init
-console-setup
-xfonts-terminus
-wcanadian
 gdisk
 openssh-server
 curl
@@ -27,3 +24,9 @@ nvme-cli
 busybox
 rng-tools5
 jq
+
+# just because it's really annoying not having those
+neovim
+nano
+less
+htop
