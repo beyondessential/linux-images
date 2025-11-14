@@ -140,7 +140,7 @@ _prepare-firmware: clean
     exit 1
   fi
 
-raw: _prepare-firmware iso
+_qemu: _prepare-firmware iso
   qemu-img create -f raw "{{output_raw}}" 8G
   {{qemu_command}} {{qemu_options}} \
     -m {{qemu_memory}} \
@@ -152,10 +152,45 @@ raw: _prepare-firmware iso
     -cdrom "{{output_iso}}" \
     -boot d
 
-vmdk: raw
+_post-process: _qemu
+  #!/usr/bin/env bash
+  set -euxo pipefail
+
+  LOOP_DEVICE=$(losetup -f)
+
+  cleanup() {
+    umount /mnt/image-root 2>/dev/null || true
+    cryptsetup close image-root 2>/dev/null || true
+    losetup -d "$LOOP_DEVICE" 2>/dev/null || true
+    rmdir /mnt/image-root 2>/dev/null || true
+  }
+
+  trap cleanup EXIT
+
+  losetup -P "$LOOP_DEVICE" "{{output_raw}}"
+
+  KEYFILE=$(mktemp)
+  trap "rm -f $KEYFILE; cleanup" EXIT
+  touch "$KEYFILE"
+  cryptsetup open "${LOOP_DEVICE}p4" image-root --key-file "$KEYFILE"
+  rm -f "$KEYFILE"
+
+  mkdir -p /mnt/image-root
+  mount -o subvol=@ /dev/mapper/image-root /mnt/image-root
+  rm -rf /mnt/image-root/etc/netplan/* # so that the image isn't tied to the qemu net devices
+  umount /mnt/image-root
+  cryptsetup close image-root
+  losetup -d "$LOOP_DEVICE"
+  rmdir /mnt/image-root
+
+  trap - EXIT
+
+raw: _post-process
+
+vmdk: _post-process
   qemu-img convert -f raw -O vmdk -o subformat=streamOptimized "{{output_raw}}" "{{output_vmdk}}"
 
-qcow: raw
+qcow: _post-process
   qemu-img convert -f raw -O qcow2 -o compression_type=zstd "{{output_raw}}" "{{output_qcow}}"
 
 build: iso raw vmdk qcow && compress checksum
