@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ex
+set -euxo pipefail
 
 # this will be the default in the next LTS, but we want to use
 # it today because otherwise the disk encryption doesn't work.
@@ -11,13 +11,74 @@ hostonly="yes"
 hostonly_mode="sloppy"
 EOF
 
-dracut --force --kver $(ls /lib/modules | head -n1)
-
+: Adjust grub settings
 sed -i 's/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/' /etc/default/grub
 sed -i 's/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub
 sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="noresume"/' /etc/default/grub
 echo GRUB_RECORDFAIL_TIMEOUT=5 >> /etc/default/grub
 
+: Write crypttab
+cat > /etc/crypttab << EOF
+# <name> <device>       <keyfile>    <options>
+root     PARTLABEL=root -            luks,discard,headless=true,try-empty-password=true
+swap     PARTLABEL=swap /dev/urandom swap,cipher=aes-xts-plain64
+EOF
+# the "force" is needed for dracut to pickup the entry as it skips keyfile'd entries by default
+# why? nobody knows. https://github.com/dracutdevs/dracut/issues/2128#issuecomment-1353362957
+
+: Write fstab
+cat > /etc/fstab << EOF
+# <device>       <mountpoint>        <fs>  <options>                     <dump> <pass>
+/dev/mapper/root /                   btrfs subvol=@,compress=zstd:6           0 1
+/dev/mapper/root /home               btrfs subvol=@home,compress=zstd:6       0 2
+/dev/mapper/root /var/log            btrfs subvol=@logs,compress=zstd:6       0 2
+/dev/mapper/root /var/lib/postgresql btrfs subvol=@postgres,compress=zstd:6   0 2
+/dev/mapper/root /var/lib/containers btrfs subvol=@containers,compress=zstd:6 0 2
+/dev/mapper/root /.snapshots         btrfs subvol=@.snapshots,compress=zstd:6 0 2
+PARTLABEL=xboot  /boot               ext4  defaults                           0 2
+PARTLABEL=efi    /boot/efi           vfat  umask=0077                         0 1
+/dev/mapper/swap none                swap  sw                                 0 0
+EOF
+
+: Setup TPM enrollment script
+cat > /usr/local/bin/setup-tpm-unlock << EOFTPM
+#!/bin/bash
+set -euxo pipefail
+touch /tmp/empty
+systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty
+sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
+touch /etc/luks/tpm-enrolled
+rm /tmp/empty
+dracut -f
+EOFTPM
+
+chmod +x /usr/local/bin/setup-tpm-unlock
+mkdir -p /etc/luks
+
+: Create systemd service for TPM enrollment
+cat > /etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
+[Unit]
+Description=Setup TPM2 auto-unlock for LUKS
+After=local-fs.target
+Before=tailscale-first-boot.service
+ConditionPathExists=/dev/tpm0
+ConditionPathExists=/dev/tpmrm0
+ConditionPathExists=!/etc/luks/tpm-enrolled
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/setup-tpm-unlock
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOFTPMSVC
+
+: Enable TPM enrollment service
+systemctl enable setup-tpm-unlock.service
+
+: Regenerate boot files
+dracut --force --kver $(ls /lib/modules | head -n1)
 rm -rf /boot/grub || true
 mkdir /boot/grub
 update-grub
