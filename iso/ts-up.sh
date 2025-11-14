@@ -18,7 +18,7 @@ echo "=========================================="
 echo "Tailscale Configuration"
 echo "=========================================="
 echo ""
-echo "Enter your Tailscale auth key (or press Enter to skip):"
+echo "Enter the auth key provided by BES (or press Enter to skip):"
 read -r TS_AUTH_KEY
 
 TAILSCALE_CONNECTED=0
@@ -30,21 +30,20 @@ if [ -n "$TS_AUTH_KEY" ]; then
     TAILSCALE_CONNECTED=1
   else
     echo "WARNING: Failed to connect to Tailscale"
-    echo "You can try again later with: sudo ts-up"
+    echo "You can try again later with: ts-up"
   fi
 else
   echo ""
-  echo "No auth key provided. Starting interactive login..."
-  echo "Scan the QR code below with your Tailscale app:"
+  echo "Please provide this link to BES and leave this running until they connect you:"
   echo ""
-  if tailscale up --ssh --qr; then
+  if tailscale up --ssh; then
     echo ""
     echo "Tailscale configured successfully!"
     TAILSCALE_CONNECTED=1
   else
     echo ""
     echo "WARNING: Failed to connect to Tailscale"
-    echo "You can try again later with: sudo ts-up"
+    echo "You can try again later with: ts-up"
   fi
 fi
 
