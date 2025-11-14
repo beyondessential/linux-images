@@ -25,10 +25,10 @@ cryptsetup open $SWAP_PART swap --key-file=/var/run/swapkey
 mkswap /dev/mapper/swap
 swapon /dev/mapper/swap
 
-: Mounting real root
-mount /dev/mapper/root /target -o subvol=@
-mount /dev/mapper/root /target/home -o subvol=@home
-mount /dev/mapper/root /target/var/log -o subvol=@logs
+: Mount real root
+mount /dev/mapper/root /target -o subvol=@,compress=zstd:6
+mount /dev/mapper/root /target/home -o subvol=@home,compress=zstd:6
+mount /dev/mapper/root /target/var/log -o subvol=@logs,compress=zstd:6
 mount $BOOT_PART /target/boot
 mount $EFI_PART /target/boot/efi
 mount -t tmpfs tmpfs /target/run

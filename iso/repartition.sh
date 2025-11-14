@@ -32,7 +32,7 @@ LUKS_DEV="/dev/mapper/root"
 mkfs.btrfs --label ROOT --checksum xxhash --features block-group-tree,squota $LUKS_DEV
 
 mkdir -p /mnt/newroot
-mount $LUKS_DEV /mnt/newroot
+mount $LUKS_DEV /mnt/newroot -o compress=zstd:6
 btrfs quota enable --simple /mnt/newroot
 
 : Create subvolumes
