@@ -10,6 +10,7 @@ Type=oneshot
 ExecStartPre=/usr/bin/truncate -s0 /run/luks-reencrypt-key
 ExecStart=/usr/sbin/cryptsetup reencrypt /dev/disk/by-partlabel/root --key-file /run/luks-reencrypt-key --resilience checksum
 ExecStartPost=/usr/bin/touch /etc/luks/rotated
+ExecStartPost=/usr/bin/systemctl disable luks-reencrypt.service
 RemainAfterExit=yes
 TimeoutStartSec=infinity
 
