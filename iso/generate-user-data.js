@@ -214,14 +214,11 @@ const config = {
       ssh_pwauth: false,
       users: ["default"],
       chpasswd: {
-        users: [
-          { name: "root", password },
-          { name: "ubuntu", password },
-        ],
+        users: [{ name: "ubuntu", password }],
       },
       runcmd: [
         ["passwd", "--expire", "ubuntu"],
-        ["passwd", "--expire", "root"],
+        ["usermod", "-s", "/sbin/nologin", "root"],
       ],
     },
 
