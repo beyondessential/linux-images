@@ -195,7 +195,9 @@ _post-process: _qemu
 
       mkdir -p /mnt/image-root
       mount -o subvol=@ /dev/mapper/image-root /mnt/image-root
-      rm -rf /mnt/image-root/etc/netplan/*
+
+      rm -rvf /mnt/image-root/etc/netplan/*
+
       umount /mnt/image-root
       cryptsetup close image-root
       losetup -d "$LOOP_DEVICE"

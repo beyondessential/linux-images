@@ -11,6 +11,17 @@ hostonly="yes"
 hostonly_mode="sloppy"
 EOF
 
+: Create empty keyfile for LUKS
+KEYFILE_PATH="/etc/luks/empty-keyfile"
+mkdir -p /etc/luks
+touch "$KEYFILE_PATH"
+chmod 000 "$KEYFILE_PATH"
+
+: Add keyfile to dracut
+cat > /etc/dracut.conf.d/02-luks-keyfile.conf <<EOF
+install_items+=" $KEYFILE_PATH "
+EOF
+
 : Adjust grub settings
 sed -i 's/GRUB_TIMEOUT=0/GRUB_TIMEOUT=5/' /etc/default/grub
 sed -i 's/GRUB_TIMEOUT_STYLE=hidden/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub
@@ -19,9 +30,9 @@ echo GRUB_RECORDFAIL_TIMEOUT=5 >> /etc/default/grub
 
 : Write crypttab
 cat > /etc/crypttab << EOF
-# <name> <device>       <keyfile>    <options>
-root     PARTLABEL=root -            luks,discard,headless=true,try-empty-password=true
-swap     PARTLABEL=swap /dev/urandom swap,cipher=aes-xts-plain64
+# <name> <device>       <keyfile>                 <options>
+root     PARTLABEL=root /etc/luks/empty-keyfile  force,luks,discard,headless=true,try-empty-password=true
+swap     PARTLABEL=swap /dev/urandom             swap,cipher=aes-xts-plain64
 EOF
 # the "force" is needed for dracut to pickup the entry as it skips keyfile'd entries by default
 # why? nobody knows. https://github.com/dracutdevs/dracut/issues/2128#issuecomment-1353362957
@@ -44,16 +55,13 @@ EOF
 cat > /usr/local/bin/setup-tpm-unlock << EOFTPM
 #!/bin/bash
 set -euxo pipefail
-touch /tmp/empty
-systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/tmp/empty
+systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/etc/luks/empty-keyfile
+sed -i "s|/etc/luks/empty-keyfile|-|" /etc/crypttab
 sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
 touch /etc/luks/tpm-enrolled
-rm /tmp/empty
 dracut -f
 EOFTPM
-
 chmod +x /usr/local/bin/setup-tpm-unlock
-mkdir -p /etc/luks
 
 : Create systemd service for TPM enrollment
 cat > /etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
