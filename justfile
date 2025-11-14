@@ -154,36 +154,55 @@ _qemu: _prepare-firmware iso
 
 _post-process: _qemu
   #!/usr/bin/env bash
-  set -euxo pipefail
+  set -euo pipefail
 
-  LOOP_DEVICE=$(losetup -f)
+  docker build -t image-post-process -f Dockerfile.post-process .
 
-  cleanup() {
-    umount /mnt/image-root 2>/dev/null || true
-    cryptsetup close image-root 2>/dev/null || true
-    losetup -d "$LOOP_DEVICE" 2>/dev/null || true
-    rmdir /mnt/image-root 2>/dev/null || true
-  }
+  docker run --rm --privileged \
+    -v "$(pwd)/{{output_dir}}:/work" \
+    -v /dev:/dev \
+    image-post-process \
+    bash -c '
+      set -euo pipefail
 
-  trap cleanup EXIT
+      if [ -e /dev/mapper/image-root ]; then
+        echo "ERROR: /dev/mapper/image-root already exists"
+        echo "Another LUKS device is using this mapping name"
+        exit 1
+      fi
 
-  losetup -P "$LOOP_DEVICE" "{{output_raw}}"
+      LOOP_DEVICE=$(losetup -f)
+      IMAGE="/work/{{filestem}}.raw"
 
-  KEYFILE=$(mktemp)
-  trap "rm -f $KEYFILE; cleanup" EXIT
-  touch "$KEYFILE"
-  cryptsetup open "${LOOP_DEVICE}p4" image-root --key-file "$KEYFILE"
-  rm -f "$KEYFILE"
+      cleanup() {
+        umount /mnt/image-root 2>/dev/null || true
+        cryptsetup close image-root 2>/dev/null || true
+        losetup -d "$LOOP_DEVICE" 2>/dev/null || true
+        rmdir /mnt/image-root 2>/dev/null || true
+      }
 
-  mkdir -p /mnt/image-root
-  mount -o subvol=@ /dev/mapper/image-root /mnt/image-root
-  rm -rf /mnt/image-root/etc/netplan/* # so that the image isn't tied to the qemu net devices
-  umount /mnt/image-root
-  cryptsetup close image-root
-  losetup -d "$LOOP_DEVICE"
-  rmdir /mnt/image-root
+      trap cleanup EXIT
 
-  trap - EXIT
+      losetup -P "$LOOP_DEVICE" "$IMAGE"
+      udevadm settle
+      sleep 2
+
+      KEYFILE=$(mktemp)
+      trap "rm -f $KEYFILE; cleanup" EXIT
+      touch "$KEYFILE"
+      cryptsetup open "${LOOP_DEVICE}p4" image-root --key-file "$KEYFILE"
+      rm -f "$KEYFILE"
+
+      mkdir -p /mnt/image-root
+      mount -o subvol=@ /dev/mapper/image-root /mnt/image-root
+      rm -rf /mnt/image-root/etc/netplan/*
+      umount /mnt/image-root
+      cryptsetup close image-root
+      losetup -d "$LOOP_DEVICE"
+      rmdir /mnt/image-root
+
+      trap - EXIT
+    '
 
 raw: _post-process
 
@@ -193,7 +212,7 @@ vmdk: _post-process
 qcow: _post-process
   qemu-img convert -f raw -O qcow2 -o compression_type=zstd "{{output_raw}}" "{{output_qcow}}"
 
-build: iso raw vmdk qcow && compress checksum
+build: raw vmdk qcow && compress checksum
 
 compress:
   zstd -6 --rm -o '{{output_raw + ".zst"}}' '{{output_raw}}'
