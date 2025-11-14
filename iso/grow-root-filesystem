@@ -5,7 +5,7 @@ DISK=/dev/$(lsblk -ndo PKNAME /dev/disk/by-partlabel/root)
 PART_NUM=$(lsblk -ndo KNAME /dev/disk/by-partlabel/root | grep -o '[0-9]*$')
 
 sgdisk --move-second-header "$DISK"
-kpartx -a "$DISK" || true
+partprobe "$DISK" || true
 if growpart --free-percent=1 "$DISK" "$PART_NUM"; then
   echo "Partition grown successfully"
 elif [ $? -eq 1 ]; then
@@ -16,6 +16,6 @@ else
 fi
 
 set -x
-kpartx -a "$DISK" || true
+partprobe "$DISK" || true
 cryptsetup resize root
 btrfs filesystem resize max /
