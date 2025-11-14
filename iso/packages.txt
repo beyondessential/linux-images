@@ -31,3 +31,4 @@ neovim
 nano
 less
 htop
+iputils-ping
