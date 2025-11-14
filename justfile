@@ -197,7 +197,7 @@ _post-process: _qemu
       mount -o subvol=@ /dev/mapper/image-root /mnt/image-root
 
       rm -rvf /mnt/image-root/etc/cloud/cloud.cfg.d/90-installer-network.cfg
-      rm -rvf /mnt/image-root/etc/machine-id
+      truncate -s0 /mnt/image-root/etc/machine-id
 
       umount /mnt/image-root
       cryptsetup close image-root
