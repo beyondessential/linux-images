@@ -8,7 +8,7 @@ ConditionPathExists=!/etc/luks/rotated
 [Service]
 Type=oneshot
 ExecStartPre=/usr/bin/truncate -s0 /run/luks-reencrypt-key
-ExecStart=/usr/bin/cryptsetup reencrypt /dev/disk/by-partlabel/root --key-file /run/luks-reencrypt-key --resilience checksum --force-offline-reencrypt=no
+ExecStart=/usr/sbin/cryptsetup reencrypt /dev/disk/by-partlabel/root --key-file /run/luks-reencrypt-key --resilience checksum
 ExecStartPost=/usr/bin/touch /etc/luks/rotated
 RemainAfterExit=yes
 TimeoutStartSec=infinity
