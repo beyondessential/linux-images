@@ -212,19 +212,12 @@ const config = {
       package_upgrade: true,
       create_hostname_file: false, // provided by DHCP
       ssh_pwauth: false,
-      users: [
-        {
-          name: "ubuntu",
-          gecos: "Default Login User",
-          groups: "adm, cdrom, dip, lxd, plugdev, sudo",
-          shell: "/bin/bash",
-          lock_passwd: false,
-          sudo: "ALL=(ALL) NOPASSWD:ALL",
-          passwd: password,
-        },
-      ],
+      users: ["default"],
       chpasswd: {
-        users: [{ name: "root", password }],
+        users: [
+          { name: "root", password },
+          { name: "ubuntu", password },
+        ],
       },
       runcmd: [
         ["passwd", "--expire", "ubuntu"],
