@@ -52,13 +52,15 @@ cat > /etc/fstab << EOF
 EOF
 
 : Setup TPM enrollment script
-cat > /usr/local/bin/setup-tpm-unlock << EOFTPM
+cat > /usr/local/bin/setup-tpm-unlock <<'EOFTPM'
 #!/bin/bash
 set -euxo pipefail
-systemd-cryptenroll --wipe-slot=0 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/etc/luks/empty-keyfile
+password_slot=$(systemd-cryptenroll /dev/disk/by-partlabel/root | grep password | awk '{print $1}')
+systemd-cryptenroll --wipe-slot=$password_slot --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/etc/luks/empty-keyfile
 sed -i "s|/etc/luks/empty-keyfile|-|" /etc/crypttab
 sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
 touch /etc/luks/tpm-enrolled
+systemctl disable setup-tpm-unlock.service
 dracut -f
 EOFTPM
 chmod +x /usr/local/bin/setup-tpm-unlock
