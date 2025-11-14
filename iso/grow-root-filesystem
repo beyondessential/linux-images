@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euxo pipefail
+set -euo pipefail
 
 DISK=/dev/$(lsblk -ndo PKNAME /dev/disk/by-partlabel/root)
 PART_NUM=$(lsblk -ndo KNAME /dev/disk/by-partlabel/root | grep -o '[0-9]*$')
@@ -14,5 +14,6 @@ else
   exit $?
 fi
 
+set -x
 cryptsetup resize root
 btrfs filesystem resize max /

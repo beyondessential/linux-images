@@ -65,7 +65,7 @@ EOF
 cat > /usr/local/bin/setup-tpm-unlock << EOFTPM
 #!/bin/bash
 set -euxo pipefail
-systemd-cryptenroll --wipe-slot=10 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/etc/luks/empty-keyfile
+systemd-cryptenroll --wipe-slot=0 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/root --unlock-key-file=/etc/luks/empty-keyfile
 sed -i "s|/etc/luks/empty-keyfile|-|" /etc/crypttab
 sed -i "s|try-empty-password=true|tpm2-device=auto|" /etc/crypttab
 touch /etc/luks/tpm-enrolled
@@ -78,7 +78,6 @@ cat > /etc/systemd/system/setup-tpm-unlock.service << 'EOFTPMSVC'
 [Unit]
 Description=Setup TPM2 auto-unlock for LUKS
 After=local-fs.target
-Before=tailscale-first-boot.service
 ConditionPathExists=/dev/tpm0
 ConditionPathExists=/dev/tpmrm0
 ConditionPathExists=!/etc/luks/tpm-enrolled

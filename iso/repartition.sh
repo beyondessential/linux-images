@@ -22,7 +22,7 @@ echo "EFI partition: $EFI_PART"
 : Setup LUKS volume on real root
 KEYFILE=/tmp/empty-passphrase
 touch $KEYFILE
-cryptsetup luksFormat --type luks2 $ROOT_PART --key-file $KEYFILE --key-slot 10
+cryptsetup luksFormat --type luks2 $ROOT_PART --key-file $KEYFILE --key-slot 0
 
 : Open LUKS device
 cryptsetup open $ROOT_PART root --key-file $KEYFILE
