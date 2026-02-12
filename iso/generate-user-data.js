@@ -49,16 +49,7 @@ const snapperSetupScript = fs.readFileSync(
 );
 
 const tailscaleGpgKey = fs.readFileSync(
-  path.join(
-    __dirname,
-    "..",
-    "..",
-    "ansible",
-    "roles",
-    "tailscale",
-    "files",
-    "apt.gpg",
-  ),
+  path.join(__dirname, "tailscale-apt.gpg"),
 );
 
 const arch = process.argv?.[2] ?? "amd64";
