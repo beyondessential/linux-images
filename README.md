@@ -58,7 +58,7 @@ quotas are enabled to track per-subvolume disk usage.
 Transparent filesystem compression is enabled system-wide.
 
 The Snapper snapshot manager is enabled by default, which takes snapshots of the subvolumes
-regularly and retains them for default 24/7/4/12 periods. This provides a simple way to
+regularly and retains them for default 10/7/4/12 periods. This provides a simple way to
 rollback a server or a file to an earlier configuration and protects against catastrophes.
 
 The system partition can be grown or shrunk while online. Shrinking is a manual process

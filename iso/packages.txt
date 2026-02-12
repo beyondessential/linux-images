@@ -3,6 +3,7 @@ grub-efi
 btrfs-progs
 cryptsetup
 dracut-core
+snapper
 cloud-init
 gdisk
 openssh-server

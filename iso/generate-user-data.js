@@ -43,6 +43,11 @@ const tailscaleUpScript = fs.readFileSync(
   "utf8",
 );
 
+const snapperSetupScript = fs.readFileSync(
+  path.join(__dirname, "setup-snapper.sh"),
+  "utf8",
+);
+
 const tailscaleGpgKey = fs.readFileSync(
   path.join(
     __dirname,
@@ -122,6 +127,10 @@ const lateCommands = [
   // re-install the bootloader from the real root
   `cat > /target/tmp/bootloader.sh << 'EOFMIGRATE'\n${bootloaderScript}\nEOFMIGRATE`,
   "curtin in-target --target=/target -- bash /tmp/bootloader.sh",
+
+  // configure snapper for btrfs snapshots
+  `cat > /target/tmp/setup-snapper.sh << 'EOFSNAPPER'\n${snapperSetupScript}\nEOFSNAPPER`,
+  "curtin in-target --target=/target -- bash /tmp/setup-snapper.sh",
 
   // setup disk growth service and script
   `cat > /target/usr/local/bin/grow-root-filesystem << 'EOFDISKGROWTH'\n${diskGrowthScript}\nEOFDISKGROWTH`,

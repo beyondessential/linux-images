@@ -42,6 +42,8 @@ fi
 
 : Mount real root
 mount $ROOT_DEV /target -o subvol=@,compress=zstd:6
+mkdir -p /target/var/lib/postgresql
+mount $ROOT_DEV /target/var/lib/postgresql -o subvol=@postgres,compress=zstd:6
 mount $BOOT_PART /target/boot
 mount $EFI_PART /target/boot/efi
 mount -t tmpfs tmpfs /target/run
