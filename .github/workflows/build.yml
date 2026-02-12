@@ -1,0 +1,142 @@
+name: Build Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      ubuntu_version:
+        description: "Ubuntu version"
+        default: "24.04.3"
+      tag:
+        description: "Release tag (leave empty to auto-generate)"
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  UBUNTU_VERSION: ${{ inputs.ubuntu_version || '24.04.3' }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [cloud, metal, metal-encrypted]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            qemu_pkg: qemu-system-x86
+            firmware_pkg: ovmf
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            qemu_pkg: qemu-system-arm
+            firmware_pkg: qemu-efi-aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -la /dev/kvm
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ${{ matrix.qemu_pkg }} qemu-utils ${{ matrix.firmware_pkg }} \
+            xorriso wget \
+            nodejs zstd
+
+      - uses: extractions/setup-just@v2
+
+      - name: Cache Ubuntu ISO
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ubuntu-${{ env.UBUNTU_VERSION }}-live-server-${{ matrix.arch }}.iso
+          key: ubuntu-iso-${{ env.UBUNTU_VERSION }}-${{ matrix.arch }}
+
+      - name: Build ${{ matrix.variant }} ${{ matrix.arch }}
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} build
+        timeout-minutes: 60
+
+      - name: List outputs
+        run: ls -lh output/${{ matrix.arch }}/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.variant }}-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          for dir in artifacts/*/; do
+            cp "$dir"* release/ 2>/dev/null || true
+          done
+
+          # Remove per-variant SHA256SUMS and generate a combined one
+          rm -f release/SHA256SUMS
+          cd release
+          sha256sum *.iso *.raw.zst *.vmdk *.qcow2 | tee SHA256SUMS
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=build-$(date -u +%Y%m%d)-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: List release assets
+        run: ls -lh release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: |
+            Ubuntu ${{ env.UBUNTU_VERSION }} server images (amd64 + arm64)
+
+            ### Variants
+            - **cloud** — for AWS and other cloud providers (no encryption)
+            - **metal** — for bare metal and on-premise virtualisation (no encryption)
+            - **metal-encrypted** — for bare metal with TPM-backed full disk encryption
+
+            ### Formats
+            | Format | Use case |
+            |--------|----------|
+            | `.iso` | Boot from USB/DVD for interactive autoinstall |
+            | `.raw.zst` | Decompress with `zstd -d` and write directly to disk or import to cloud |
+            | `.vmdk` | VMware / vSphere |
+            | `.qcow2` | KVM / libvirt / Proxmox |
+
+            Verify downloads:
+            ```
+            sha256sum -c SHA256SUMS
+            ```
+          files: release/*
+          fail_on_unmatched_files: true
+          make_latest: true
