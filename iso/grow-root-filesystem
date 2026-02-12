@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "metal-encrypted")
+
 DISK=/dev/$(lsblk -ndo PKNAME /dev/disk/by-partlabel/root)
 PART_NUM=$(lsblk -ndo KNAME /dev/disk/by-partlabel/root | grep -o '[0-9]*$')
 
@@ -19,6 +21,10 @@ fi
 
 set -x
 partprobe "$DISK" || true
-cryptsetup resize root
+
+if [ "$VARIANT" = "metal-encrypted" ]; then
+  cryptsetup resize root
+fi
+
 btrfs filesystem resize max /
 fdisk -l "$DISK"

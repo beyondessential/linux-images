@@ -2,6 +2,7 @@ linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
 
 ubuntu_version := "24.04.3"
 arch := "amd64"
+variant := "metal-encrypted"
 qemu_memory := "4096"
 qemu_cores := "2"
 
@@ -11,11 +12,19 @@ _default:
   @just --list
   @echo ""
   @echo "Variable: arch={{arch}} (amd64, arm64)"
+  @echo "Variable: variant={{variant}} (cloud, metal, metal-encrypted)"
   @echo "Variable: ubuntu_version={{ubuntu_version}}"
   @echo "Variable: qemu_memory={{qemu_memory}}"
   @echo "Variable: qemu_cores={{qemu_cores}}"
 
-filestem := "ubuntu-" + ubuntu_version + "-bes-server-" + arch + "-" + datetime_utc("%Y%m%d")
+_validate-variant:
+  #!/usr/bin/env bash
+  case "{{variant}}" in
+    cloud|metal|metal-encrypted) ;;
+    *) echo "ERROR: variant must be one of: cloud, metal, metal-encrypted"; exit 1 ;;
+  esac
+
+filestem := "ubuntu-" + ubuntu_version + "-bes-" + variant + "-" + arch + "-" + datetime_utc("%Y%m%d")
 
 work_dir := "working" / arch
 output_dir := "output" / arch
@@ -59,8 +68,8 @@ clean:
   mkdir -p "{{work_dir}}" "{{output_dir}}"
   rm -rf "{{work_dir}}"/* "{{output_dir}}"/* || true
 
-_generate-autoinstall: clean
-  node iso/generate-user-data.js "{{arch}}" > "{{autoinstall}}"
+_generate-autoinstall: clean _validate-variant
+  node iso/generate-user-data.js "{{arch}}" "{{variant}}" > "{{autoinstall}}"
 
 iso: _generate-autoinstall
   iso/remaster-iso.sh \
@@ -156,7 +165,7 @@ _post-process-image:
   cd iso && docker build -t image-post-process -f Dockerfile.post-process .
 
 _post-process: _qemu _post-process-image
-  docker run --rm --privileged -v "$(pwd)/{{output_dir}}:/work" -v /dev:/dev --init image-post-process post-process "{{filestem}}"
+  docker run --rm --privileged -v "$(pwd)/{{output_dir}}:/work" -v /dev:/dev --init image-post-process post-process "{{filestem}}" "{{variant}}"
 
 raw: _post-process
 

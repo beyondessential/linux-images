@@ -1,18 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
-if [ -e /dev/mapper/image-root ]; then
+FILESTEM="$1"
+VARIANT="${2:-metal-encrypted}"
+IMAGE="/work/${FILESTEM}.raw"
+
+if [ "$VARIANT" = "metal-encrypted" ] && [ -e /dev/mapper/image-root ]; then
   echo "ERROR: /dev/mapper/image-root already exists"
   echo "Another LUKS device is using this mapping name"
   exit 1
 fi
 
 LOOP_DEVICE=$(losetup -f)
-IMAGE="/work/$1.raw"
 
 cleanup() {
   umount /mnt/image-root 2>/dev/null || true
-  cryptsetup close image-root 2>/dev/null || true
+  if [ "$VARIANT" = "metal-encrypted" ]; then
+    cryptsetup close image-root 2>/dev/null || true
+  fi
   losetup -d "$LOOP_DEVICE" 2>/dev/null || true
   rmdir /mnt/image-root 2>/dev/null || true
 }
@@ -24,14 +29,19 @@ losetup -P "$LOOP_DEVICE" "$IMAGE"
 udevadm settle
 sleep 2
 
-KEYFILE=$(mktemp)
-trap "rm -f $KEYFILE; cleanup" EXIT
-touch "$KEYFILE"
-cryptsetup open "${LOOP_DEVICE}p4" image-root --key-file "$KEYFILE"
-rm -f "$KEYFILE"
+if [ "$VARIANT" = "metal-encrypted" ]; then
+  KEYFILE=$(mktemp)
+  trap "rm -f $KEYFILE; cleanup" EXIT
+  touch "$KEYFILE"
+  cryptsetup open "${LOOP_DEVICE}p4" image-root --key-file "$KEYFILE"
+  rm -f "$KEYFILE"
+  BTRFS_DEV="/dev/mapper/image-root"
+else
+  BTRFS_DEV="${LOOP_DEVICE}p4"
+fi
 
 mkdir -p /mnt/image-root
-mount -o subvol=@ /dev/mapper/image-root /mnt/image-root
+mount -o subvol=@ "$BTRFS_DEV" /mnt/image-root
 
 rm -rvf /mnt/image-root/etc/cloud/cloud.cfg.d/90-installer-network.cfg
 rm -rvf /mnt/image-root/etc/update-motd.d/60-unminimize
@@ -47,7 +57,9 @@ btrfs fi df /mnt/image-root
 compsize -x /mnt/image-root
 
 umount /mnt/image-root
-cryptsetup close image-root
+if [ "$VARIANT" = "metal-encrypted" ]; then
+  cryptsetup close image-root
+fi
 losetup -d "$LOOP_DEVICE"
 rmdir /mnt/image-root
 

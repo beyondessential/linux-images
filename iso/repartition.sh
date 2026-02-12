@@ -1,6 +1,8 @@
 #!/bin/bash
 set -ex
 
+VARIANT=$(cat /tmp/image-variant)
+
 # Find partitions
 DISK=$(lsblk -ndo PKNAME $(findmnt -n -o SOURCE /))
 ROOT_PART="/dev/$(lsblk -ln -o NAME,PARTLABEL | grep 'root' | awk '{print $1}')"
@@ -18,30 +20,31 @@ echo "Root partition: $ROOT_PART"
 echo "Staging partition: $STAGING_PART"
 echo "Boot partition: $BOOT_PART"
 echo "EFI partition: $EFI_PART"
+echo "Variant: $VARIANT"
 
-: Setup LUKS volume on real root
-KEYFILE=/tmp/empty-passphrase
-touch $KEYFILE
-cryptsetup luksFormat --type luks2 $ROOT_PART --key-file $KEYFILE --key-slot 0
+if [ "$VARIANT" = "metal-encrypted" ]; then
+  : Setup LUKS volume on real root
+  KEYFILE=/tmp/empty-passphrase
+  touch $KEYFILE
+  cryptsetup luksFormat --type luks2 $ROOT_PART --key-file $KEYFILE --key-slot 0
 
-: Open LUKS device
-cryptsetup open $ROOT_PART root --key-file $KEYFILE
-LUKS_DEV="/dev/mapper/root"
+  : Open LUKS device
+  cryptsetup open $ROOT_PART root --key-file $KEYFILE
+  BTRFS_DEV="/dev/mapper/root"
+else
+  BTRFS_DEV="$ROOT_PART"
+fi
 
 : Create filesystem
-mkfs.btrfs --label ROOT --checksum xxhash --features block-group-tree,squota $LUKS_DEV
+mkfs.btrfs --label ROOT --checksum xxhash --features block-group-tree,squota $BTRFS_DEV
 
 mkdir -p /mnt/newroot
-mount $LUKS_DEV /mnt/newroot -o compress=zstd:6
+mount $BTRFS_DEV /mnt/newroot -o compress=zstd:6
 btrfs quota enable --simple /mnt/newroot
 
 : Create subvolumes
 btrfs subvolume create /mnt/newroot/@
-btrfs subvolume create /mnt/newroot/@home
-btrfs subvolume create /mnt/newroot/@logs
 btrfs subvolume create /mnt/newroot/@postgres
-btrfs subvolume create /mnt/newroot/@containers
-btrfs subvolume create /mnt/newroot/@.snapshots
 
 : Copy system from staging to real root
 rsync -aAX \
@@ -52,25 +55,11 @@ rsync -aAX \
   --exclude=/proc/\* \
   --exclude=/sys/\* \
   --exclude=/dev/\* \
-  --exclude=/home \
-  --exclude=/var/log \
   / /mnt/newroot/@/
-
-if [ -d /home ] && [ "$(ls -A /home 2>/dev/null)" ]; then
-  : Copying /home
-  rsync -aAX /home/ /mnt/newroot/@home/
-fi
-
-if [ -d /var/log ] && [ "$(ls -A /var/log 2>/dev/null)" ]; then
-  : Copying /var/log
-  rsync -aAX /var/log/ /mnt/newroot/@logs/
-fi
 
 : Fix resolv.conf symlink
 rm -f /mnt/newroot/@/etc/resolv.conf
 ln -snf /run/systemd/resolve/stub-resolv.conf /mnt/newroot/@/etc/resolv.conf
 
 : Create mountpoints
-mkdir -p /mnt/newroot/@/{.snapshots,boot,dev,home,mnt,proc,root,run,sys,tmp,var/{lib/{postgresql,containers},log}}
-: Pre-create directories for snapshots
-mkdir -p /mnt/newroot/@snapshots/{root,home,logs,postgres,containers}
+mkdir -p /mnt/newroot/@/{boot,dev,mnt,proc,root,run,sys,tmp,var/lib/postgresql}

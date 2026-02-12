@@ -57,6 +57,17 @@ const tailscaleGpgKey = fs.readFileSync(
 );
 
 const arch = process.argv?.[2] ?? "amd64";
+const variant = process.argv?.[3] ?? "metal-encrypted";
+
+const validVariants = ["cloud", "metal", "metal-encrypted"];
+if (!validVariants.includes(variant)) {
+  console.error(
+    `ERROR: variant must be one of: ${validVariants.join(", ")} (got: ${variant})`,
+  );
+  process.exit(1);
+}
+
+const encrypted = variant === "metal-encrypted";
 
 const packagesContent = fs.readFileSync(
   path.join(__dirname, "packages.txt"),
@@ -76,6 +87,56 @@ const firewallSetupScript = fs.readFileSync(
 // passwords are not allowed for SSH so this is purely a console-based login thing
 const password =
   "$y$j9T$Kh7z7p6FH3zn9r4HAMB1i0$dgY1wDtDbL4do748v9q32AV2qE5kgz0vqW8rUHQFox9";
+
+const lateCommands = [
+  // helper to wipe the disk if needed (on error)
+  `echo "dd if=/dev/zero of=/dev/$(lsblk -ndo PKNAME $(findmnt -no SOURCE /target)) bs=1M status=progress" > wipe-target.sh`,
+
+  // write variant file so scripts can branch on it
+  `echo "${variant}" > /target/tmp/image-variant`,
+
+  // network configuration (in original /target)
+  `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
+  `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
+  `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
+  `cat > /target/usr/local/bin/ts-up << 'EOFTSUP'\n${tailscaleUpScript}\nEOFTSUP`,
+  "chmod +x /target/usr/local/bin/ts-up",
+  "curtin in-target --target=/target -- bash /tmp/setup-firewall.sh",
+  "curtin in-target --target=/target -- bash /tmp/setup-tailscale.sh",
+  "curtin in-target --target=/target -- systemctl enable ssh",
+
+  // subiquity doesn't set labels and type uuids correctly, so fix that
+  `cat > /target/tmp/fix-partitions.sh << 'EOFFIX'\n${fixPartitionsScript}\nEOFFIX`,
+  "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
+  "partprobe /dev/$(lsblk -no PKNAME /dev/disk/by-partlabel/xboot)",
+
+  // setup the real root as btrfs (optionally encrypted) with subvolumes and copy data into it
+  `cat > /target/tmp/repartition.sh << 'EOFMIGRATE'\n${repartitionScript}\nEOFMIGRATE`,
+  "curtin in-target --target=/target -- bash /tmp/repartition.sh",
+  "partprobe /dev/$(lsblk -no PKNAME /dev/disk/by-partlabel/xboot)",
+
+  // unmount /target, wipe staging, make it into swap, mount the real root to /target
+  `cat > /tmp/remountTarget.sh << 'EOFMIGRATE'\n${remountTargetScript}\nEOFMIGRATE`,
+  "bash /tmp/remountTarget.sh",
+
+  // re-install the bootloader from the real root
+  `cat > /target/tmp/bootloader.sh << 'EOFMIGRATE'\n${bootloaderScript}\nEOFMIGRATE`,
+  "curtin in-target --target=/target -- bash /tmp/bootloader.sh",
+
+  // setup disk growth service and script
+  `cat > /target/usr/local/bin/grow-root-filesystem << 'EOFDISKGROWTH'\n${diskGrowthScript}\nEOFDISKGROWTH`,
+  "chmod +x /target/usr/local/bin/grow-root-filesystem",
+  `cat > /target/etc/systemd/system/grow-root-filesystem.service << 'EOFDISKGROWTHSVC'\n${diskGrowthService}\nEOFDISKGROWTHSVC`,
+  "curtin in-target --target=/target -- systemctl enable grow-root-filesystem.service",
+];
+
+if (encrypted) {
+  lateCommands.push(
+    // setup LUKS key rotation service
+    `cat > /target/etc/systemd/system/luks-reencrypt.service << 'EOFLUKSREENCRYPT'\n${luksReencryptService}\nEOFLUKSREENCRYPT`,
+    "curtin in-target --target=/target -- systemctl enable luks-reencrypt.service",
+  );
+}
 
 const config = {
   autoinstall: {
@@ -222,41 +283,7 @@ const config = {
       ],
     },
 
-    "late-commands": [
-      // helper to wipe the disk if needed (on error)
-      `echo "dd if=/dev/zero of=/dev/$(lsblk -ndo PKNAME $(findmnt -no SOURCE /target)) bs=1M status=progress" > wipe-target.sh`,
-      // network configuration (in original /target)
-      `cat > /target/tmp/setup-firewall.sh << 'EOFFIREWALL'\n${firewallSetupScript}\nEOFFIREWALL`,
-      `base64 -d > /target/tmp/tailscale-apt.gpg << 'EOFGPG'\n${tailscaleGpgKey.toString("base64")}\nEOFGPG`,
-      `cat > /target/tmp/setup-tailscale.sh << 'EOFTAILSCALE'\n${fs.readFileSync(path.join(__dirname, "setup-tailscale.sh"), "utf8")}\nEOFTAILSCALE`,
-      `cat > /target/usr/local/bin/ts-up << 'EOFTSUP'\n${tailscaleUpScript}\nEOFTSUP`,
-      "chmod +x /target/usr/local/bin/ts-up",
-      "curtin in-target --target=/target -- bash /tmp/setup-firewall.sh",
-      "curtin in-target --target=/target -- bash /tmp/setup-tailscale.sh",
-      "curtin in-target --target=/target -- systemctl enable ssh",
-      // subiquity doesn't set labels and type uuids correctly, so fix that
-      `cat > /target/tmp/fix-partitions.sh << 'EOFFIX'\n${fixPartitionsScript}\nEOFFIX`,
-      "curtin in-target --target=/target -- bash /tmp/fix-partitions.sh",
-      "partprobe /dev/$(lsblk -no PKNAME /dev/disk/by-partlabel/xboot)",
-      // setup the real root as encrypted btrfs with subvolumes and copy data into it
-      `cat > /target/tmp/repartition.sh << 'EOFMIGRATE'\n${repartitionScript}\nEOFMIGRATE`,
-      "curtin in-target --target=/target -- bash /tmp/repartition.sh",
-      "partprobe /dev/$(lsblk -no PKNAME /dev/disk/by-partlabel/xboot)",
-      // unmount /target, wipe staging, make it into encrypted swap, mount the real root to /target
-      `cat > /tmp/remountTarget.sh << 'EOFMIGRATE'\n${remountTargetScript}\nEOFMIGRATE`,
-      "bash /tmp/remountTarget.sh",
-      // re-install the bootloader from the real root
-      `cat > /target/tmp/bootloader.sh << 'EOFMIGRATE'\n${bootloaderScript}\nEOFMIGRATE`,
-      "curtin in-target --target=/target -- bash /tmp/bootloader.sh",
-      // setup LUKS key rotation service
-      `cat > /target/etc/systemd/system/luks-reencrypt.service << 'EOFLUKSREENCRYPT'\n${luksReencryptService}\nEOFLUKSREENCRYPT`,
-      "curtin in-target --target=/target -- systemctl enable luks-reencrypt.service",
-      // setup disk growth service and script
-      `cat > /target/usr/local/bin/grow-root-filesystem << 'EOFDISKGROWTH'\n${diskGrowthScript}\nEOFDISKGROWTH`,
-      "chmod +x /target/usr/local/bin/grow-root-filesystem",
-      `cat > /target/etc/systemd/system/grow-root-filesystem.service << 'EOFDISKGROWTHSVC'\n${diskGrowthService}\nEOFDISKGROWTHSVC`,
-      "curtin in-target --target=/target -- systemctl enable grow-root-filesystem.service",
-    ],
+    "late-commands": lateCommands,
 
     "error-commands": [
       "tar -czf /target/installer-logs.tar.gz /var/log/installer/",
