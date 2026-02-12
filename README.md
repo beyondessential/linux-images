@@ -1,8 +1,9 @@
 ## Which image to use
 
 - On AWS: use the AMI
-- On other clouds: use the `generic-cloud` image
+- On other clouds or on-premise virtualisation: use the `cloud` images
 - On bare metal: use the `metal` image
+- On bare metal where you have a TPM: use the `metal-encrypted` image
 - On bare metal where you need to install from USB/DVD: use the ISO
 
 ### The disk images
@@ -47,8 +48,24 @@ Cloud providers will likely do this automatically via cloud-init.
 The disk layout is as follows:
 - EFI System Partition, FAT32, label `efi`
 - Extended Boot Partition, ext4, label `xboot`
-- Linux encrypted swap space, label `swap`
-- Linux encrypted system partition, BTRFS over LUKS, label `root`
+- Linux swap space, label `swap`
+- Linux system partition, BTRFS over LUKS, label `root`
+
+The filesystem is BTRFS, and has a subvolume-based inner layout, with the `@` subvolume
+mounted as `/`, and the `@postgres` subvolume mounted as `/var/lib/postgresql`. Simple
+quotas are enabled to track per-subvolume disk usage.
+
+Transparent filesystem compression is enabled system-wide.
+
+The Snapper snapshot manager is enabled by default, which takes snapshots of the subvolumes
+regularly and retains them for default 24/7/4/12 periods. This provides a simple way to
+rollback a server or a file to an earlier configuration and protects against catastrophes.
+
+The system partition can be grown or shrunk while online. Shrinking is a manual process
+which may involve data loss, but growing is performed automatically if more space is
+available at boot.
+
+#### For the metal-encrypted variant and the ISO
 
 The swap space is encrypted with a random key at boot. This makes "resume" (hibernation)
 impossible — which is fine, as servers shouldn't be hibernated anyway.
@@ -59,16 +76,9 @@ the system will automatically detect it, write its encryption key to the TPM2, a
 remove the empty passphrase. This binds the disk to the machine's TPM2 device, and enables
 the promise of a full-disk-encryption unattended server system when such a device is present.
 
-The filesystem is BTRFS, and has a subvolume-based inner layout, with the `@` subvolume
-mounted as `/`, and some other subvolumes configured. Simple quotas are enabled to track
-per-subvolume disk usage. A simple mechanism is enabled by default which takes snapshots
-of the various subvolumes daily and retains them for a few weeks. This provides a simple
-way to rollback a server to an earlier configuration and protects against catastrophic
-misconfiguration. Transparent filesystem compression is enabled system-wide.
-
-The system partition can be grown or shrunk while online. Shrinking is a manual process
-which may involve data loss, but growing is performed automatically if more space is
-available at boot.
+Non-encrypted variants are expected to be installed in environments where encryption at rest
+is provided by the storage system in some way, such as hardware encryption, a cloud provider,
+or a SAN.
 
 ### The ISO image
 
