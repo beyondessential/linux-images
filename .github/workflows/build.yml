@@ -56,6 +56,13 @@ jobs:
             xorriso wget \
             nodejs zstd
 
+      - name: List firmware files
+        run: |
+          echo "=== OVMF/AAVMF files from package ==="
+          dpkg -L ${{ matrix.firmware_pkg }} | grep -iE '(OVMF|AAVMF|QEMU_EFI|QEMU_CODE|QEMU_VARS|\.fd$|\.raw$)' || true
+          echo "=== Find in /usr/share ==="
+          find /usr/share -name '*.fd' -o -name 'QEMU_EFI*' 2>/dev/null || true
+
       - uses: extractions/setup-just@v2
 
       - name: Cache Ubuntu ISO

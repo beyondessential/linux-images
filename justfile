@@ -84,62 +84,46 @@ _prepare-firmware: clean
 
   if [ "{{arch}}" == "amd64" ]; then
     # Find OVMF firmware files
-    OVMF_CODE=""
-    for path in /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/ovmf/x64/OVMF_CODE.fd; do
-      if [ -f "$path" ]; then
-        OVMF_CODE="$path"
-        break
-      fi
-    done
-
+    OVMF_CODE=$(find /usr/share -name 'OVMF_CODE*.fd' -print -quit 2>/dev/null)
     if [ -z "$OVMF_CODE" ]; then
       echo "ERROR: OVMF_CODE.fd not found. Install ovmf package."
+      echo "Searched under /usr/share:"
+      find /usr/share -iname '*ovmf*' 2>/dev/null || true
       exit 1
     fi
+    echo "Using OVMF_CODE: $OVMF_CODE"
 
-    OVMF_VARS_TEMPLATE=""
-    for path in /usr/share/edk2/x64/OVMF_VARS.4m.fd /usr/share/OVMF/OVMF_VARS.fd /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/ovmf/x64/OVMF_VARS.fd; do
-      if [ -f "$path" ]; then
-        OVMF_VARS_TEMPLATE="$path"
-        break
-      fi
-    done
-
+    OVMF_VARS_TEMPLATE=$(find /usr/share -name 'OVMF_VARS*.fd' -print -quit 2>/dev/null)
     if [ -z "$OVMF_VARS_TEMPLATE" ]; then
       echo "ERROR: OVMF_VARS.fd not found. Install ovmf package."
+      echo "Searched under /usr/share:"
+      find /usr/share -iname '*ovmf*' 2>/dev/null || true
       exit 1
     fi
+    echo "Using OVMF_VARS: $OVMF_VARS_TEMPLATE"
 
     ln -sf "$OVMF_CODE" "{{qemu_firmware}}"
     cp "$OVMF_VARS_TEMPLATE" "{{qemu_firmvars}}"
 
   elif [ "{{arch}}" == "arm64" ]; then
     # Find AAVMF firmware files for ARM64
-    AAVMF_CODE=""
-    for path in /usr/share/edk2/aarch64/QEMU_CODE.fd /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd /usr/share/edk2/aarch64/QEMU_EFI-pflash.raw; do
-      if [ -f "$path" ]; then
-        AAVMF_CODE="$path"
-        break
-      fi
-    done
-
+    AAVMF_CODE=$(find /usr/share -name 'QEMU_CODE.fd' -o -name 'AAVMF_CODE.fd' -o -name 'QEMU_EFI.fd' -o -name 'QEMU_EFI-pflash.raw' 2>/dev/null | head -1)
     if [ -z "$AAVMF_CODE" ]; then
       echo "ERROR: AAVMF/QEMU_EFI firmware not found. Install qemu-efi-aarch64 package."
+      echo "Searched under /usr/share:"
+      find /usr/share -iname '*aavmf*' -o -iname '*qemu_efi*' 2>/dev/null || true
       exit 1
     fi
+    echo "Using AAVMF_CODE: $AAVMF_CODE"
 
-    AAVMF_VARS_TEMPLATE=""
-    for path in /usr/share/edk2/aarch64/QEMU_VARS.fd /usr/share/AAVMF/AAVMF_VARS.fd /usr/share/qemu-efi-aarch64/QEMU_VARS.fd /usr/share/edk2/aarch64/vars-template-pflash.raw; do
-      if [ -f "$path" ]; then
-        AAVMF_VARS_TEMPLATE="$path"
-        break
-      fi
-    done
-
+    AAVMF_VARS_TEMPLATE=$(find /usr/share -name 'QEMU_VARS.fd' -o -name 'AAVMF_VARS.fd' -o -name 'vars-template-pflash.raw' 2>/dev/null | head -1)
     if [ -z "$AAVMF_VARS_TEMPLATE" ]; then
       echo "ERROR: AAVMF_VARS firmware not found. Install qemu-efi-aarch64 package."
+      echo "Searched under /usr/share:"
+      find /usr/share -iname '*aavmf*' -o -iname '*qemu_vars*' -o -iname '*pflash*' 2>/dev/null || true
       exit 1
     fi
+    echo "Using AAVMF_VARS: $AAVMF_VARS_TEMPLATE"
 
     ln -sf "$AAVMF_CODE" "{{qemu_firmware}}"
     cp "$AAVMF_VARS_TEMPLATE" "{{qemu_firmvars}}"
