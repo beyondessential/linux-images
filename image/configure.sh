@@ -15,6 +15,9 @@ VARIANT="$2"
 GRUB_TARGET="$3"
 
 export DEBIAN_FRONTEND=noninteractive
+# minbase doesn't include /usr/sbin in PATH, but that's where locale-gen,
+# update-locale, and other admin tools live.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 echo "--- configure.sh: arch=$ARCH variant=$VARIANT grub_target=$GRUB_TARGET ---"
 
