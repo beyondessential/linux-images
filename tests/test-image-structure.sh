@@ -108,7 +108,7 @@ partprobe "$LOOP_DEVICE" 2>/dev/null || true
 udevadm settle 2>/dev/null || true
 sleep 1
 
-# r[verify test.structure.partitions]: Correct partition count
+# r[verify image.partition.count]
 PART_COUNT="$(lsblk -ln -o NAME "$LOOP_DEVICE" | grep -c "^$(basename "$LOOP_DEVICE")p")"
 if [ "$PART_COUNT" -eq 3 ]; then
     pass "partition count is 3"
@@ -120,19 +120,19 @@ fi
 get_part_label() { sgdisk -i "$1" "$LOOP_DEVICE" 2>/dev/null | grep "Partition name" | sed "s/.*'\(.*\)'/\1/"; }
 get_part_type() { sgdisk -i "$1" "$LOOP_DEVICE" 2>/dev/null | grep "Partition GUID code" | awk '{print $4}'; }
 
-# Partition 1: EFI
+# r[verify image.partition.efi]
 EFI_LABEL="$(get_part_label 1)"
 EFI_TYPE="$(get_part_type 1)"
 check "partition 1 label is 'efi'" [ "$EFI_LABEL" = "efi" ]
 check "partition 1 type is EFI System" [ "$EFI_TYPE" = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" ]
 
-# Partition 2: xboot
+# r[verify image.partition.xboot]
 XBOOT_LABEL="$(get_part_label 2)"
 XBOOT_TYPE="$(get_part_type 2)"
 check "partition 2 label is 'xboot'" [ "$XBOOT_LABEL" = "xboot" ]
 check "partition 2 type is Linux extended boot" [ "$XBOOT_TYPE" = "BC13C2FF-59E6-4262-A352-B275FD6F7172" ]
 
-# Partition 3: root
+# r[verify image.partition.root]
 ROOT_LABEL="$(get_part_label 3)"
 ROOT_TYPE="$(get_part_type 3)"
 check "partition 3 label is 'root'" [ "$ROOT_LABEL" = "root" ]
@@ -154,17 +154,18 @@ ROOT_PART="${LOOP_DEVICE}p3"
 echo ""
 echo "--- Filesystems ---"
 
-# r[verify test.structure.filesystems]
+# r[verify image.partition.efi]
 EFI_FSTYPE="$(blkid -o value -s TYPE "$EFI_PART" 2>/dev/null || true)"
 check "EFI partition is vfat" [ "$EFI_FSTYPE" = "vfat" ]
 
+# r[verify image.partition.xboot]
 BOOT_FSTYPE="$(blkid -o value -s TYPE "$BOOT_PART" 2>/dev/null || true)"
 check "boot partition is ext4" [ "$BOOT_FSTYPE" = "ext4" ]
 
 BOOT_FSLABEL="$(blkid -o value -s LABEL "$BOOT_PART" 2>/dev/null || true)"
 check "boot partition label is 'xboot'" [ "$BOOT_FSLABEL" = "xboot" ]
 
-# r[verify test.structure.variant-specific]: LUKS check for metal
+# r[verify image.luks.format]
 if [ "$VARIANT" = "metal" ]; then
     ROOT_FSTYPE="$(blkid -o value -s TYPE "$ROOT_PART" 2>/dev/null || true)"
     check "root partition is crypto_LUKS (metal)" [ "$ROOT_FSTYPE" = "crypto_LUKS" ]
@@ -195,6 +196,7 @@ else
     BTRFS_DEV="$ROOT_PART"
 fi
 
+# r[verify image.btrfs.format]
 BTRFS_LABEL="$(blkid -o value -s LABEL "$BTRFS_DEV" 2>/dev/null || true)"
 check "BTRFS label is 'ROOT'" [ "$BTRFS_LABEL" = "ROOT" ]
 
@@ -210,12 +212,12 @@ mkdir -p "$MNT"
 mount "$BTRFS_DEV" "$MNT" -o compress=zstd:6
 ROOT_MOUNTED=1
 
-# r[verify test.structure.subvolumes]
+# r[verify image.btrfs.subvolumes]
 SUBVOLS="$(btrfs subvolume list "$MNT" 2>/dev/null | awk '{print $NF}')"
 if echo "$SUBVOLS" | grep -qx "@"; then pass "subvolume '@' exists"; else fail "subvolume '@' exists"; fi
 if echo "$SUBVOLS" | grep -qx "@postgres"; then pass "subvolume '@postgres' exists"; else fail "subvolume '@postgres' exists"; fi
 
-# Check simple quotas
+# r[verify image.btrfs.quotas]
 QUOTA_OUTPUT="$(btrfs qgroup show "$MNT" 2>/dev/null || true)"
 if [ -n "$QUOTA_OUTPUT" ]; then
     pass "BTRFS quotas are enabled"
@@ -249,73 +251,88 @@ mkdir -p "$MNT/boot/efi"
 mount "$EFI_PART" "$MNT/boot/efi"
 EFI_MOUNTED=1
 
-# r[verify test.structure.files]
 check "/etc/fstab exists" test -f "$MNT/etc/fstab"
+
+# r[verify image.variant.persisted]
 check "/etc/bes/image-variant exists" test -f "$MNT/etc/bes/image-variant"
+
+# r[verify image.tailscale.ts-up]
 check "/usr/local/bin/ts-up exists" test -x "$MNT/usr/local/bin/ts-up"
+
+# r[verify image.growth.script]
 check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/grow-root-filesystem"
+
+# r[verify image.growth.service]
 check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/etc/systemd/system/grow-root-filesystem.service"
 
-# Check variant file contents
+# r[verify image.variant.persisted]
 ACTUAL_VARIANT="$(cat "$MNT/etc/bes/image-variant" 2>/dev/null || true)"
 check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 
-# Check machine-id is empty
+# r[verify image.base.machine-id]
 MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing")"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
 
-# Check resolv.conf is a symlink
+# r[verify image.base.resolv-conf]
 check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
 check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/systemd/resolve/stub-resolv.conf" ]
 
-# Check boot files
+# r[verify image.boot.dracut]
 check "kernel exists in /boot" ls "$MNT"/boot/vmlinuz-* >/dev/null 2>&1
 check "initramfs exists in /boot" ls "$MNT"/boot/initrd.img-* >/dev/null 2>&1
-check "GRUB config exists" test -f "$MNT/boot/grub/grub.cfg"
 
-# Check EFI bootloader
+# r[verify image.boot.grub-install]
+check "GRUB config exists" test -f "$MNT/boot/grub/grub.cfg"
 if [ "$ARCH" = "amd64" ]; then
     check "EFI bootloader exists (BOOTX64.EFI)" test -f "$MNT/boot/efi/EFI/BOOT/BOOTX64.EFI"
 else
     check "EFI bootloader exists (BOOTAA64.EFI)" test -f "$MNT/boot/efi/EFI/BOOT/BOOTAA64.EFI"
 fi
 
-# SSH config
+# r[verify image.credentials.ssh-keys-only]
 check "SSH no-password config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
 check "SSH no-password config correct" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
 
-# Cloud-init
+# r[verify image.cloud-init.no-hostname-file]
 check "cloud-init BES config exists" test -f "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"
 check "cloud-init has no hostname_file setting" grep -q "create_hostname_file: false" "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"
 
-# Installer artifacts should be removed
+# r[verify image.postprocess.cleanup]
 check_not "installer network config absent" test -f "$MNT/etc/cloud/cloud.cfg.d/90-installer-network.cfg"
 check_not "unminimize prompt absent" test -f "$MNT/etc/update-motd.d/60-unminimize"
 
-# Tailscale
+# r[verify image.tailscale.repo]
 check "Tailscale signing key installed" test -f "$MNT/usr/share/keyrings/tailscale-archive-keyring.gpg"
 check "Tailscale apt repo configured" test -f "$MNT/etc/apt/sources.list.d/tailscale.list"
+
+# r[verify image.tailscale.pinned]
 check "Tailscale apt pin configured" test -f "$MNT/etc/apt/preferences.d/99-tailscale"
+
+# r[verify image.tailscale.auto-update]
 check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-tailscale"
 
-# Dracut config
+# r[verify image.boot.dracut]
 check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 
-# GRUB defaults
+# r[verify image.boot.grub-timeout]
 check "GRUB timeout is 5" grep -q '^GRUB_TIMEOUT=5' "$MNT/etc/default/grub"
 check "GRUB timeout style is menu" grep -q '^GRUB_TIMEOUT_STYLE=menu' "$MNT/etc/default/grub"
-check "GRUB cmdline has noresume" grep -q 'noresume' "$MNT/etc/default/grub"
 check "GRUB recordfail timeout is 5" grep -q '^GRUB_RECORDFAIL_TIMEOUT=5' "$MNT/etc/default/grub"
 
-# User
+# r[verify image.boot.grub-cmdline]
+check "GRUB cmdline has noresume" grep -q 'noresume' "$MNT/etc/default/grub"
+
+# r[verify image.credentials.ubuntu-user]
 check "ubuntu user exists in passwd" grep -q '^ubuntu:' "$MNT/etc/passwd"
 if grep '^ubuntu:' "$MNT/etc/passwd" | grep -q '/bin/bash$'; then
     pass "ubuntu user has /bin/bash shell"
 else
     fail "ubuntu user has /bin/bash shell"
 fi
+
+# r[verify image.credentials.root-disabled]
 if grep '^root:' "$MNT/etc/passwd" | grep -q '/sbin/nologin$'; then
     pass "root user has /sbin/nologin shell"
 else
@@ -328,7 +345,6 @@ fi
 echo ""
 echo "--- Services ---"
 
-# r[verify test.structure.services]
 # Check enabled services by looking for symlinks in .wants directories
 check_service_enabled() {
     local svc="$1"
@@ -341,24 +357,41 @@ check_service_enabled() {
 }
 
 check_service_enabled "ssh.service"                   "ssh is enabled"
+
+# r[verify image.firewall.enabled]
 check_service_enabled "ufw.service"                   "ufw is enabled"
+
+# r[verify image.tailscale.service-enabled]
 check_service_enabled "tailscaled.service"            "tailscaled is enabled"
+
+# r[verify image.snapper.timers]
 check_service_enabled "snapper-timeline.timer"        "snapper-timeline.timer is enabled"
 check_service_enabled "snapper-cleanup.timer"         "snapper-cleanup.timer is enabled"
+
+# r[verify image.growth.service]
 check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is enabled"
+
+# r[verify image.cloud-init.enabled]
 check_service_enabled "cloud-init.service"            "cloud-init is enabled"
 
 if [ "$VARIANT" = "metal" ]; then
+    # r[verify image.luks.reencrypt]
     check_service_enabled "luks-reencrypt.service"    "luks-reencrypt is enabled (metal)"
+
+    # r[verify image.tpm.service]
     check_service_enabled "setup-tpm-unlock.service"  "setup-tpm-unlock is enabled (metal)"
 
-    # Metal-specific files
+    # r[verify image.luks.keyfile]
     check "LUKS empty keyfile exists" test -f "$MNT/etc/luks/empty-keyfile"
     KEYFILE_MODE="$(stat -c%a "$MNT/etc/luks/empty-keyfile" 2>/dev/null || true)"
     check "LUKS empty keyfile has mode 000" [ "$KEYFILE_MODE" = "0" ]
+
+    # r[verify image.luks.crypttab]
     check "crypttab exists" test -f "$MNT/etc/crypttab"
     check "crypttab references by-partlabel/root" grep -q "by-partlabel/root" "$MNT/etc/crypttab"
     check "crypttab has force option" grep -q "force" "$MNT/etc/crypttab"
+
+    # r[verify image.luks.keyfile]
     check "dracut LUKS keyfile config exists" test -f "$MNT/etc/dracut.conf.d/02-luks-keyfile.conf"
 else
     check_not "no crypttab for cloud variant" test -f "$MNT/etc/crypttab"
@@ -380,24 +413,28 @@ fi
 echo ""
 echo "--- fstab ---"
 
-# r[verify test.structure.fstab]
 FSTAB="$MNT/etc/fstab"
 if [ -f "$FSTAB" ]; then
     check "fstab has / mount" grep -qE '^\S+\s+/\s+btrfs\s+.*subvol=@' "$FSTAB"
         check "fstab has /var/lib/postgresql mount" grep -qE '^\S+\s+/var/lib/postgresql\s+btrfs\s+.*subvol=@postgres' "$FSTAB"
         check "fstab has /boot mount" grep -qE '^\S+\s+/boot\s+ext4' "$FSTAB"
         check "fstab has /boot/efi mount" grep -qE '^\S+\s+/boot/efi\s+vfat' "$FSTAB"
+
+        # r[verify image.btrfs.compression]
         if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q 'compress=zstd:6'; then
             pass "fstab has compress=zstd:6 on root"
         else
             fail "fstab has compress=zstd:6 on root"
         fi
+
+        # r[verify image.partition.count]
         if grep -qE '^\S+\s+\S+\s+swap\s' "$FSTAB"; then
             fail "fstab has no swap entries"
         else
             pass "fstab has no swap entries"
         fi
 
+        # r[verify image.fstab.metal]
         if [ "$VARIANT" = "metal" ]; then
             if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q '/dev/mapper/root'; then
                 pass "fstab uses /dev/mapper/root for / (metal)"
@@ -409,6 +446,7 @@ if [ -f "$FSTAB" ]; then
             else
                 fail "fstab uses /dev/mapper/root for pg (metal)"
             fi
+        # r[verify image.fstab.cloud]
         else
             if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q 'by-partlabel/root'; then
                 pass "fstab uses by-partlabel/root for / (cloud)"
@@ -441,7 +479,7 @@ fi
 echo ""
 echo "--- Packages ---"
 
-# r[verify test.structure.packages]
+# r[verify image.packages.install]
 # Use the image's own dpkg-query via chroot so we don't depend on host tools
 # or regex parsing of the status file.
 if [ -x "$MNT/usr/bin/dpkg-query" ]; then
@@ -460,7 +498,7 @@ if [ -x "$MNT/usr/bin/dpkg-query" ]; then
         fi
     done < "$PACKAGES_FILE"
 
-    # Verify dracut replaced initramfs-tools
+    # r[verify image.boot.dracut]
     # shellcheck disable=SC2016
     if chroot "$MNT" dpkg-query -W -f='${Status}\n' initramfs-tools 2>/dev/null | grep -q "install ok installed"; then
         fail "initramfs-tools is NOT installed (dracut should replace it)"
