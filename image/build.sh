@@ -202,7 +202,7 @@ echo "    Partitions: efi=${EFI_PART} xboot=${BOOT_PART} root=${ROOT_PART}"
 # Phase 2: Format filesystems
 # ============================================================
 echo "==> Formatting EFI partition (FAT32)..."
-mkfs.vfat -F 32 -n efi "$EFI_PART" >/dev/null
+mkfs.vfat -F 32 -n EFI "$EFI_PART" >/dev/null
 
 echo "==> Formatting boot partition (ext4)..."
 mkfs.ext4 -q -L xboot "$BOOT_PART"
