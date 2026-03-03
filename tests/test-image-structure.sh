@@ -438,33 +438,41 @@ echo ""
 echo "--- Packages ---"
 
 # r[verify test.structure.packages]
-DPKG_STATUS="$MNT/var/lib/dpkg/status"
-if [ -f "$DPKG_STATUS" ]; then
+# Use the image's own dpkg-query via chroot so we don't depend on host tools
+# or regex parsing of the status file.
+if [ -x "$MNT/usr/bin/dpkg-query" ]; then
+    # Bind-mount /proc so dpkg-query doesn't complain
+    mount -t proc proc "$MNT/proc" 2>/dev/null || true
+
     while IFS= read -r line; do
         line="${line%%#*}"
         line="${line// /}"
         [ -z "$line" ] && continue
-        if grep -qP "^Package: \Q$line\E$" "$DPKG_STATUS" && \
-           awk "/^Package: ${line}$/,/^$/" "$DPKG_STATUS" | grep -q "^Status: install ok installed"; then
+        # shellcheck disable=SC2016 # ${Status} is a dpkg format string, not a bash variable
+        if chroot "$MNT" dpkg-query -W -f='${Status}\n' "$line" 2>/dev/null | grep -q "install ok installed"; then
             pass "package '$line' is installed"
         else
             fail "package '$line' is installed"
         fi
     done < "$PACKAGES_FILE"
-else
-    fail "dpkg status database exists"
-fi
 
-# Verify dracut replaced initramfs-tools
-if awk '/^Package: initramfs-tools$/,/^$/' "$DPKG_STATUS" 2>/dev/null | grep -q "^Status: install ok installed"; then
-    fail "initramfs-tools is NOT installed (dracut should replace it)"
+    # Verify dracut replaced initramfs-tools
+    # shellcheck disable=SC2016
+    if chroot "$MNT" dpkg-query -W -f='${Status}\n' initramfs-tools 2>/dev/null | grep -q "install ok installed"; then
+        fail "initramfs-tools is NOT installed (dracut should replace it)"
+    else
+        pass "initramfs-tools is NOT installed (dracut should replace it)"
+    fi
+    # shellcheck disable=SC2016
+    if chroot "$MNT" dpkg-query -W -f='${Status}\n' dracut 2>/dev/null | grep -q "install ok installed"; then
+        pass "dracut is installed"
+    else
+        fail "dracut is installed"
+    fi
+
+    umount "$MNT/proc" 2>/dev/null || true
 else
-    pass "initramfs-tools is NOT installed (dracut should replace it)"
-fi
-if awk '/^Package: dracut$/,/^$/' "$DPKG_STATUS" 2>/dev/null | grep -q "^Status: install ok installed"; then
-    pass "dracut is installed"
-else
-    fail "dracut is installed"
+    fail "dpkg-query not found in image — cannot verify packages"
 fi
 
 # ============================================================
