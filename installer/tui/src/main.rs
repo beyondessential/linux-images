@@ -3,11 +3,14 @@
 // r[impl installer.mode.auto]
 // r[impl installer.mode.auto-incomplete]
 
+use std::fs::File;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
 
 mod config;
 mod disk;
@@ -15,17 +18,23 @@ mod firstboot;
 mod ui;
 mod writer;
 
+const DEFAULT_LOG_PATH: &str = "/var/log/bes-installer.log";
+
 #[derive(Parser)]
 #[command(name = "bes-installer", about = "BES Linux Images Installer")]
 struct Cli {
     /// Path to config file (overrides automatic EFI partition search)
     #[arg(long)]
     config: Option<PathBuf>,
+
+    /// Path to log file (default: /var/log/bes-installer.log)
+    #[arg(long, default_value = DEFAULT_LOG_PATH)]
+    log: PathBuf,
 }
 
 fn main() -> ExitCode {
-    env_logger::init();
     let cli = Cli::parse();
+    init_logging(&cli.log);
 
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
@@ -36,11 +45,22 @@ fn main() -> ExitCode {
     }
 }
 
+fn init_logging(log_path: &PathBuf) {
+    let file = File::create(log_path).ok();
+    if let Some(file) = file {
+        let file_layer = fmt::layer()
+            .with_writer(file)
+            .with_ansi(false)
+            .with_target(false);
+        tracing_subscriber::registry().with(file_layer).init();
+    }
+}
+
 fn run(cli: Cli) -> Result<()> {
     let (install_config, mode) = load_config(&cli)?;
 
     let arch = detect_arch();
-    log::info!("detected architecture: {arch}");
+    tracing::info!("detected architecture: {arch}");
 
     let devices = disk::detect_block_devices().context("detecting block devices")?;
     if devices.is_empty() {
@@ -49,7 +69,7 @@ fn run(cli: Cli) -> Result<()> {
 
     let boot_device = disk::detect_boot_device();
     if let Some(ref bd) = boot_device {
-        log::info!("boot device: {}", bd.display());
+        tracing::info!("boot device: {}", bd.display());
     }
 
     match mode {
@@ -87,15 +107,15 @@ fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMod
 
             let warnings = cfg.validate();
             for w in &warnings {
-                log::warn!("config: {w}");
+                tracing::warn!("config: {w}");
             }
 
             let mode = cfg.mode();
-            log::info!("operating mode: {mode}");
+            tracing::info!("operating mode: {mode}");
             Ok((cfg, mode))
         }
         None => {
-            log::info!("no config file found, using interactive mode");
+            tracing::info!("no config file found, using interactive mode");
             Ok((
                 config::InstallConfig::default(),
                 config::OperatingMode::Interactive,

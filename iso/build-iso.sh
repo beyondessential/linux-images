@@ -243,10 +243,9 @@ install -m 755 "$INSTALLER_BIN" "$MNT_ROOTFS/usr/local/bin/bes-installer"
 # the error on the TTY.
 cat > "$MNT_ROOTFS/usr/local/bin/bes-installer-wrapper" << 'WRAPPER'
 #!/bin/bash
-export RUST_LOG=info
 LOG=/var/log/bes-installer.log
 
-/usr/local/bin/bes-installer 2>"$LOG"
+/usr/local/bin/bes-installer --log "$LOG"
 RC=$?
 
 if [ "$RC" -ne 0 ]; then
@@ -257,9 +256,11 @@ if [ "$RC" -ne 0 ]; then
     echo " BES Installer exited with error (rc=$RC)"
     echo "=========================================="
     echo ""
-    echo "Log output:"
-    cat "$LOG"
-    echo ""
+    if [ -f "$LOG" ]; then
+        echo "Log output:"
+        cat "$LOG"
+        echo ""
+    fi
     echo "Press Enter to retry, or Ctrl-Alt-F1 for a shell."
     read -r
 fi

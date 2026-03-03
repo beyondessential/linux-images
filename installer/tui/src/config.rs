@@ -133,14 +133,14 @@ impl fmt::Display for OperatingMode {
 impl InstallConfig {
     pub fn load_from_file(path: &Path) -> Result<Option<Self>> {
         if !path.exists() {
-            log::info!("no config file at {}", path.display());
+            tracing::info!("no config file at {}", path.display());
             return Ok(None);
         }
         let contents = std::fs::read_to_string(path)
             .with_context(|| format!("reading config file: {}", path.display()))?;
         let config: InstallConfig = toml::from_str(&contents)
             .with_context(|| format!("parsing config file: {}", path.display()))?;
-        log::info!("loaded config from {}", path.display());
+        tracing::info!("loaded config from {}", path.display());
         Ok(Some(config))
     }
 
@@ -218,12 +218,12 @@ pub fn find_config_file() -> Option<PathBuf> {
 
     for candidate in &candidates {
         if candidate.exists() {
-            log::info!("found config file at {}", candidate.display());
+            tracing::info!("found config file at {}", candidate.display());
             return Some(candidate.clone());
         }
     }
 
-    log::info!("no config file found at any known location");
+    tracing::info!("no config file found at any known location");
     None
 }
 

@@ -227,10 +227,10 @@ fn start_write_worker(image_path: &Path, state: &AppState, tx: &mpsc::Sender<Wor
         match result {
             Ok(()) => {
                 if let Err(e) = writer::reread_partition_table(&target) {
-                    log::warn!("partition table re-read failed: {e}");
+                    tracing::warn!("partition table re-read failed: {e}");
                 }
                 if let Err(e) = writer::verify_partition_table(&target) {
-                    log::warn!("partition table verification failed: {e}");
+                    tracing::warn!("partition table verification failed: {e}");
                 }
                 let _ = tx.send(WorkerMessage::WriteDone);
             }
@@ -298,6 +298,6 @@ fn run_firstboot(
 }
 
 fn reboot() {
-    log::info!("rebooting system");
+    tracing::info!("rebooting system");
     let _ = std::process::Command::new("reboot").status();
 }

@@ -101,9 +101,9 @@ pub fn apply_tpm_disable(target: &MountedTarget) -> Result<()> {
                 symlink.display()
             )
         })?;
-        log::info!("removed setup-tpm-unlock.service enable symlink");
+        tracing::info!("removed setup-tpm-unlock.service enable symlink");
     } else {
-        log::info!("setup-tpm-unlock.service symlink not present, nothing to remove");
+        tracing::info!("setup-tpm-unlock.service symlink not present, nothing to remove");
     }
 
     Ok(())
@@ -124,7 +124,7 @@ fn apply_hostname(root: &Path, hostname: &str) -> Result<()> {
         }
     }
 
-    log::info!("set hostname to {hostname}");
+    tracing::info!("set hostname to {hostname}");
     Ok(())
 }
 
@@ -138,7 +138,7 @@ fn apply_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
     fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
         .context("setting tailscale-authkey permissions")?;
 
-    log::info!("wrote tailscale authkey");
+    tracing::info!("wrote tailscale authkey");
     Ok(())
 }
 
@@ -177,7 +177,7 @@ fn apply_ssh_keys(root: &Path, keys: &[String]) -> Result<()> {
     chown(&ak_path, Some(ubuntu_uid_gid.0), Some(ubuntu_uid_gid.1))
         .context("chowning authorized_keys")?;
 
-    log::info!("wrote {} SSH authorized key(s)", keys.len());
+    tracing::info!("wrote {} SSH authorized key(s)", keys.len());
     Ok(())
 }
 
@@ -244,7 +244,7 @@ fn partition_path(device: &Path, part_num: u32) -> Result<PathBuf> {
 }
 
 fn run_command(program: &str, args: &[&str]) -> Result<()> {
-    log::debug!("running: {program} {}", args.join(" "));
+    tracing::debug!("running: {program} {}", args.join(" "));
 
     let output = Command::new(program)
         .args(args)

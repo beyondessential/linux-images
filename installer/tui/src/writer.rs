@@ -141,7 +141,7 @@ pub fn write_image(
         elapsed: start.elapsed(),
     });
 
-    log::info!(
+    tracing::info!(
         "wrote {} to {} in {:.1}s ({:.1} MiB/s)",
         format_size(bytes_written),
         target.display(),
@@ -195,7 +195,7 @@ pub fn verify_partition_table(target: &Path) -> Result<()> {
         }
     }
 
-    log::info!("partition table verified on {}", target.display());
+    tracing::info!("partition table verified on {}", target.display());
     Ok(())
 }
 
