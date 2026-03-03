@@ -8,7 +8,7 @@ use crate::writer::WriteProgress;
 mod render;
 mod run;
 
-pub use run::run_tui;
+pub use run::{run_tui, run_tui_scripted};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
