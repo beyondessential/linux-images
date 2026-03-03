@@ -1,9 +1,11 @@
+// r[impl installer.write.wipe]
 // r[impl installer.write.decompress-stream]
 // r[impl installer.tui.progress]
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
+use std::process::Command;
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
@@ -82,6 +84,55 @@ pub fn find_image_path(variant: &str, arch: &str) -> Result<std::path::PathBuf> 
     bail!("no .raw.zst image found for variant={variant} arch={arch}");
 }
 
+/// Wipe all existing filesystem, RAID, and partition-table signatures from a disk.
+// r[impl installer.write.wipe]
+pub fn wipe_disk(target: &Path) -> Result<()> {
+    tracing::info!("wiping existing signatures on {}", target.display());
+
+    let wipefs_status = Command::new("wipefs")
+        .args(["--all", "--force"])
+        .arg(target)
+        .output()
+        .context("running wipefs")?;
+
+    if !wipefs_status.status.success() {
+        let stderr = String::from_utf8_lossy(&wipefs_status.stderr);
+        tracing::warn!("wipefs failed (non-fatal): {stderr}");
+    }
+
+    let sgdisk_status = Command::new("sgdisk")
+        .arg("--zap-all")
+        .arg(target)
+        .output()
+        .context("running sgdisk --zap-all")?;
+
+    if !sgdisk_status.status.success() {
+        let stderr = String::from_utf8_lossy(&sgdisk_status.stderr);
+        tracing::warn!("sgdisk --zap-all failed (non-fatal): {stderr}");
+    }
+
+    // Zero out the first and last 1 MiB to destroy any remaining MBR, GPT backup,
+    // or LUKS headers that wipefs/sgdisk may have missed.
+    if let Ok(mut f) = OpenOptions::new().write(true).open(target) {
+        let zeros = vec![0u8; 1024 * 1024];
+        let _ = f.write_all(&zeros);
+
+        if let Ok(size) = std::fs::metadata(target).map(|m| m.len())
+            && size > zeros.len() as u64
+        {
+            use std::io::Seek;
+            let tail_offset = size - zeros.len() as u64;
+            if f.seek(std::io::SeekFrom::Start(tail_offset)).is_ok() {
+                let _ = f.write_all(&zeros);
+            }
+        }
+        let _ = f.flush();
+    }
+
+    tracing::info!("disk signatures wiped on {}", target.display());
+    Ok(())
+}
+
 /// Stream-decompress a `.raw.zst` file directly to a block device, calling `on_progress`
 /// periodically with current write progress.
 pub fn write_image(
@@ -89,6 +140,8 @@ pub fn write_image(
     target: &Path,
     on_progress: &mut dyn FnMut(&WriteProgress),
 ) -> Result<()> {
+    wipe_disk(target).context("wiping target disk before writing")?;
+
     let compressed_size = std::fs::metadata(source)
         .with_context(|| format!("stat {}", source.display()))?
         .len();
@@ -169,7 +222,7 @@ fn format_size(bytes: u64) -> String {
 
 // r[impl installer.write.verify]
 pub fn verify_partition_table(target: &Path) -> Result<()> {
-    let output = std::process::Command::new("lsblk")
+    let output = Command::new("lsblk")
         .args([
             "--json",
             "--output",
@@ -201,7 +254,7 @@ pub fn verify_partition_table(target: &Path) -> Result<()> {
 
 /// Re-read the partition table on the target device so the kernel picks up changes.
 pub fn reread_partition_table(target: &Path) -> Result<()> {
-    let status = std::process::Command::new("partprobe")
+    let status = Command::new("partprobe")
         .arg(target)
         .status()
         .context("running partprobe")?;
@@ -210,7 +263,7 @@ pub fn reread_partition_table(target: &Path) -> Result<()> {
         bail!("partprobe failed on {}", target.display());
     }
 
-    let _ = std::process::Command::new("udevadm")
+    let _ = Command::new("udevadm")
         .args(["settle", "--timeout=5"])
         .status();
 

@@ -464,6 +464,12 @@ written and estimated time remaining.
 
 ## Image Writing
 
+r[installer.write.wipe]
+Before writing an image, the installer must wipe all existing filesystem,
+RAID, and partition-table signatures from the target disk using `wipefs --all`
+and `sgdisk --zap-all`. This prevents stale signatures from interfering with
+the new partition table or causing the kernel to refuse a partition re-read.
+
 r[installer.write.source]
 Compressed disk images (`.raw.zst`) must be stored on the ISO filesystem. The
 installer must select the correct image for the running CPU architecture and
