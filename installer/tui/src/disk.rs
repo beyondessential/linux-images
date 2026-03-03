@@ -105,7 +105,7 @@ struct LsblkOutput {
 #[derive(Deserialize)]
 struct LsblkDevice {
     name: String,
-    size: Option<String>,
+    size: Option<u64>,
     model: Option<String>,
     tran: Option<String>,
     #[serde(rename = "type")]
@@ -140,11 +140,7 @@ pub fn detect_block_devices() -> Result<Vec<BlockDevice>> {
         .filter(|d| d.devtype == "disk")
         .filter(|d| d.ro != Some(true))
         .map(|d| {
-            let size_bytes = d
-                .size
-                .as_deref()
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(0);
+            let size_bytes = d.size.unwrap_or(0);
             let transport = d
                 .tran
                 .as_deref()
