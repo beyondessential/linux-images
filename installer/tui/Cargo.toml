@@ -24,6 +24,8 @@ tui-big-text = "0.8.2"
 zstd = "0.13.3"
 
 [dev-dependencies]
+assert_cmd = "2.1.2"
+predicates = "3.1.4"
 tempfile = "3.26.0"
 
 [profile.release]
