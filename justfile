@@ -50,6 +50,18 @@ output_dir := "output" / arch
 output_raw := output_dir / filestem + ".raw"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
+output_iso := output_dir / "bes-installer-" + arch + ".iso"
+
+# --- Rust installer settings ---
+cargo_target := if arch == "amd64" {
+    "x86_64-unknown-linux-musl"
+  } else if arch == "arm64" {
+    "aarch64-unknown-linux-musl"
+  } else {
+    error("Unsupported architecture")
+  }
+
+installer_bin := "installer/tui/target" / cargo_target / "release" / "bes-installer"
 
 # --- QEMU settings for boot tests ---
 qemu_command := if arch == "amd64" {
@@ -83,6 +95,55 @@ qemu_firmvars := if arch == "amd64" {
   } else {
     error("Unsupported architecture")
   }
+
+# ============================================================
+# Installer (Rust TUI)
+# ============================================================
+
+# Build the TUI installer binary (static musl)
+installer-build: _validate-arch
+  cd installer/tui && cargo build --release --target {{cargo_target}}
+
+# Run installer unit tests
+installer-test:
+  cd installer/tui && cargo test
+
+# Run clippy and fmt checks on the installer
+installer-lint:
+  cd installer/tui && cargo fmt --check && cargo clippy -- -D warnings
+
+# ============================================================
+# Live ISO
+# ============================================================
+
+# Build the live installer ISO (requires images + installer binary)
+iso: _validate-arch installer-build
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  # Verify installer binary exists
+  if [ ! -f "{{installer_bin}}" ]; then
+    echo "ERROR: installer binary not found at {{installer_bin}}"
+    echo "Run 'just installer-build' first."
+    exit 1
+  fi
+
+  # Verify we have images for both variants
+  METAL_IMAGE="$(find "{{output_dir}}" -maxdepth 1 -name '*-metal-*.raw.zst' | head -1)"
+  CLOUD_IMAGE="$(find "{{output_dir}}" -maxdepth 1 -name '*-cloud-*.raw.zst' | head -1)"
+
+  if [ -z "$METAL_IMAGE" ] || [ -z "$CLOUD_IMAGE" ]; then
+    echo "ERROR: need both metal and cloud .raw.zst images in {{output_dir}}"
+    echo "Run 'just arch={{arch}} variant=metal build' and 'just arch={{arch}} variant=cloud build' first."
+    exit 1
+  fi
+
+  sudo ARCH="{{arch}}" \
+       OUTPUT="{{output_iso}}" \
+       INSTALLER_BIN="{{installer_bin}}" \
+       IMAGE_DIR="{{output_dir}}" \
+       UBUNTU_SUITE="{{ubuntu_suite}}" \
+       iso/build-iso.sh
 
 # ============================================================
 # Housekeeping
@@ -273,7 +334,7 @@ test-shellcheck:
   #!/usr/bin/env bash
   set -euo pipefail
   echo "Running shellcheck..."
-  find image/ tests/ scripts/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=error
+  find image/ tests/ scripts/ iso/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=error
   shellcheck --severity=error image/files/grow-root-filesystem image/files/ts-up image/files/setup-tpm-unlock
   echo "All scripts passed shellcheck."
 
@@ -473,8 +534,8 @@ test-boot: _validate-variant _validate-arch _prepare-firmware _make-test-cloud-i
     exit 1
   fi
 
-# Run all tests (structure + boot if KVM available)
-test: test-shellcheck test-structure
+# Run all tests (structure + installer + boot if KVM available)
+test: test-shellcheck installer-test test-structure
   #!/usr/bin/env bash
   set -euo pipefail
   if [ -e /dev/kvm ]; then
