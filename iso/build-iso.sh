@@ -237,25 +237,54 @@ echo "==> Phase 3: Installing TUI installer binary and configuring autostart..."
 install -m 755 "$INSTALLER_BIN" "$MNT_ROOTFS/usr/local/bin/bes-installer"
 
 # r[impl iso.boot.autostart]
+# Wrapper script: runs the installer and if it crashes, shows the error
+# on the TTY so the user isn't left staring at a blank screen.
+cat > "$MNT_ROOTFS/usr/local/bin/bes-installer-wrapper" << 'WRAPPER'
+#!/bin/bash
+export RUST_LOG=info
+LOG=/var/log/bes-installer.log
+
+/usr/bin/dmesg -n 1
+/usr/bin/chvt 2
+
+/usr/local/bin/bes-installer 2>&1 | tee "$LOG"
+RC=${PIPESTATUS[0]}
+
+if [ "$RC" -ne 0 ]; then
+    echo ""
+    echo "=========================================="
+    echo " BES Installer exited with error (rc=$RC)"
+    echo "=========================================="
+    echo ""
+    echo "Last 20 lines of log:"
+    tail -20 "$LOG"
+    echo ""
+    echo "Full log: $LOG"
+    echo "Press Enter to retry, or Ctrl-Alt-F1 for a shell."
+    read -r
+fi
+
+exit "$RC"
+WRAPPER
+chmod 755 "$MNT_ROOTFS/usr/local/bin/bes-installer-wrapper"
+
 cat > "$MNT_ROOTFS/etc/systemd/system/bes-installer.service" << 'UNIT'
 [Unit]
 Description=BES Installer TUI
-After=multi-user.target
-ConditionPathExists=/usr/local/bin/bes-installer
+After=multi-user.target systemd-logind.service
+Conflicts=getty@tty2.service autovt@tty2.service
 
 [Service]
 Type=simple
-ExecStartPre=/usr/bin/chvt 2
-ExecStartPre=/usr/bin/dmesg -n 1
-ExecStart=/usr/local/bin/bes-installer
+ExecStart=/usr/local/bin/bes-installer-wrapper
 StandardInput=tty
 StandardOutput=tty
 StandardError=tty
 TTYPath=/dev/tty2
 TTYReset=yes
-TTYVHangup=yes
+TTYVHangup=no
 Restart=on-failure
-RestartSec=2
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
@@ -263,8 +292,16 @@ UNIT
 
 chroot "$MNT_ROOTFS" systemctl enable bes-installer.service
 
-# Disable getty on tty2 so it doesn't compete with the installer
+# Disable getty and autovt on tty2 so they don't compete with the installer
 chroot "$MNT_ROOTFS" systemctl mask getty@tty2.service
+chroot "$MNT_ROOTFS" systemctl mask autovt@tty2.service
+
+# Prevent systemd-logind from spawning VTs on demand for tty2
+mkdir -p "$MNT_ROOTFS/etc/systemd/logind.conf.d"
+cat > "$MNT_ROOTFS/etc/systemd/logind.conf.d/reserve-tty2.conf" << 'LOGIND'
+[Login]
+ReserveVT=2
+LOGIND
 
 # r[impl iso.config-partition]
 # Mount unit for the BESCONF partition so the installer can find bes-install.toml.
