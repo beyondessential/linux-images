@@ -295,6 +295,10 @@ clean:
 raw: _validate-variant _validate-arch _ensure-dirs
   #!/usr/bin/env bash
   set -euo pipefail
+  if [ -f "{{output_raw}}" ]; then
+    echo "Raw image already exists: {{output_raw}} (skipping build)"
+    exit 0
+  fi
   echo "Building raw image: {{output_raw}}"
   sudo ARCH="{{arch}}" \
        VARIANT="{{variant}}" \

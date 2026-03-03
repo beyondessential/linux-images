@@ -91,21 +91,9 @@ jobs:
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-boot
         timeout-minutes: 10
 
-      - name: Post-process image
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} image
+      - name: Post-process, convert, compress, checksum
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} build
         timeout-minutes: 30
-
-      - name: Convert to VMDK
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} vmdk
-
-      - name: Convert to qcow2
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} qcow
-
-      - name: Compress raw image
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} compress
-
-      - name: Generate checksums
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} checksum
 
       - name: List outputs
         run: ls -lh output/${{ matrix.arch }}/
