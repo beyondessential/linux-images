@@ -412,6 +412,76 @@ When `auto = true` but required fields (`variant` or `disk`) are missing, the
 installer must print an error describing the missing fields and fall back to
 interactive mode.
 
+## Dry-Run / Testing Mode
+
+r[installer.dryrun]
+When the `--dry-run` flag is passed, the installer must not perform any
+destructive operations (no disk wiping, no image writing, no filesystem
+mounting, no rebooting). Instead, after collecting all user decisions —
+whether from automatic mode, prefilled mode, or the interactive TUI — it
+must write a JSON file (the "install plan") summarising what it *would* do
+and exit with status 0.
+
+r[installer.dryrun.output]
+The `--dry-run-output <path>` flag specifies the path for the JSON install
+plan. If omitted, the plan is written to stdout.
+
+> r[installer.dryrun.schema]
+> The install plan JSON has the following structure:
+>
+> ```json
+> {
+>   "mode": "auto | prefilled | interactive | auto-incomplete",
+>   "variant": "metal | cloud",
+>   "disk": {
+>     "path": "/dev/nvme0n1",
+>     "model": "Samsung 980 PRO",
+>     "size_bytes": 1000204886016,
+>     "transport": "NVMe"
+>   },
+>   "disable_tpm": false,
+>   "firstboot": {
+>     "hostname": "server-01",
+>     "tailscale_authkey": true,
+>     "ssh_authorized_keys_count": 2
+>   },
+>   "image_path": "/run/live/medium/images/metal-amd64.raw.zst",
+>   "config_warnings": []
+> }
+> ```
+>
+> The `firstboot` field is `null` when no first-boot configuration is set.
+> `tailscale_authkey` is a boolean (true when a key is provided) to avoid
+> leaking secrets into test output.
+
+r[installer.dryrun.devices]
+In dry-run mode the installer must still detect real block devices (via
+`lsblk`) unless a `--fake-devices <path>` flag is given, in which case
+it reads device definitions from a JSON file instead. The JSON file must
+be an array of objects with the same fields as the `disk` object in the
+install plan (`path`, `model`, `size_bytes`, `transport`), plus an
+optional `removable` boolean (default false).
+
+### Scripted TUI Input
+
+r[installer.dryrun.script]
+When `--input-script <path>` is passed, the TUI must read keypress events
+from a newline-delimited text file instead of the terminal. Each line
+describes a single key event using the following tokens:
+
+- `enter`, `esc`, `tab`, `backspace`, `up`, `down`, `left`, `right`,
+  `space` — named special keys.
+- `type:<text>` — emits one `Char` keypress per character of `<text>`.
+- Lines starting with `#` are comments and must be ignored.
+- Empty lines must be ignored.
+
+r[installer.dryrun.script.headless]
+When `--input-script` is used, the TUI must not initialise the real terminal
+(no raw mode, no alternate screen). It must process events from the script
+file, update state, and — when the script is exhausted — produce the install
+plan from whatever screen state was reached. The TUI must not block waiting
+for terminal events.
+
 ## TUI
 
 r[installer.tui.welcome]
