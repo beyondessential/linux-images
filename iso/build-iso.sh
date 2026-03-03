@@ -76,7 +76,7 @@ if [ "${#IMAGE_FILES[@]}" -eq 0 ]; then
 fi
 
 MISSING=()
-for cmd in debootstrap mksquashfs sgdisk mkfs.vfat mkfs.ext4 losetup grub-mkimage partprobe; do
+for cmd in debootstrap mksquashfs unsquashfs sgdisk mkfs.vfat mkfs.ext4 losetup grub-mkimage partprobe; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then

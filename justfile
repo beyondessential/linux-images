@@ -238,6 +238,36 @@ check-deps:
   fi
   echo ""
 
+  echo "=== Optional: ISO build (just iso) ==="
+  opt mksquashfs     "Arch: pacman -S squashfs-tools / Debian: apt install squashfs-tools"
+  opt unsquashfs     "Arch: pacman -S squashfs-tools / Debian: apt install squashfs-tools"
+  opt grub-mkimage   "Arch: pacman -S grub / Debian: apt install grub-common"
+  echo ""
+
+  echo "=== Optional: installer build (just installer-build) ==="
+  if command -v rustup >/dev/null 2>&1; then
+    echo "  ✓ rustup $(command -v rustup)"
+    ((PASS++))
+    if rustup target list --installed 2>/dev/null | grep -q "$(uname -m | sed 's/x86_64/x86_64-unknown-linux-musl/;s/aarch64/aarch64-unknown-linux-musl/')"; then
+      echo "  ✓ musl target installed"
+      ((PASS++))
+    else
+      echo "  ○ musl target not installed — run: rustup target add x86_64-unknown-linux-musl"
+      ((OPTIONAL_FAIL++))
+    fi
+  else
+    echo "  ○ rustup — install from https://rustup.rs"
+    ((OPTIONAL_FAIL++))
+  fi
+  if [ -f /usr/lib/musl/lib/libc.a ] || [ -f /lib/ld-musl-x86_64.so.1 ] || [ -f /lib/ld-musl-aarch64.so.1 ]; then
+    echo "  ✓ musl libc found"
+    ((PASS++))
+  else
+    echo "  ○ musl libc — Arch: pacman -S musl / Debian: apt install musl-tools"
+    ((OPTIONAL_FAIL++))
+  fi
+  echo ""
+
   echo "=== Optional: cross-architecture builds ==="
   if [ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
     echo "  ✓ binfmt qemu-aarch64 registered"
