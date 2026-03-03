@@ -1,16 +1,4 @@
 #!/bin/bash
-# r[impl iso.format]
-# r[impl iso.hybrid]
-# r[impl iso.base]
-# r[impl iso.live-boot]
-# r[impl iso.minimal]
-# r[impl iso.offline]
-# r[impl iso.contents]
-# r[impl iso.boot.uefi]
-# r[impl iso.boot.autostart]
-# r[impl iso.config-partition]
-# r[impl iso.per-arch]
-# r[impl iso.usb]
 #
 # Build a hybrid live installer ISO with:
 #   - ISO9660 filesystem (bootable in VMs as optical media)
@@ -41,6 +29,7 @@ INSTALLER_BIN="${INSTALLER_BIN:?INSTALLER_BIN must point to the bes-installer bi
 IMAGE_DIR="${IMAGE_DIR:?IMAGE_DIR must point to directory with .raw.zst images}"
 OUTPUT="${OUTPUT:-output/${ARCH}/bes-installer-${ARCH}.iso}"
 
+# r[impl iso.per-arch]
 case "$ARCH" in
     amd64)
         UBUNTU_MIRROR="${UBUNTU_MIRROR:-http://archive.ubuntu.com/ubuntu}"
@@ -156,6 +145,7 @@ mkdir -p "$MNT_ROOTFS" "$MNT_ESP" "$STAGING"
 # ============================================================
 # Phase 1: Build minimal live rootfs via debootstrap
 # ============================================================
+# r[impl iso.base]
 echo "==> Phase 1: Building minimal live rootfs..."
 
 DEBOOTSTRAP_EXTRA_ARGS=()
@@ -193,6 +183,7 @@ fi
 
 # r[impl iso.minimal]
 # r[impl iso.live-boot]
+# r[impl iso.offline]
 # Enable the universe repository (live-boot is not in main)
 cat > "$MNT_ROOTFS/etc/apt/sources.list.d/universe.list" << SOURCES
 deb $UBUNTU_MIRROR $UBUNTU_SUITE main universe
@@ -555,6 +546,7 @@ echo "    BESCONF image: $(du -h "$BESCONF_IMG" | cut -f1)"
 # ============================================================
 # r[impl iso.format]
 # r[impl iso.hybrid]
+# r[impl iso.usb]
 echo "==> Phase 8: Producing hybrid ISO9660 image with xorriso..."
 
 mkdir -p "$(dirname "$OUTPUT")"
