@@ -97,6 +97,10 @@ Caddy version >=2.10.0 must be pre-installed.
 r[image.packages.podman]
 Podman version >=5.0.0 must be pre-installed.
 
+r[image.packages.kopia]
+Kopia version >=0.22.0 must be pre-installed.
+The official Kopia apt repository must be configured and preferred.
+
 r[image.packages.tailscale]
 Tailscale version >=1.92.0 must be pre-installed.
 The official Tailscale apt repository must be configured and preferred.
