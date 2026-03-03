@@ -271,7 +271,7 @@ check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/s
 
 # Check boot files
 check "kernel exists in /boot" ls "$MNT"/boot/vmlinuz-* >/dev/null 2>&1
-check "initramfs exists in /boot" ls "$MNT"/boot/initramfs-*.img >/dev/null 2>&1
+check "initramfs exists in /boot" ls "$MNT"/boot/initrd.img-* >/dev/null 2>&1
 check "GRUB config exists" test -f "$MNT/boot/grub/grub.cfg"
 
 # Check EFI bootloader
