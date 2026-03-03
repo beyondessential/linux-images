@@ -429,6 +429,45 @@ BESCONF_IMG="$WORK_DIR/besconf.img"
 truncate -s "${BESCONF_SIZE_MB}M" "$BESCONF_IMG"
 mkfs.vfat -F 12 -n BESCONF "$BESCONF_IMG" >/dev/null
 
+# Write a template config file with all options commented out
+mount -o loop "$BESCONF_IMG" "$MNT_ESP"
+cat > "$MNT_ESP/bes-install.toml" << 'TEMPLATE'
+# BES Installer Configuration
+#
+# Uncomment and edit the options below to pre-configure the installer.
+# When written to the BESCONF partition of a USB stick, these values
+# will be used as defaults (or to drive a fully automatic install).
+
+# Run fully automatically without prompts.
+# Requires at minimum: variant and disk.
+# auto = true
+
+# Image variant: "metal" or "cloud"
+#   metal - Full-disk encryption (LUKS2) with optional TPM auto-unlock
+#   cloud - No encryption, for cloud VMs or environments with
+#           host-level disk encryption
+# variant = "metal"
+
+# Target disk: a device path (e.g. "/dev/sda") or a selection strategy.
+# Strategies:
+#   "largest-ssd" - largest SSD by capacity
+#   "largest"     - largest disk of any type
+#   "smallest"    - smallest disk of any type
+# disk = "largest-ssd"
+
+# Disable TPM auto-enrollment (metal variant only).
+# When true, the LUKS volume will not be bound to the TPM on first boot.
+# disable-tpm = false
+
+# [firstboot]
+# hostname = "server-01"
+# tailscale-authkey = "tskey-auth-xxxxx"
+# ssh-authorized-keys = [
+#   "ssh-ed25519 AAAA... admin@example.com",
+# ]
+TEMPLATE
+umount "$MNT_ESP"
+
 echo "    BESCONF image: $(du -h "$BESCONF_IMG" | cut -f1)"
 
 # ============================================================
