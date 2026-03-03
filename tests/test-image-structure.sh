@@ -48,6 +48,33 @@ check_not() {
     fi
 }
 
+# Compare two dotted version strings: returns 0 (true) if $1 >= $2
+version_ge() {
+    printf '%s\n%s\n' "$2" "$1" | sort -V -C
+}
+
+# Query a package version from the chroot and check it meets a minimum.
+# Usage: check_pkg_version <package> <min_version> <tracey_tag>
+check_pkg_version() {
+    local pkg="$1" min="$2" tag="$3"
+    # shellcheck disable=SC2016 # ${Version} is a dpkg format string
+    local ver
+    ver="$(chroot "$MNT" dpkg-query -W -f='${Version}\n' "$pkg" 2>/dev/null || true)"
+    if [ -z "$ver" ]; then
+        fail "$tag: $pkg is installed"
+        return
+    fi
+    # Strip epoch (e.g. "2:5.3.1-1" -> "5.3.1-1") and debian revision
+    local upstream
+    upstream="${ver#*:}"       # remove epoch
+    upstream="${upstream%%-*}" # remove debian revision
+    if version_ge "$upstream" "$min"; then
+        pass "$tag: $pkg version $ver >= $min"
+    else
+        fail "$tag: $pkg version $ver >= $min"
+    fi
+}
+
 # --- Pre-flight ---
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERROR: must run as root (need losetup/mount)"
@@ -307,6 +334,16 @@ check_not "installer network config absent" test -f "$MNT/etc/cloud/cloud.cfg.d/
 
 check_not "unminimize prompt absent" test -f "$MNT/etc/update-motd.d/60-unminimize"
 
+# r[verify image.packages.bes-tools]
+check "bes-tools signing key installed" test -f "$MNT/etc/apt/keyrings/bes-tools.gpg"
+check "bes-tools apt repo configured" test -f "$MNT/etc/apt/sources.list.d/bes-tools.list"
+check "bes-tools apt pin configured" test -f "$MNT/etc/apt/preferences.d/99-bes-tools"
+
+# r[verify image.packages.kopia]
+check "Kopia signing key installed" test -f "$MNT/etc/apt/keyrings/kopia-keyring.gpg"
+check "Kopia apt repo configured" test -f "$MNT/etc/apt/sources.list.d/kopia.list"
+check "Kopia apt pin configured" test -f "$MNT/etc/apt/preferences.d/99-kopia"
+
 # r[verify image.packages.tailscale]
 check "Tailscale signing key installed" test -f "$MNT/usr/share/keyrings/tailscale-archive-keyring.gpg"
 check "Tailscale apt repo configured" test -f "$MNT/etc/apt/sources.list.d/tailscale.list"
@@ -507,6 +544,17 @@ if [ -x "$MNT/usr/bin/dpkg-query" ]; then
             fail "podman dependency '$dep_pkg' is installed"
         fi
     done
+
+    # r[verify image.packages.caddy]
+    check_pkg_version caddy    2.10.0 "image.packages.caddy"
+    # r[verify image.packages.podman]
+    check_pkg_version podman   5.0.0  "image.packages.podman"
+    # r[verify image.packages.kopia]
+    check_pkg_version kopia    0.22.0 "image.packages.kopia"
+    # r[verify image.packages.tailscale]
+    check_pkg_version tailscale 1.92.0 "image.packages.tailscale"
+    # r[verify image.packages.bestool]
+    check_pkg_version bestool  2.0.0  "image.packages.bestool"
 
     # r[verify image.boot.dracut]
     # shellcheck disable=SC2016
