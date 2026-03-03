@@ -3,6 +3,7 @@
 specs (
     {
         name linux-images
+        source_url https://github.com/beyondessential/linux-images
         include (docs/spec/**/*.md)
         impls (
             {
@@ -15,15 +16,19 @@ specs (
                     scripts/**/*.sh
                     justfile
                     .github/workflows/*.yml
+
+                    # temporary: in tracey 1.1.5 there's a bug where test_include is ignored
+                    # https://github.com/bearcove/tracey/pull/137
+                    tests/*.sh
+                    tests/**/*.sh
+                    installer/tui/tests/**/*.rs
                 )
                 exclude (
-                    target/**
+                    installer/tui/target/**
                 )
                 test_include (
                     tests/*.sh
-                    tests/*.rs
                     tests/**/*.sh
-                    tests/**/*.rs
                     installer/tui/tests/**/*.rs
                 )
             }
