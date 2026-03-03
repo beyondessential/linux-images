@@ -3,6 +3,10 @@
 # Usage: verify-outputs.sh <output_dir> <filestem>
 set -euo pipefail
 
+# tracey doesn't support justfile, so we put the impl annotations here
+# but the actual impls are directly in the justfile
+# r[impl image.output.raw] r[impl image.output.vmdk] r[impl image.output.qcow2] r[impl image.output.checksum]
+
 OUTPUT_DIR="${1:?Usage: $0 <output_dir> <filestem>}"
 FILESTEM="${2:?Usage: $0 <output_dir> <filestem>}"
 
