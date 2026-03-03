@@ -336,11 +336,6 @@ r[build.container-postprocess]
 Post-processing (defrag, dedupe) must run inside a container to isolate
 privileged loopback and device-mapper operations from the host.
 
-r[build.idempotent]
-Running a clean build twice with the same inputs must produce
-bit-for-bit identical images (excluding timestamps embedded by tools
-outside our control, such as filesystem UUIDs).
-
 # Installer
 
 ## Configuration File
