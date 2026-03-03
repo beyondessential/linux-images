@@ -534,6 +534,22 @@ test-boot: _validate-variant _validate-arch _prepare-firmware _make-test-cloud-i
     exit 1
   fi
 
+# Run E2E install test: boot ISO in QEMU, auto-install to blank disk, verify
+test-e2e: _validate-variant _validate-arch
+  #!/usr/bin/env bash
+  set -euo pipefail
+  ISO="{{output_iso}}"
+  if [ ! -f "$ISO" ]; then
+    echo "ERROR: ISO not found: $ISO"
+    echo "Run 'just iso' first to build the live installer."
+    exit 1
+  fi
+  if [ ! -e /dev/kvm ]; then
+    echo "ERROR: KVM required for E2E tests"
+    exit 1
+  fi
+  sudo tests/test-e2e-install.sh "$ISO" "{{variant}}" "{{arch}}"
+
 # Run all tests (structure + installer + boot if KVM available)
 test: test-shellcheck installer-test test-structure
   #!/usr/bin/env bash
