@@ -469,7 +469,7 @@ _make-test-cloud-init: _ensure-dirs
       # r[verify image.btrfs.compression]
       check "compression active in /proc/mounts" grep -q 'compress=' /proc/mounts
 
-      # r[verify image.variant.persisted]
+      # r[verify image.variant.types]
       VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "unknown")
       echo "Variant: $VARIANT"
 

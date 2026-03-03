@@ -282,9 +282,10 @@ mkdir -p "$MNT/boot/efi"
 mount "$EFI_PART" "$MNT/boot/efi"
 EFI_MOUNTED=1
 
+# r[verify image.base.debootstrap]
 check "/etc/fstab exists" test -f "$MNT/etc/fstab"
 
-# r[verify image.variant.persisted]
+# r[verify image.variant.types]
 check "/etc/bes/image-variant exists" test -f "$MNT/etc/bes/image-variant"
 
 # r[verify image.tailscale.ts-up]
@@ -296,7 +297,7 @@ check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/g
 # r[verify image.growth.service]
 check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/etc/systemd/system/grow-root-filesystem.service"
 
-# r[verify image.variant.persisted]
+# r[verify image.variant.types]
 ACTUAL_VARIANT="$(cat "$MNT/etc/bes/image-variant" 2>/dev/null || true)"
 check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 

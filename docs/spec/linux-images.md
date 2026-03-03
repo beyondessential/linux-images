@@ -66,17 +66,14 @@ BTRFS simple quotas must be enabled on the filesystem.
 >
 > The `cloud` variant does not encrypt the root partition. It is intended for
 > cloud environments where encryption at rest is provided by the infrastructure.
-
-r[image.variant.persisted]
-The active variant name must be written to `/etc/bes/image-variant` in the
+>
+> The active variant name must be written to `/etc/bes/image-variant` in the
 installed system so that runtime scripts can branch on it.
 
 ## Base System
 
 r[image.base.debootstrap]
 The base system must be debootstrapped into the `@` subvolume.
-
-r[image.base.minimal]
 The debootstrap must create the minimal viable bootable system.
 
 r[image.base.machine-id]

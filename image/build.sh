@@ -256,8 +256,7 @@ mount "$EFI_PART" "$MNT/boot/efi"
 # ============================================================
 # Phase 4: Debootstrap
 # ============================================================
-# r[image.base.debootstrap]: Bootstrap from Ubuntu 24.04 (Noble).
-# r[image.base.minimal]: Use minbase variant.
+# r[image.base.debootstrap]
 # If the Ubuntu keyring isn't available (e.g. building on Arch), skip GPG check.
 # The packages are still fetched over HTTPS and apt inside the chroot will have
 # the real keyring once debootstrap completes.
