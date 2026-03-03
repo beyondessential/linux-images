@@ -2,6 +2,9 @@
 // r[impl installer.tui.disk-detection]
 // r[impl installer.tui.variant-selection]
 // r[impl installer.tui.tpm-toggle]
+// r[impl installer.tui.hostname]
+// r[impl installer.tui.tailscale]
+// r[impl installer.tui.ssh-keys]
 // r[impl installer.tui.confirmation]
 // r[impl installer.tui.progress]
 
@@ -23,6 +26,9 @@ pub enum Screen {
     DiskSelection,
     VariantSelection,
     TpmToggle,
+    Hostname,
+    Tailscale,
+    SshKeys,
     Confirmation,
     Writing,
     FirstbootApply,
@@ -36,10 +42,13 @@ pub struct AppState {
     pub selected_disk_index: usize,
     pub variant: Variant,
     pub disable_tpm: bool,
-    pub firstboot: Option<FirstbootConfig>,
     pub boot_device: Option<PathBuf>,
     pub write_progress: Option<ProgressSnapshot>,
     pub confirm_input: String,
+
+    pub hostname_input: String,
+    pub tailscale_input: String,
+    pub ssh_keys_input: String,
 }
 
 #[derive(Debug, Clone)]
@@ -70,17 +79,61 @@ impl AppState {
         boot_device: Option<PathBuf>,
         default_disk_index: Option<usize>,
     ) -> Self {
+        let (hostname_input, tailscale_input, ssh_keys_input) = match firstboot {
+            Some(ref fb) => (
+                fb.hostname.clone().unwrap_or_default(),
+                fb.tailscale_authkey.clone().unwrap_or_default(),
+                fb.ssh_authorized_keys.join("\n"),
+            ),
+            None => (String::new(), String::new(), String::new()),
+        };
+
         Self {
             screen: Screen::Welcome,
             selected_disk_index: default_disk_index.unwrap_or(0),
             devices,
             variant,
             disable_tpm,
-            firstboot,
             boot_device,
             write_progress: None,
             confirm_input: String::new(),
+            hostname_input,
+            tailscale_input,
+            ssh_keys_input,
         }
+    }
+
+    /// Build a `FirstbootConfig` from the current interactive input fields.
+    /// Returns `None` if all fields are empty (nothing to configure).
+    pub fn firstboot_config(&self) -> Option<FirstbootConfig> {
+        let hostname = if self.hostname_input.trim().is_empty() {
+            None
+        } else {
+            Some(self.hostname_input.trim().to_string())
+        };
+
+        let tailscale_authkey = if self.tailscale_input.trim().is_empty() {
+            None
+        } else {
+            Some(self.tailscale_input.trim().to_string())
+        };
+
+        let ssh_authorized_keys: Vec<String> = self
+            .ssh_keys_input
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+
+        if hostname.is_none() && tailscale_authkey.is_none() && ssh_authorized_keys.is_empty() {
+            return None;
+        }
+
+        Some(FirstbootConfig {
+            hostname,
+            tailscale_authkey,
+            ssh_authorized_keys,
+        })
     }
 
     pub fn selected_disk(&self) -> Option<&BlockDevice> {
@@ -114,8 +167,11 @@ impl AppState {
             Screen::Welcome => Screen::DiskSelection,
             Screen::DiskSelection => Screen::VariantSelection,
             Screen::VariantSelection if self.variant == Variant::Metal => Screen::TpmToggle,
-            Screen::VariantSelection => Screen::Confirmation,
-            Screen::TpmToggle => Screen::Confirmation,
+            Screen::VariantSelection => Screen::Hostname,
+            Screen::TpmToggle => Screen::Hostname,
+            Screen::Hostname => Screen::Tailscale,
+            Screen::Tailscale => Screen::SshKeys,
+            Screen::SshKeys => Screen::Confirmation,
             Screen::Confirmation => Screen::Writing,
             Screen::Writing => Screen::FirstbootApply,
             Screen::FirstbootApply => Screen::Done,
@@ -128,13 +184,16 @@ impl AppState {
             Screen::DiskSelection => Screen::Welcome,
             Screen::VariantSelection => Screen::DiskSelection,
             Screen::TpmToggle => Screen::VariantSelection,
-            Screen::Confirmation => {
+            Screen::Hostname => {
                 if self.variant == Variant::Metal {
                     Screen::TpmToggle
                 } else {
                     Screen::VariantSelection
                 }
             }
+            Screen::Tailscale => Screen::Hostname,
+            Screen::SshKeys => Screen::Tailscale,
+            Screen::Confirmation => Screen::SshKeys,
             _ => return,
         };
     }
@@ -239,6 +298,12 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::TpmToggle);
         state.advance();
+        assert_eq!(state.screen, Screen::Hostname);
+        state.advance();
+        assert_eq!(state.screen, Screen::Tailscale);
+        state.advance();
+        assert_eq!(state.screen, Screen::SshKeys);
+        state.advance();
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
@@ -254,6 +319,12 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::VariantSelection);
         state.advance();
+        assert_eq!(state.screen, Screen::Hostname);
+        state.advance();
+        assert_eq!(state.screen, Screen::Tailscale);
+        state.advance();
+        assert_eq!(state.screen, Screen::SshKeys);
+        state.advance();
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
@@ -264,6 +335,12 @@ mod tests {
         state.variant = Variant::Metal;
         state.screen = Screen::Confirmation;
 
+        state.go_back();
+        assert_eq!(state.screen, Screen::SshKeys);
+        state.go_back();
+        assert_eq!(state.screen, Screen::Tailscale);
+        state.go_back();
+        assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
         assert_eq!(state.screen, Screen::TpmToggle);
         state.go_back();
@@ -281,6 +358,12 @@ mod tests {
         state.variant = Variant::Cloud;
         state.screen = Screen::Confirmation;
 
+        state.go_back();
+        assert_eq!(state.screen, Screen::SshKeys);
+        state.go_back();
+        assert_eq!(state.screen, Screen::Tailscale);
+        state.go_back();
+        assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
         assert_eq!(state.screen, Screen::VariantSelection);
     }
@@ -309,5 +392,108 @@ mod tests {
         state.screen = Screen::Error("test".into());
         state.advance();
         assert_eq!(state.screen, Screen::Error("test".into()));
+    }
+
+    // r[verify installer.tui.hostname]
+    #[test]
+    fn hostname_prefilled_from_config() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            hostname: Some("myhost".into()),
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec![],
+        };
+        let state = AppState::new(devices, Variant::Cloud, false, Some(fb), None, None);
+        assert_eq!(state.hostname_input, "myhost");
+        assert_eq!(state.tailscale_input, "");
+        assert_eq!(state.ssh_keys_input, "");
+    }
+
+    // r[verify installer.tui.tailscale]
+    #[test]
+    fn tailscale_prefilled_from_config() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: Some("tskey-auth-xxx".into()),
+            ssh_authorized_keys: vec![],
+        };
+        let state = AppState::new(devices, Variant::Cloud, false, Some(fb), None, None);
+        assert_eq!(state.tailscale_input, "tskey-auth-xxx");
+    }
+
+    // r[verify installer.tui.ssh-keys]
+    #[test]
+    fn ssh_keys_prefilled_from_config() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
+        };
+        let state = AppState::new(devices, Variant::Cloud, false, Some(fb), None, None);
+        assert_eq!(
+            state.ssh_keys_input,
+            "ssh-ed25519 AAAA key1\nssh-rsa BBBB key2"
+        );
+    }
+
+    // r[verify installer.tui.hostname]
+    #[test]
+    fn firstboot_config_from_inputs() {
+        let mut state = make_state();
+        assert!(state.firstboot_config().is_none());
+
+        state.hostname_input = "server-01".into();
+        let fb = state.firstboot_config().unwrap();
+        assert_eq!(fb.hostname.as_deref(), Some("server-01"));
+        assert!(fb.tailscale_authkey.is_none());
+        assert!(fb.ssh_authorized_keys.is_empty());
+    }
+
+    // r[verify installer.tui.tailscale]
+    // r[verify installer.tui.ssh-keys]
+    #[test]
+    fn firstboot_config_all_fields() {
+        let mut state = make_state();
+        state.hostname_input = "host".into();
+        state.tailscale_input = "tskey-auth-123".into();
+        state.ssh_keys_input = "ssh-ed25519 AAAA\nssh-rsa BBBB\n".into();
+
+        let fb = state.firstboot_config().unwrap();
+        assert_eq!(fb.hostname.as_deref(), Some("host"));
+        assert_eq!(fb.tailscale_authkey.as_deref(), Some("tskey-auth-123"));
+        assert_eq!(fb.ssh_authorized_keys.len(), 2);
+    }
+
+    // r[verify installer.tui.hostname]
+    #[test]
+    fn firstboot_config_empty_strings_are_none() {
+        let mut state = make_state();
+        state.hostname_input = "   ".into();
+        state.tailscale_input = "  ".into();
+        state.ssh_keys_input = "\n\n".into();
+        assert!(state.firstboot_config().is_none());
     }
 }

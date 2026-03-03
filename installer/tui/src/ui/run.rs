@@ -126,6 +126,49 @@ fn event_loop(
                 _ => {}
             },
 
+            // r[impl installer.tui.hostname]
+            Screen::Hostname => match key.code {
+                KeyCode::Esc => state.go_back(),
+                KeyCode::Enter => state.advance(),
+                KeyCode::Backspace => {
+                    state.hostname_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.hostname_input.push(c);
+                }
+                _ => {}
+            },
+
+            // r[impl installer.tui.tailscale]
+            Screen::Tailscale => match key.code {
+                KeyCode::Esc => state.go_back(),
+                KeyCode::Enter => state.advance(),
+                KeyCode::Backspace => {
+                    state.tailscale_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.tailscale_input.push(c);
+                }
+                _ => {}
+            },
+
+            // r[impl installer.tui.ssh-keys]
+            Screen::SshKeys => match key.code {
+                KeyCode::Esc => state.go_back(),
+                // Tab advances to the next screen (Enter adds a newline)
+                KeyCode::Tab => state.advance(),
+                KeyCode::Enter => {
+                    state.ssh_keys_input.push('\n');
+                }
+                KeyCode::Backspace => {
+                    state.ssh_keys_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.ssh_keys_input.push(c);
+                }
+                _ => {}
+            },
+
             Screen::Confirmation => match key.code {
                 KeyCode::Char('q') if state.confirm_input.is_empty() => break,
                 KeyCode::Esc => {
@@ -208,7 +251,7 @@ fn start_firstboot_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
     };
     let variant = state.variant;
     let disable_tpm = state.disable_tpm;
-    let firstboot_config = state.firstboot.clone();
+    let firstboot_config = state.firstboot_config();
     let tx = tx.clone();
 
     thread::spawn(move || {

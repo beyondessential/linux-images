@@ -435,6 +435,22 @@ r[installer.tui.tpm-toggle]
 When the `metal` variant is selected, the TUI must offer a toggle to disable
 TPM auto-enrollment.
 
+r[installer.tui.hostname]
+After variant/TPM configuration, the TUI must present a text input screen
+for the system hostname. The field may be pre-filled from the configuration
+file. The user can leave it empty to skip hostname configuration.
+
+r[installer.tui.tailscale]
+After the hostname screen, the TUI must present a text input screen for a
+Tailscale auth key. The field may be pre-filled from the configuration file.
+The user can leave it empty to skip Tailscale configuration.
+
+r[installer.tui.ssh-keys]
+After the Tailscale screen, the TUI must present a multi-line text input
+screen for SSH authorized keys (one per line). The field may be pre-filled
+from the configuration file. The user can leave it empty to skip SSH key
+configuration.
+
 r[installer.tui.confirmation]
 Before writing, the TUI must show a summary screen listing: target disk
 (path, model, size), chosen variant, TPM enrollment status, and any

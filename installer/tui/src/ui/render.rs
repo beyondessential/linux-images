@@ -27,6 +27,9 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
         Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
         Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
+        Screen::Hostname => render_hostname(frame, chunks[1], state),
+        Screen::Tailscale => render_tailscale(frame, chunks[1], state),
+        Screen::SshKeys => render_ssh_keys(frame, chunks[1], state),
         Screen::Confirmation => render_confirmation(frame, chunks[1], state),
         Screen::Writing => render_writing(frame, chunks[1], state),
         Screen::FirstbootApply => render_firstboot(frame, chunks[1]),
@@ -40,12 +43,15 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
         Screen::Welcome => "Welcome",
-        Screen::DiskSelection => "1/4 Select Target Disk",
-        Screen::VariantSelection => "2/4 Select Variant",
-        Screen::TpmToggle => "2/4 TPM Configuration",
-        Screen::Confirmation => "3/4 Confirm",
-        Screen::Writing => "4/4 Writing Image",
-        Screen::FirstbootApply => "4/4 Applying Configuration",
+        Screen::DiskSelection => "1/7 Select Target Disk",
+        Screen::VariantSelection => "2/7 Select Variant",
+        Screen::TpmToggle => "2/7 TPM Configuration",
+        Screen::Hostname => "3/7 Hostname",
+        Screen::Tailscale => "4/7 Tailscale",
+        Screen::SshKeys => "5/7 SSH Keys",
+        Screen::Confirmation => "6/7 Confirm",
+        Screen::Writing => "7/7 Writing Image",
+        Screen::FirstbootApply => "7/7 Applying Configuration",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
     };
@@ -62,6 +68,9 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit",
+        Screen::Hostname => "Enter: next | Esc: back",
+        Screen::Tailscale => "Enter: next | Esc: back",
+        Screen::SshKeys => "Tab: next | Enter: new line | Esc: back",
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit",
         Screen::Writing => "Please wait...",
         Screen::FirstbootApply => "Please wait...",
@@ -233,6 +242,117 @@ fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
+// r[impl installer.tui.hostname]
+fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
+    let lines = vec![
+        Line::from(""),
+        Line::from("  Enter the hostname for this system."),
+        Line::from("  Leave empty to skip hostname configuration."),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Hostname: "),
+            Span::styled(
+                &state.hostname_input,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("_", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+
+    let block = Block::default().title(" Hostname ").borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
+}
+
+// r[impl installer.tui.tailscale]
+fn render_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
+    let lines = vec![
+        Line::from(""),
+        Line::from("  Enter a Tailscale auth key for automatic enrollment."),
+        Line::from("  Leave empty to skip Tailscale configuration."),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  The key will be used on first boot to run 'tailscale up --auth-key --ssh'",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            "  and will be deleted after use.",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Auth key: "),
+            Span::styled(
+                &state.tailscale_input,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("_", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
+
+    let block = Block::default().title(" Tailscale ").borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
+}
+
+// r[impl installer.tui.ssh-keys]
+fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
+    let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
+
+    let intro = vec![
+        Line::from(""),
+        Line::from("  Paste SSH public keys for the 'ubuntu' user (one per line)."),
+        Line::from("  Leave empty to skip. Press Tab when done."),
+        Line::from(""),
+    ];
+    let intro_paragraph = Paragraph::new(intro);
+    frame.render_widget(intro_paragraph, chunks[0]);
+
+    let key_lines: Vec<Line> = if state.ssh_keys_input.is_empty() {
+        vec![Line::from(Span::styled(
+            "_",
+            Style::default().fg(Color::DarkGray),
+        ))]
+    } else {
+        let mut lines: Vec<Line> = state
+            .ssh_keys_input
+            .lines()
+            .map(|l| {
+                Line::from(Span::styled(
+                    l.to_string(),
+                    Style::default().fg(Color::Yellow),
+                ))
+            })
+            .collect();
+        // Show cursor on the last line
+        if state.ssh_keys_input.ends_with('\n') {
+            lines.push(Line::from(Span::styled(
+                "_",
+                Style::default().fg(Color::DarkGray),
+            )));
+        } else if let Some(last) = lines.last_mut() {
+            last.spans
+                .push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+        }
+        lines
+    };
+
+    let block = Block::default()
+        .title(" SSH Authorized Keys ")
+        .borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(key_lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, chunks[1]);
+}
+
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -275,18 +395,30 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         ]),
     ];
 
-    if let Some(ref fb) = state.firstboot {
+    if let Some(fb) = state.firstboot_config() {
         if let Some(ref h) = fb.hostname {
-            lines.push(Line::from(format!("  Hostname:     {h}")));
+            lines.push(Line::from(vec![
+                Span::raw("  Hostname:     "),
+                Span::styled(h.to_string(), Style::default().add_modifier(Modifier::BOLD)),
+            ]));
         }
         if fb.tailscale_authkey.is_some() {
-            lines.push(Line::from("  Tailscale:    auth key provided"));
+            lines.push(Line::from(vec![
+                Span::raw("  Tailscale:    "),
+                Span::styled(
+                    "auth key provided",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+            ]));
         }
         if !fb.ssh_authorized_keys.is_empty() {
-            lines.push(Line::from(format!(
-                "  SSH keys:     {}",
-                fb.ssh_authorized_keys.len()
-            )));
+            lines.push(Line::from(vec![
+                Span::raw("  SSH keys:     "),
+                Span::styled(
+                    format!("{} key(s)", fb.ssh_authorized_keys.len()),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+            ]));
         }
     }
 
