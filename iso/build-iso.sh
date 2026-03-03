@@ -199,6 +199,7 @@ chroot "$MNT_ROOTFS" bash -c "
 
     apt-get install -y -q --no-install-recommends \
         linux-generic \
+        initramfs-tools \
         systemd \
         systemd-sysv \
         dbus \
@@ -218,6 +219,12 @@ chroot "$MNT_ROOTFS" bash -c "
 
     apt-get clean
     rm -rf /var/lib/apt/lists/*
+
+    echo '--- DEBUG: /boot contents after package install ---'
+    ls -la /boot/ || true
+    echo '--- DEBUG: kernel modules ---'
+    ls /lib/modules/ || true
+    echo '--- DEBUG: end ---'
 "
 
 # ============================================================
@@ -282,9 +289,38 @@ rm -rf "$MNT_ROOTFS/tmp/"*
 rm -rf "$MNT_ROOTFS/var/cache/apt/archives/"*.deb
 rm -rf "$MNT_ROOTFS/var/lib/apt/lists/"*
 
+echo "==> DEBUG: rootfs /boot contents before squashfs..."
+ls -la "$MNT_ROOTFS/boot/" || true
+echo "==> DEBUG: looking for vmlinuz..."
+find "$MNT_ROOTFS/boot" -maxdepth 1 -name 'vmlinuz*' -ls 2>/dev/null || true
+echo "==> DEBUG: looking for initrd..."
+find "$MNT_ROOTFS/boot" -maxdepth 1 -name 'initrd*' -ls 2>/dev/null || true
+
+# Copy vmlinuz and initrd out of rootfs BEFORE squashing (avoids unsquashfs issues)
+echo "==> Copying kernel and initrd from rootfs..."
+mkdir -p "$STAGING/live"
+
+VMLINUZ="$(find "$MNT_ROOTFS/boot" -maxdepth 1 -name 'vmlinuz-*' -not -name '*.old' -type f | sort -V | tail -1)"
+INITRD="$(find "$MNT_ROOTFS/boot" -maxdepth 1 -name 'initrd.img-*' -not -name '*.old' -type f | sort -V | tail -1)"
+
+echo "    vmlinuz candidate: ${VMLINUZ:-NONE}"
+echo "    initrd candidate:  ${INITRD:-NONE}"
+
+if [ -z "$VMLINUZ" ] || [ -z "$INITRD" ]; then
+    echo "ERROR: could not find vmlinuz or initrd in rootfs /boot"
+    echo "Full /boot listing:"
+    find "$MNT_ROOTFS/boot" -ls 2>/dev/null || true
+    exit 1
+fi
+
+cp "$VMLINUZ" "$STAGING/live/vmlinuz"
+cp "$INITRD" "$STAGING/live/initrd.img"
+echo "    vmlinuz: $(du -h "$STAGING/live/vmlinuz" | cut -f1)"
+echo "    initrd:  $(du -h "$STAGING/live/initrd.img" | cut -f1)"
+
 echo "==> Creating squashfs..."
 SQUASHFS="$STAGING/live/filesystem.squashfs"
-mkdir -p "$STAGING/live" "$STAGING/images"
+mkdir -p "$STAGING/images"
 mksquashfs "$MNT_ROOTFS" "$SQUASHFS" -comp xz -no-exports -noappend -quiet
 rm -rf "$MNT_ROOTFS"
 echo "    squashfs: $(du -h "$SQUASHFS" | cut -f1)"
@@ -299,26 +335,7 @@ for img in "${IMAGE_FILES[@]}"; do
     cp "$img" "$STAGING/images/"
 done
 
-# Copy vmlinuz and initrd from the squashfs for direct GRUB boot
-echo "==> Extracting kernel and initrd from squashfs..."
-unsquashfs -f -d "$WORK_DIR/squash-extract" "$SQUASHFS" \
-    'boot/vmlinuz-*' 'boot/initrd.img-*' >/dev/null 2>&1
-
-VMLINUZ="$(find "$WORK_DIR/squash-extract/boot" -maxdepth 1 -name 'vmlinuz-*' -not -name '*.old' -type f | sort -V | tail -1)"
-INITRD="$(find "$WORK_DIR/squash-extract/boot" -maxdepth 1 -name 'initrd.img-*' -not -name '*.old' -type f | sort -V | tail -1)"
-
-if [ -z "$VMLINUZ" ] || [ -z "$INITRD" ]; then
-    echo "ERROR: could not find vmlinuz or initrd in squashfs"
-    exit 1
-fi
-
-mkdir -p "$STAGING/live"
-cp "$VMLINUZ" "$STAGING/live/vmlinuz"
-cp "$INITRD" "$STAGING/live/initrd.img"
-rm -rf "$WORK_DIR/squash-extract"
-
-echo "    vmlinuz: $(du -h "$STAGING/live/vmlinuz" | cut -f1)"
-echo "    initrd:  $(du -h "$STAGING/live/initrd.img" | cut -f1)"
+# vmlinuz and initrd were already copied before squashfs creation
 
 # ============================================================
 # Phase 6: Calculate image size and create disk image
