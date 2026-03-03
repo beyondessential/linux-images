@@ -121,13 +121,6 @@ iso: _validate-arch installer-build
   #!/usr/bin/env bash
   set -euo pipefail
 
-  # Verify installer binary exists
-  if [ ! -f "{{installer_bin}}" ]; then
-    echo "ERROR: installer binary not found at {{installer_bin}}"
-    echo "Run 'just installer-build' first."
-    exit 1
-  fi
-
   # Verify we have images for both variants
   METAL_IMAGE="$(find "{{output_dir}}" -maxdepth 1 -name '*-metal-*.raw.zst' | head -1)"
   CLOUD_IMAGE="$(find "{{output_dir}}" -maxdepth 1 -name '*-cloud-*.raw.zst' | head -1)"
