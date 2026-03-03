@@ -245,11 +245,13 @@ ConditionPathExists=/usr/local/bin/bes-installer
 
 [Service]
 Type=simple
+ExecStartPre=/usr/bin/chvt 2
+ExecStartPre=/usr/bin/dmesg -n 1
 ExecStart=/usr/local/bin/bes-installer
 StandardInput=tty
 StandardOutput=tty
 StandardError=tty
-TTYPath=/dev/tty1
+TTYPath=/dev/tty2
 TTYReset=yes
 TTYVHangup=yes
 Restart=on-failure
@@ -261,8 +263,8 @@ UNIT
 
 chroot "$MNT_ROOTFS" systemctl enable bes-installer.service
 
-# Disable getty on tty1 so it doesn't compete with the installer
-chroot "$MNT_ROOTFS" systemctl mask getty@tty1.service
+# Disable getty on tty2 so it doesn't compete with the installer
+chroot "$MNT_ROOTFS" systemctl mask getty@tty2.service
 
 # r[impl iso.config-partition]
 # Mount unit for the BESCONF partition so the installer can find bes-install.toml.
@@ -388,12 +390,12 @@ insmod all_video
 search --file --no-floppy --set=root /live/vmlinuz
 
 menuentry "BES Installer" {
-    linux /live/vmlinuz boot=live toram quiet
+    linux /live/vmlinuz boot=live toram quiet console=tty1
     initrd /live/initrd.img
 }
 
 menuentry "BES Installer (verbose)" {
-    linux /live/vmlinuz boot=live toram
+    linux /live/vmlinuz boot=live toram console=tty1
     initrd /live/initrd.img
 }
 GRUBCFG
