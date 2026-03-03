@@ -88,7 +88,7 @@ fn render_welcome(frame: &mut Frame, area: Rect) {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )
-        .lines(vec!["BES Installer".into()])
+        .lines(vec!["BES".into()])
         .alignment(Alignment::Center)
         .build();
     frame.render_widget(big_text, chunks[0]);
@@ -96,32 +96,27 @@ fn render_welcome(frame: &mut Frame, area: Rect) {
     let description = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "  BES Linux Images — Disk Installer",
+            "  Tamanu Linux",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  This installer writes a pre-built BES Linux disk image to the"),
-        Line::from("  target disk you select. The image contains a fully configured"),
-        Line::from("  Ubuntu Server system with BES's preferred disk and system layout."),
+        Line::from("  Tamanu Linux is BES's preferred system layout for Linux deployments."),
+        Line::from("  It is based on Ubuntu Server. If you're not installing a Tamanu or"),
+        Line::from("  other BES system, you may want to use the normal Ubuntu Server ISO."),
         Line::from(""),
         Line::from("  Available variants:"),
         Line::from(Span::styled(
-            "    metal  — Full-disk encryption (LUKS2) with optional TPM auto-unlock",
+            "    metal  — Full-disk encryption, hardware-locked when a TPM is available",
             Style::default().fg(Color::Yellow),
         )),
         Line::from(Span::styled(
-            "    cloud  — No encryption, for cloud/VM deployments",
+            "    cloud  — For cloud or on-prem VMs where disk encryption is not needed",
             Style::default().fg(Color::Yellow),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "  WARNING: the selected disk will be completely overwritten.",
-            Style::default().fg(Color::Red),
         )),
         Line::from(""),
         Line::from("  For support, contact BES at:"),
         Line::from(Span::styled(
-            "    https://bearcove.eu",
+            "    https://bes.au",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::UNDERLINED),

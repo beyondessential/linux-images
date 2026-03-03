@@ -413,10 +413,8 @@ statically-linked executable.
 
 r[installer.tui.welcome]
 The TUI must open with a welcome screen that displays a large branded "BES"
-heading rendered with the `tui-big-text` crate, a brief description of what
-the installer does (writes a pre-built BES Linux disk image to the selected
-target disk), and contact information. The user presses Enter to proceed to
-disk selection.
+heading, a brief description of what the image is for, and contact information.
+The user presses Enter to proceed to disk selection.
 
 r[installer.tui.disk-detection]
 The TUI must detect available block devices and display their device path,
