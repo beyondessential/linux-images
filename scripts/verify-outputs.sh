@@ -1,6 +1,4 @@
 #!/bin/bash
-# r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
-#
 # Verify that all expected output formats and checksums are present and valid.
 # Usage: verify-outputs.sh <output_dir> <filestem>
 set -euo pipefail

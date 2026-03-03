@@ -1,3 +1,4 @@
+#!/bin/bash
 PACKAGES=(
     # Kernel and boot
     linux-generic
