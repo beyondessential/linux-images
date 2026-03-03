@@ -579,8 +579,10 @@ partition.
 
 r[test.boot.method]
 The image must be booted in QEMU with a cloud-init NoCloud datasource
-attached as a second virtual disk. This test requires KVM for acceptable
-speed.
+attached as a second virtual disk. QEMU must be configured to prefer KVM
+acceleration with a TCG (software emulation) fallback, so the test can
+run on hosts where KVM is unavailable. KVM is strongly preferred for
+acceptable speed.
 
 > r[test.boot.checks]
 > The cloud-init injected test script must verify:
@@ -633,12 +635,14 @@ Image structure verification (r[test.structure.method]) must run on every
 build.
 
 r[ci.test-boot]
-Boot smoke tests (r[test.boot.method]) must run when KVM is available on the
-runner.
+Boot smoke tests (r[test.boot.method]) must run when KVM is usable on the
+runner. KVM usability must be verified by actually testing access (e.g.
+checking the device is writable), not merely by checking that the device
+node exists.
 
 r[ci.test-e2e]
-End-to-end install tests (r[test.e2e.method]) must run when KVM is available
-on the runner.
+End-to-end install tests (r[test.e2e.method]) must run when KVM is usable
+on the runner, using the same usability check as r[ci.test-boot].
 
 r[ci.tui-build]
 The TUI installer must be compiled for both amd64 and arm64 in CI. For the

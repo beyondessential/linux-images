@@ -51,7 +51,12 @@ jobs:
         run: |
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm
-            echo "kvm=true" >> "$GITHUB_OUTPUT"
+            if [ -w /dev/kvm ] && [ -r /dev/kvm ]; then
+              echo "kvm=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::KVM device exists but is not accessible"
+              echo "kvm=false" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "::warning::KVM not available"
             echo "kvm=false" >> "$GITHUB_OUTPUT"
@@ -257,7 +262,7 @@ jobs:
           - arch: amd64
             runner: ubuntu-24.04
             qemu_cmd: qemu-system-x86_64
-            qemu_accel: -enable-kvm
+            qemu_accel: -accel kvm -accel tcg
             firmware_pkg: ovmf
             fw_code: /usr/share/OVMF/OVMF_CODE.fd
             fw_vars: /usr/share/OVMF/OVMF_VARS.fd
@@ -269,9 +274,13 @@ jobs:
         run: |
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm
+            if [ -w /dev/kvm ] && [ -r /dev/kvm ]; then
+              echo "KVM is usable"
+            else
+              echo "::warning::KVM device exists but is not accessible, falling back to TCG"
+            fi
           else
-            echo "::error::KVM required for E2E tests"
-            exit 1
+            echo "::warning::KVM not available, falling back to TCG"
           fi
 
       - name: Install dependencies

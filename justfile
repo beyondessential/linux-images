@@ -73,9 +73,9 @@ qemu_command := if arch == "amd64" {
   }
 
 qemu_accel := if arch == "amd64" {
-    if arch() == "x86_64" { "-enable-kvm" } else { "-machine virt" }
+    if arch() == "x86_64" { "-accel kvm -accel tcg" } else { "-accel tcg" }
   } else if arch == "arm64" {
-    if arch() == "aarch64" { "-enable-kvm -machine virt" } else { "-machine virt -cpu cortex-a57" }
+    if arch() == "aarch64" { "-accel kvm -accel tcg -machine virt" } else { "-accel tcg -machine virt -cpu cortex-a57" }
   } else {
     error("Unsupported architecture")
   }
