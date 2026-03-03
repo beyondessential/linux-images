@@ -108,6 +108,10 @@ partprobe "$LOOP_DEVICE" 2>/dev/null || true
 udevadm settle 2>/dev/null || true
 sleep 1
 
+# r[verify image.partition.table]
+PTTYPE="$(blkid -o value -s PTTYPE "$LOOP_DEVICE" 2>/dev/null || true)"
+check "partition table is GPT" [ "$PTTYPE" = "gpt" ]
+
 # r[verify image.partition.count]
 PART_COUNT="$(lsblk -ln -o NAME "$LOOP_DEVICE" | grep -c "^$(basename "$LOOP_DEVICE")p")"
 if [ "$PART_COUNT" -eq 3 ]; then
