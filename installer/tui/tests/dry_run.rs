@@ -199,6 +199,7 @@ fn auto_disk_path_resolves_correctly() {
 
 // r[verify installer.dryrun.schema]
 // r[verify installer.config.schema]
+// r[verify image.tpm.disableable]
 #[test]
 fn auto_disable_tpm_reflected_in_plan() {
     let f = Fixture::new();
@@ -266,6 +267,7 @@ fn auto_cloud_variant_no_firstboot() {
 }
 
 // r[verify installer.config.schema]
+// r[verify image.tpm.disableable]
 #[test]
 fn auto_disable_tpm_on_cloud_emits_warning() {
     let f = Fixture::new();
@@ -648,6 +650,7 @@ enter
 
 // r[verify installer.mode.interactive]
 // r[verify installer.tui.variant-selection]
+// r[verify image.tpm.disableable]
 #[test]
 fn interactive_cloud_skips_tpm_screen() {
     let f = Fixture::new();
@@ -1719,6 +1722,7 @@ fn auto_with_only_ssh_keys() {
 // ---------------------------------------------------------------------------
 
 // r[verify installer.tui.tpm-toggle]
+// r[verify image.tpm.disableable]
 #[test]
 fn scripted_tpm_toggle_twice_leaves_enabled() {
     let f = Fixture::new();
