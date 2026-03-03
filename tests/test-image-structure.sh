@@ -392,7 +392,11 @@ if [ -f "$FSTAB" ]; then
         else
             fail "fstab has compress=zstd:6 on root"
         fi
-        check "fstab has no swap entries" ! grep -qE '^\S+\s+\S+\s+swap\s' "$FSTAB"
+        if grep -qE '^\S+\s+\S+\s+swap\s' "$FSTAB"; then
+            fail "fstab has no swap entries"
+        else
+            pass "fstab has no swap entries"
+        fi
 
         if [ "$VARIANT" = "metal" ]; then
             if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q '/dev/mapper/root'; then
