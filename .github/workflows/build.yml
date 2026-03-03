@@ -53,14 +53,19 @@ jobs:
         run: |
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm
-            if [ -w /dev/kvm ] && [ -r /dev/kvm ]; then
-              echo "kvm=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "::warning::KVM device exists but is not accessible"
-              echo "kvm=false" >> "$GITHUB_OUTPUT"
-            fi
+          fi
+          # Probe KVM by opening the device and issuing KVM_GET_API_VERSION ioctl
+          if python3 -c "
+          import os, fcntl
+          KVM_GET_API_VERSION = 0xAE00
+          fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
+          ret = fcntl.ioctl(fd, KVM_GET_API_VERSION, 0)
+          os.close(fd)
+          " 2>/dev/null; then
+            echo "KVM is usable (ioctl probe succeeded)"
+            echo "kvm=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::KVM not available"
+            echo "::warning::KVM is not usable (ioctl probe failed)"
             echo "kvm=false" >> "$GITHUB_OUTPUT"
           fi
         id: kvm
@@ -276,13 +281,17 @@ jobs:
         run: |
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm
-            if [ -w /dev/kvm ] && [ -r /dev/kvm ]; then
-              echo "KVM is usable"
-            else
-              echo "::warning::KVM device exists but is not accessible, falling back to TCG"
-            fi
+          fi
+          if python3 -c "
+          import os, fcntl
+          KVM_GET_API_VERSION = 0xAE00
+          fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
+          ret = fcntl.ioctl(fd, KVM_GET_API_VERSION, 0)
+          os.close(fd)
+          " 2>/dev/null; then
+            echo "KVM is usable (ioctl probe succeeded)"
           else
-            echo "::warning::KVM not available, falling back to TCG"
+            echo "::warning::KVM is not usable, QEMU will fall back to TCG"
           fi
 
       - name: Install dependencies

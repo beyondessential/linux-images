@@ -641,9 +641,9 @@ build.
 
 r[ci.test-boot]
 Boot smoke tests (r[test.boot.method]) must run when KVM is usable on the
-runner. KVM usability must be verified by actually testing access (e.g.
-checking the device is writable), not merely by checking that the device
-node exists.
+runner. KVM usability must be verified by issuing a `KVM_GET_API_VERSION`
+ioctl on `/dev/kvm`, not merely by checking that the device node exists or
+has the right file permissions.
 
 r[ci.test-e2e]
 End-to-end install tests (r[test.e2e.method]) must run when KVM is usable
