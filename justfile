@@ -16,6 +16,14 @@ variant := "metal"
 qemu_memory := "4096"
 qemu_cores := "2"
 
+# Mirror for debootstrap: override with e.g. `just ubuntu_mirror=http://localhost:3142/archive.ubuntu.com/ubuntu`
+# Auto-detects local apt-cacher-ng on port 3142, falls back to archive.ubuntu.com.
+ubuntu_mirror := if arch == "arm64" {
+    `curl -sf -o /dev/null --max-time 1 http://localhost:3142/ports.ubuntu.com/ubuntu-ports/dists/ 2>/dev/null && echo http://localhost:3142/ports.ubuntu.com/ubuntu-ports || echo http://ports.ubuntu.com/ubuntu-ports`
+  } else {
+    `curl -sf -o /dev/null --max-time 1 http://localhost:3142/archive.ubuntu.com/ubuntu/dists/ 2>/dev/null && echo http://localhost:3142/archive.ubuntu.com/ubuntu || echo http://nz.archive.ubuntu.com/ubuntu`
+  }
+
 _default:
   @echo "{{BOLD}}You probably want to run {{INVERT}}just build{{NORMAL}}"
   @echo ""
@@ -25,6 +33,7 @@ _default:
   @echo "Variable: variant={{variant}} (metal, cloud)"
   @echo "Variable: ubuntu_version={{ubuntu_version}}"
   @echo "Variable: ubuntu_suite={{ubuntu_suite}}"
+  @echo "Variable: ubuntu_mirror={{ubuntu_mirror}}"
   @echo "Variable: qemu_memory={{qemu_memory}}"
   @echo "Variable: qemu_cores={{qemu_cores}}"
 
@@ -136,6 +145,7 @@ iso: _validate-arch installer-build
        INSTALLER_BIN="{{installer_bin}}" \
        IMAGE_DIR="{{output_dir}}" \
        UBUNTU_SUITE="{{ubuntu_suite}}" \
+       UBUNTU_MIRROR="{{ubuntu_mirror}}" \
        iso/build-iso.sh
 
 # ============================================================
@@ -305,6 +315,7 @@ raw: _validate-variant _validate-arch _ensure-dirs
        OUTPUT="{{output_raw}}" \
        IMAGE_SIZE=8G \
        UBUNTU_SUITE="{{ubuntu_suite}}" \
+       UBUNTU_MIRROR="{{ubuntu_mirror}}" \
        image/build.sh
 
 # Post-process image (defrag, dedupe, compress)
