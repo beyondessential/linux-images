@@ -237,29 +237,29 @@ echo "==> Phase 3: Installing TUI installer binary and configuring autostart..."
 install -m 755 "$INSTALLER_BIN" "$MNT_ROOTFS/usr/local/bin/bes-installer"
 
 # r[impl iso.boot.autostart]
-# Wrapper script: runs the installer and if it crashes, shows the error
-# on the TTY so the user isn't left staring at a blank screen.
+# Wrapper script: runs the installer with logging to a file (not piped
+# through tee, which would break the TUI's alternate screen mode).
+# If the installer crashes, it leaves the alternate screen and shows
+# the error on the TTY.
 cat > "$MNT_ROOTFS/usr/local/bin/bes-installer-wrapper" << 'WRAPPER'
 #!/bin/bash
 export RUST_LOG=info
 LOG=/var/log/bes-installer.log
 
-/usr/bin/dmesg -n 1
-/usr/bin/chvt 2
-
-/usr/local/bin/bes-installer 2>&1 | tee "$LOG"
-RC=${PIPESTATUS[0]}
+/usr/local/bin/bes-installer 2>"$LOG"
+RC=$?
 
 if [ "$RC" -ne 0 ]; then
+    # Installer crashed — make sure we're out of alternate screen mode
+    printf '\033[?1049l'
     echo ""
     echo "=========================================="
     echo " BES Installer exited with error (rc=$RC)"
     echo "=========================================="
     echo ""
-    echo "Last 20 lines of log:"
-    tail -20 "$LOG"
+    echo "Log output:"
+    cat "$LOG"
     echo ""
-    echo "Full log: $LOG"
     echo "Press Enter to retry, or Ctrl-Alt-F1 for a shell."
     read -r
 fi
@@ -268,10 +268,29 @@ exit "$RC"
 WRAPPER
 chmod 755 "$MNT_ROOTFS/usr/local/bin/bes-installer-wrapper"
 
+# Oneshot service to switch to tty2 early in boot, before the installer starts.
+# Runs as a separate unit so it doesn't depend on the installer's TTY context.
+cat > "$MNT_ROOTFS/etc/systemd/system/bes-chvt.service" << 'UNIT'
+[Unit]
+Description=Switch to VT2 for BES Installer
+After=systemd-vconsole-setup.service
+Before=bes-installer.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/chvt 2
+ExecStart=/usr/bin/dmesg -n 1
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
 cat > "$MNT_ROOTFS/etc/systemd/system/bes-installer.service" << 'UNIT'
 [Unit]
 Description=BES Installer TUI
-After=multi-user.target systemd-logind.service
+After=multi-user.target systemd-logind.service bes-chvt.service
 Conflicts=getty@tty2.service autovt@tty2.service
 
 [Service]
@@ -290,6 +309,7 @@ RestartSec=3
 WantedBy=multi-user.target
 UNIT
 
+chroot "$MNT_ROOTFS" systemctl enable bes-chvt.service
 chroot "$MNT_ROOTFS" systemctl enable bes-installer.service
 
 # Disable getty and autovt on tty2 so they don't compete with the installer
