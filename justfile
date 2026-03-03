@@ -16,12 +16,11 @@ variant := "metal"
 qemu_memory := "4096"
 qemu_cores := "2"
 
-# Mirror for debootstrap: override with e.g. `just ubuntu_mirror=http://localhost:3142/archive.ubuntu.com/ubuntu`
-# Auto-detects local apt-cacher-ng on port 3142, falls back to archive.ubuntu.com.
+# Mirror for debootstrap: override with e.g. `just ubuntu_mirror=http://archive.ubuntu.com/ubuntu`
 ubuntu_mirror := if arch == "arm64" {
-    `curl -sf -o /dev/null --max-time 1 http://localhost:3142/ports.ubuntu.com/ubuntu-ports/dists/ 2>/dev/null && echo http://localhost:3142/ports.ubuntu.com/ubuntu-ports || echo http://ports.ubuntu.com/ubuntu-ports`
+    "http://ports.ubuntu.com/ubuntu-ports"
   } else {
-    `curl -sf -o /dev/null --max-time 1 http://localhost:3142/archive.ubuntu.com/ubuntu/dists/ 2>/dev/null && echo http://localhost:3142/archive.ubuntu.com/ubuntu || echo http://nz.archive.ubuntu.com/ubuntu`
+    "http://nz.archive.ubuntu.com/ubuntu"
   }
 
 _default:
