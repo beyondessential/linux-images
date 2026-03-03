@@ -10,6 +10,8 @@ use tracing_subscriber::prelude::*;
 mod config;
 mod disk;
 mod firstboot;
+mod plan;
+mod script;
 mod ui;
 mod writer;
 
@@ -25,6 +27,31 @@ struct Cli {
     /// Path to log file (default: /var/log/bes-installer.log)
     #[arg(long, default_value = DEFAULT_LOG_PATH)]
     log: PathBuf,
+
+    // r[impl installer.dryrun]
+    /// Dry-run mode: collect all decisions and emit an install plan as JSON
+    /// instead of performing any destructive operations.
+    #[arg(long)]
+    dry_run: bool,
+
+    // r[impl installer.dryrun.output]
+    /// Path to write the dry-run JSON install plan. If omitted, the plan is
+    /// written to stdout.
+    #[arg(long)]
+    dry_run_output: Option<PathBuf>,
+
+    // r[impl installer.dryrun.devices]
+    /// Path to a JSON file describing fake block devices (for testing).
+    /// When given, the installer reads devices from this file instead of
+    /// running lsblk.
+    #[arg(long)]
+    fake_devices: Option<PathBuf>,
+
+    // r[impl installer.dryrun.script]
+    /// Path to a newline-delimited script file of key events to feed to the
+    /// TUI instead of reading from the terminal.
+    #[arg(long)]
+    input_script: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -57,18 +84,41 @@ fn run(cli: Cli) -> Result<()> {
     let arch = detect_arch();
     tracing::info!("detected architecture: {arch}");
 
-    let devices = disk::detect_block_devices().context("detecting block devices")?;
+    // r[impl installer.dryrun.devices]
+    let devices = if let Some(ref fake_path) = cli.fake_devices {
+        tracing::info!("loading fake devices from {}", fake_path.display());
+        disk::load_fake_devices(fake_path)?
+    } else {
+        disk::detect_block_devices().context("detecting block devices")?
+    };
+
     if devices.is_empty() {
         bail!("no block devices found");
     }
 
-    let boot_device = disk::detect_boot_device();
+    let boot_device = if cli.fake_devices.is_some() {
+        None
+    } else {
+        disk::detect_boot_device()
+    };
     if let Some(ref bd) = boot_device {
         tracing::info!("boot device: {}", bd.display());
     }
 
+    let config_warnings = install_config.validate();
+    for w in &config_warnings {
+        tracing::warn!("config: {w}");
+    }
+
     match mode {
-        config::OperatingMode::Auto => run_auto(install_config, &arch, &devices, &boot_device),
+        config::OperatingMode::Auto => run_auto(
+            install_config,
+            &arch,
+            &devices,
+            &boot_device,
+            config_warnings,
+            &cli,
+        ),
         // r[impl installer.mode.auto-incomplete]
         config::OperatingMode::AutoIncomplete {
             missing_variant,
@@ -86,11 +136,25 @@ fn run(cli: Cli) -> Result<()> {
                 missing.join(", ")
             );
             eprintln!("falling back to interactive mode");
-            run_interactive(install_config, &arch, devices, boot_device)
+            run_interactive(
+                install_config,
+                &mode,
+                &arch,
+                devices,
+                boot_device,
+                config_warnings,
+                &cli,
+            )
         }
-        config::OperatingMode::Interactive | config::OperatingMode::Prefilled => {
-            run_interactive(install_config, &arch, devices, boot_device)
-        }
+        config::OperatingMode::Interactive | config::OperatingMode::Prefilled => run_interactive(
+            install_config,
+            &mode,
+            &arch,
+            devices,
+            boot_device,
+            config_warnings,
+            &cli,
+        ),
     }
 }
 
@@ -100,11 +164,6 @@ fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMod
     match config_path {
         Some(path) => {
             let cfg = config::InstallConfig::load_from_file(&path)?.unwrap_or_default();
-
-            let warnings = cfg.validate();
-            for w in &warnings {
-                tracing::warn!("config: {w}");
-            }
 
             let mode = cfg.mode();
             tracing::info!("operating mode: {mode}");
@@ -126,12 +185,34 @@ fn run_auto(
     arch: &str,
     devices: &[disk::BlockDevice],
     boot_device: &Option<PathBuf>,
+    config_warnings: Vec<String>,
+    cli: &Cli,
 ) -> Result<()> {
     let variant = cfg.variant.expect("auto mode requires variant");
     let disk_selector = cfg.disk.as_ref().expect("auto mode requires disk");
 
     let target = disk::resolve_disk(disk_selector, devices, boot_device.as_ref())?;
-    let image_path = writer::find_image_path(&variant.to_string(), arch)?;
+    let image_path = if cli.dry_run {
+        writer::find_image_path(&variant.to_string(), arch).ok()
+    } else {
+        Some(writer::find_image_path(&variant.to_string(), arch)?)
+    };
+
+    // r[impl installer.dryrun]
+    if cli.dry_run {
+        let plan = plan::InstallPlan::new(
+            &config::OperatingMode::Auto,
+            variant,
+            Some(target),
+            cfg.disable_tpm,
+            cfg.firstboot.as_ref(),
+            image_path,
+            config_warnings,
+        );
+        return emit_plan(&plan, cli);
+    }
+
+    let image_path = image_path.unwrap();
 
     eprintln!("BES Installer -- automatic mode");
     eprintln!("  variant:    {variant}");
@@ -196,9 +277,12 @@ fn run_auto(
 // r[impl installer.mode.prefilled]
 fn run_interactive(
     cfg: config::InstallConfig,
+    mode: &config::OperatingMode,
     arch: &str,
     devices: Vec<disk::BlockDevice>,
     boot_device: Option<PathBuf>,
+    config_warnings: Vec<String>,
+    cli: &Cli,
 ) -> Result<()> {
     let variant = cfg.variant.unwrap_or(config::Variant::Metal);
 
@@ -208,7 +292,12 @@ fn run_interactive(
             .and_then(|resolved| devices.iter().position(|d| d.path == resolved.path))
     });
 
-    let image_path = writer::find_image_path(&variant.to_string(), arch)?;
+    let image_path = if cli.dry_run {
+        writer::find_image_path(&variant.to_string(), arch).ok()
+    } else {
+        Some(writer::find_image_path(&variant.to_string(), arch)?)
+    };
+
     let build_info = read_build_info();
 
     let state = ui::AppState::new(
@@ -221,7 +310,59 @@ fn run_interactive(
         build_info,
     );
 
+    // r[impl installer.dryrun.script]
+    // r[impl installer.dryrun.script.headless]
+    if let Some(ref script_path) = cli.input_script {
+        let events = script::parse_script_file(script_path)?;
+        let final_state = ui::run_tui_scripted(state, events);
+
+        if cli.dry_run {
+            let plan = plan_from_tui_state(&final_state, mode, &image_path, &config_warnings);
+            return emit_plan(&plan, cli);
+        }
+
+        eprintln!("scripted TUI finished on screen: {:?}", final_state.screen);
+        return Ok(());
+    }
+
+    // r[impl installer.dryrun]
+    if cli.dry_run {
+        let plan = plan_from_tui_state(&state, mode, &image_path, &config_warnings);
+        return emit_plan(&plan, cli);
+    }
+
+    let image_path = image_path.unwrap();
     ui::run_tui(state, &image_path)
+}
+
+fn plan_from_tui_state(
+    state: &ui::AppState,
+    mode: &config::OperatingMode,
+    image_path: &Option<PathBuf>,
+    config_warnings: &[String],
+) -> plan::InstallPlan {
+    let disk = state.selected_disk();
+    let firstboot = state.firstboot_config();
+    plan::InstallPlan::new(
+        mode,
+        state.variant,
+        disk,
+        state.disable_tpm,
+        firstboot.as_ref(),
+        image_path.clone(),
+        config_warnings.to_vec(),
+    )
+}
+
+// r[impl installer.dryrun.output]
+fn emit_plan(plan: &plan::InstallPlan, cli: &Cli) -> Result<()> {
+    if let Some(ref path) = cli.dry_run_output {
+        plan.write_to_path(path)?;
+        tracing::info!("wrote install plan to {}", path.display());
+    } else {
+        plan.write_to_stdout()?;
+    }
+    Ok(())
 }
 
 fn read_build_info() -> String {
