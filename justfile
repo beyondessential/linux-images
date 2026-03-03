@@ -16,11 +16,11 @@ variant := "metal"
 qemu_memory := "4096"
 qemu_cores := "2"
 
-# Mirror for debootstrap: override with e.g. `just ubuntu_mirror=http://archive.ubuntu.com/ubuntu`
+# Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 ubuntu_mirror := if arch == "arm64" {
-    "http://ports.ubuntu.com/ubuntu-ports"
+    env_var_or_default("UBUNTU_PORTS_MIRROR", "http://ports.ubuntu.com/ubuntu-ports")
   } else {
-    "http://nz.archive.ubuntu.com/ubuntu"
+    env_var_or_default("UBUNTU_MIRROR", "http://nz.archive.ubuntu.com/ubuntu")
   }
 
 _default:

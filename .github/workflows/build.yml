@@ -24,6 +24,8 @@ permissions:
 
 env:
   UBUNTU_SUITE: noble
+  UBUNTU_MIRROR: http://us.archive.ubuntu.com/ubuntu
+  UBUNTU_PORTS_MIRROR: http://ports.ubuntu.com/ubuntu-ports
 
 jobs:
   # ============================================================
