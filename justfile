@@ -1,5 +1,14 @@
 linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
 
+# Auto-detect container runtime: prefer docker, fall back to podman
+container_runtime := if `command -v docker >/dev/null 2>&1 && echo found || echo missing` == "found" {
+    "docker"
+  } else if `command -v podman >/dev/null 2>&1 && echo found || echo missing` == "found" {
+    "podman"
+  } else {
+    error("Neither docker nor podman found")
+  }
+
 ubuntu_version := "24.04"
 ubuntu_suite := "noble"
 arch := "amd64"
@@ -102,10 +111,10 @@ raw: _validate-variant _validate-arch _ensure-dirs
 
 # Post-process image (defrag, dedupe, compress)
 _post-process-image:
-  cd image && docker build -t image-post-process -f Dockerfile.post-process .
+  cd image && {{container_runtime}} build -t image-post-process -f Dockerfile.post-process .
 
 _post-process: raw _post-process-image
-  docker run --rm --privileged \
+  {{container_runtime}} run --rm --privileged \
     -v "$(pwd)/{{output_dir}}:/work" \
     -v /dev:/dev \
     --init \
