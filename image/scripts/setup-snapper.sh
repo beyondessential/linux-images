@@ -6,8 +6,8 @@
 set -euxo pipefail
 
 # r[image.snapper.root]: Configure snapper for the root subvolume
-snapper -c root create-config /
-snapper -c root set-config \
+snapper --no-dbus -c root create-config /
+snapper --no-dbus -c root set-config \
     TIMELINE_CREATE=yes \
     TIMELINE_CLEANUP=yes \
     NUMBER_CLEANUP=yes \
@@ -18,8 +18,8 @@ snapper -c root set-config \
 
 # r[image.snapper.postgres]: Configure snapper for the PostgreSQL subvolume
 mkdir -p /var/lib/postgresql
-snapper -c postgres create-config /var/lib/postgresql
-snapper -c postgres set-config \
+snapper --no-dbus -c postgres create-config /var/lib/postgresql
+snapper --no-dbus -c postgres set-config \
     TIMELINE_CREATE=yes \
     TIMELINE_CLEANUP=yes \
     NUMBER_CLEANUP=yes \
