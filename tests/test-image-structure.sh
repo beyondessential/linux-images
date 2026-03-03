@@ -18,14 +18,14 @@ ERRORS=()
 pass() {
     local desc="$1"
     echo "  PASS: $desc"
-    ((PASS++))
+    PASS=$((PASS + 1))
 }
 
 fail() {
     local desc="$1"
     echo "  FAIL: $desc"
     ERRORS+=("$desc")
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
 }
 
 check() {
@@ -311,8 +311,16 @@ check "GRUB recordfail timeout is 5" grep -q '^GRUB_RECORDFAIL_TIMEOUT=5' "$MNT/
 
 # User
 check "ubuntu user exists in passwd" grep -q '^ubuntu:' "$MNT/etc/passwd"
-check "ubuntu user has /bin/bash shell" grep '^ubuntu:' "$MNT/etc/passwd" | grep -q '/bin/bash$'
-check "root user has /sbin/nologin shell" grep '^root:' "$MNT/etc/passwd" | grep -q '/sbin/nologin$'
+if grep '^ubuntu:' "$MNT/etc/passwd" | grep -q '/bin/bash$'; then
+    pass "ubuntu user has /bin/bash shell"
+else
+    fail "ubuntu user has /bin/bash shell"
+fi
+if grep '^root:' "$MNT/etc/passwd" | grep -q '/sbin/nologin$'; then
+    pass "root user has /sbin/nologin shell"
+else
+    fail "root user has /sbin/nologin shell"
+fi
 
 # ============================================================
 # 5. systemd service checks
