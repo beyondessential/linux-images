@@ -31,9 +31,10 @@ jobs:
             qemu_pkg: qemu-system-arm
             firmware_pkg: qemu-efi-aarch64
     runs-on: ${{ matrix.runner }}
+    # r[verify ci.output-arch] r[verify ci.output-suite]
     steps:
       - uses: actions/checkout@v6
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v3
 
       - name: Install dependencies
         run: |
@@ -57,6 +58,9 @@ jobs:
       - name: Produce final artifacts
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} build
         timeout-minutes: 30
+
+      - name: Verify outputs # r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} verify-outputs
 
       - name: List outputs
         run: ls -lh output/${{ matrix.arch }}/
@@ -82,27 +86,24 @@ jobs:
             cargo_target: aarch64-unknown-linux-musl
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.cargo_target }}
+      # r[verify ci.rust-stable]
+      - name: Install Rust toolchain via rustup
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup target add ${{ matrix.cargo_target }}
 
       - name: Install musl tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends musl-tools
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+      # r[verify ci.rust-cache]
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            installer/tui/target
-          key: cargo-${{ matrix.cargo_target }}-${{ hashFiles('installer/tui/Cargo.lock') }}
-          restore-keys: cargo-${{ matrix.cargo_target }}-
+          workspaces: installer/tui
 
       - name: Run cargo test # r[verify ci.unit-test]
         run: cd installer/tui && cargo test
@@ -124,7 +125,7 @@ jobs:
             echo "::warning::Binary may not be fully static"
 
       - name: Upload installer binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.arch }}
           path: installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer
@@ -143,8 +144,8 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v2
+      - uses: actions/checkout@v6
+      - uses: extractions/setup-just@v3
 
       - name: Install dependencies
         run: |
@@ -155,19 +156,19 @@ jobs:
             parted util-linux zstd cryptsetup xorriso
 
       - name: Download metal image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: image-metal-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/
 
       - name: Download cloud image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: image-cloud-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/
 
       - name: Download installer binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: installer-${{ matrix.arch }}
           path: installer-bin/
@@ -196,7 +197,7 @@ jobs:
         run: just arch=${{ matrix.arch }} iso-test-structure
 
       - name: Upload ISO
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: iso-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/bes-installer-*.iso
@@ -207,9 +208,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts/
 
@@ -237,7 +238,6 @@ jobs:
             fi
           done
 
-          # Generate combined checksums
           # r[image.output.checksum]
           cd release
           rm -f SHA256SUMS

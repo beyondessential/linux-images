@@ -333,6 +333,11 @@ build-all:
   just arch=arm64 variant=metal build
   just arch=arm64 variant=cloud build
 
+# Verify output formats and checksums
+# r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
+verify-outputs: _validate-variant _validate-arch
+  scripts/verify-outputs.sh "{{output_dir}}" "{{filestem}}"
+
 # ============================================================
 # Testing
 # ============================================================

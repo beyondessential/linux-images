@@ -498,6 +498,16 @@ if [ -x "$MNT/usr/bin/dpkg-query" ]; then
         fi
     done
 
+    # netavark and aardvark-dns are expected as dependencies of podman from the bes-tools repo
+    for dep_pkg in netavark aardvark-dns; do
+        # shellcheck disable=SC2016 # ${Status} is a dpkg format string, not a bash variable
+        if chroot "$MNT" dpkg-query -W -f='${Status}\n' "$dep_pkg" 2>/dev/null | grep -q "install ok installed"; then
+            pass "podman dependency '$dep_pkg' is installed"
+        else
+            fail "podman dependency '$dep_pkg' is installed"
+        fi
+    done
+
     # r[verify image.boot.dracut]
     # shellcheck disable=SC2016
     if chroot "$MNT" dpkg-query -W -f='${Status}\n' initramfs-tools 2>/dev/null | grep -q "install ok installed"; then
