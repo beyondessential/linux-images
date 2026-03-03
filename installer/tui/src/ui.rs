@@ -1,13 +1,3 @@
-// r[impl installer.tui.rust]
-// r[impl installer.tui.disk-detection]
-// r[impl installer.tui.variant-selection]
-// r[impl installer.tui.tpm-toggle]
-// r[impl installer.tui.hostname]
-// r[impl installer.tui.tailscale]
-// r[impl installer.tui.ssh-keys]
-// r[impl installer.tui.confirmation]
-// r[impl installer.tui.progress]
-
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -52,6 +42,7 @@ pub struct AppState {
     pub ssh_keys_input: String,
 }
 
+// r[impl installer.tui.progress]
 #[derive(Debug, Clone)]
 pub struct ProgressSnapshot {
     pub bytes_written: u64,
@@ -106,6 +97,9 @@ impl AppState {
         }
     }
 
+    // r[impl installer.tui.hostname]
+    // r[impl installer.tui.tailscale]
+    // r[impl installer.tui.ssh-keys]
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
     pub fn firstboot_config(&self) -> Option<FirstbootConfig> {
@@ -143,6 +137,7 @@ impl AppState {
         self.devices.get(self.selected_disk_index)
     }
 
+    // r[impl installer.tui.disk-detection]
     pub fn select_next_disk(&mut self) {
         if !self.devices.is_empty() {
             self.selected_disk_index = (self.selected_disk_index + 1) % self.devices.len();
@@ -158,6 +153,7 @@ impl AppState {
         }
     }
 
+    // r[impl installer.tui.variant-selection]
     pub fn toggle_variant(&mut self) {
         self.variant = match self.variant {
             Variant::Metal => Variant::Cloud,
@@ -165,6 +161,7 @@ impl AppState {
         };
     }
 
+    // r[impl installer.tui.tpm-toggle]
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
             Screen::Welcome => Screen::DiskSelection,
@@ -205,6 +202,7 @@ impl AppState {
         "yes"
     }
 
+    // r[impl installer.tui.confirmation]
     pub fn is_confirmed(&self) -> bool {
         self.confirm_input
             .trim()

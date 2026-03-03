@@ -1,11 +1,3 @@
-# r[impl ci.matrix]
-# r[impl ci.test-structure]
-# r[impl ci.test-boot]
-# r[impl ci.test-e2e]
-# r[impl ci.tui-build]
-# r[impl ci.iso-build]
-# r[impl ci.release]
-
 name: Build Images
 
 on:
@@ -31,6 +23,7 @@ jobs:
   # ============================================================
   # Build disk images: {arch} x {variant}
   # ============================================================
+  # r[impl ci.matrix]
   images:
     strategy:
       fail-fast: false
@@ -86,9 +79,11 @@ jobs:
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} raw
         timeout-minutes: 60
 
+      # r[impl ci.test-structure]
       - name: Test image structure
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-structure
 
+      # r[impl ci.test-boot]
       - name: Boot smoke test
         if: steps.kvm.outputs.kvm == 'true'
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-boot
@@ -111,6 +106,7 @@ jobs:
   # ============================================================
   # Build TUI installer (cross-compile for both arches)
   # ============================================================
+  # r[impl ci.tui-build]
   installer:
     strategy:
       fail-fast: false
@@ -176,6 +172,7 @@ jobs:
   # ============================================================
   # Build live ISOs (per-arch, depends on images + installer)
   # ============================================================
+  # r[impl ci.iso-build]
   iso:
     needs: [images, installer]
     strategy:
@@ -248,6 +245,7 @@ jobs:
   # ============================================================
   # E2E install test: boot ISO in QEMU, auto-install to blank disk
   # ============================================================
+  # r[impl ci.test-e2e]
   e2e-test:
     needs: [iso]
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')

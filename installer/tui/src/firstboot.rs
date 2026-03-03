@@ -1,10 +1,3 @@
-// r[impl installer.firstboot.mount]
-// r[impl installer.firstboot.hostname]
-// r[impl installer.firstboot.tailscale-authkey]
-// r[impl installer.firstboot.ssh-keys]
-// r[impl installer.firstboot.tpm-disable]
-// r[impl installer.firstboot.unmount]
-
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, chown};
 use std::path::{Path, PathBuf};
@@ -28,6 +21,7 @@ impl MountedTarget {
     }
 }
 
+// r[impl installer.firstboot.mount]
 pub fn mount_target(target_device: &Path, variant: Variant) -> Result<MountedTarget> {
     let root_part = partition_path(target_device, 3)?;
 
@@ -59,6 +53,7 @@ pub fn mount_target(target_device: &Path, variant: Variant) -> Result<MountedTar
     })
 }
 
+// r[impl installer.firstboot.unmount]
 pub fn unmount_target(target: MountedTarget) -> Result<()> {
     run_command("umount", &[target.mount_path.to_str().unwrap_or_default()])
         .context("unmounting target root")?;
@@ -89,6 +84,7 @@ pub fn apply_firstboot(target: &MountedTarget, config: &FirstbootConfig) -> Resu
     Ok(())
 }
 
+// r[impl installer.firstboot.tpm-disable]
 pub fn apply_tpm_disable(target: &MountedTarget) -> Result<()> {
     let symlink = target
         .path()
@@ -109,6 +105,7 @@ pub fn apply_tpm_disable(target: &MountedTarget) -> Result<()> {
     Ok(())
 }
 
+// r[impl installer.firstboot.hostname]
 fn apply_hostname(root: &Path, hostname: &str) -> Result<()> {
     let path = root.join("etc/hostname");
     fs::write(&path, format!("{hostname}\n"))
@@ -128,6 +125,7 @@ fn apply_hostname(root: &Path, hostname: &str) -> Result<()> {
     Ok(())
 }
 
+// r[impl installer.firstboot.tailscale-authkey]
 fn apply_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
     let bes_dir = root.join("etc/bes");
     fs::create_dir_all(&bes_dir).context("creating /etc/bes")?;
@@ -142,6 +140,7 @@ fn apply_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
     Ok(())
 }
 
+// r[impl installer.firstboot.ssh-keys]
 fn apply_ssh_keys(root: &Path, keys: &[String]) -> Result<()> {
     let ssh_dir = root.join("home/ubuntu/.ssh");
     fs::create_dir_all(&ssh_dir).context("creating .ssh directory")?;

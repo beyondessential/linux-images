@@ -11,7 +11,6 @@ use crate::writer::format_eta;
 use super::{AppState, Screen};
 
 pub fn render(frame: &mut Frame, state: &AppState) {
-    // r[impl installer.tui.welcome]
     let area = frame.area();
 
     let chunks = Layout::vertical([
@@ -153,6 +152,7 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, chunks[2]);
 }
 
+// r[impl installer.tui.disk-detection]
 fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     let items: Vec<ListItem> = state
         .devices
@@ -190,6 +190,7 @@ fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, area);
 }
 
+// r[impl installer.tui.variant-selection]
 fn render_variant_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     let variants = [
         ("metal", "Full-disk encryption (LUKS2) with TPM auto-unlock"),
@@ -221,6 +222,7 @@ fn render_variant_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, area);
 }
 
+// r[impl installer.tui.tpm-toggle]
 fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
     let status = if state.disable_tpm {
         "DISABLED"
@@ -368,6 +370,7 @@ fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, chunks[1]);
 }
 
+// r[impl installer.tui.confirmation]
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -459,6 +462,7 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
+// r[impl installer.tui.progress]
 fn render_writing(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(area);
 

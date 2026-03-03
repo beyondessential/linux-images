@@ -1,12 +1,10 @@
-// r[impl installer.config.schema]
-// r[impl installer.config.location]
-
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+// r[impl installer.config.schema]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {

@@ -1,5 +1,3 @@
-// r[impl installer.tui.rust]
-
 use std::io;
 use std::path::Path;
 use std::sync::mpsc;
@@ -28,6 +26,7 @@ enum WorkerMessage {
     FirstbootError(String),
 }
 
+// r[impl installer.tui.rust]
 pub fn run_tui(mut state: AppState, image_path: &Path) -> Result<()> {
     terminal::enable_raw_mode().context("enabling raw mode")?;
     let mut stdout = io::stdout();

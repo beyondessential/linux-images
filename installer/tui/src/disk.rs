@@ -1,5 +1,3 @@
-// r[impl installer.tui.disk-detection]
-
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -114,6 +112,7 @@ struct LsblkDevice {
     ro: Option<bool>,
 }
 
+// r[impl installer.tui.disk-detection]
 pub fn detect_block_devices() -> Result<Vec<BlockDevice>> {
     let output = Command::new("lsblk")
         .args([

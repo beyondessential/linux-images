@@ -1,7 +1,3 @@
-// r[impl installer.write.wipe]
-// r[impl installer.write.decompress-stream]
-// r[impl installer.tui.progress]
-
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -10,6 +6,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 
+// r[impl installer.tui.progress]
 pub struct WriteProgress {
     pub bytes_written: u64,
     pub total_bytes: Option<u64>,
@@ -135,6 +132,7 @@ pub fn wipe_disk(target: &Path) -> Result<()> {
 
 /// Stream-decompress a `.raw.zst` file directly to a block device, calling `on_progress`
 /// periodically with current write progress.
+// r[impl installer.write.decompress-stream]
 pub fn write_image(
     source: &Path,
     target: &Path,

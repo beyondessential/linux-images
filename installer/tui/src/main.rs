@@ -1,8 +1,3 @@
-// r[impl installer.mode.interactive]
-// r[impl installer.mode.prefilled]
-// r[impl installer.mode.auto]
-// r[impl installer.mode.auto-incomplete]
-
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -74,6 +69,7 @@ fn run(cli: Cli) -> Result<()> {
 
     match mode {
         config::OperatingMode::Auto => run_auto(install_config, &arch, &devices, &boot_device),
+        // r[impl installer.mode.auto-incomplete]
         config::OperatingMode::AutoIncomplete {
             missing_variant,
             missing_disk,
@@ -124,6 +120,7 @@ fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMod
     }
 }
 
+// r[impl installer.mode.auto]
 fn run_auto(
     cfg: config::InstallConfig,
     arch: &str,
@@ -195,6 +192,8 @@ fn run_auto(
     Ok(())
 }
 
+// r[impl installer.mode.interactive]
+// r[impl installer.mode.prefilled]
 fn run_interactive(
     cfg: config::InstallConfig,
     arch: &str,
