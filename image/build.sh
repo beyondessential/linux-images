@@ -262,11 +262,21 @@ mount "$EFI_PART" "$MNT/boot/efi"
 # ============================================================
 # r[image.base.debootstrap]: Bootstrap from Ubuntu 24.04 (Noble).
 # r[image.base.minimal]: Use minbase variant.
+# If the Ubuntu keyring isn't available (e.g. building on Arch), skip GPG check.
+# The packages are still fetched over HTTPS and apt inside the chroot will have
+# the real keyring once debootstrap completes.
+DEBOOTSTRAP_EXTRA_ARGS=()
+if [ ! -f /usr/share/keyrings/ubuntu-archive-keyring.gpg ]; then
+    echo "    (Ubuntu keyring not found on host — using --no-check-gpg)"
+    DEBOOTSTRAP_EXTRA_ARGS+=(--no-check-gpg)
+fi
+
 echo "==> Running debootstrap (${UBUNTU_SUITE}, ${ARCH}, minbase)..."
 debootstrap \
     --arch="$ARCH" \
     --variant=minbase \
-    --include=ca-certificates,apt-transport-https \
+    --include=ca-certificates \
+    "${DEBOOTSTRAP_EXTRA_ARGS[@]}" \
     "$UBUNTU_SUITE" "$MNT" "$UBUNTU_MIRROR"
 
 # ============================================================
