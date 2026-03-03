@@ -4,7 +4,7 @@ linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
 container_runtime := if `command -v docker >/dev/null 2>&1 && echo found || echo missing` == "found" {
     "docker"
   } else if `command -v podman >/dev/null 2>&1 && echo found || echo missing` == "found" {
-    "podman"
+    "sudo podman"
   } else {
     error("Neither docker nor podman found")
   }
