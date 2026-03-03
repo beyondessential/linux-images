@@ -67,8 +67,8 @@ apt-get install -y -q --no-install-recommends \
     locales \
     linux-generic
 
-# Generate locale — seed it first since minbase has an empty locale.gen
-sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
+# Generate all English locales
+sed -i '/^# *en_/s/^# *//' /etc/locale.gen
 locale-gen
 update-locale LANG=en_US.UTF-8
 
