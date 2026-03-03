@@ -580,19 +580,15 @@ r[iso.usb]
 The ISO must be writable to USB media using `dd` and must boot correctly on
 UEFI systems from that media.
 
-# Testing
+# CI/CD
 
-## Static Analysis
-
-r[test.static.shellcheck]
+r[ci.shellcheck]
 All shell scripts in the repository must pass shellcheck with no errors.
 
-r[test.static.cargo-test]
+r[ci.cargo-test]
 The TUI installer project must pass `cargo test` with no failures. Unit tests
 must cover configuration parsing, disk strategy selection, and progress
 calculation.
-
-# CI/CD
 
 r[ci.matrix]
 CI must build images for all combinations of architecture (amd64, arm64) and

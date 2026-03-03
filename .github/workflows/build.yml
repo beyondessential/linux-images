@@ -76,7 +76,7 @@ jobs:
             ${{ matrix.qemu_pkg }} qemu-utils ${{ matrix.firmware_pkg }} \
             genisoimage zstd squashfs-tools
 
-      # r[verify test.static.shellcheck]
+      # r[verify ci.shellcheck]
       - name: Run shellcheck
         run: just test-shellcheck
 
@@ -146,7 +146,7 @@ jobs:
           key: cargo-${{ matrix.cargo_target }}-${{ hashFiles('installer/tui/Cargo.lock') }}
           restore-keys: cargo-${{ matrix.cargo_target }}-
 
-      # r[verify test.static.cargo-test]
+      # r[verify ci.cargo-test]
       - name: Run cargo test
         run: cd installer/tui && cargo test
 
