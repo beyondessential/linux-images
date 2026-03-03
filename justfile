@@ -88,6 +88,116 @@ qemu_firmvars := if arch == "amd64" {
 # Housekeeping
 # ============================================================
 
+# Check for all required and optional dependencies
+check-deps:
+  #!/usr/bin/env bash
+  PASS=0
+  FAIL=0
+  OPTIONAL_FAIL=0
+
+  req() {
+    if command -v "$1" >/dev/null 2>&1; then
+      echo "  ✓ $1 $(command -v "$1")"
+      ((PASS++))
+    else
+      echo "  ✗ $1 — $2"
+      ((FAIL++))
+    fi
+  }
+
+  opt() {
+    if command -v "$1" >/dev/null 2>&1; then
+      echo "  ✓ $1 $(command -v "$1")"
+      ((PASS++))
+    else
+      echo "  ○ $1 — $2"
+      ((OPTIONAL_FAIL++))
+    fi
+  }
+
+  echo "=== Required: image build (just raw) ==="
+  req debootstrap    "Arch: pacman -S debootstrap / Debian: apt install debootstrap"
+  req sgdisk         "Arch: pacman -S gptfdisk / Debian: apt install gdisk"
+  req mkfs.vfat      "Arch: pacman -S dosfstools / Debian: apt install dosfstools"
+  req mkfs.ext4      "Arch: pacman -S e2fsprogs / Debian: apt install e2fsprogs"
+  req mkfs.btrfs     "Arch: pacman -S btrfs-progs / Debian: apt install btrfs-progs"
+  req btrfs          "Arch: pacman -S btrfs-progs / Debian: apt install btrfs-progs"
+  req losetup        "Arch: pacman -S util-linux / Debian: apt install util-linux"
+  req cryptsetup     "Arch: pacman -S cryptsetup / Debian: apt install cryptsetup"
+  req partprobe      "Arch: pacman -S parted / Debian: apt install parted"
+  req udevadm        "Arch: pacman -S systemd / Debian: apt install udev"
+  req truncate       "Arch: pacman -S coreutils / Debian: apt install coreutils"
+  req chroot         "Arch: pacman -S coreutils / Debian: apt install coreutils"
+  req rsync          "Arch: pacman -S rsync / Debian: apt install rsync"
+  echo ""
+
+  echo "=== Required: post-processing & output (just build) ==="
+  if command -v docker >/dev/null 2>&1; then
+    echo "  ✓ docker $(command -v docker)"
+    ((PASS++))
+  elif command -v podman >/dev/null 2>&1; then
+    echo "  ✓ podman $(command -v podman) (used as container runtime)"
+    ((PASS++))
+  else
+    echo "  ✗ docker or podman — need at least one container runtime"
+    ((FAIL++))
+  fi
+  req qemu-img       "Arch: pacman -S qemu-img / Debian: apt install qemu-utils"
+  req zstd           "Arch: pacman -S zstd / Debian: apt install zstd"
+  req sha256sum      "Arch: pacman -S coreutils / Debian: apt install coreutils"
+  echo ""
+
+  echo "=== Required: testing (just test) ==="
+  req shellcheck     "Arch: pacman -S shellcheck / Debian: apt install shellcheck"
+  req blkid          "Arch: pacman -S util-linux / Debian: apt install util-linux"
+  echo ""
+
+  echo "=== Optional: boot smoke tests (just test-boot) ==="
+  opt qemu-system-x86_64  "Arch: pacman -S qemu-system-x86 / Debian: apt install qemu-system-x86"
+  opt qemu-system-aarch64 "Arch: pacman -S qemu-system-aarch64 / Debian: apt install qemu-system-arm"
+  opt genisoimage         "Arch: pacman -S cdrtools / Debian: apt install genisoimage"
+  if [ -e /dev/kvm ]; then
+    echo "  ✓ /dev/kvm is available"
+    ((PASS++))
+  else
+    echo "  ○ /dev/kvm not available — boot tests will be slow or skipped"
+    ((OPTIONAL_FAIL++))
+  fi
+
+  FIRMWARE_FOUND=0
+  for f in /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.fd /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd; do
+    if [ -f "$f" ]; then FIRMWARE_FOUND=1; break; fi
+  done
+  if [ $FIRMWARE_FOUND -eq 1 ]; then
+    echo "  ✓ UEFI firmware found ($f)"
+    ((PASS++))
+  else
+    echo "  ○ UEFI firmware not found — Arch: pacman -S edk2-ovmf / Debian: apt install ovmf"
+    ((OPTIONAL_FAIL++))
+  fi
+  echo ""
+
+  echo "=== Optional: cross-architecture builds ==="
+  if [ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+    echo "  ✓ binfmt qemu-aarch64 registered"
+    ((PASS++))
+  else
+    echo "  ○ binfmt qemu-aarch64 not registered — Arch: pacman -S qemu-user-static-binfmt / Debian: apt install qemu-user-static binfmt-support"
+    ((OPTIONAL_FAIL++))
+  fi
+  echo ""
+
+  echo "=============================="
+  echo "$PASS found, $FAIL missing, $OPTIONAL_FAIL optional missing"
+  echo "=============================="
+  if [ $FAIL -gt 0 ]; then
+    echo "Install the missing required tools above before building."
+    exit 1
+  fi
+  if [ $OPTIONAL_FAIL -gt 0 ]; then
+    echo "Optional tools are only needed for specific tasks — see labels above."
+  fi
+
 # Remove all build artifacts
 clean:
   mkdir -p "{{work_dir}}" "{{output_dir}}"
