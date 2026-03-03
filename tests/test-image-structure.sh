@@ -1,6 +1,6 @@
 #!/bin/bash
-# r[verify test.structure.method]: Loopback-mount a built image and verify its
-# structure without booting. This runs in CI without KVM.
+# Loopback-mount a built image and verify its structure without booting.
+# This runs in CI without KVM.
 #
 # Usage: test-image-structure.sh <image.raw> <variant> <arch>
 #   variant: metal | cloud

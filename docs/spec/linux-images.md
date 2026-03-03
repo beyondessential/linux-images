@@ -592,118 +592,18 @@ The TUI installer project must pass `cargo test` with no failures. Unit tests
 must cover configuration parsing, disk strategy selection, and progress
 calculation.
 
-## Image Structure Verification
-
-r[test.structure.method]
-After building an image, automated verification must loopback-mount it and
-assert correctness without booting. This must run in CI without KVM.
-
-r[test.structure.partitions]
-Verification must check that the partition table contains the expected number
-of partitions with the correct labels and type UUIDs.
-
-r[test.structure.filesystems]
-Verification must check filesystem types (FAT32, ext4, BTRFS) and labels.
-
-r[test.structure.subvolumes]
-Verification must check that BTRFS subvolumes `@` and `@postgres` exist and
-that simple quotas are enabled.
-
-> r[test.structure.files]
-> Verification must check that the following files exist in the root subvolume:
->
-> - `/etc/fstab`
-> - `/etc/bes/image-variant`
-> - `/usr/local/bin/ts-up`
-> - `/usr/local/bin/grow-root-filesystem`
-> - `/etc/systemd/system/grow-root-filesystem.service`
-
-r[test.structure.services]
-Verification must check that expected systemd services are enabled by
-confirming the presence of the appropriate symlinks in `.wants/` directories.
-
-r[test.structure.packages]
-Verification must check that every package listed in `packages.txt` is
-recorded as installed in the image's `/var/lib/dpkg/status`.
-
-r[test.structure.fstab]
-Verification must check that the fstab entries match the expected values for
-the variant under test (per r[image.fstab.metal] or r[image.fstab.cloud]).
-
-r[test.structure.variant-specific]
-For the metal variant, verification must additionally confirm the existence
-of `/etc/crypttab`, `/etc/luks/empty-keyfile`, and LUKS metadata on the root
-partition.
-
-## Boot Smoke Test
-
-r[test.boot.method]
-The image must be booted in QEMU with a cloud-init NoCloud datasource
-attached as a second virtual disk. QEMU must be configured to prefer KVM
-acceleration with a TCG (software emulation) fallback, so the test can
-run on hosts where KVM is unavailable. KVM is strongly preferred for
-acceptable speed.
-
-> r[test.boot.checks]
-> The cloud-init injected test script must verify:
->
-> - systemd has reached `multi-user.target` with no failed units
-> - All expected services are active: sshd, ufw, tailscaled,
->   snapper-timeline.timer, grow-root-filesystem.service
-> - Filesystem mounts match `/etc/fstab`
-> - BTRFS compression is active (check `/proc/mounts` for `compress=`)
-> - For metal: the LUKS volume unlocked successfully
-> - The `ubuntu` user can be resolved
-> - `/etc/machine-id` is non-empty (was regenerated at boot)
-
-r[test.boot.output]
-The test script must write results to the serial console. Each check must
-print `PASS: <description>` or `FAIL: <description>`. A final line of
-`TEST_SUCCESS` or `TEST_FAILURE` must be printed as the overall result.
-
-r[test.boot.timeout]
-The test harness must enforce a timeout (default 5 minutes). If the marker
-line is not seen within the timeout, the test is considered failed.
-
-r[test.boot.poweroff]
-After printing results, the test script must power off the VM so the
-harness can exit cleanly.
-
-## End-to-End Install Test
-
-r[test.e2e.method]
-The live ISO must be booted in QEMU with a blank virtual disk attached and a
-`bes-install.toml` config injected into the ISO's appended BESCONF partition
-to drive a fully automatic install.
-
-r[test.e2e.reboot]
-After the installer finishes and the VM reboots, the harness must boot from
-the target disk (not the ISO) and run the boot smoke test checks defined
-in r[test.boot.checks].
-
-r[test.e2e.variants]
-The end-to-end test must be run for both the `metal` and `cloud` variants.
-
 # CI/CD
 
 r[ci.matrix]
 CI must build images for all combinations of architecture (amd64, arm64) and
 variant (metal, cloud).
 
-r[ci.test-structure]
-Image structure verification (r[test.structure.method]) must run on every
-build.
-
-r[ci.test-boot]
-Boot smoke tests (r[test.boot.method]) must run when KVM is usable on the
-runner. KVM usability must be verified by issuing a `KVM_CREATE_VM` ioctl
-on `/dev/kvm` (and closing the resulting VM fd), not merely by checking that
+r[ci.kvm-detection]
+KVM usability must be verified by issuing a `KVM_CREATE_VM` ioctl on
+`/dev/kvm` (and closing the resulting VM fd), not merely by checking that
 the device node exists, has the right file permissions, or responds to
-`KVM_GET_API_VERSION`.
-
-r[ci.test-e2e]
-End-to-end install tests (r[test.e2e.method]) must run when KVM is usable
-on the runner, using the same usability check as r[ci.test-boot].
+`KVM_GET_API_VERSION`. Boot smoke tests and E2E install tests must only
+run when this probe succeeds.
 
 r[ci.tui-build]
 The TUI installer must be compiled for both amd64 and arm64 in CI. For the

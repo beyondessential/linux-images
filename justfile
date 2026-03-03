@@ -478,38 +478,49 @@ _make-test-cloud-init: _ensure-dirs
       echo "=== BES Boot Smoke Test ==="
       echo ""
 
-      # r[verify test.boot.checks]
       check "systemd reached multi-user.target" systemctl is-active multi-user.target
       FAILED_UNITS=$(systemctl --failed --no-legend --no-pager | wc -l)
       check "no failed systemd units" test "$FAILED_UNITS" -eq 0
 
+      # r[verify image.credentials.ssh-keys-only]
       check "sshd is active" systemctl is-active ssh
+      # r[verify image.firewall.enabled]
       check "ufw is active" systemctl is-active ufw
+      # r[verify image.tailscale.service-enabled]
       check "tailscaled is active" systemctl is-active tailscaled
+      # r[verify image.snapper.timers]
       check "snapper-timeline.timer is active" systemctl is-active snapper-timeline.timer
+      # r[verify image.growth.service]
       check "grow-root-filesystem ran" systemctl show -p ActiveState grow-root-filesystem.service | grep -q inactive
 
+      # r[verify image.btrfs.format]
       check "root is btrfs" stat -f -c%T /
+      # r[verify image.btrfs.compression]
       check "compression active in /proc/mounts" grep -q 'compress=' /proc/mounts
 
+      # r[verify image.variant.persisted]
       VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "unknown")
       echo "Variant: $VARIANT"
 
       if [ "$VARIANT" = "metal" ]; then
+        # r[verify image.luks.format]
         check "LUKS volume is active" test -e /dev/mapper/root
       fi
 
+      # r[verify image.credentials.ubuntu-user]
       check "ubuntu user exists" id ubuntu
+      # r[verify image.base.machine-id]
       check "machine-id is non-empty" test -s /etc/machine-id
 
+      # r[verify image.partition.xboot]
       check "/boot is mounted" mountpoint -q /boot
+      # r[verify image.partition.efi]
       check "/boot/efi is mounted" mountpoint -q /boot/efi
 
       echo ""
       echo "RESULTS: $PASS passed, $FAIL failed"
 
       if [ $FAIL -eq 0 ]; then
-        # r[verify test.boot.output]
         echo "TEST_SUCCESS"
       else
         echo "TEST_FAILURE"
@@ -518,7 +529,6 @@ _make-test-cloud-init: _ensure-dirs
         done
       fi
 
-      # r[verify test.boot.poweroff]
       sleep 2
       poweroff
   CLOUDINIT
@@ -554,7 +564,6 @@ test-boot: _validate-variant _validate-arch _prepare-firmware _make-test-cloud-i
   echo "Booting image in QEMU (timeout: ${TIMEOUT}s)..."
   echo "Serial log: $SERIAL_LOG"
 
-  # r[verify test.boot.method]
   timeout "$TIMEOUT" \
     {{qemu_command}} {{qemu_accel}} \
     -m {{qemu_memory}} \
@@ -573,7 +582,6 @@ test-boot: _validate-variant _validate-arch _prepare-firmware _make-test-cloud-i
   echo ""
   echo "=== Checking test results ==="
 
-  # r[verify test.boot.timeout]
   if grep -q "TEST_SUCCESS" "$SERIAL_LOG"; then
     echo "Boot smoke test PASSED"
     exit 0

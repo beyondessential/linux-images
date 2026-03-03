@@ -1,7 +1,4 @@
 #!/bin/bash
-# r[verify test.e2e.method]
-# r[verify test.e2e.reboot]
-# r[verify test.e2e.variants]
 #
 # End-to-end install test: boot the live ISO in QEMU with a blank virtual disk
 # and an injected bes-install.toml for fully automatic installation, then boot

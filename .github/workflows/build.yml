@@ -44,6 +44,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2
 
+      # r[verify ci.kvm-detection]
       - name: Enable KVM if possible
         run: |
           if [ -e /dev/kvm ]; then
@@ -75,15 +76,17 @@ jobs:
             ${{ matrix.qemu_pkg }} qemu-utils ${{ matrix.firmware_pkg }} \
             genisoimage zstd squashfs-tools
 
+      # r[verify test.static.shellcheck]
+      - name: Run shellcheck
+        run: just test-shellcheck
+
       - name: Build raw image
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} raw
         timeout-minutes: 60
 
-      # r[impl ci.test-structure]
       - name: Test image structure
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-structure
 
-      # r[impl ci.test-boot]
       - name: Boot smoke test
         if: steps.kvm.outputs.kvm == 'true'
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-boot
@@ -143,6 +146,7 @@ jobs:
           key: cargo-${{ matrix.cargo_target }}-${{ hashFiles('installer/tui/Cargo.lock') }}
           restore-keys: cargo-${{ matrix.cargo_target }}-
 
+      # r[verify test.static.cargo-test]
       - name: Run cargo test
         run: cd installer/tui && cargo test
 
@@ -248,7 +252,6 @@ jobs:
   # ============================================================
   # E2E install test: boot ISO in QEMU, auto-install to blank disk
   # ============================================================
-  # r[impl ci.test-e2e]
   e2e-test:
     needs: [iso]
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
@@ -301,7 +304,6 @@ jobs:
           path: iso/
 
       - name: Inject bes-install.toml into ISO EFI partition
-        # r[verify test.e2e.method]
         run: |
           ISO=$(ls iso/bes-installer-*.iso | head -1)
           echo "ISO: $ISO"
@@ -336,8 +338,6 @@ jobs:
         run: cp ${{ matrix.fw_vars }} fw_vars.fd
 
       - name: Run E2E install test
-        # r[verify test.e2e.method]
-        # r[verify test.e2e.reboot]
         timeout-minutes: 15
         run: |
           ISO=$(ls iso/bes-installer-*.iso | head -1)
@@ -432,8 +432,9 @@ jobs:
           fi
 
   # ============================================================
-  # Release: collect all artifacts, publish GitHub release
+  # Release: collect all artifacts and create a GitHub release
   # ============================================================
+  # r[impl ci.release]
   release:
     needs: [images, installer, iso, e2e-test]
     if: always() && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && (needs.images.result == 'success') && (needs.installer.result == 'success') && (needs.iso.result == 'success')
@@ -478,7 +479,6 @@ jobs:
             fi
           done
 
-          # r[impl ci.release]
           # Generate combined checksums
           cd release
           rm -f SHA256SUMS
