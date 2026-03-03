@@ -1,0 +1,30 @@
+@schema {id crate:tracey-config@1, cli tracey}
+
+specs (
+    {
+        name linux-images
+        include (docs/spec/**/*.md)
+        impls (
+            {
+                name main
+                include (
+                    image/**/*.sh
+                    installer/**/*.rs
+                    installer/**/*.toml
+                    iso/**/*.sh
+                    scripts/**/*.sh
+                    justfile
+                    .github/workflows/*.yml
+                )
+                exclude (
+                    target/**
+                )
+                test_include (
+                    tests/**/*.sh
+                    tests/**/*.rs
+                    installer/tui/tests/**/*.rs
+                )
+            }
+        )
+    }
+)
