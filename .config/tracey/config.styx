@@ -14,22 +14,18 @@ specs (
                     installer/**/*.toml
                     iso/**/*.sh
                     scripts/**/*.sh
+
+                    // temporary: in tracey 1.1.5 there's a bug where test_include is ignored
+                    // https://github.com/bearcove/tracey/pull/137
+                    tests/*.sh
+
+                    // tracey doesn't yet support YAML or justfile
+                    // so those don't do anything, but let's still include them
                     justfile
                     .github/workflows/*.yml
-
-                    # temporary: in tracey 1.1.5 there's a bug where test_include is ignored
-                    # https://github.com/bearcove/tracey/pull/137
-                    tests/*.sh
-                    tests/**/*.sh
-                    installer/tui/tests/**/*.rs
-                )
-                exclude (
-                    installer/tui/target/**
                 )
                 test_include (
                     tests/*.sh
-                    tests/**/*.sh
-                    installer/tui/tests/**/*.rs
                 )
             }
         )
