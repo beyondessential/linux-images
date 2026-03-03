@@ -301,7 +301,7 @@ check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/et
 ACTUAL_VARIANT="$(cat "$MNT/etc/bes/image-variant" 2>/dev/null || true)"
 check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 
-# r[verify image.base.machine-id]
+# r[verify image.base.machine-id] r[verify image.cloud-init.no-machineid]
 MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing")"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
 
@@ -334,6 +334,75 @@ check "cloud-init has no hostname_file setting" grep -q "create_hostname_file: f
 check_not "installer network config absent" test -f "$MNT/etc/cloud/cloud.cfg.d/90-installer-network.cfg"
 
 check_not "unminimize prompt absent" test -f "$MNT/etc/update-motd.d/60-unminimize"
+
+# ============================================================
+# Snapper configuration
+# ============================================================
+echo ""
+echo "--- Snapper ---"
+
+# r[verify image.snapper.root]
+SNAPPER_ROOT_CFG="$MNT/etc/snapper/configs/root"
+check "snapper root config exists" test -f "$SNAPPER_ROOT_CFG"
+if [ -f "$SNAPPER_ROOT_CFG" ]; then
+    check "snapper root: TIMELINE_CREATE=yes" grep -q '^TIMELINE_CREATE="yes"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_CLEANUP=yes" grep -q '^TIMELINE_CLEANUP="yes"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_HOURLY=10" grep -q '^TIMELINE_LIMIT_HOURLY="10"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_DAILY=7" grep -q '^TIMELINE_LIMIT_DAILY="7"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_WEEKLY=4" grep -q '^TIMELINE_LIMIT_WEEKLY="4"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_MONTHLY=12" grep -q '^TIMELINE_LIMIT_MONTHLY="12"' "$SNAPPER_ROOT_CFG"
+fi
+
+# r[verify image.snapper.postgres]
+SNAPPER_PG_CFG="$MNT/etc/snapper/configs/postgres"
+check "snapper postgres config exists" test -f "$SNAPPER_PG_CFG"
+if [ -f "$SNAPPER_PG_CFG" ]; then
+    check "snapper postgres: TIMELINE_CREATE=yes" grep -q '^TIMELINE_CREATE="yes"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_CLEANUP=yes" grep -q '^TIMELINE_CLEANUP="yes"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_HOURLY=10" grep -q '^TIMELINE_LIMIT_HOURLY="10"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_DAILY=7" grep -q '^TIMELINE_LIMIT_DAILY="7"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_WEEKLY=4" grep -q '^TIMELINE_LIMIT_WEEKLY="4"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_MONTHLY=12" grep -q '^TIMELINE_LIMIT_MONTHLY="12"' "$SNAPPER_PG_CFG"
+fi
+
+# ============================================================
+# UFW firewall rules
+# ============================================================
+echo ""
+echo "--- Firewall Rules ---"
+
+UFW_RULES_DIR="$MNT/etc/ufw"
+UFW_USER_RULES="$UFW_RULES_DIR/user.rules"
+UFW_USER6_RULES="$UFW_RULES_DIR/user6.rules"
+
+# r[verify image.firewall.policy]
+UFW_DEFAULT="$UFW_RULES_DIR/ufw.conf"
+if [ -f "$UFW_DEFAULT" ]; then
+    check "ufw is enabled in config" grep -q '^ENABLED=yes' "$UFW_DEFAULT"
+fi
+UFW_DEFAULTS="$UFW_RULES_DIR/default"
+if [ -f "$UFW_DEFAULTS" ] || [ -f "$MNT/etc/default/ufw" ]; then
+    DEFAULTS_FILE="$UFW_DEFAULTS"
+    [ -f "$DEFAULTS_FILE" ] || DEFAULTS_FILE="$MNT/etc/default/ufw"
+    check "ufw default incoming=deny" grep -q 'DEFAULT_INPUT_POLICY="DROP"' "$DEFAULTS_FILE"
+    check "ufw default outgoing=allow" grep -q 'DEFAULT_OUTPUT_POLICY="ACCEPT"' "$DEFAULTS_FILE"
+    check "ufw default forward=allow" grep -q 'DEFAULT_FORWARD_POLICY="ACCEPT"' "$DEFAULTS_FILE"
+fi
+
+# r[verify image.firewall.ssh]
+if [ -f "$UFW_USER_RULES" ]; then
+    check "ufw allows 22/tcp" grep -q '22/tcp' "$UFW_USER_RULES"
+fi
+
+# r[verify image.firewall.http]
+if [ -f "$UFW_USER_RULES" ]; then
+    check "ufw allows 80/tcp" grep -q '80/tcp' "$UFW_USER_RULES"
+    check "ufw allows 443/tcp" grep -q '443/tcp' "$UFW_USER_RULES"
+fi
+if [ -f "$UFW_USER6_RULES" ] || [ -f "$UFW_USER_RULES" ]; then
+    RULES_FOR_UDP="${UFW_USER_RULES}"
+    check "ufw allows 443/udp" grep -q '443/udp' "$RULES_FOR_UDP"
+fi
 
 # r[verify image.packages.bes-tools]
 check "bes-tools signing key installed" test -f "$MNT/etc/apt/keyrings/bes-tools.gpg"
@@ -423,6 +492,17 @@ if [ "$VARIANT" = "metal" ]; then
 
     # r[verify image.tpm.service]
     check_service_enabled "setup-tpm-unlock.service"  "setup-tpm-unlock is enabled (metal)"
+
+    # r[verify image.tpm.enrollment]
+    TPM_SCRIPT="$MNT/usr/local/bin/setup-tpm-unlock"
+    check "setup-tpm-unlock script exists" test -x "$TPM_SCRIPT"
+    if [ -f "$TPM_SCRIPT" ]; then
+        check "tpm script uses systemd-cryptenroll" grep -q 'systemd-cryptenroll' "$TPM_SCRIPT"
+        check "tpm script binds to PCR 7" grep -q 'tpm2-pcrs=7' "$TPM_SCRIPT"
+        check "tpm script wipes password slot" grep -q 'wipe-slot' "$TPM_SCRIPT"
+        check "tpm script updates crypttab for tpm2" grep -q 'tpm2-device=auto' "$TPM_SCRIPT"
+        check "tpm script regenerates initramfs" grep -q 'dracut -f' "$TPM_SCRIPT"
+    fi
 
     # r[verify image.luks.keyfile]
     check "LUKS empty keyfile exists" test -f "$MNT/etc/luks/empty-keyfile"

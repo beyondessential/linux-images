@@ -210,6 +210,20 @@ else
     fail "at least one .raw.zst image in /images/ (found $IMAGE_COUNT)"
 fi
 
+# r[verify installer.write.source]
+METAL_IMAGE="$(find "$ISO_MNT/images" -maxdepth 1 -name "*-metal-${ARCH}-*.raw.zst" 2>/dev/null | head -1)"
+CLOUD_IMAGE="$(find "$ISO_MNT/images" -maxdepth 1 -name "*-cloud-${ARCH}-*.raw.zst" 2>/dev/null | head -1)"
+if [ -n "$METAL_IMAGE" ]; then
+    pass "metal .raw.zst image for $ARCH exists on ISO"
+else
+    fail "metal .raw.zst image for $ARCH exists on ISO"
+fi
+if [ -n "$CLOUD_IMAGE" ]; then
+    pass "cloud .raw.zst image for $ARCH exists on ISO"
+else
+    fail "cloud .raw.zst image for $ARCH exists on ISO"
+fi
+
 # r[verify iso.boot.uefi]
 check "/boot/efi.img exists" test -f "$ISO_MNT/boot/efi.img"
 
