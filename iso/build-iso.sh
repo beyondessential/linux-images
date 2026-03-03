@@ -1,34 +1,41 @@
 #!/bin/bash
+# r[impl iso.format]
+# r[impl iso.hybrid]
 # r[impl iso.base]
+# r[impl iso.live-boot]
 # r[impl iso.minimal]
 # r[impl iso.offline]
 # r[impl iso.contents]
 # r[impl iso.boot.uefi]
 # r[impl iso.boot.autostart]
-# r[impl iso.efi-writable]
+# r[impl iso.config-partition]
 # r[impl iso.per-arch]
 # r[impl iso.usb]
 #
-# Build a live installer image as a GPT disk image with:
-#   - Partition 1: FAT32 EFI System Partition (GRUB EFI + config file location)
-#   - Partition 2: ext4 data partition (squashfs live rootfs + compressed disk images + installer)
+# Build a hybrid live installer ISO with:
+#   - ISO9660 filesystem (bootable in VMs as optical media)
+#   - El Torito EFI boot catalog with embedded FAT32 ESP image
+#   - GPT for USB boot after dd
+#   - Appended FAT32 BESCONF partition (writable on USB for bes-install.toml)
+#   - Squashfs live rootfs with live-boot support
 #
-# The EFI partition is a real FAT32 partition, so after dd to USB it remains
-# writable — users can place bes-install.toml on it before booting.
+# The resulting .iso works in VirtualBox/QEMU as a CD, and after dd to USB
+# the BESCONF partition is writable for configuration injection.
 #
 # Usage: build-iso.sh
 #   Environment variables:
 #     ARCH            - amd64 or arm64 (default: amd64)
-#     OUTPUT          - output file path (default: output/<arch>/bes-installer-<arch>.img)
+#     OUTPUT          - output file path (default: output/<arch>/bes-installer-<arch>.iso)
 #     INSTALLER_BIN   - path to the bes-installer binary
 #     IMAGE_DIR       - directory containing .raw.zst images to embed
 #     UBUNTU_SUITE    - Ubuntu suite name (default: noble)
-#     ESP_SIZE_MB     - EFI partition size in MiB (default: 64)
+#     UBUNTU_MIRROR   - mirror URL (auto-selected per arch if unset)
+#     BESCONF_SIZE_MB - BESCONF partition size in MiB (default: 4)
 set -euo pipefail
 
 ARCH="${ARCH:-amd64}"
 UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
-ESP_SIZE_MB="${ESP_SIZE_MB:-64}"
+BESCONF_SIZE_MB="${BESCONF_SIZE_MB:-4}"
 INSTALLER_BIN="${INSTALLER_BIN:?INSTALLER_BIN must point to the bes-installer binary}"
 IMAGE_DIR="${IMAGE_DIR:?IMAGE_DIR must point to directory with .raw.zst images}"
 OUTPUT="${OUTPUT:-output/${ARCH}/bes-installer-${ARCH}.iso}"
@@ -76,7 +83,7 @@ if [ "${#IMAGE_FILES[@]}" -eq 0 ]; then
 fi
 
 MISSING=()
-for cmd in debootstrap mksquashfs unsquashfs sgdisk mkfs.vfat mkfs.ext4 losetup grub-mkimage partprobe; do
+for cmd in debootstrap mksquashfs sgdisk mkfs.vfat losetup grub-mkimage xorriso; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -93,7 +100,7 @@ echo "Installer:     $INSTALLER_BIN"
 echo "Image dir:     $IMAGE_DIR"
 echo "Images:        ${IMAGE_FILES[*]}"
 echo "Suite:         $UBUNTU_SUITE"
-echo "ESP size:      ${ESP_SIZE_MB} MiB"
+echo "BESCONF size:  ${BESCONF_SIZE_MB} MiB"
 echo "=============================="
 echo ""
 
@@ -101,10 +108,8 @@ echo ""
 # State tracking for cleanup
 # ============================================================
 WORK_DIR=""
-LOOP_DEVICE=""
 MNT_ROOTFS=""
 MNT_ESP=""
-MNT_DATA=""
 CHROOT_MOUNTS_ACTIVE=0
 
 cleanup() {
@@ -127,12 +132,7 @@ cleanup() {
     fi
 
     [ -n "$MNT_ESP" ] && mountpoint -q "$MNT_ESP" 2>/dev/null && umount "$MNT_ESP"
-    [ -n "$MNT_DATA" ] && mountpoint -q "$MNT_DATA" 2>/dev/null && umount "$MNT_DATA"
     [ -n "$MNT_ROOTFS" ] && mountpoint -q "$MNT_ROOTFS" 2>/dev/null && umount "$MNT_ROOTFS"
-
-    if [ -n "$LOOP_DEVICE" ]; then
-        losetup -d "$LOOP_DEVICE" 2>/dev/null
-    fi
 
     if [ -n "$WORK_DIR" ]; then
         rm -rf "$WORK_DIR"
@@ -146,20 +146,19 @@ trap cleanup EXIT
 
 WORK_DIR="$(mktemp -d -t bes-iso-XXXXXX)"
 MNT_ROOTFS="$WORK_DIR/rootfs"
-MNT_ESP="$WORK_DIR/esp"
-MNT_DATA="$WORK_DIR/data"
+MNT_ESP="$WORK_DIR/esp-mnt"
 STAGING="$WORK_DIR/staging"
 
-mkdir -p "$MNT_ROOTFS" "$MNT_ESP" "$MNT_DATA" "$STAGING"
+mkdir -p "$MNT_ROOTFS" "$MNT_ESP" "$STAGING"
 
 # ============================================================
 # Phase 1: Build minimal live rootfs via debootstrap
 # ============================================================
-echo "==> Building minimal live rootfs..."
+echo "==> Phase 1: Building minimal live rootfs..."
 
 DEBOOTSTRAP_EXTRA_ARGS=()
 if [ ! -f /usr/share/keyrings/ubuntu-archive-keyring.gpg ]; then
-    echo "    (Ubuntu keyring not found on host — using --no-check-gpg)"
+    echo "    (Ubuntu keyring not found on host -- using --no-check-gpg)"
     DEBOOTSTRAP_EXTRA_ARGS+=(--no-check-gpg)
 fi
 
@@ -171,9 +170,9 @@ debootstrap \
     "$UBUNTU_SUITE" "$MNT_ROOTFS" "$UBUNTU_MIRROR"
 
 # ============================================================
-# Phase 2: Install packages in chroot
+# Phase 2: Install packages in chroot (including live-boot)
 # ============================================================
-echo "==> Installing live environment packages..."
+echo "==> Phase 2: Installing live environment packages..."
 
 mount -t proc proc "$MNT_ROOTFS/proc"
 mount -t sysfs sysfs "$MNT_ROOTFS/sys"
@@ -191,6 +190,14 @@ else
 fi
 
 # r[impl iso.minimal]
+# r[impl iso.live-boot]
+# Enable the universe repository (live-boot is not in main)
+cat > "$MNT_ROOTFS/etc/apt/sources.list.d/universe.list" << SOURCES
+deb $UBUNTU_MIRROR $UBUNTU_SUITE main universe
+deb $UBUNTU_MIRROR $UBUNTU_SUITE-updates main universe
+deb $UBUNTU_MIRROR $UBUNTU_SUITE-security main universe
+SOURCES
+
 chroot "$MNT_ROOTFS" bash -c "
     export DEBIAN_FRONTEND=noninteractive
     export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
@@ -200,6 +207,8 @@ chroot "$MNT_ROOTFS" bash -c "
     apt-get install -y -q --no-install-recommends \
         linux-generic \
         initramfs-tools \
+        live-boot \
+        live-boot-initramfs-tools \
         systemd \
         systemd-sysv \
         dbus \
@@ -219,24 +228,15 @@ chroot "$MNT_ROOTFS" bash -c "
 
     apt-get clean
     rm -rf /var/lib/apt/lists/*
-
-    echo '--- DEBUG: /boot contents after package install ---'
-    ls -la /boot/ || true
-    echo '--- DEBUG: kernel modules ---'
-    ls /lib/modules/ || true
-    echo '--- DEBUG: end ---'
 "
 
 # ============================================================
 # Phase 3: Install the TUI installer and configure autostart
 # ============================================================
-echo "==> Installing TUI installer binary..."
+echo "==> Phase 3: Installing TUI installer binary and configuring autostart..."
 install -m 755 "$INSTALLER_BIN" "$MNT_ROOTFS/usr/local/bin/bes-installer"
 
 # r[impl iso.boot.autostart]
-echo "==> Configuring auto-launch of installer on boot..."
-
-# Create a systemd service that launches the installer on the main console
 cat > "$MNT_ROOTFS/etc/systemd/system/bes-installer.service" << 'UNIT'
 [Unit]
 Description=BES Installer TUI
@@ -264,16 +264,50 @@ chroot "$MNT_ROOTFS" systemctl enable bes-installer.service
 # Disable getty on tty1 so it doesn't compete with the installer
 chroot "$MNT_ROOTFS" systemctl mask getty@tty1.service
 
-# Set hostname for the live environment
-echo "bes-installer" > "$MNT_ROOTFS/etc/hostname"
+# r[impl iso.config-partition]
+# Mount unit for the BESCONF partition so the installer can find bes-install.toml.
+# On USB boot this is a writable FAT32 partition; on optical boot it may not exist
+# (FailureAction is intentionally absent so the unit failing is non-fatal).
+cat > "$MNT_ROOTFS/etc/systemd/system/run-besconf.mount" << 'UNIT'
+[Unit]
+Description=BES Configuration Partition
+After=local-fs-pre.target
+DefaultDependencies=no
 
-# Ensure we have a machine-id (live systems need one)
+[Mount]
+What=/dev/disk/by-label/BESCONF
+Where=/run/besconf
+Type=vfat
+Options=ro,noatime,iocharset=ascii
+TimeoutSec=5
+
+[Install]
+WantedBy=local-fs.target
+UNIT
+
+# Automount so we don't block boot if the partition is absent (optical media)
+cat > "$MNT_ROOTFS/etc/systemd/system/run-besconf.automount" << 'UNIT'
+[Unit]
+Description=BES Configuration Partition Automount
+ConditionPathExists=/dev/disk/by-label/BESCONF
+
+[Automount]
+Where=/run/besconf
+TimeoutIdleSec=60
+
+[Install]
+WantedBy=local-fs.target
+UNIT
+
+chroot "$MNT_ROOTFS" systemctl enable run-besconf.automount
+
+echo "bes-installer" > "$MNT_ROOTFS/etc/hostname"
 chroot "$MNT_ROOTFS" systemd-machine-id-setup 2>/dev/null || true
 
 # ============================================================
 # Phase 4: Unmount chroot and create squashfs
 # ============================================================
-echo "==> Unmounting chroot virtual filesystems..."
+echo "==> Phase 4: Unmounting chroot and creating squashfs..."
 umount "$MNT_ROOTFS/dev/pts"
 umount "$MNT_ROOTFS/dev"
 umount "$MNT_ROOTFS/proc"
@@ -284,27 +318,16 @@ CHROOT_MOUNTS_ACTIVE=0
 rm -f "$MNT_ROOTFS/etc/resolv.conf"
 echo "nameserver 1.1.1.1" > "$MNT_ROOTFS/etc/resolv.conf"
 
-# Clean up build artifacts
 rm -rf "$MNT_ROOTFS/tmp/"*
 rm -rf "$MNT_ROOTFS/var/cache/apt/archives/"*.deb
 rm -rf "$MNT_ROOTFS/var/lib/apt/lists/"*
 
-echo "==> DEBUG: rootfs /boot contents before squashfs..."
-ls -la "$MNT_ROOTFS/boot/" || true
-echo "==> DEBUG: looking for vmlinuz..."
-find "$MNT_ROOTFS/boot" -maxdepth 1 -name 'vmlinuz*' -ls 2>/dev/null || true
-echo "==> DEBUG: looking for initrd..."
-find "$MNT_ROOTFS/boot" -maxdepth 1 -name 'initrd*' -ls 2>/dev/null || true
-
-# Copy vmlinuz and initrd out of rootfs BEFORE squashing (avoids unsquashfs issues)
-echo "==> Copying kernel and initrd from rootfs..."
+# Copy vmlinuz and initrd out of rootfs BEFORE squashing
+echo "    Copying kernel and initrd from rootfs..."
 mkdir -p "$STAGING/live"
 
 VMLINUZ="$(find "$MNT_ROOTFS/boot" -maxdepth 1 -name 'vmlinuz-*' -not -name '*.old' -type f | sort -V | tail -1)"
 INITRD="$(find "$MNT_ROOTFS/boot" -maxdepth 1 -name 'initrd.img-*' -not -name '*.old' -type f | sort -V | tail -1)"
-
-echo "    vmlinuz candidate: ${VMLINUZ:-NONE}"
-echo "    initrd candidate:  ${INITRD:-NONE}"
 
 if [ -z "$VMLINUZ" ] || [ -z "$INITRD" ]; then
     echo "ERROR: could not find vmlinuz or initrd in rootfs /boot"
@@ -318,130 +341,119 @@ cp "$INITRD" "$STAGING/live/initrd.img"
 echo "    vmlinuz: $(du -h "$STAGING/live/vmlinuz" | cut -f1)"
 echo "    initrd:  $(du -h "$STAGING/live/initrd.img" | cut -f1)"
 
-echo "==> Creating squashfs..."
-SQUASHFS="$STAGING/live/filesystem.squashfs"
-mkdir -p "$STAGING/images"
-mksquashfs "$MNT_ROOTFS" "$SQUASHFS" -comp xz -no-exports -noappend -quiet
+echo "    Creating squashfs (this may take a while)..."
+# live-boot expects the squashfs at /live/filesystem.squashfs
+mksquashfs "$MNT_ROOTFS" "$STAGING/live/filesystem.squashfs" \
+    -comp xz -no-exports -noappend -quiet
 rm -rf "$MNT_ROOTFS"
-echo "    squashfs: $(du -h "$SQUASHFS" | cut -f1)"
+echo "    squashfs: $(du -h "$STAGING/live/filesystem.squashfs" | cut -f1)"
 
 # ============================================================
-# Phase 5: Copy images into staging
+# Phase 5: Copy disk images into staging
 # ============================================================
 # r[impl iso.contents]
-echo "==> Copying disk images into staging..."
+echo "==> Phase 5: Copying disk images into staging..."
+mkdir -p "$STAGING/images"
 for img in "${IMAGE_FILES[@]}"; do
     echo "    $(basename "$img")"
     cp "$img" "$STAGING/images/"
 done
 
-# vmlinuz and initrd were already copied before squashfs creation
-
 # ============================================================
-# Phase 6: Calculate image size and create disk image
+# Phase 6: Build GRUB EFI bootloader and ESP image
 # ============================================================
-echo "==> Calculating image size..."
-DATA_SIZE_KB=$(du -sk "$STAGING" | cut -f1)
-# Add 20% headroom for filesystem overhead
-DATA_SIZE_MB=$(( (DATA_SIZE_KB / 1024) * 120 / 100 + 64 ))
-TOTAL_SIZE_MB=$(( ESP_SIZE_MB + DATA_SIZE_MB + 2 ))
-
-echo "    Data partition: ~${DATA_SIZE_MB} MiB"
-echo "    Total image:    ~${TOTAL_SIZE_MB} MiB"
-
-mkdir -p "$(dirname "$OUTPUT")"
-truncate -s "${TOTAL_SIZE_MB}M" "$OUTPUT"
-
-# ============================================================
-# Phase 7: Partition the image
-# ============================================================
-echo "==> Partitioning image (GPT)..."
-LOOP_DEVICE="$(losetup -f --show -P "$OUTPUT")"
-echo "    Loop device: $LOOP_DEVICE"
-
-sgdisk --zap-all "$LOOP_DEVICE" >/dev/null
-
-# EFI System Partition
-sgdisk -n "1:0:+${ESP_SIZE_MB}M" \
-    -t 1:C12A7328-F81F-11D2-BA4B-00A0C93EC93B \
-    -c 1:EFI \
-    "$LOOP_DEVICE" >/dev/null
-
-# Data partition (Linux filesystem)
-sgdisk -n 2:0:0 \
-    -t 2:0FC63DAF-8483-4772-8E79-3D69D8477DE4 \
-    -c 2:BESDATA \
-    "$LOOP_DEVICE" >/dev/null
-
-partprobe "$LOOP_DEVICE"
-udevadm settle
-sleep 1
-
-ESP_PART="${LOOP_DEVICE}p1"
-DATA_PART="${LOOP_DEVICE}p2"
-
-# ============================================================
-# Phase 8: Format and populate EFI partition
-# ============================================================
-# r[impl iso.efi-writable]
-echo "==> Formatting EFI partition (FAT32)..."
-mkfs.vfat -F 32 -n EFI "$ESP_PART" >/dev/null
-
-mount "$ESP_PART" "$MNT_ESP"
-
 # r[impl iso.boot.uefi]
-echo "==> Installing GRUB EFI bootloader..."
-mkdir -p "$MNT_ESP/EFI/BOOT"
-mkdir -p "$MNT_ESP/boot/grub"
+echo "==> Phase 6: Building EFI boot image..."
 
-# Build a standalone GRUB EFI image
+# Place EFI/BOOT inside the ISO tree so xorriso can see it and so that
+# firmware/tools that look for the EFI directory in the ISO filesystem
+# find it there.
+mkdir -p "$STAGING/EFI/BOOT"
+mkdir -p "$STAGING/boot/grub"
+
 grub-mkimage \
-    -o "$MNT_ESP/EFI/BOOT/$GRUB_EFI_NAME" \
+    -o "$STAGING/EFI/BOOT/$GRUB_EFI_NAME" \
     -O "$GRUB_TARGET" \
     -p /boot/grub \
-    part_gpt fat ext2 normal boot linux configfile loopback search \
-    search_label search_fs_uuid ls cat echo test true
+    part_gpt part_msdos fat iso9660 normal boot linux configfile loopback \
+    search search_label search_fs_uuid search_fs_file ls cat echo test true \
+    chain efinet
 
-cat > "$MNT_ESP/boot/grub/grub.cfg" << 'GRUBCFG'
+cat > "$STAGING/boot/grub/grub.cfg" << 'GRUBCFG'
 set timeout=3
 set default=0
 
+insmod all_video
+
+search --file --no-floppy --set=root /live/vmlinuz
+
 menuentry "BES Installer" {
-    search --label --no-floppy --set=datapart BESDATA
-    linux ($datapart)/live/vmlinuz boot=live toram quiet
-    initrd ($datapart)/live/initrd.img
+    linux /live/vmlinuz boot=live toram quiet
+    initrd /live/initrd.img
 }
 
 menuentry "BES Installer (verbose)" {
-    search --label --no-floppy --set=datapart BESDATA
-    linux ($datapart)/live/vmlinuz boot=live toram
-    initrd ($datapart)/live/initrd.img
+    linux /live/vmlinuz boot=live toram
+    initrd /live/initrd.img
 }
 GRUBCFG
 
+# Build a FAT32 image for the El Torito EFI boot catalog entry.
+# This image is embedded inside the ISO filesystem at /boot/efi.img and
+# is also exposed as a GPT ESP via --efi-boot-part for USB boot.
+ESP_IMG="$STAGING/boot/efi.img"
+ESP_SIZE_MB=16
+
+truncate -s "${ESP_SIZE_MB}M" "$ESP_IMG"
+mkfs.vfat -F 12 -n ESP "$ESP_IMG" >/dev/null
+
+mount -o loop "$ESP_IMG" "$MNT_ESP"
+mkdir -p "$MNT_ESP/EFI/BOOT"
+mkdir -p "$MNT_ESP/boot/grub"
+cp "$STAGING/EFI/BOOT/$GRUB_EFI_NAME" "$MNT_ESP/EFI/BOOT/$GRUB_EFI_NAME"
+cp "$STAGING/boot/grub/grub.cfg" "$MNT_ESP/boot/grub/grub.cfg"
 umount "$MNT_ESP"
 
-# ============================================================
-# Phase 9: Format and populate data partition
-# ============================================================
-echo "==> Formatting data partition (ext4)..."
-mkfs.ext4 -q -L BESDATA "$DATA_PART"
-
-mount "$DATA_PART" "$MNT_DATA"
-
-echo "==> Copying live filesystem and images to data partition..."
-cp -a "$STAGING"/* "$MNT_DATA/"
-
-sync
-umount "$MNT_DATA"
+echo "    EFI image: $(du -h "$ESP_IMG" | cut -f1)"
+echo "    GRUB target: $GRUB_TARGET ($GRUB_EFI_NAME)"
 
 # ============================================================
-# Phase 10: Cleanup and finalize
+# Phase 7: Build BESCONF FAT32 partition image
 # ============================================================
-echo "==> Detaching loop device..."
-losetup -d "$LOOP_DEVICE"
-LOOP_DEVICE=""
+# r[impl iso.config-partition]
+echo "==> Phase 7: Building BESCONF partition image..."
 
+BESCONF_IMG="$WORK_DIR/besconf.img"
+truncate -s "${BESCONF_SIZE_MB}M" "$BESCONF_IMG"
+mkfs.vfat -F 12 -n BESCONF "$BESCONF_IMG" >/dev/null
+
+echo "    BESCONF image: $(du -h "$BESCONF_IMG" | cut -f1)"
+
+# ============================================================
+# Phase 8: Produce hybrid ISO with xorriso
+# ============================================================
+# r[impl iso.format]
+# r[impl iso.hybrid]
+echo "==> Phase 8: Producing hybrid ISO9660 image with xorriso..."
+
+mkdir -p "$(dirname "$OUTPUT")"
+
+xorriso -as mkisofs \
+    -o "$OUTPUT" \
+    -V "BES_INSTALLER" \
+    -R -J \
+    -iso-level 3 \
+    \
+    -e boot/efi.img \
+    -no-emul-boot \
+    \
+    --efi-boot-part --efi-boot-image \
+    \
+    -append_partition 3 EBD0A0A2-B9E5-4433-87C0-68B6B72699C7 "$BESCONF_IMG" \
+    \
+    "$STAGING"
+
+# Clean up working directory
 rm -rf "$WORK_DIR"
 WORK_DIR=""
 
@@ -455,9 +467,13 @@ echo "Output: $OUTPUT"
 echo "Size:   $(du -h "$OUTPUT" | cut -f1)"
 echo "SHA256: $(sha256sum "$OUTPUT" | cut -d' ' -f1)"
 echo ""
+echo "Boot in a VM:"
+echo "  Attach $OUTPUT as a CD/DVD drive (UEFI mode)"
+echo ""
 echo "Write to USB:"
 echo "  sudo dd if=$OUTPUT of=/dev/sdX bs=4M status=progress"
 echo ""
-echo "To pre-configure, mount the first partition and place bes-install.toml:"
-echo "  mount /dev/sdX1 /mnt && cp bes-install.toml /mnt/ && umount /mnt"
+echo "To pre-configure on USB, mount the BESCONF partition and place bes-install.toml:"
+echo "  lsblk -o NAME,LABEL /dev/sdX   # find the BESCONF partition"
+echo "  mount /dev/sdXN /mnt && cp bes-install.toml /mnt/ && umount /mnt"
 echo "=============================="

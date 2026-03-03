@@ -242,8 +242,8 @@ check-deps:
 
   echo "=== Optional: ISO build (just iso) ==="
   opt mksquashfs     "Arch: pacman -S squashfs-tools / Debian: apt install squashfs-tools"
-  opt unsquashfs     "Arch: pacman -S squashfs-tools / Debian: apt install squashfs-tools"
   opt grub-mkimage   "Arch: pacman -S grub / Debian: apt install grub-common"
+  opt xorriso        "Arch: pacman -S xorriso / Debian: apt install xorriso"
   echo ""
 
   echo "=== Optional: installer build (just installer-build) ==="

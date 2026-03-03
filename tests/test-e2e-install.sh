@@ -11,7 +11,7 @@
 #   variant: metal | cloud
 #   arch:    amd64 | arm64
 #
-# Requires: qemu-system-{x86_64,aarch64}, qemu-img, genisoimage, UEFI firmware
+# Requires: qemu-system-{x86_64,aarch64}, qemu-img, genisoimage, xorriso, UEFI firmware
 set -euo pipefail
 
 ISO="${1:?Usage: $0 <iso> <variant> <arch>}"
@@ -83,7 +83,7 @@ if [ -z "$FW_CODE" ] || [ -z "$FW_VARS" ]; then
     exit 1
 fi
 
-for cmd in "$QEMU_CMD" qemu-img genisoimage; do
+for cmd in "$QEMU_CMD" qemu-img genisoimage xorriso; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: $cmd not found"
         exit 1
@@ -95,10 +95,6 @@ WORK_DIR="$(mktemp -d -t bes-e2e-XXXXXX)"
 cleanup() {
     local exit_code=$?
     set +e
-    if [ -n "${LOOP_DEVICE:-}" ]; then
-        mountpoint -q "$WORK_DIR/efi-mount" 2>/dev/null && sudo umount "$WORK_DIR/efi-mount"
-        sudo losetup -d "$LOOP_DEVICE" 2>/dev/null
-    fi
     rm -rf "$WORK_DIR"
     exit "$exit_code"
 }
@@ -117,9 +113,9 @@ echo "=============================="
 echo ""
 
 # ============================================================
-# Phase 1: Inject bes-install.toml into ISO's EFI partition
+# Phase 1: Inject bes-install.toml into ISO's BESCONF partition
 # ============================================================
-echo "==> Injecting bes-install.toml into ISO..."
+echo "==> Injecting bes-install.toml into ISO's BESCONF partition..."
 
 MODIFIED_ISO="$WORK_DIR/installer.iso"
 cp "$ISO" "$MODIFIED_ISO"
@@ -137,15 +133,45 @@ EOF
 echo "    Config:"
 sed 's/^/      /' "$WORK_DIR/bes-install.toml"
 
-LOOP_DEVICE="$(sudo losetup -f --show -P "$MODIFIED_ISO")"
-mkdir -p "$WORK_DIR/efi-mount"
-sudo mount "${LOOP_DEVICE}p1" "$WORK_DIR/efi-mount"
-sudo cp "$WORK_DIR/bes-install.toml" "$WORK_DIR/efi-mount/bes-install.toml"
-sudo umount "$WORK_DIR/efi-mount"
-sudo losetup -d "$LOOP_DEVICE"
-LOOP_DEVICE=""
+# The BESCONF partition is an appended partition in the hybrid ISO's GPT.
+# xorriso inserts gap partitions, so the number is not predictable.
+# Find it by PARTLABEL instead.
+BESCONF_LINE=""
+while IFS= read -r line; do
+    if echo "$line" | grep -q "Appended3"; then
+        BESCONF_LINE="$line"
+        break
+    fi
+done < <(sgdisk --print "$MODIFIED_ISO" 2>/dev/null)
 
-echo "    Injected config into EFI partition."
+if [ -z "$BESCONF_LINE" ]; then
+    echo "ERROR: could not find BESCONF (Appended3) partition in ISO GPT"
+    echo "sgdisk output:"
+    sgdisk --print "$MODIFIED_ISO" 2>/dev/null || true
+    exit 1
+fi
+
+BESCONF_START_SECTOR="$(echo "$BESCONF_LINE" | awk '{print $2}')"
+BESCONF_END_SECTOR="$(echo "$BESCONF_LINE" | awk '{print $3}')"
+BESCONF_SECTOR_COUNT=$(( BESCONF_END_SECTOR - BESCONF_START_SECTOR + 1 ))
+
+echo "    BESCONF partition: start=${BESCONF_START_SECTOR} sectors=${BESCONF_SECTOR_COUNT}"
+
+# Extract the BESCONF FAT image, mount it, inject the config, put it back
+BESCONF_IMG="$WORK_DIR/besconf.img"
+dd if="$MODIFIED_ISO" of="$BESCONF_IMG" bs=512 \
+    skip="$BESCONF_START_SECTOR" count="$BESCONF_SECTOR_COUNT" status=none
+
+mkdir -p "$WORK_DIR/besconf-mount"
+sudo mount -o loop "$BESCONF_IMG" "$WORK_DIR/besconf-mount"
+sudo cp "$WORK_DIR/bes-install.toml" "$WORK_DIR/besconf-mount/bes-install.toml"
+sudo umount "$WORK_DIR/besconf-mount"
+
+# Write the modified FAT image back into the ISO at the same offset
+dd if="$BESCONF_IMG" of="$MODIFIED_ISO" bs=512 \
+    seek="$BESCONF_START_SECTOR" conv=notrunc status=none
+
+echo "    Injected config into BESCONF partition."
 
 # ============================================================
 # Phase 2: Create blank target disk

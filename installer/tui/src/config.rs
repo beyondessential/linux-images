@@ -206,12 +206,14 @@ impl InstallConfig {
 }
 
 pub fn find_config_file() -> Option<PathBuf> {
+    // r[impl installer.config.location]
     let candidates = [
-        PathBuf::from("/run/live/medium/efi/bes-install.toml"),
-        PathBuf::from("/run/live/medium/EFI/bes-install.toml"),
+        // BESCONF partition (appended FAT32 partition on USB-booted ISO)
+        PathBuf::from("/run/besconf/bes-install.toml"),
+        // ISO filesystem root (mounted by live-boot)
         PathBuf::from("/run/live/medium/bes-install.toml"),
+        // Legacy / manual placement paths
         PathBuf::from("/boot/efi/bes-install.toml"),
-        PathBuf::from("/mnt/efi/bes-install.toml"),
     ];
 
     for candidate in &candidates {
