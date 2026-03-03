@@ -56,15 +56,16 @@ jobs:
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm
           fi
-          # Probe KVM by opening the device and issuing KVM_GET_API_VERSION ioctl
+          # Probe KVM by actually creating (and destroying) a VM via ioctl
           if python3 -c "
           import os, fcntl
-          KVM_GET_API_VERSION = 0xAE00
+          KVM_CREATE_VM = 0xAE01
           fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
-          ret = fcntl.ioctl(fd, KVM_GET_API_VERSION, 0)
+          vm_fd = fcntl.ioctl(fd, KVM_CREATE_VM, 0)
+          os.close(vm_fd)
           os.close(fd)
           " 2>/dev/null; then
-            echo "KVM is usable (ioctl probe succeeded)"
+            echo "KVM is usable (VM creation probe succeeded)"
             echo "kvm=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::KVM is not usable (ioctl probe failed)"
@@ -274,12 +275,13 @@ jobs:
           fi
           if python3 -c "
           import os, fcntl
-          KVM_GET_API_VERSION = 0xAE00
+          KVM_CREATE_VM = 0xAE01
           fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
-          ret = fcntl.ioctl(fd, KVM_GET_API_VERSION, 0)
+          vm_fd = fcntl.ioctl(fd, KVM_CREATE_VM, 0)
+          os.close(vm_fd)
           os.close(fd)
           " 2>/dev/null; then
-            echo "KVM is usable (ioctl probe succeeded)"
+            echo "KVM is usable (VM creation probe succeeded)"
           else
             echo "::warning::KVM is not usable, QEMU will fall back to TCG"
           fi
