@@ -1,11 +1,16 @@
+# r[impl ci.matrix]
+# r[impl ci.test-structure]
+# r[impl ci.test-boot]
+# r[impl ci.test-e2e]
+# r[impl ci.tui-build]
+# r[impl ci.iso-build]
+# r[impl ci.release]
+
 name: Build Images
 
 on:
   workflow_dispatch:
     inputs:
-      ubuntu_version:
-        description: "Ubuntu version"
-        default: "24.04.3"
       tag:
         description: "Release tag (leave empty to auto-generate)"
         default: ""
@@ -16,15 +21,18 @@ permissions:
   contents: write
 
 env:
-  UBUNTU_VERSION: ${{ inputs.ubuntu_version || '24.04.3' }}
+  UBUNTU_SUITE: noble
 
 jobs:
-  build:
+  # ============================================================
+  # Build disk images: {arch} x {variant}
+  # ============================================================
+  images:
     strategy:
       fail-fast: false
       matrix:
-        variant: [cloud, metal, metal-encrypted]
         arch: [amd64, arm64]
+        variant: [metal, cloud]
         include:
           - arch: amd64
             runner: ubuntu-24.04
@@ -37,56 +45,385 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
 
-      - name: Enable KVM (best-effort)
+      - name: Enable KVM
         run: |
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm
-            echo "KVM is available"
-            ls -la /dev/kvm
+            echo "kvm=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::KVM is not available — QEMU will use software emulation (slow)"
+            echo "::warning::KVM not available"
+            echo "kvm=false" >> "$GITHUB_OUTPUT"
+          fi
+        id: kvm
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap gdisk dosfstools e2fsprogs btrfs-progs \
+            cryptsetup parted util-linux rsync shellcheck \
+            ${{ matrix.qemu_pkg }} qemu-utils ${{ matrix.firmware_pkg }} \
+            genisoimage zstd squashfs-tools
+
+      - name: Build raw image
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} raw
+        timeout-minutes: 60
+
+      - name: Test image structure
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-structure
+
+      - name: Boot smoke test
+        if: steps.kvm.outputs.kvm == 'true'
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-boot
+        timeout-minutes: 10
+
+      - name: Post-process image
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} image
+        timeout-minutes: 30
+
+      - name: Convert to VMDK
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} vmdk
+
+      - name: Convert to qcow2
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} qcow
+
+      - name: Compress raw image
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} compress
+
+      - name: Generate checksums
+        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} checksum
+
+      - name: List outputs
+        run: ls -lh output/${{ matrix.arch }}/
+
+      - name: Upload image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.variant }}-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/*
+          if-no-files-found: error
+
+  # ============================================================
+  # Build TUI installer (cross-compile for both arches)
+  # ============================================================
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            cargo_target: x86_64-unknown-linux-musl
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            cargo_target: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.cargo_target }}
+
+      - name: Install musl tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            installer/tui/target
+          key: cargo-${{ matrix.cargo_target }}-${{ hashFiles('installer/tui/Cargo.lock') }}
+          restore-keys: cargo-${{ matrix.cargo_target }}-
+
+      - name: Run cargo test
+        run: cd installer/tui && cargo test
+
+      - name: Run cargo clippy
+        run: cd installer/tui && cargo clippy -- -D warnings
+
+      - name: Check formatting
+        run: cd installer/tui && cargo fmt --check
+
+      - name: Build release binary (static musl)
+        run: cd installer/tui && cargo build --release --target ${{ matrix.cargo_target }}
+
+      - name: Verify binary is static
+        run: |
+          file installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer
+          ldd installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer 2>&1 | grep -q "not a dynamic" || \
+            ldd installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer 2>&1 | grep -q "statically linked" || \
+            echo "::warning::Binary may not be fully static"
+
+      - name: Upload installer binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.arch }}
+          path: installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer
+          if-no-files-found: error
+
+  # ============================================================
+  # Build live ISOs (per-arch, depends on images + installer)
+  # ============================================================
+  iso:
+    needs: [images, installer]
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap gdisk dosfstools e2fsprogs squashfs-tools \
+            grub-efi-amd64-bin grub-efi-arm64-bin grub-common \
+            parted util-linux zstd cryptsetup
+
+      - name: Download metal image
+        uses: actions/download-artifact@v4
+        with:
+          name: image-metal-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/
+
+      - name: Download cloud image
+        uses: actions/download-artifact@v4
+        with:
+          name: image-cloud-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/
+
+      - name: Download installer binary
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-${{ matrix.arch }}
+          path: installer-bin/
+
+      - name: Make installer binary executable
+        run: chmod +x installer-bin/bes-installer
+
+      - name: List inputs
+        run: |
+          echo "=== Images ==="
+          ls -lh output/${{ matrix.arch }}/*.raw.zst || true
+          echo "=== Installer ==="
+          ls -lh installer-bin/
+
+      - name: Build ISO
+        run: |
+          sudo ARCH=${{ matrix.arch }} \
+               OUTPUT=output/${{ matrix.arch }}/bes-installer-${{ matrix.arch }}.iso \
+               INSTALLER_BIN=installer-bin/bes-installer \
+               IMAGE_DIR=output/${{ matrix.arch }} \
+               UBUNTU_SUITE=${{ env.UBUNTU_SUITE }} \
+               iso/build-iso.sh
+        timeout-minutes: 30
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: iso-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/bes-installer-*.iso
+          if-no-files-found: error
+
+  # ============================================================
+  # E2E install test: boot ISO in QEMU, auto-install to blank disk
+  # ============================================================
+  e2e-test:
+    needs: [iso]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64]
+        variant: [metal, cloud]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            qemu_cmd: qemu-system-x86_64
+            qemu_accel: -enable-kvm
+            firmware_pkg: ovmf
+            fw_code: /usr/share/OVMF/OVMF_CODE.fd
+            fw_vars: /usr/share/OVMF/OVMF_VARS.fd
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+          else
+            echo "::error::KVM required for E2E tests"
+            exit 1
           fi
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ${{ matrix.qemu_pkg }} qemu-utils ${{ matrix.firmware_pkg }} \
-            xorriso wget \
-            nodejs zstd
+            ${{ matrix.qemu_cmd }} qemu-utils ${{ matrix.firmware_pkg }} \
+            genisoimage util-linux dosfstools
 
-      - name: List firmware files
+      - name: Download ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: iso-${{ matrix.arch }}
+          path: iso/
+
+      - name: Inject bes-install.toml into ISO EFI partition
+        # r[verify test.e2e.method]
         run: |
-          echo "=== OVMF/AAVMF files from package ==="
-          dpkg -L ${{ matrix.firmware_pkg }} | grep -iE '(OVMF|AAVMF|QEMU_EFI|QEMU_CODE|QEMU_VARS|\.fd$|\.raw$)' || true
-          echo "=== Find in /usr/share ==="
-          find /usr/share -name '*.fd' -o -name 'QEMU_EFI*' 2>/dev/null || true
+          ISO=$(ls iso/bes-installer-*.iso | head -1)
+          echo "ISO: $ISO"
 
-      - uses: extractions/setup-just@v2
+          # Find the EFI partition offset
+          LOOP=$(sudo losetup -f --show -P "$ISO")
+          echo "Loop: $LOOP"
 
-      - name: Cache Ubuntu ISO
-        uses: actions/cache@v4
-        with:
-          path: /tmp/ubuntu-${{ env.UBUNTU_VERSION }}-live-server-${{ matrix.arch }}.iso
-          key: ubuntu-iso-${{ env.UBUNTU_VERSION }}-${{ matrix.arch }}
+          MOUNT_DIR=$(mktemp -d)
 
-      - name: Build ${{ matrix.variant }} ${{ matrix.arch }}
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} build
-        timeout-minutes: 240
+          sudo mount "${LOOP}p1" "$MOUNT_DIR"
 
-      - name: List outputs
-        run: ls -lh output/${{ matrix.arch }}/
+          cat > /tmp/bes-install.toml << EOF
+          auto = true
+          variant = "${{ matrix.variant }}"
+          disk = "largest"
+          disable-tpm = true
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.variant }}-${{ matrix.arch }}
-          path: output/${{ matrix.arch }}/*
-          if-no-files-found: error
+          [firstboot]
+          hostname = "e2e-test"
+          EOF
 
+          sudo cp /tmp/bes-install.toml "$MOUNT_DIR/bes-install.toml"
+          sudo umount "$MOUNT_DIR"
+          sudo losetup -d "$LOOP"
+          rmdir "$MOUNT_DIR"
+
+      - name: Create blank target disk
+        run: qemu-img create -f qcow2 target-disk.qcow2 16G
+
+      - name: Copy UEFI firmware vars (writable)
+        run: cp ${{ matrix.fw_vars }} fw_vars.fd
+
+      - name: Run E2E install test
+        # r[verify test.e2e.method]
+        # r[verify test.e2e.reboot]
+        timeout-minutes: 15
+        run: |
+          ISO=$(ls iso/bes-installer-*.iso | head -1)
+          SERIAL_LOG=e2e-serial.log
+
+          echo "=== Phase 1: Boot ISO and auto-install ==="
+          timeout 600 ${{ matrix.qemu_cmd }} ${{ matrix.qemu_accel }} \
+            -m 4096 -smp 2 -nographic \
+            -serial mon:stdio \
+            -drive if=pflash,format=raw,readonly=on,file=${{ matrix.fw_code }} \
+            -drive if=pflash,format=raw,file=fw_vars.fd \
+            -drive file="$ISO",format=raw,if=virtio,readonly=on \
+            -drive file=target-disk.qcow2,format=qcow2,if=virtio \
+            -netdev user,id=net0 \
+            -device virtio-net-pci,netdev=net0 \
+            -no-reboot \
+            2>&1 | tee install-serial.log || true
+
+          echo ""
+          echo "=== Phase 2: Boot installed system ==="
+
+          # Create cloud-init NoCloud ISO for smoke test
+          CI_DIR=$(mktemp -d)
+          cat > "$CI_DIR/meta-data" << 'META'
+          instance-id: e2e-test
+          local-hostname: e2e-test
+          META
+
+          cat > "$CI_DIR/user-data" << 'CLOUDINIT'
+          #cloud-config
+          runcmd:
+            - |
+              #!/bin/bash
+              exec > /dev/ttyS0 2>&1
+              PASS=0; FAIL=0; ERRORS=()
+              check() {
+                local desc="$1"; shift
+                if "$@" >/dev/null 2>&1; then
+                  echo "PASS: $desc"; ((PASS++))
+                else
+                  echo "FAIL: $desc"; ERRORS+=("$desc"); ((FAIL++))
+                fi
+              }
+              echo "=== BES E2E Smoke Test ==="
+              check "multi-user.target" systemctl is-active multi-user.target
+              check "no failed units" test "$(systemctl --failed --no-legend | wc -l)" -eq 0
+              check "sshd active" systemctl is-active ssh
+              check "ufw active" systemctl is-active ufw
+              check "tailscaled active" systemctl is-active tailscaled
+              check "root is btrfs" stat -f -c%T /
+              check "ubuntu user" id ubuntu
+              check "hostname is e2e-test" test "$(hostname)" = "e2e-test"
+              check "/boot mounted" mountpoint -q /boot
+              check "/boot/efi mounted" mountpoint -q /boot/efi
+              echo ""
+              echo "RESULTS: $PASS passed, $FAIL failed"
+              if [ $FAIL -eq 0 ]; then echo "TEST_SUCCESS"; else echo "TEST_FAILURE"; fi
+              sleep 2; poweroff
+          CLOUDINIT
+
+          genisoimage -output cidata.iso -volid cidata -joliet -rock \
+            "$CI_DIR/meta-data" "$CI_DIR/user-data"
+          rm -rf "$CI_DIR"
+
+          # Reset firmware vars for clean boot
+          cp ${{ matrix.fw_vars }} fw_vars.fd
+
+          timeout 300 ${{ matrix.qemu_cmd }} ${{ matrix.qemu_accel }} \
+            -m 4096 -smp 2 -nographic \
+            -serial mon:stdio \
+            -drive if=pflash,format=raw,readonly=on,file=${{ matrix.fw_code }} \
+            -drive if=pflash,format=raw,file=fw_vars.fd \
+            -drive file=target-disk.qcow2,format=qcow2,if=virtio \
+            -drive file=cidata.iso,format=raw,if=virtio \
+            -netdev user,id=net0 \
+            -device virtio-net-pci,netdev=net0 \
+            -no-reboot \
+            2>&1 | tee "$SERIAL_LOG" || true
+
+          echo ""
+          echo "=== Checking E2E results ==="
+          if grep -q "TEST_SUCCESS" "$SERIAL_LOG"; then
+            echo "E2E test PASSED (${{ matrix.variant }} ${{ matrix.arch }})"
+          elif grep -q "TEST_FAILURE" "$SERIAL_LOG"; then
+            echo "E2E test FAILED"
+            grep "FAIL:" "$SERIAL_LOG" || true
+            exit 1
+          else
+            echo "E2E test TIMED OUT or did not complete"
+            tail -50 "$SERIAL_LOG"
+            exit 1
+          fi
+
+  # ============================================================
+  # Release: collect all artifacts, publish GitHub release
+  # ============================================================
   release:
-    needs: build
+    needs: [images, installer, iso, e2e-test]
+    if: always() && (needs.images.result == 'success') && (needs.installer.result == 'success') && (needs.iso.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,14 +436,40 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release
-          for dir in artifacts/*/; do
-            cp "$dir"* release/ 2>/dev/null || true
+
+          # Copy image artifacts (raw.zst, vmdk, qcow2)
+          for variant in metal cloud; do
+            for arch in amd64 arm64; do
+              dir="artifacts/image-${variant}-${arch}"
+              if [ -d "$dir" ]; then
+                cp "$dir"/*.raw.zst release/ 2>/dev/null || true
+                cp "$dir"/*.vmdk release/ 2>/dev/null || true
+                cp "$dir"/*.qcow2 release/ 2>/dev/null || true
+              fi
+            done
           done
 
-          # Remove per-variant SHA256SUMS and generate a combined one
-          rm -f release/SHA256SUMS
+          # Copy ISOs
+          for arch in amd64 arm64; do
+            dir="artifacts/iso-${arch}"
+            if [ -d "$dir" ]; then
+              cp "$dir"/*.iso release/ 2>/dev/null || true
+            fi
+          done
+
+          # Copy installer binaries
+          for arch in amd64 arm64; do
+            dir="artifacts/installer-${arch}"
+            if [ -d "$dir" ]; then
+              cp "$dir"/bes-installer "release/bes-installer-${arch}" 2>/dev/null || true
+            fi
+          done
+
+          # r[impl ci.release]
+          # Generate combined checksums
           cd release
-          sha256sum *.iso *.raw.zst *.vmdk *.qcow2 | tee SHA256SUMS
+          rm -f SHA256SUMS
+          sha256sum * | tee SHA256SUMS
 
       - name: Determine tag
         id: tag
@@ -128,25 +491,28 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
           body: |
-            Ubuntu ${{ env.UBUNTU_VERSION }} server images (amd64 + arm64)
+            Ubuntu Server 24.04 disk images and installer (amd64 + arm64)
 
             ### Variants
-            - **cloud** — for AWS and other cloud providers (no encryption)
-            - **metal** — for bare metal and on-premise virtualisation (no encryption)
-            - **metal-encrypted** — for bare metal with TPM-backed full disk encryption
+            - **metal** — full-disk encryption (LUKS2) with TPM auto-unlock
+            - **cloud** — no encryption, for cloud/VM deployments
 
             ### Formats
             | Format | Use case |
             |--------|----------|
-            | `.iso` | Boot from USB/DVD for interactive autoinstall |
-            | `.raw.zst` | Decompress with `zstd -d` and write directly to disk or import to cloud |
+            | `.iso` | Boot from USB for interactive or automated install |
+            | `.raw.zst` | Decompress with `zstd -d` and write directly to disk |
             | `.vmdk` | VMware / vSphere |
             | `.qcow2` | KVM / libvirt / Proxmox |
 
-            Verify downloads:
+            ### Installer binary
+            `bes-installer-amd64` and `bes-installer-arm64` are the standalone
+            static TUI installer binaries (included in the ISO).
+
+            ### Verify downloads
             ```
             sha256sum -c SHA256SUMS
             ```
           files: release/*
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           make_latest: true
