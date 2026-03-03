@@ -299,7 +299,7 @@ fi
 # Copy build inputs into chroot
 echo "==> Copying build inputs into chroot..."
 cp "$SCRIPT_DIR/configure.sh"  "$MNT/tmp/configure.sh"
-cp "$SCRIPT_DIR/packages.txt"  "$MNT/tmp/packages.txt"
+cp "$SCRIPT_DIR/packages.sh"   "$MNT/tmp/packages.sh"
 cp -r "$SCRIPT_DIR/scripts"    "$MNT/tmp/scripts/"
 cp -r "$SCRIPT_DIR/files"      "$MNT/tmp/files/"
 

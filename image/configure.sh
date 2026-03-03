@@ -3,7 +3,7 @@
 #   chroot "$MNT" /bin/bash /tmp/configure.sh "$ARCH" "$VARIANT" "$GRUB_TARGET"
 #
 # It expects the following to be available under /tmp/:
-#   /tmp/packages.txt       — package list
+#   /tmp/packages.sh        — package list (sourced as bash)
 #   /tmp/scripts/           — setup scripts (firewall, tailscale, snapper, etc.)
 #   /tmp/files/             — static files to install
 set -euo pipefail
@@ -239,7 +239,7 @@ usermod -s /sbin/nologin root
 # 15. Cloud-init
 # ============================================================
 # r[image.cloud-init.enabled]
-# cloud-init is in packages.txt, just configure it.
+# cloud-init is in packages.sh, just configure it.
 
 # r[image.cloud-init.no-hostname-file]
 mkdir -p /etc/cloud/cloud.cfg.d
