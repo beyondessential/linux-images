@@ -1,27 +1,35 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::{DiskSelector, DiskStrategy};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// r[impl installer.dryrun.devices]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockDevice {
     pub path: PathBuf,
     pub size_bytes: u64,
     pub model: String,
     pub transport: TransportType,
+    #[serde(default)]
     pub removable: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransportType {
+    #[serde(alias = "NVMe", alias = "nvme")]
     Nvme,
+    #[serde(alias = "SATA", alias = "sata")]
     Sata,
+    #[serde(alias = "USB", alias = "usb")]
     Usb,
+    #[serde(alias = "virtio")]
     Virtio,
+    #[serde(alias = "SCSI", alias = "scsi")]
     Scsi,
+    #[serde(alias = "unknown")]
     Unknown,
 }
 
@@ -211,6 +219,19 @@ fn resolve_strategy<'a>(
     }
 }
 
+/// Load fake block devices from a JSON file for dry-run testing.
+///
+/// The JSON file must contain an array of objects with the same fields as
+/// `BlockDevice`: `path`, `model`, `size_bytes`, `transport`, and an
+/// optional `removable` boolean (default false).
+pub fn load_fake_devices(path: &Path) -> Result<Vec<BlockDevice>> {
+    let contents = std::fs::read_to_string(path)
+        .with_context(|| format!("reading fake devices file: {}", path.display()))?;
+    let devices: Vec<BlockDevice> = serde_json::from_str(&contents)
+        .with_context(|| format!("parsing fake devices file: {}", path.display()))?;
+    Ok(devices)
+}
+
 /// Try to determine which block device we booted from, so we can exclude it
 /// as an install target.
 pub fn detect_boot_device() -> Option<PathBuf> {
@@ -384,6 +405,66 @@ mod tests {
         assert_eq!(format_bytes(1_073_741_824), "1.0 GiB");
         assert_eq!(format_bytes(1_099_511_627_776), "1.0 TiB");
         assert_eq!(format_bytes(500_107_862_016), "465.8 GiB");
+    }
+
+    // r[verify installer.dryrun.devices]
+    #[test]
+    fn load_fake_devices_from_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("devices.json");
+        std::fs::write(
+            &path,
+            r#"[
+                {
+                    "path": "/dev/sda",
+                    "size_bytes": 500000000000,
+                    "model": "Fake SSD",
+                    "transport": "NVMe",
+                    "removable": false
+                },
+                {
+                    "path": "/dev/sdb",
+                    "size_bytes": 1000000000000,
+                    "model": "Fake HDD",
+                    "transport": "SATA"
+                }
+            ]"#,
+        )
+        .unwrap();
+
+        let devices = load_fake_devices(&path).unwrap();
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].path, PathBuf::from("/dev/sda"));
+        assert_eq!(devices[0].model, "Fake SSD");
+        assert_eq!(devices[0].transport, TransportType::Nvme);
+        assert!(!devices[0].removable);
+        assert_eq!(devices[1].path, PathBuf::from("/dev/sdb"));
+        assert_eq!(devices[1].transport, TransportType::Sata);
+        assert!(!devices[1].removable);
+    }
+
+    // r[verify installer.dryrun.devices]
+    #[test]
+    fn load_fake_devices_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.json");
+        std::fs::write(&path, "not json").unwrap();
+        assert!(load_fake_devices(&path).is_err());
+    }
+
+    // r[verify installer.dryrun.devices]
+    #[test]
+    fn load_fake_devices_nonexistent() {
+        assert!(load_fake_devices(Path::new("/nonexistent/devices.json")).is_err());
+    }
+
+    // r[verify installer.dryrun.devices]
+    #[test]
+    fn block_device_roundtrip_serde() {
+        let dev = make_device("/dev/nvme0n1", 1_000_000_000_000, TransportType::Nvme);
+        let json = serde_json::to_string(&dev).unwrap();
+        let parsed: BlockDevice = serde_json::from_str(&json).unwrap();
+        assert_eq!(dev, parsed);
     }
 
     // r[verify installer.tui.disk-detection]
