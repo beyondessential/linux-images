@@ -392,6 +392,18 @@ test-structure: _validate-variant _validate-arch
   fi
   sudo tests/test-image-structure.sh "$IMAGE" "{{variant}}" "{{arch}}"
 
+# Verify ISO structure without booting (requires sudo)
+iso-test-structure: _validate-arch
+  #!/usr/bin/env bash
+  set -euo pipefail
+  ISO="{{output_iso}}"
+  if [ ! -f "$ISO" ]; then
+    echo "ERROR: ISO not found: $ISO"
+    echo "Run 'just iso' first to build the ISO."
+    exit 1
+  fi
+  sudo tests/test-iso-structure.sh "$ISO" "{{arch}}"
+
 # Prepare QEMU firmware files for boot tests
 _prepare-firmware: _ensure-dirs
   #!/usr/bin/env bash

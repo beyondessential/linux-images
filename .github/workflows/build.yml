@@ -195,7 +195,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             debootstrap gdisk dosfstools e2fsprogs squashfs-tools \
             grub-efi-amd64-bin grub-efi-arm64-bin grub-common \
-            parted util-linux zstd cryptsetup
+            parted util-linux zstd cryptsetup xorriso
 
       - name: Download metal image
         uses: actions/download-artifact@v4
@@ -234,6 +234,9 @@ jobs:
                UBUNTU_SUITE=${{ env.UBUNTU_SUITE }} \
                iso/build-iso.sh
         timeout-minutes: 30
+
+      - name: Test ISO structure
+        run: just arch=${{ matrix.arch }} iso-test-structure
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
