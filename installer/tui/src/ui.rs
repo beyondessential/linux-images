@@ -45,6 +45,7 @@ pub struct AppState {
     pub boot_device: Option<PathBuf>,
     pub write_progress: Option<ProgressSnapshot>,
     pub confirm_input: String,
+    pub build_info: String,
 
     pub hostname_input: String,
     pub tailscale_input: String,
@@ -78,6 +79,7 @@ impl AppState {
         firstboot: Option<FirstbootConfig>,
         boot_device: Option<PathBuf>,
         default_disk_index: Option<usize>,
+        build_info: String,
     ) -> Self {
         let (hostname_input, tailscale_input, ssh_keys_input) = match firstboot {
             Some(ref fb) => (
@@ -97,6 +99,7 @@ impl AppState {
             boot_device,
             write_progress: None,
             confirm_input: String::new(),
+            build_info,
             hostname_input,
             tailscale_input,
             ssh_keys_input,
@@ -231,7 +234,15 @@ mod tests {
                 removable: false,
             },
         ];
-        AppState::new(devices, Variant::Metal, false, None, None, None)
+        AppState::new(
+            devices,
+            Variant::Metal,
+            false,
+            None,
+            None,
+            None,
+            String::new(),
+        )
     }
 
     // r[verify installer.tui.welcome]
@@ -410,7 +421,15 @@ mod tests {
             tailscale_authkey: None,
             ssh_authorized_keys: vec![],
         };
-        let state = AppState::new(devices, Variant::Cloud, false, Some(fb), None, None);
+        let state = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+        );
         assert_eq!(state.hostname_input, "myhost");
         assert_eq!(state.tailscale_input, "");
         assert_eq!(state.ssh_keys_input, "");
@@ -432,7 +451,15 @@ mod tests {
             tailscale_authkey: Some("tskey-auth-xxx".into()),
             ssh_authorized_keys: vec![],
         };
-        let state = AppState::new(devices, Variant::Cloud, false, Some(fb), None, None);
+        let state = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+        );
         assert_eq!(state.tailscale_input, "tskey-auth-xxx");
     }
 
@@ -452,7 +479,15 @@ mod tests {
             tailscale_authkey: None,
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
         };
-        let state = AppState::new(devices, Variant::Cloud, false, Some(fb), None, None);
+        let state = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+        );
         assert_eq!(
             state.ssh_keys_input,
             "ssh-ed25519 AAAA key1\nssh-rsa BBBB key2"

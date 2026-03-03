@@ -11,6 +11,7 @@ use crate::writer::format_eta;
 use super::{AppState, Screen};
 
 pub fn render(frame: &mut Frame, state: &AppState) {
+    // r[impl installer.tui.welcome]
     let area = frame.area();
 
     let chunks = Layout::vertical([
@@ -23,7 +24,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     render_header(frame, chunks[0], state);
 
     match &state.screen {
-        Screen::Welcome => render_welcome(frame, chunks[1]),
+        Screen::Welcome => render_welcome(frame, chunks[1], state),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
         Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
         Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
@@ -55,8 +56,13 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
     };
+    let title = if state.build_info.is_empty() {
+        format!(" BES Installer -- {step} ")
+    } else {
+        format!(" BES Installer -- {step} | {} ", state.build_info)
+    };
     let block = Block::default()
-        .title(format!(" BES Installer -- {step} "))
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
     frame.render_widget(block, area);
@@ -82,7 +88,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 // r[impl installer.tui.welcome]
-fn render_welcome(frame: &mut Frame, area: Rect) {
+fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([
         Constraint::Length(4),
         Constraint::Length(1),
@@ -102,7 +108,7 @@ fn render_welcome(frame: &mut Frame, area: Rect) {
         .build();
     frame.render_widget(big_text, chunks[0]);
 
-    let description = vec![
+    let mut description = vec![
         Line::from(""),
         Line::from(Span::styled(
             "  Tamanu Linux",
@@ -130,9 +136,18 @@ fn render_welcome(frame: &mut Frame, area: Rect) {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::UNDERLINED),
         )),
-        Line::from(""),
-        Line::from("  Press Enter to begin."),
     ];
+
+    if !state.build_info.is_empty() {
+        description.push(Line::from(""));
+        description.push(Line::from(Span::styled(
+            format!("  {}", state.build_info),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    description.push(Line::from(""));
+    description.push(Line::from("  Press Enter to begin."));
 
     let paragraph = Paragraph::new(description).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, chunks[2]);

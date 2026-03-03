@@ -3,7 +3,7 @@
 // r[impl installer.mode.auto]
 // r[impl installer.mode.auto-incomplete]
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -210,6 +210,7 @@ fn run_interactive(
     });
 
     let image_path = writer::find_image_path(&variant.to_string(), arch)?;
+    let build_info = read_build_info();
 
     let state = ui::AppState::new(
         devices,
@@ -218,9 +219,33 @@ fn run_interactive(
         cfg.firstboot,
         boot_device,
         default_disk_index,
+        build_info,
     );
 
     ui::run_tui(state, &image_path)
+}
+
+fn read_build_info() -> String {
+    let contents = match fs::read_to_string("/etc/bes-build-info") {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+
+    let mut date = None;
+    let mut arch = None;
+    for line in contents.lines() {
+        if let Some(val) = line.strip_prefix("BUILD_DATE=") {
+            date = Some(val.trim());
+        } else if let Some(val) = line.strip_prefix("ARCH=") {
+            arch = Some(val.trim());
+        }
+    }
+
+    match (date, arch) {
+        (Some(d), Some(a)) => format!("Built {d} ({a})"),
+        (Some(d), None) => format!("Built {d}"),
+        _ => String::new(),
+    }
 }
 
 fn detect_arch() -> String {

@@ -36,6 +36,7 @@ set -euo pipefail
 ARCH="${ARCH:-amd64}"
 UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
 BESCONF_SIZE_MB="${BESCONF_SIZE_MB:-4}"
+BUILD_DATE="$(date -u +%Y-%m-%d)"
 INSTALLER_BIN="${INSTALLER_BIN:?INSTALLER_BIN must point to the bes-installer binary}"
 IMAGE_DIR="${IMAGE_DIR:?IMAGE_DIR must point to directory with .raw.zst images}"
 OUTPUT="${OUTPUT:-output/${ARCH}/bes-installer-${ARCH}.iso}"
@@ -101,6 +102,7 @@ echo "Image dir:     $IMAGE_DIR"
 echo "Images:        ${IMAGE_FILES[*]}"
 echo "Suite:         $UBUNTU_SUITE"
 echo "BESCONF size:  ${BESCONF_SIZE_MB} MiB"
+echo "Build date:    $BUILD_DATE"
 echo "=============================="
 echo ""
 
@@ -235,6 +237,12 @@ chroot "$MNT_ROOTFS" bash -c "
 # ============================================================
 echo "==> Phase 3: Installing TUI installer binary and configuring autostart..."
 install -m 755 "$INSTALLER_BIN" "$MNT_ROOTFS/usr/local/bin/bes-installer"
+
+# Write build info file so the installer can display it
+cat > "$MNT_ROOTFS/etc/bes-build-info" << BUILDINFO
+BUILD_DATE=$BUILD_DATE
+ARCH=$ARCH
+BUILDINFO
 
 # r[impl iso.boot.autostart]
 # Wrapper script: runs the installer with logging to a file (not piped
@@ -459,16 +467,18 @@ insmod all_video
 
 search --file --no-floppy --set=root /live/vmlinuz
 
-menuentry "BES Installer" {
+menuentry "BES Installer (__ARCH__, built __BUILD_DATE__)" {
     linux /live/vmlinuz boot=live toram quiet console=tty1
     initrd /live/initrd.img
 }
 
-menuentry "BES Installer (verbose)" {
+menuentry "BES Installer (__ARCH__, built __BUILD_DATE__) -- verbose" {
     linux /live/vmlinuz boot=live toram console=tty1
     initrd /live/initrd.img
 }
 GRUBCFG
+
+sed -i "s/__ARCH__/${ARCH}/g; s/__BUILD_DATE__/${BUILD_DATE}/g" "$STAGING/boot/grub/grub.cfg"
 
 # Build a FAT32 image for the El Torito EFI boot catalog entry.
 # This image is embedded inside the ISO filesystem at /boot/efi.img and
