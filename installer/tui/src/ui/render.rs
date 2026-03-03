@@ -1,8 +1,9 @@
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap};
+use tui_big_text::{BigText, PixelSize};
 
 use crate::disk::BlockDevice;
 use crate::writer::format_eta;
@@ -22,6 +23,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     render_header(frame, chunks[0], state);
 
     match &state.screen {
+        Screen::Welcome => render_welcome(frame, chunks[1]),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
         Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
         Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
@@ -37,6 +39,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
+        Screen::Welcome => "Welcome",
         Screen::DiskSelection => "1/4 Select Target Disk",
         Screen::VariantSelection => "2/4 Select Variant",
         Screen::TpmToggle => "2/4 TPM Configuration",
@@ -55,7 +58,8 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     let hints = match &state.screen {
-        Screen::DiskSelection => "Up/Down: select | Enter: next | q: quit",
+        Screen::Welcome => "Enter: start | q: quit",
+        Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit",
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit",
@@ -66,6 +70,68 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     };
     let paragraph = Paragraph::new(hints).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(paragraph, area);
+}
+
+// r[impl installer.tui.welcome]
+fn render_welcome(frame: &mut Frame, area: Rect) {
+    let chunks = Layout::vertical([
+        Constraint::Length(4),
+        Constraint::Length(1),
+        Constraint::Min(0),
+    ])
+    .split(area);
+
+    let big_text = BigText::builder()
+        .pixel_size(PixelSize::Quadrant)
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .lines(vec!["BES Installer".into()])
+        .alignment(Alignment::Center)
+        .build();
+    frame.render_widget(big_text, chunks[0]);
+
+    let description = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  BES Linux Images — Disk Installer",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("  This installer writes a pre-built BES Linux disk image to the"),
+        Line::from("  target disk you select. The image contains a fully configured"),
+        Line::from("  Ubuntu Server system with BES's preferred disk and system layout."),
+        Line::from(""),
+        Line::from("  Available variants:"),
+        Line::from(Span::styled(
+            "    metal  — Full-disk encryption (LUKS2) with optional TPM auto-unlock",
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(Span::styled(
+            "    cloud  — No encryption, for cloud/VM deployments",
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  WARNING: the selected disk will be completely overwritten.",
+            Style::default().fg(Color::Red),
+        )),
+        Line::from(""),
+        Line::from("  For support, contact BES at:"),
+        Line::from(Span::styled(
+            "    https://bearcove.eu",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED),
+        )),
+        Line::from(""),
+        Line::from("  Press Enter to begin."),
+    ];
+
+    let paragraph = Paragraph::new(description).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, chunks[2]);
 }
 
 fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {

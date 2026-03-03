@@ -19,6 +19,7 @@ pub use run::run_tui;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
+    Welcome,
     DiskSelection,
     VariantSelection,
     TpmToggle,
@@ -70,7 +71,7 @@ impl AppState {
         default_disk_index: Option<usize>,
     ) -> Self {
         Self {
-            screen: Screen::DiskSelection,
+            screen: Screen::Welcome,
             selected_disk_index: default_disk_index.unwrap_or(0),
             devices,
             variant,
@@ -110,6 +111,7 @@ impl AppState {
 
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
+            Screen::Welcome => Screen::DiskSelection,
             Screen::DiskSelection => Screen::VariantSelection,
             Screen::VariantSelection if self.variant == Variant::Metal => Screen::TpmToggle,
             Screen::VariantSelection => Screen::Confirmation,
@@ -123,6 +125,7 @@ impl AppState {
 
     pub fn go_back(&mut self) {
         self.screen = match &self.screen {
+            Screen::DiskSelection => Screen::Welcome,
             Screen::VariantSelection => Screen::DiskSelection,
             Screen::TpmToggle => Screen::VariantSelection,
             Screen::Confirmation => {
@@ -172,14 +175,32 @@ mod tests {
         AppState::new(devices, Variant::Metal, false, None, None, None)
     }
 
-    // r[verify installer.tui.disk-detection]
+    // r[verify installer.tui.welcome]
     #[test]
     fn initial_state() {
         let state = make_state();
-        assert_eq!(state.screen, Screen::DiskSelection);
+        assert_eq!(state.screen, Screen::Welcome);
         assert_eq!(state.selected_disk_index, 0);
         assert_eq!(state.variant, Variant::Metal);
         assert!(!state.disable_tpm);
+    }
+
+    // r[verify installer.tui.welcome]
+    #[test]
+    fn welcome_advances_to_disk_selection() {
+        let mut state = make_state();
+        assert_eq!(state.screen, Screen::Welcome);
+        state.advance();
+        assert_eq!(state.screen, Screen::DiskSelection);
+    }
+
+    // r[verify installer.tui.welcome]
+    #[test]
+    fn disk_selection_goes_back_to_welcome() {
+        let mut state = make_state();
+        state.screen = Screen::DiskSelection;
+        state.go_back();
+        assert_eq!(state.screen, Screen::Welcome);
     }
 
     // r[verify installer.tui.disk-detection]
@@ -210,6 +231,8 @@ mod tests {
         let mut state = make_state();
         state.variant = Variant::Metal;
 
+        assert_eq!(state.screen, Screen::Welcome);
+        state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
         assert_eq!(state.screen, Screen::VariantSelection);
@@ -225,6 +248,8 @@ mod tests {
         let mut state = make_state();
         state.variant = Variant::Cloud;
 
+        assert_eq!(state.screen, Screen::Welcome);
+        state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
         assert_eq!(state.screen, Screen::VariantSelection);
@@ -246,7 +271,7 @@ mod tests {
         state.go_back();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.go_back();
-        assert_eq!(state.screen, Screen::DiskSelection);
+        assert_eq!(state.screen, Screen::Welcome);
     }
 
     // r[verify installer.tui.variant-selection]

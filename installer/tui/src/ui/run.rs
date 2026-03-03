@@ -89,8 +89,15 @@ fn event_loop(
         }
 
         match &state.screen {
+            Screen::Welcome => match key.code {
+                KeyCode::Char('q') => break,
+                KeyCode::Enter => state.advance(),
+                _ => {}
+            },
+
             Screen::DiskSelection => match key.code {
                 KeyCode::Char('q') => break,
+                KeyCode::Esc => state.go_back(),
                 KeyCode::Up | KeyCode::Char('k') => state.select_prev_disk(),
                 KeyCode::Down | KeyCode::Char('j') => state.select_next_disk(),
                 KeyCode::Enter => {
