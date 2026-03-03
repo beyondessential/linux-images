@@ -15,7 +15,9 @@ on:
         description: "Release tag (leave empty to auto-generate)"
         default: ""
   push:
+    branches: [main]
     tags: ["v*"]
+  pull_request:
 
 permissions:
   contents: write
@@ -47,7 +49,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2
 
-      - name: Enable KVM
+      - name: Enable KVM if possible
         run: |
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm
@@ -432,7 +434,7 @@ jobs:
   # ============================================================
   release:
     needs: [images, installer, iso, e2e-test]
-    if: always() && (needs.images.result == 'success') && (needs.installer.result == 'success') && (needs.iso.result == 'success')
+    if: always() && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && (needs.images.result == 'success') && (needs.installer.result == 'success') && (needs.iso.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
