@@ -302,10 +302,10 @@ done
 # Copy vmlinuz and initrd from the squashfs for direct GRUB boot
 echo "==> Extracting kernel and initrd from squashfs..."
 unsquashfs -f -d "$WORK_DIR/squash-extract" "$SQUASHFS" \
-    'boot/vmlinuz-*' 'boot/initrd*' >/dev/null 2>&1
+    'boot/vmlinuz-*' 'boot/initrd.img-*' >/dev/null 2>&1
 
-VMLINUZ="$(find "$WORK_DIR/squash-extract/boot" -name 'vmlinuz-*' | sort -V | tail -1)"
-INITRD="$(find "$WORK_DIR/squash-extract/boot" -name 'initrd*' | sort -V | tail -1)"
+VMLINUZ="$(find "$WORK_DIR/squash-extract/boot" -maxdepth 1 -name 'vmlinuz-*' -not -name '*.old' -type f | sort -V | tail -1)"
+INITRD="$(find "$WORK_DIR/squash-extract/boot" -maxdepth 1 -name 'initrd.img-*' -not -name '*.old' -type f | sort -V | tail -1)"
 
 if [ -z "$VMLINUZ" ] || [ -z "$INITRD" ]; then
     echo "ERROR: could not find vmlinuz or initrd in squashfs"
