@@ -24,7 +24,7 @@ export LANGUAGE=
 echo "--- configure.sh: arch=$ARCH variant=$VARIANT grub_target=$GRUB_TARGET ---"
 
 # ============================================================
-# 1. Apt sources
+# Apt sources
 # ============================================================
 # Ubuntu 24.04 uses DEB822 format
 if [ "$ARCH" = "arm64" ]; then
@@ -53,7 +53,7 @@ rm -f /etc/apt/sources.list
 apt-get update -q
 
 # ============================================================
-# 2. Bootstrap essential packages
+# Bootstrap essential packages
 # ============================================================
 # minbase is very minimal — we need systemd, a kernel, and dbus before
 # we can install the rest of the package list.
@@ -75,7 +75,14 @@ ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
 echo "Etc/UTC" > /etc/timezone
 
 # ============================================================
-# 3. Install packages from list
+# Third-party APT repositories
+# ============================================================
+# r[image.packages.bes-tools] r[image.packages.tailscale] r[image.packages.kopia]
+bash /tmp/scripts/setup-bes-tools.sh
+bash /tmp/scripts/setup-kopia.sh
+
+# ============================================================
+# Install packages from list
 # ============================================================
 # r[image.packages.install]: Install all via apt inside the chroot.
 source packages.sh
@@ -85,7 +92,7 @@ if [ "${#PACKAGES[@]}" -gt 0 ]; then
 fi
 
 # ============================================================
-# 4. Dracut (replaces initramfs-tools)
+# Dracut (replaces initramfs-tools)
 # ============================================================
 # r[image.boot.dracut]
 apt-get install -y -q dracut  # this removes initramfs-tools
@@ -94,14 +101,14 @@ install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
     /etc/dracut.conf.d/01-fix-hostonly-noble.conf
 
 # ============================================================
-# 5. Variant identification
+# Variant identification
 # ============================================================
 # r[image.variant.persisted]
 mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 
 # ============================================================
-# 6. GRUB configuration
+# GRUB configuration
 # ============================================================
 # Ensure /etc/default/grub exists (grub package should create it)
 if [ ! -f /etc/default/grub ]; then
@@ -132,7 +139,7 @@ else
 fi
 
 # ============================================================
-# 7. fstab and crypttab
+# fstab and crypttab
 # ============================================================
 if [ "$VARIANT" = "metal" ]; then
     # r[image.luks.keyfile]
@@ -170,22 +177,22 @@ EOF
 fi
 
 # ============================================================
-# 8. Firewall
+# Firewall
 # ============================================================
 # r[image.firewall.policy] r[image.firewall.ssh] r[image.firewall.http] r[image.firewall.enabled]
 bash /tmp/scripts/setup-firewall.sh
 
 # ============================================================
-# 9. Tailscale
+# Tailscale
 # ============================================================
-# r[image.packages.tailscale] r[image.tailscale.service-enabled] r[image.tailscale.ts-up]
+# r[image.tailscale.service-enabled] r[image.tailscale.ts-up]
 bash /tmp/scripts/setup-tailscale.sh
 
 # r[image.tailscale.ts-up]
 install -m 755 /tmp/files/ts-up /usr/local/bin/ts-up
 
 # ============================================================
-# 10. SSH
+# SSH
 # ============================================================
 # r[image.credentials.ssh-keys-only]
 mkdir -p /etc/ssh/sshd_config.d
@@ -195,13 +202,13 @@ EOF
 systemctl enable ssh
 
 # ============================================================
-# 11. Snapper
+# Snapper
 # ============================================================
 # r[image.snapper.root] r[image.snapper.postgres] r[image.snapper.timers]
 bash /tmp/scripts/setup-snapper.sh
 
 # ============================================================
-# 12. Disk growth service
+# Disk growth service
 # ============================================================
 # r[image.growth.service] r[image.growth.script]
 install -m 755 /tmp/files/grow-root-filesystem /usr/local/bin/grow-root-filesystem
@@ -209,7 +216,7 @@ install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/syst
 systemctl enable grow-root-filesystem.service
 
 # ============================================================
-# 13. Metal-variant encryption services
+# Metal-variant encryption services
 # ============================================================
 if [ "$VARIANT" = "metal" ]; then
     # r[image.luks.reencrypt]
@@ -223,7 +230,7 @@ if [ "$VARIANT" = "metal" ]; then
 fi
 
 # ============================================================
-# 14. Credentials
+# Credentials
 # ============================================================
 # r[image.credentials.ubuntu-user]
 if ! id -u ubuntu &>/dev/null; then
@@ -236,7 +243,7 @@ passwd --expire ubuntu
 usermod -s /sbin/nologin root
 
 # ============================================================
-# 15. Cloud-init
+# Cloud-init
 # ============================================================
 # r[image.cloud-init.enabled]
 # cloud-init is in packages.sh, just configure it.
@@ -265,7 +272,7 @@ rm -rvf /mnt/image-root/etc/cloud/cloud.cfg.d/90-installer-network.cfg
 truncate -s0 /mnt/image-root/etc/machine-id
 
 # ============================================================
-# 16. Generate initramfs and install bootloader
+# Generate initramfs and install bootloader
 # ============================================================
 # Determine kernel version (there should be exactly one)
 KVER="$(find /lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -n1)"
@@ -292,14 +299,14 @@ grub-install \
     --removable
 
 # ============================================================
-# 17. Hostname (cleared — set by DHCP or cloud-init or installer)
+# Hostname (cleared — set by DHCP or cloud-init or installer)
 # ============================================================
 echo "ubuntu" > /etc/hostname
 echo "127.0.0.1 localhost" > /etc/hosts
 echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
 
 # ============================================================
-# 18. Final package cleanup
+# Final package cleanup
 # ============================================================
 apt-get autoremove -y -q
 apt-get clean
