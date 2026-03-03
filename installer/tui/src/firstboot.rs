@@ -263,26 +263,28 @@ fn run_command(program: &str, args: &[&str]) -> Result<()> {
 mod tests {
     use super::*;
 
-    // r[verify test.static.cargo-test]
-
+    // r[verify installer.firstboot.mount]
     #[test]
     fn partition_path_scsi_disk() {
         let p = partition_path(Path::new("/dev/sda"), 3).unwrap();
         assert_eq!(p, PathBuf::from("/dev/sda3"));
     }
 
+    // r[verify installer.firstboot.mount]
     #[test]
     fn partition_path_nvme() {
         let p = partition_path(Path::new("/dev/nvme0n1"), 1).unwrap();
         assert_eq!(p, PathBuf::from("/dev/nvme0n1p1"));
     }
 
+    // r[verify installer.firstboot.mount]
     #[test]
     fn partition_path_loop() {
         let p = partition_path(Path::new("/dev/loop0"), 2).unwrap();
         assert_eq!(p, PathBuf::from("/dev/loop0p2"));
     }
 
+    // r[verify installer.firstboot.ssh-keys]
     #[test]
     fn resolve_uid_gid_from_passwd_contents() {
         let dir = tempfile::tempdir().unwrap();
@@ -299,6 +301,7 @@ mod tests {
         assert_eq!(gid, 1000);
     }
 
+    // r[verify installer.firstboot.ssh-keys]
     #[test]
     fn resolve_uid_gid_user_not_found() {
         let dir = tempfile::tempdir().unwrap();

@@ -221,8 +221,7 @@ pub fn reread_partition_table(target: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
-    // r[verify test.static.cargo-test]
-
+    // r[verify installer.tui.progress]
     #[test]
     fn progress_fraction_with_total() {
         let p = WriteProgress {
@@ -233,6 +232,7 @@ mod tests {
         assert!((p.fraction().unwrap() - 0.5).abs() < f64::EPSILON);
     }
 
+    // r[verify installer.tui.progress]
     #[test]
     fn progress_fraction_without_total() {
         let p = WriteProgress {
@@ -243,6 +243,7 @@ mod tests {
         assert!(p.fraction().is_none());
     }
 
+    // r[verify installer.tui.progress]
     #[test]
     fn progress_eta_calculation() {
         let p = WriteProgress {
@@ -254,6 +255,7 @@ mod tests {
         assert!((eta.as_secs_f64() - 10.0).abs() < 0.1);
     }
 
+    // r[verify installer.tui.progress]
     #[test]
     fn progress_eta_at_zero() {
         let p = WriteProgress {
@@ -264,6 +266,7 @@ mod tests {
         assert!(p.eta().is_none());
     }
 
+    // r[verify installer.tui.progress]
     #[test]
     fn progress_eta_complete() {
         let p = WriteProgress {
@@ -275,6 +278,7 @@ mod tests {
         assert!(eta.as_secs_f64() < 0.1);
     }
 
+    // r[verify installer.tui.progress]
     #[test]
     fn progress_throughput() {
         let p = WriteProgress {
@@ -285,6 +289,7 @@ mod tests {
         assert!((p.throughput_mbps() - 10.0).abs() < 0.1);
     }
 
+    // r[verify installer.tui.progress]
     #[test]
     fn eta_formatting() {
         assert_eq!(format_eta(std::time::Duration::from_secs(45)), "45s");
@@ -292,6 +297,7 @@ mod tests {
         assert_eq!(format_eta(std::time::Duration::from_secs(3661)), "61m01s");
     }
 
+    // r[verify installer.write.decompress-stream]
     #[test]
     fn size_formatting() {
         assert_eq!(format_size(0), "0.0 MiB");

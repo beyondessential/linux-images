@@ -151,8 +151,6 @@ impl AppState {
 mod tests {
     use super::*;
 
-    // r[verify test.static.cargo-test]
-
     fn make_state() -> AppState {
         use crate::disk::TransportType;
         let devices = vec![
@@ -174,6 +172,7 @@ mod tests {
         AppState::new(devices, Variant::Metal, false, None, None, None)
     }
 
+    // r[verify installer.tui.disk-detection]
     #[test]
     fn initial_state() {
         let state = make_state();
@@ -183,6 +182,7 @@ mod tests {
         assert!(!state.disable_tpm);
     }
 
+    // r[verify installer.tui.disk-detection]
     #[test]
     fn disk_navigation_wraps() {
         let mut state = make_state();
@@ -193,6 +193,7 @@ mod tests {
         assert_eq!(state.selected_disk_index, 0);
     }
 
+    // r[verify installer.tui.variant-selection]
     #[test]
     fn variant_toggle() {
         let mut state = make_state();
@@ -203,6 +204,7 @@ mod tests {
         assert_eq!(state.variant, Variant::Metal);
     }
 
+    // r[verify installer.tui.tpm-toggle]
     #[test]
     fn advance_metal_flow() {
         let mut state = make_state();
@@ -217,6 +219,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
+    // r[verify installer.tui.variant-selection]
     #[test]
     fn advance_cloud_skips_tpm() {
         let mut state = make_state();
@@ -229,6 +232,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
+    // r[verify installer.tui.tpm-toggle]
     #[test]
     fn go_back_through_metal_flow() {
         let mut state = make_state();
@@ -245,6 +249,7 @@ mod tests {
         assert_eq!(state.screen, Screen::DiskSelection);
     }
 
+    // r[verify installer.tui.variant-selection]
     #[test]
     fn go_back_cloud_skips_tpm() {
         let mut state = make_state();
@@ -255,6 +260,7 @@ mod tests {
         assert_eq!(state.screen, Screen::VariantSelection);
     }
 
+    // r[verify installer.tui.confirmation]
     #[test]
     fn confirmation_requires_explicit_yes() {
         let mut state = make_state();
@@ -267,6 +273,7 @@ mod tests {
         assert!(state.is_confirmed());
     }
 
+    // r[verify installer.tui.confirmation]
     #[test]
     fn done_and_error_do_not_advance() {
         let mut state = make_state();

@@ -229,14 +229,14 @@ pub fn find_config_file() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    // r[verify test.static.cargo-test]
-
+    // r[verify installer.config.schema]
     #[test]
     fn parse_empty_config() {
         let config = InstallConfig::from_toml("").unwrap();
         assert_eq!(config, InstallConfig::default());
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn parse_full_config() {
         let toml = r#"
@@ -268,12 +268,14 @@ mod tests {
         );
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn parse_cloud_variant() {
         let config = InstallConfig::from_toml(r#"variant = "cloud""#).unwrap();
         assert_eq!(config.variant, Some(Variant::Cloud));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn parse_disk_path() {
         let config = InstallConfig::from_toml(r#"disk = "/dev/nvme0n1""#).unwrap();
@@ -283,6 +285,7 @@ mod tests {
         );
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn parse_disk_strategies() {
         for (input, expected) in [
@@ -295,24 +298,28 @@ mod tests {
         }
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn parse_invalid_variant_rejected() {
         let result = InstallConfig::from_toml(r#"variant = "bad""#);
         assert!(result.is_err());
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn parse_unknown_field_rejected() {
         let result = InstallConfig::from_toml(r#"bogus = true"#);
         assert!(result.is_err());
     }
 
+    // r[verify installer.mode.prefilled]
     #[test]
     fn mode_prefilled_when_auto_false() {
         let config = InstallConfig::default();
         assert_eq!(config.mode(), OperatingMode::Prefilled);
     }
 
+    // r[verify installer.mode.auto]
     #[test]
     fn mode_auto_when_complete() {
         let config = InstallConfig {
@@ -324,6 +331,7 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
+    // r[verify installer.mode.auto-incomplete]
     #[test]
     fn mode_auto_incomplete_missing_variant() {
         let config = InstallConfig {
@@ -340,6 +348,7 @@ mod tests {
         );
     }
 
+    // r[verify installer.mode.auto-incomplete]
     #[test]
     fn mode_auto_incomplete_missing_disk() {
         let config = InstallConfig {
@@ -356,6 +365,7 @@ mod tests {
         );
     }
 
+    // r[verify installer.mode.auto-incomplete]
     #[test]
     fn mode_auto_incomplete_missing_both() {
         let config = InstallConfig {
@@ -371,6 +381,7 @@ mod tests {
         );
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn validate_disable_tpm_cloud_warns() {
         let config = InstallConfig {
@@ -386,6 +397,7 @@ mod tests {
         );
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn validate_bad_hostname() {
         let config = InstallConfig {
@@ -399,6 +411,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("not a valid hostname")));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn validate_long_hostname() {
         let config = InstallConfig {
@@ -412,6 +425,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("too long")));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn validate_empty_ssh_key() {
         let config = InstallConfig {
@@ -425,6 +439,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("empty")));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn validate_good_config_has_no_issues() {
         let config = InstallConfig {
@@ -442,12 +457,14 @@ mod tests {
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn variant_display() {
         assert_eq!(Variant::Metal.to_string(), "metal");
         assert_eq!(Variant::Cloud.to_string(), "cloud");
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn disk_selector_display() {
         assert_eq!(
@@ -460,6 +477,7 @@ mod tests {
         );
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn parse_minimal_firstboot() {
         let config = InstallConfig::from_toml(
@@ -475,12 +493,14 @@ mod tests {
         assert!(fb.ssh_authorized_keys.is_empty());
     }
 
+    // r[verify installer.config.location]
     #[test]
     fn load_nonexistent_file_returns_none() {
         let result = InstallConfig::load_from_file(Path::new("/nonexistent/bes-install.toml"));
         assert!(result.unwrap().is_none());
     }
 
+    // r[verify installer.config.location]
     #[test]
     fn load_valid_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -501,6 +521,7 @@ mod tests {
         );
     }
 
+    // r[verify installer.config.location]
     #[test]
     fn load_invalid_toml_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -509,6 +530,10 @@ mod tests {
         assert!(InstallConfig::load_from_file(&path).is_err());
     }
 
+    // r[verify installer.mode.interactive]
+    // r[verify installer.mode.prefilled]
+    // r[verify installer.mode.auto]
+    // r[verify installer.mode.auto-incomplete]
     #[test]
     fn operating_mode_display() {
         assert_eq!(OperatingMode::Interactive.to_string(), "interactive");

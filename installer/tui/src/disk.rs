@@ -271,8 +271,6 @@ pub fn detect_boot_device() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    // r[verify test.static.cargo-test]
-
     fn make_device(path: &str, size: u64, transport: TransportType) -> BlockDevice {
         BlockDevice {
             path: PathBuf::from(path),
@@ -283,6 +281,7 @@ mod tests {
         }
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn resolve_largest_ssd() {
         let devices = vec![
@@ -295,6 +294,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/nvme0n1"));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn resolve_largest() {
         let devices = vec![
@@ -306,6 +306,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/sda"));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn resolve_smallest() {
         let devices = vec![
@@ -317,6 +318,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/sdb"));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn resolve_by_path() {
         let devices = vec![
@@ -328,6 +330,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/sdb"));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn resolve_by_path_not_found() {
         let devices = vec![make_device(
@@ -339,6 +342,7 @@ mod tests {
         assert!(resolve_disk(&selector, &devices, None).is_err());
     }
 
+    // r[verify installer.tui.disk-detection]
     #[test]
     fn resolve_excludes_boot_device() {
         let devices = vec![
@@ -351,6 +355,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/sdb"));
     }
 
+    // r[verify installer.config.schema]
     #[test]
     fn resolve_largest_ssd_no_ssds() {
         let devices = vec![make_device(
@@ -362,6 +367,7 @@ mod tests {
         assert!(resolve_disk(&selector, &devices, None).is_err());
     }
 
+    // r[verify installer.tui.disk-detection]
     #[test]
     fn resolve_no_eligible_devices() {
         let devices = vec![make_device(
@@ -374,6 +380,7 @@ mod tests {
         assert!(resolve_disk(&selector, &devices, Some(&boot)).is_err());
     }
 
+    // r[verify installer.tui.disk-detection]
     #[test]
     fn format_bytes_display() {
         assert_eq!(format_bytes(0), "0 B");
@@ -384,6 +391,7 @@ mod tests {
         assert_eq!(format_bytes(500_107_862_016), "465.8 GiB");
     }
 
+    // r[verify installer.tui.disk-detection]
     #[test]
     fn transport_display() {
         assert_eq!(TransportType::Nvme.to_string(), "NVMe");
@@ -394,6 +402,7 @@ mod tests {
         assert_eq!(TransportType::Unknown.to_string(), "unknown");
     }
 
+    // r[verify installer.tui.disk-detection]
     #[test]
     fn transport_from_tran_strings() {
         assert_eq!(TransportType::from_tran("nvme"), TransportType::Nvme);
@@ -405,6 +414,7 @@ mod tests {
         assert_eq!(TransportType::from_tran("blah"), TransportType::Unknown);
     }
 
+    // r[verify installer.tui.disk-detection]
     #[test]
     fn ssd_detection() {
         assert!(TransportType::Nvme.is_ssd());
