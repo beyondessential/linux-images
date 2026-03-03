@@ -20,6 +20,8 @@ specs (
                     target/**
                 )
                 test_include (
+                    tests/*.sh
+                    tests/*.rs
                     tests/**/*.sh
                     tests/**/*.rs
                     installer/tui/tests/**/*.rs
