@@ -1,0 +1,16 @@
+FROM ubuntu:25.10
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cryptsetup \
+    btrfs-progs \
+    btrfs-compsize \
+    util-linux \
+    duperemove \
+    udev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY post-process.sh /usr/local/bin/post-process
+RUN chmod +x /usr/local/bin/post-process
+
+WORKDIR /work

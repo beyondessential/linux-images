@@ -1,0 +1,47 @@
+#!/bin/bash
+# r[image.growth.script]: Grow the root partition and filesystem at boot.
+#
+# On first boot (or any boot where the disk is larger than the partition table
+# accounts for), this script expands the root partition and filesystem to fill
+# all available space.
+#
+# Order of operations:
+#   1. Move the GPT secondary header to the end of the disk.
+#   2. Run growpart on the root partition (partition 3).
+#   3. If metal variant, resize the LUKS container.
+#   4. Resize the BTRFS filesystem to fill the partition.
+set -euo pipefail
+
+VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "metal")
+
+DISK=/dev/$(lsblk -ndo PKNAME /dev/disk/by-partlabel/root)
+PART_NUM=$(lsblk -ndo KNAME /dev/disk/by-partlabel/root | grep -o '[0-9]*$')
+
+# Step 1: Move GPT secondary header
+sgdisk --move-second-header "$DISK"
+partprobe "$DISK" || true
+
+# Step 2: Grow the partition
+GROW_RC=0
+growpart --free-percent=1 "$DISK" "$PART_NUM" || GROW_RC=$?
+if [ "$GROW_RC" -eq 0 ]; then
+    echo "Partition grown successfully"
+elif [ "$GROW_RC" -eq 1 ]; then
+    echo "No change needed"
+    exit 0
+else
+    echo "growpart failed with exit code $GROW_RC"
+    exit "$GROW_RC"
+fi
+
+set -x
+partprobe "$DISK" || true
+
+# Step 3: Resize LUKS (metal variant only)
+if [ "$VARIANT" = "metal" ]; then
+    cryptsetup resize root
+fi
+
+# Step 4: Resize BTRFS
+btrfs filesystem resize max /
+fdisk -l "$DISK"

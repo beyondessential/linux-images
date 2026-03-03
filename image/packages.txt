@@ -1,0 +1,43 @@
+# Kernel and boot
+linux-generic
+grub-efi
+dracut-core
+
+# Filesystem and storage
+btrfs-progs
+cryptsetup
+snapper
+gdisk
+
+# for growpart
+cloud-guest-utils
+parted
+
+# Networking
+openssh-server
+curl
+wget
+ufw
+
+# Cloud
+cloud-init
+
+# System
+systemd-resolved
+rsync
+cron
+sudo
+
+# for dracut modules
+tpm2-tools
+nvme-cli
+busybox
+rng-tools5
+jq
+
+# Editors and tools (it's really annoying not having these)
+neovim
+nano
+less
+htop
+iputils-ping
