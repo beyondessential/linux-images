@@ -85,6 +85,7 @@ pub fn apply_firstboot(target: &MountedTarget, config: &FirstbootConfig) -> Resu
 }
 
 // r[impl installer.firstboot.tpm-disable]
+// r[impl image.tpm.disableable]
 pub fn apply_tpm_disable(target: &MountedTarget) -> Result<()> {
     let symlink = target
         .path()

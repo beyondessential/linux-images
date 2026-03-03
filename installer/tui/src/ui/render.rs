@@ -223,6 +223,7 @@ fn render_variant_selection(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 // r[impl installer.tui.tpm-toggle]
+// r[impl image.tpm.disableable]
 fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
     let status = if state.disable_tpm {
         "DISABLED"

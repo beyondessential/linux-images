@@ -414,10 +414,6 @@ interactive mode.
 
 ## TUI
 
-r[installer.tui.rust]
-The TUI must be a Rust binary using the ratatui library, compiled as a
-statically-linked executable.
-
 r[installer.tui.welcome]
 The TUI must open with a welcome screen that displays a large branded "BES"
 heading, a brief description of what the image is for, and contact information.
