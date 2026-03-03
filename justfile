@@ -292,21 +292,26 @@ _post-process: raw _post-process-image
     image-post-process post-process "{{filestem}}" "{{variant}}"
 
 # Build raw image and post-process it
+# r[image.output.raw]
 image: _post-process
 
 # Convert raw image to VMDK (streamOptimized)
+# r[image.output.vmdk]
 vmdk: image
   qemu-img convert -f raw -O vmdk -o subformat=streamOptimized "{{output_raw}}" "{{output_vmdk}}"
 
 # Convert raw image to qcow2 (zstd compressed)
+# r[image.output.qcow2]
 qcow: image
   qemu-img convert -f raw -O qcow2 -o compression_type=zstd "{{output_raw}}" "{{output_qcow}}"
 
 # Compress raw image with zstd
+# r[image.output.compress]
 compress:
   zstd -6 --rm -o '{{output_raw + ".zst"}}' '{{output_raw}}'
 
 # Generate SHA256 checksums for all outputs
+# r[image.output.checksum]
 checksum:
   cd "{{output_dir}}" && sha256sum * | tee SHA256SUMS
 
