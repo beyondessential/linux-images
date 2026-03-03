@@ -1,6 +1,4 @@
 #!/bin/bash
-# r[build.direct]: Build disk images using debootstrap + chroot on a loopback-mounted raw file.
-# r[build.privileged]: Requires root for loopback, partitioning, filesystem creation, and chroot.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,7 +11,6 @@ IMAGE_SIZE="${IMAGE_SIZE:-8G}"
 UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
 
 # --- Derived values ---
-# r[build.architectures]: Both amd64 and arm64 images must be producible.
 case "$ARCH" in
     amd64)
         UBUNTU_MIRROR="${UBUNTU_MIRROR:-http://archive.ubuntu.com/ubuntu}"
@@ -56,7 +53,6 @@ if [ "${#MISSING[@]}" -gt 0 ]; then
     exit 1
 fi
 
-# r[build.cross-arch]: Foreign-arch builds supported via qemu-user-static + binfmt_misc.
 HOST_ARCH="$(uname -m)"
 NEED_QEMU=0
 if [ "$ARCH" = "arm64" ] && [ "$HOST_ARCH" = "x86_64" ]; then
@@ -318,15 +314,16 @@ chroot "$MNT" /bin/bash /tmp/configure.sh "$ARCH" "$VARIANT" "$GRUB_TARGET"
 # ============================================================
 echo "==> Post-chroot cleanup..."
 
-# r[image.base.resolv-conf]
+# r[image.base.resolver]
 rm -f "$MNT/etc/resolv.conf"
 ln -snf /run/systemd/resolve/stub-resolv.conf "$MNT/etc/resolv.conf"
 
 # r[image.base.machine-id]
 truncate -s 0 "$MNT/etc/machine-id"
 
-# r[image.postprocess.cleanup]
+# r[image.cloud-init.no-network]
 rm -rf "$MNT/etc/cloud/cloud.cfg.d/90-installer-network.cfg"
+
 rm -rf "$MNT/etc/update-motd.d/60-unminimize"
 
 # Clean temporary build files

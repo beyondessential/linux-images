@@ -1,5 +1,5 @@
 #!/bin/bash
-# r[image.tailscale.repo] r[image.tailscale.pinned] r[image.tailscale.service-enabled]
+# r[image.packages.tailscale] r[image.tailscale.service-enabled]
 #
 # Install Tailscale from the official apt repository.
 # This runs inside the chroot during image build.
@@ -7,7 +7,7 @@ set -euxo pipefail
 
 echo "Installing Tailscale..."
 
-# r[image.tailscale.repo]: Install signing key
+# r[image.packages.tailscale]: Install signing key
 if [ -f /tmp/files/tailscale-apt.gpg ]; then
     cp /tmp/files/tailscale-apt.gpg /usr/share/keyrings/tailscale-archive-keyring.gpg
 else

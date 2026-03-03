@@ -57,17 +57,15 @@ BTRFS simple quotas must be enabled on the filesystem.
 
 ## Variants
 
-r[image.variant.types]
-Two image variants must be supported: `metal` and `cloud`.
-
-r[image.variant.metal]
-The `metal` variant encrypts the root partition with LUKS2 and includes
-TPM auto-enrollment support. It is intended for bare-metal and on-premise
-virtualisation.
-
-r[image.variant.cloud]
-The `cloud` variant does not encrypt the root partition. It is intended for
-cloud environments where encryption at rest is provided by the infrastructure.
+> r[image.variant.types]
+> Two image variants must be supported: `metal` and `cloud`.
+>
+> The `metal` variant encrypts the root partition with LUKS2 and includes
+> TPM auto-enrollment support. It is intended for bare-metal and on-premise
+> virtualisation.
+>
+> The `cloud` variant does not encrypt the root partition. It is intended for
+> cloud environments where encryption at rest is provided by the infrastructure.
 
 r[image.variant.persisted]
 The active variant name must be written to `/etc/bes/image-variant` in the
@@ -76,30 +74,35 @@ installed system so that runtime scripts can branch on it.
 ## Base System
 
 r[image.base.debootstrap]
-The base system must be bootstrapped using debootstrap from the Ubuntu 24.04
-(Noble Numbat) repositories into the `@` subvolume.
+The base system must be debootstrapped into the `@` subvolume.
 
 r[image.base.minimal]
-The debootstrap must use the `minbase` variant. Additional packages are
-installed via apt after the initial bootstrap.
+The debootstrap must create the minimal viable bootable system.
 
 r[image.base.machine-id]
 `/etc/machine-id` must be truncated to zero bytes so that systemd generates a
 unique machine ID on each first boot.
 
-r[image.base.resolv-conf]
-`/etc/resolv.conf` must be a symlink to `/run/systemd/resolve/stub-resolv.conf`.
+r[image.base.resolver]
+systemd-resolved must be enabled and configured as the system DNS resolver.
 
-## Package Installation
+## Packages
 
-r[image.packages.list]
-Packages to install must be defined in a text file (`packages.txt`), one
-package per line. Lines starting with `#` are comments and blank lines are
-ignored.
+r[image.packages.bes-tools]
+The bes-tools APT repo must be configured and preferred.
 
-r[image.packages.install]
-All packages in the package list must be installed via apt inside the chroot
-after the base system is bootstrapped.
+r[image.packages.caddy]
+Caddy version >=2.10.0 must be pre-installed.
+
+r[image.packages.podman]
+Podman version >=5.0.0 must be pre-installed.
+
+r[image.packages.tailscale]
+Tailscale version >=1.92.0 must be pre-installed.
+The official Tailscale apt repository must be configured and preferred.
+
+r[image.packages.bestool]
+bestool version >=2.0.0 must be pre-installed.
 
 ## Bootloader
 
@@ -135,14 +138,6 @@ r[image.firewall.enabled]
 UFW must be force-enabled during image configuration.
 
 ## Tailscale
-
-r[image.tailscale.repo]
-Tailscale must be installed from the official Tailscale apt repository. The
-repository signing key must be pre-installed at
-`/usr/share/keyrings/tailscale-archive-keyring.gpg`.
-
-r[image.tailscale.pinned]
-An apt pin at priority 900 must be configured for the Tailscale repository.
 
 r[image.tailscale.service-enabled]
 The `tailscaled` systemd service must be enabled but Tailscale must not be
@@ -211,6 +206,12 @@ r[image.cloud-init.no-hostname-file]
 cloud-init must be configured with `create_hostname_file: false` so that the
 hostname is provided by DHCP rather than a static file.
 
+r[image.cloud-init.no-network]
+cloud-init must not have network configs in the image.
+
+r[image.cloud-init.no-machineid]
+The /etc/machine-id file must be blank in the image so it's unique per install.
+
 ## Encryption (Metal Variant)
 
 ### LUKS
@@ -223,118 +224,40 @@ r[image.luks.keyfile]
 An empty keyfile must be installed at `/etc/luks/empty-keyfile` with mode 000.
 Dracut must be configured to include this keyfile in the initramfs.
 
-> r[image.luks.crypttab]
-> `/etc/crypttab` must contain an entry mapping `/dev/disk/by-partlabel/root`
-> to the name `root` with the keyfile `/etc/luks/empty-keyfile` and options:
->
-> `force,luks,discard,headless=true,try-empty-password=true`
->
-> The `force` option is required because dracut otherwise skips entries that
-> have a keyfile configured.
+r[image.luks.crypttab]
+`/etc/crypttab` must be configured to automatically decrypt the root on boot.
 
 r[image.luks.reencrypt]
-A first-boot systemd service `luks-reencrypt.service` must re-encrypt the
-LUKS volume with a new randomly-generated master key, so that each
-installation has unique key material. The service must disable itself after
-running.
+The system must rotate the master key of the LUKS volume on first boot,
+so that each installation has unique key material.
 
 ### TPM Auto-Enrollment
 
 r[image.tpm.service]
-A systemd service `setup-tpm-unlock.service` must be installed, conditioned on
-the presence of `/dev/tpm0` and `/dev/tpmrm0` and the absence of
-`/etc/luks/tpm-enrolled`.
+A service must run when a TPM device is present and has not yet been
+enrolled into the system, which calls the `image.tpm.enrollment` script.
 
 r[image.tpm.enrollment]
-The TPM enrollment script must use `systemd-cryptenroll` to bind the LUKS
-volume to TPM2 PCR 7 using the empty keyfile for unlock, then remove the
-password key slot, update `/etc/crypttab` to use `tpm2-device=auto`, mark
-enrollment complete, and regenerate the initramfs.
+A TPM enrollment script must use be configured which binds the LUKS
+volume to TPM2 PCR 7, then removes the empty password key slot.
+The crypttab must be updated to use the TPM device from then on.
 
 r[image.tpm.disableable]
-TPM auto-enrollment must be disableable. When disabled, the
-`setup-tpm-unlock.service` unit must not be enabled in the installed system.
-The LUKS volume remains unlockable via the empty passphrase.
-
-## fstab
-
-> r[image.fstab.metal]
-> The metal variant `/etc/fstab` must contain:
->
-> | Device | Mount | FS | Options |
-> |---|---|---|---|
-> | `/dev/mapper/root` | `/` | btrfs | `subvol=@,compress=zstd:6` |
-> | `/dev/mapper/root` | `/var/lib/postgresql` | btrfs | `subvol=@postgres,compress=zstd:6` |
-> | `/dev/disk/by-partlabel/xboot` | `/boot` | ext4 | `defaults` |
-> | `/dev/disk/by-partlabel/efi` | `/boot/efi` | vfat | `umask=0077` |
-
-> r[image.fstab.cloud]
-> The cloud variant `/etc/fstab` must contain:
->
-> | Device | Mount | FS | Options |
-> |---|---|---|---|
-> | `/dev/disk/by-partlabel/root` | `/` | btrfs | `subvol=@,compress=zstd:6` |
-> | `/dev/disk/by-partlabel/root` | `/var/lib/postgresql` | btrfs | `subvol=@postgres,compress=zstd:6` |
-> | `/dev/disk/by-partlabel/xboot` | `/boot` | ext4 | `defaults` |
-> | `/dev/disk/by-partlabel/efi` | `/boot/efi` | vfat | `umask=0077` |
-
-## Post-Processing
-
-r[image.postprocess.defrag]
-The `@` subvolume must be defragmented with zstd compression at level 15
-before the image is finalized.
-
-r[image.postprocess.dedupe]
-The `@` subvolume must be block-level deduplicated using duperemove before the
-image is finalized.
-
-r[image.postprocess.cleanup]
-Installer artifacts, cloud-init installer network configs
-(`/etc/cloud/cloud.cfg.d/90-installer-network.cfg`), and the unminimize
-prompt (`/etc/update-motd.d/60-unminimize`) must be removed.
+TPM auto-enrollment must be disableable.
 
 ## Output
 
 r[image.output.raw]
-A raw disk image file (`.raw`) must be produced.
+A raw disk image file (`.raw`) must be produced, and compressed with zstd.
 
 r[image.output.vmdk]
-A VMDK image with `streamOptimized` subformat must be produced from the raw
-image using `qemu-img convert`.
+A VMDK image must be produced.
 
 r[image.output.qcow2]
-A qcow2 image with zstd compression must be produced from the raw image using
-`qemu-img convert`.
-
-r[image.output.compress]
-The raw image must be compressed with zstd at level 6, producing a `.raw.zst`
-file. The uncompressed `.raw` is removed.
+A qcow2 image must be produced.
 
 r[image.output.checksum]
-SHA256 checksums of all output files must be written to a `SHA256SUMS` file
-in the output directory.
-
-# Build Process
-
-r[build.direct]
-Images must be built using debootstrap and chroot on a loopback-mounted raw
-file. The build must not require QEMU, an Ubuntu ISO, or an autoinstall
-process.
-
-r[build.architectures]
-Both amd64 and arm64 images must be producible.
-
-r[build.cross-arch]
-Building images for a foreign architecture (e.g. arm64 on an amd64 host)
-must be supported via qemu-user-static and binfmt_misc for the chroot steps.
-
-r[build.privileged]
-The image build requires root privileges for loopback device setup,
-partitioning, filesystem creation, and chroot.
-
-r[build.container-postprocess]
-Post-processing (defrag, dedupe) must run inside a container to isolate
-privileged loopback and device-mapper operations from the host.
+SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
 
 # Installer
 
@@ -646,34 +569,21 @@ UEFI systems from that media.
 r[ci.shellcheck]
 All shell scripts in the repository must pass shellcheck with no errors.
 
-r[ci.cargo-test]
-The TUI installer project must pass `cargo test` with no failures. Unit tests
-must cover configuration parsing, disk strategy selection, and progress
-calculation.
+r[ci.unit-test]
+Unit tests must be checked in CI.
 
-r[ci.matrix]
-CI must build images for all combinations of architecture (amd64, arm64) and
-variant (metal, cloud).
+r[ci.uptodate]
+All `uses:` actions must be up to date.
 
-r[ci.kvm-detection]
-KVM usability must be verified by issuing a `KVM_CREATE_VM` ioctl on
-`/dev/kvm` (and closing the resulting VM fd), not merely by checking that
-the device node exists, has the right file permissions, or responds to
-`KVM_GET_API_VERSION`. Boot smoke tests and E2E install tests must only
-run when this probe succeeds.
+r[ci.rust-stable]
+Rustup must be used to install and select the latest stable Rust version.
+The dtolnay/rust-toolchain action must not be used.
 
-r[ci.tui-build]
-The TUI installer must be compiled for both amd64 and arm64 in CI. For the
-foreign architecture, cross-compilation must be used.
+r[ci.rust-cache]
+The "swatinem" rust caching system must be used.
 
-r[ci.iso-build]
-Live ISOs must be built for each architecture, containing that architecture's
-images and TUI binary.
+r[ci.output-arch]
+CI must produce at least `amd64` and `arm64` outputs.
 
-> r[ci.release]
-> On tag push or manual workflow dispatch, CI must create a GitHub release
-> containing:
->
-> - Per architecture: `.raw.zst`, `.vmdk`, `.qcow2` for each variant
-> - Per architecture: one live installer `.iso`
-> - A combined `SHA256SUMS` file covering all release assets
+r[ci.output-suite]
+CI must produce images based on Ubuntu Server 24.04 LTS.

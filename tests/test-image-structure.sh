@@ -61,7 +61,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PACKAGES_FILE="$REPO_ROOT/image/packages.txt"
+PACKAGES_FILE="$REPO_ROOT/image/packages.sh"
 
 echo "=============================="
 echo "Image Structure Verification"
@@ -277,7 +277,7 @@ check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing")"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
 
-# r[verify image.base.resolv-conf]
+# r[verify image.base.resolver]
 check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
 check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/systemd/resolve/stub-resolv.conf" ]
@@ -302,11 +302,12 @@ check "SSH no-password config correct" grep -q "PasswordAuthentication no" "$MNT
 check "cloud-init BES config exists" test -f "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"
 check "cloud-init has no hostname_file setting" grep -q "create_hostname_file: false" "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"
 
-# r[verify image.postprocess.cleanup]
+# r[verify image.cloud-init.no-network]
 check_not "installer network config absent" test -f "$MNT/etc/cloud/cloud.cfg.d/90-installer-network.cfg"
+
 check_not "unminimize prompt absent" test -f "$MNT/etc/update-motd.d/60-unminimize"
 
-# r[verify image.tailscale.repo]
+# r[verify image.packages.tailscale]
 check "Tailscale signing key installed" test -f "$MNT/usr/share/keyrings/tailscale-archive-keyring.gpg"
 check "Tailscale apt repo configured" test -f "$MNT/etc/apt/sources.list.d/tailscale.list"
 
@@ -438,7 +439,6 @@ if [ -f "$FSTAB" ]; then
             pass "fstab has no swap entries"
         fi
 
-        # r[verify image.fstab.metal]
         if [ "$VARIANT" = "metal" ]; then
             if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q '/dev/mapper/root'; then
                 pass "fstab uses /dev/mapper/root for / (metal)"
@@ -450,7 +450,6 @@ if [ -f "$FSTAB" ]; then
             else
                 fail "fstab uses /dev/mapper/root for pg (metal)"
             fi
-        # r[verify image.fstab.cloud]
         else
             if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q 'by-partlabel/root'; then
                 pass "fstab uses by-partlabel/root for / (cloud)"
@@ -483,24 +482,21 @@ fi
 echo ""
 echo "--- Packages ---"
 
-# r[verify image.packages.install]
 # Use the image's own dpkg-query via chroot so we don't depend on host tools
 # or regex parsing of the status file.
 if [ -x "$MNT/usr/bin/dpkg-query" ]; then
     # Bind-mount /proc so dpkg-query doesn't complain
     mount -t proc proc "$MNT/proc" 2>/dev/null || true
 
-    while IFS= read -r line; do
-        line="${line%%#*}"
-        line="${line// /}"
-        [ -z "$line" ] && continue
+    source "$PACKAGES_FILE"
+    for pkg in "${PACKAGES[@]}"; do
         # shellcheck disable=SC2016 # ${Status} is a dpkg format string, not a bash variable
-        if chroot "$MNT" dpkg-query -W -f='${Status}\n' "$line" 2>/dev/null | grep -q "install ok installed"; then
-            pass "package '$line' is installed"
+        if chroot "$MNT" dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+            pass "package '$pkg' is installed"
         else
-            fail "package '$line' is installed"
+            fail "package '$pkg' is installed"
         fi
-    done < "$PACKAGES_FILE"
+    done
 
     # r[verify image.boot.dracut]
     # shellcheck disable=SC2016

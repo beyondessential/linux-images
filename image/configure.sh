@@ -1,6 +1,4 @@
 #!/bin/bash
-# r[build.direct]: In-chroot configuration — runs inside the debootstrapped system.
-#
 # This script is copied into /tmp/ and executed via:
 #   chroot "$MNT" /bin/bash /tmp/configure.sh "$ARCH" "$VARIANT" "$GRUB_TARGET"
 #
@@ -79,16 +77,8 @@ echo "Etc/UTC" > /etc/timezone
 # ============================================================
 # 3. Install packages from list
 # ============================================================
-# r[image.packages.list]: packages.txt, one per line, # comments, blank lines ignored.
 # r[image.packages.install]: Install all via apt inside the chroot.
-PACKAGES=()
-while IFS= read -r line; do
-    line="${line%%#*}"      # strip comments
-    line="${line// /}"      # strip spaces
-    [ -z "$line" ] && continue
-    PACKAGES+=("$line")
-done < /tmp/packages.txt
-
+source packages.sh
 if [ "${#PACKAGES[@]}" -gt 0 ]; then
     echo "Installing ${#PACKAGES[@]} packages..."
     apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"
@@ -159,7 +149,6 @@ if [ "$VARIANT" = "metal" ]; then
 root     /dev/disk/by-partlabel/root /etc/luks/empty-keyfile  force,luks,discard,headless=true,try-empty-password=true
 EOF
 
-    # r[image.fstab.metal]
     cat > /etc/fstab << 'EOF'
 # <device>                   <mountpoint>         <fs>  <options>                           <dump> <pass>
 /dev/mapper/root             /                    btrfs subvol=@,compress=zstd:6                 0 1
@@ -168,7 +157,6 @@ EOF
 /dev/disk/by-partlabel/efi   /boot/efi            vfat  umask=0077                               0 1
 EOF
 else
-    # r[image.fstab.cloud]
     cat > /etc/fstab << 'EOF'
 # <device>                   <mountpoint>         <fs>  <options>                           <dump> <pass>
 /dev/disk/by-partlabel/root  /                    btrfs subvol=@,compress=zstd:6                 0 1
@@ -190,7 +178,7 @@ bash /tmp/scripts/setup-firewall.sh
 # ============================================================
 # 9. Tailscale
 # ============================================================
-# r[image.tailscale.repo] r[image.tailscale.service-enabled] r[image.tailscale.ts-up]
+# r[image.packages.tailscale] r[image.tailscale.service-enabled] r[image.tailscale.ts-up]
 bash /tmp/scripts/setup-tailscale.sh
 
 # r[image.tailscale.ts-up]
@@ -262,10 +250,19 @@ EOF
 
 # Allow the default user to sudo without password (cloud-init default)
 cat > /etc/sudoers.d/90-cloud-init-users << 'EOF'
-# Created by BES image builder (matches cloud-init defaults)
+# Created by BES image builder
 ubuntu ALL=(ALL) NOPASSWD:ALL
 EOF
 chmod 440 /etc/sudoers.d/90-cloud-init-users
+
+# Ensure there's no unminimize message in the MOTD
+rm -rvf /mnt/image-root/etc/update-motd.d/60-unminimize
+
+# r[image.cloud-init.no-network]
+rm -rvf /mnt/image-root/etc/cloud/cloud.cfg.d/90-installer-network.cfg
+
+# r[image.cloud-init.no-machineid]
+truncate -s0 /mnt/image-root/etc/machine-id
 
 # ============================================================
 # 16. Generate initramfs and install bootloader

@@ -1,14 +1,5 @@
 linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
 
-# Auto-detect container runtime: prefer docker, fall back to podman
-container_runtime := if `command -v docker >/dev/null 2>&1 && echo found || echo missing` == "found" {
-    "docker"
-  } else if `command -v podman >/dev/null 2>&1 && echo found || echo missing` == "found" {
-    "sudo podman"
-  } else {
-    error("Neither docker nor podman found")
-  }
-
 ubuntu_version := "24.04"
 ubuntu_suite := "noble"
 arch := "amd64"
@@ -18,9 +9,9 @@ qemu_cores := "2"
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 ubuntu_mirror := if arch == "arm64" {
-    env_var_or_default("UBUNTU_PORTS_MIRROR", "http://ports.ubuntu.com/ubuntu-ports")
+    env("UBUNTU_PORTS_MIRROR", "http://ports.ubuntu.com/ubuntu-ports")
   } else {
-    env_var_or_default("UBUNTU_MIRROR", "http://nz.archive.ubuntu.com/ubuntu")
+    env("UBUNTU_MIRROR", "http://nz.archive.ubuntu.com/ubuntu")
   }
 
 _default:
@@ -194,17 +185,7 @@ check-deps:
   req rsync          "Arch: pacman -S rsync / Debian: apt install rsync"
   echo ""
 
-  echo "=== Required: post-processing & output (just build) ==="
-  if command -v docker >/dev/null 2>&1; then
-    echo "  ✓ docker $(command -v docker)"
-    ((PASS++))
-  elif command -v podman >/dev/null 2>&1; then
-    echo "  ✓ podman $(command -v podman) (used as container runtime)"
-    ((PASS++))
-  else
-    echo "  ✗ docker or podman — need at least one container runtime"
-    ((FAIL++))
-  fi
+  echo "=== Required: output (just build) ==="
   req qemu-img       "Arch: pacman -S qemu-img / Debian: apt install qemu-utils"
   req zstd           "Arch: pacman -S zstd / Debian: apt install zstd"
   req sha256sum      "Arch: pacman -S coreutils / Debian: apt install coreutils"
@@ -301,6 +282,7 @@ clean:
 # ============================================================
 
 # Build a raw disk image via debootstrap + chroot
+# r[image.output.raw]
 raw: _validate-variant _validate-arch _ensure-dirs
   #!/usr/bin/env bash
   set -euo pipefail
@@ -317,33 +299,17 @@ raw: _validate-variant _validate-arch _ensure-dirs
        UBUNTU_MIRROR="{{ubuntu_mirror}}" \
        image/build.sh
 
-# Post-process image (defrag, dedupe, compress)
-_post-process-image:
-  cd image && {{container_runtime}} build -t image-post-process -f Dockerfile.post-process .
-
-_post-process: raw _post-process-image
-  {{container_runtime}} run --rm --privileged \
-    -v "$(pwd)/{{output_dir}}:/work" \
-    -v /dev:/dev \
-    --init \
-    image-post-process post-process "{{filestem}}" "{{variant}}"
-
-# Build raw image and post-process it
-# r[image.output.raw]
-image: _post-process
-
 # Convert raw image to VMDK (streamOptimized)
 # r[image.output.vmdk]
-vmdk: image
+vmdk: raw
   qemu-img convert -f raw -O vmdk -o subformat=streamOptimized "{{output_raw}}" "{{output_vmdk}}"
 
 # Convert raw image to qcow2 (zstd compressed)
 # r[image.output.qcow2]
-qcow: image
+qcow: raw
   qemu-img convert -f raw -O qcow2 -o compression_type=zstd "{{output_raw}}" "{{output_qcow}}"
 
 # Compress raw image with zstd
-# r[image.output.compress]
 compress:
   zstd -6 --rm -o '{{output_raw + ".zst"}}' '{{output_raw}}'
 
@@ -352,7 +318,7 @@ compress:
 checksum:
   cd "{{output_dir}}" && sha256sum * | tee SHA256SUMS
 
-# Build everything: raw + post-process + vmdk + qcow2 + compress + checksum
+# Build everything: raw + vmdk + qcow2 + compress + checksum
 build: vmdk qcow && compress checksum
 
 # Build all variants for the current architecture
