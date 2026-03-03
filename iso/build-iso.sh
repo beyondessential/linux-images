@@ -317,6 +317,18 @@ chroot "$MNT_ROOTFS" systemctl enable bes-installer.service
 chroot "$MNT_ROOTFS" systemctl mask getty@tty2.service
 chroot "$MNT_ROOTFS" systemctl mask autovt@tty2.service
 
+# Enable root autologin on tty1 so users can debug the live environment.
+# Alt+F1 from the installer reaches a root shell without needing a password.
+mkdir -p "$MNT_ROOTFS/etc/systemd/system/getty@tty1.service.d"
+cat > "$MNT_ROOTFS/etc/systemd/system/getty@tty1.service.d/autologin.conf" << 'DROPIN'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
+DROPIN
+
+# Also allow root login with no password on other ttys (live system only)
+chroot "$MNT_ROOTFS" bash -c "passwd -d root"
+
 # Prevent systemd-logind from spawning VTs on demand for tty2
 mkdir -p "$MNT_ROOTFS/etc/systemd/logind.conf.d"
 cat > "$MNT_ROOTFS/etc/systemd/logind.conf.d/reserve-tty2.conf" << 'LOGIND'
