@@ -275,7 +275,7 @@ the first file found:
    mounted by `live-boot`).
 3. `/boot/efi/bes-install.toml` (fallback for manual placement).
 
-> r[installer.config.schema]
+> r[installer.config.schema+2]
 > The configuration file has the following schema:
 >
 > ```toml
@@ -299,10 +299,16 @@ the first file found:
 > ssh-authorized-keys = [
 >   "ssh-ed25519 AAAA... admin@example.com",
 > ]
+> # Plaintext password for the ubuntu user (mutually exclusive with password-hash).
+> password = "changeme"
+> # Pre-hashed password for the ubuntu user (crypt(3) format, e.g. from mkpasswd).
+> # Mutually exclusive with password.
+> password-hash = "$6$rounds=4096$..."
 > ```
 >
 > All fields are optional. The `[firstboot]` table and all its fields are
-> optional.
+> optional. `password` and `password-hash` are mutually exclusive; if both
+> are present the installer must report a validation error.
 
 ## Operating Modes
 
@@ -352,7 +358,7 @@ r[installer.dryrun.output]
 The `--dry-run-output <path>` flag specifies the path for the JSON install
 plan. If omitted, the plan is written to stdout.
 
-> r[installer.dryrun.schema]
+> r[installer.dryrun.schema+2]
 > The install plan JSON has the following structure:
 >
 > ```json
@@ -369,7 +375,8 @@ plan. If omitted, the plan is written to stdout.
 >   "firstboot": {
 >     "hostname": "server-01",
 >     "tailscale_authkey": true,
->     "ssh_authorized_keys_count": 2
+>     "ssh_authorized_keys_count": 2,
+>     "password_set": true
 >   },
 >   "image_path": "/run/live/medium/images/metal-amd64.raw.zst",
 >   "config_warnings": []
@@ -378,7 +385,8 @@ plan. If omitted, the plan is written to stdout.
 >
 > The `firstboot` field is `null` when no first-boot configuration is set.
 > `tailscale_authkey` is a boolean (true when a key is provided) to avoid
-> leaking secrets into test output.
+> leaking secrets into test output. `password_set` is a boolean (true when
+> a password or password hash is provided).
 
 r[installer.dryrun.devices]
 In dry-run mode the installer must still detect real block devices (via
@@ -443,6 +451,15 @@ screen for SSH authorized keys (one per line). The field may be pre-filled
 from the configuration file. The user can leave it empty to skip SSH key
 configuration.
 
+r[installer.tui.password]
+After the SSH keys screen, the TUI must present a password input screen for
+the `ubuntu` user. The user types a password, then confirms it by typing it
+again. Both fields are masked (displayed as asterisks). If the two entries
+do not match, the TUI must display an inline error and not advance. If the
+field is left empty, the image's existing default password (`bes`, expired)
+is kept. When a password is provided via the configuration file (`password`
+or `password-hash`), this screen is skipped in prefilled and auto modes.
+
 r[installer.tui.confirmation]
 Before writing, the TUI must show a summary screen listing: target disk
 (path, model, size), chosen variant, TPM enrollment status, and any
@@ -506,6 +523,14 @@ r[installer.firstboot.ssh-keys]
 If `ssh-authorized-keys` is set, the installer must append each key to
 `/home/ubuntu/.ssh/authorized_keys` with correct ownership and permissions
 (directory 700, file 600, owned by `ubuntu`).
+
+r[installer.firstboot.password]
+If a password is provided (either plaintext or pre-hashed), the installer
+must update the `ubuntu` user's password in `/etc/shadow` on the installed
+system. When a plaintext password is given, it must be hashed with SHA-512
+crypt (`$6$`). When a pre-hashed password is given, it must be written
+directly. In either case, the password expiry flag must be cleared so that
+the user is not forced to change the password on first login.
 
 r[installer.firstboot.tpm-disable]
 If `disable-tpm` is true, the installer must remove the
