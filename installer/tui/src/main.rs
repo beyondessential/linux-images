@@ -254,6 +254,9 @@ fn run_auto(
     writer::reread_partition_table(&target.path).context("re-reading partition table")?;
     writer::verify_partition_table(&target.path).context("verifying partition table")?;
 
+    eprintln!("expanding partitions to fill disk...");
+    writer::expand_partitions(&target.path).context("expanding partitions")?;
+
     if cfg.firstboot.is_some() || (variant == config::Variant::Metal && cfg.disable_tpm) {
         eprintln!("applying first-boot configuration...");
         let mounted = firstboot::mount_target(&target.path, variant)?;

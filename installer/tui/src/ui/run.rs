@@ -262,6 +262,9 @@ fn start_write_worker(image_path: &Path, state: &AppState, tx: &mpsc::Sender<Wor
                 if let Err(e) = writer::verify_partition_table(&target) {
                     tracing::warn!("partition table verification failed: {e}");
                 }
+                if let Err(e) = writer::expand_partitions(&target) {
+                    tracing::warn!("partition expansion failed: {e}");
+                }
                 let _ = tx.send(WorkerMessage::WriteDone);
             }
             Err(e) => {

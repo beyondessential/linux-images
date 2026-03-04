@@ -219,6 +219,61 @@ fn format_size(bytes: u64) -> String {
 }
 
 // r[impl installer.write.partitions]
+/// Expand the GPT and root partition to fill the target disk.
+///
+/// After writing a fixed-size image to a larger disk, the GPT secondary header
+/// is stranded in the middle and partition 3 (root) only covers the original
+/// image size. This function:
+///   1. Moves the GPT secondary header to the end of the disk.
+///   2. Grows partition 3 to fill all remaining space.
+///   3. Re-reads the partition table so the kernel picks up changes.
+///
+/// Filesystem-level resize (BTRFS, LUKS) is left to the boot-time
+/// grow-root-filesystem service.
+pub fn expand_partitions(target: &Path) -> Result<()> {
+    let target_str = target.to_str().unwrap_or_default();
+
+    tracing::info!("moving GPT secondary header on {}", target.display());
+    let sgdisk_status = Command::new("sgdisk")
+        .arg("--move-second-header")
+        .arg(target)
+        .output()
+        .context("running sgdisk --move-second-header")?;
+    if !sgdisk_status.status.success() {
+        let stderr = String::from_utf8_lossy(&sgdisk_status.stderr);
+        bail!("sgdisk --move-second-header failed: {stderr}");
+    }
+
+    reread_partition_table(target)?;
+
+    tracing::info!(
+        "growing root partition (partition 3) on {}",
+        target.display()
+    );
+    let growpart_status = Command::new("growpart")
+        .args(["--free-percent=1", target_str, "3"])
+        .output()
+        .context("running growpart")?;
+    match growpart_status.status.code() {
+        Some(0) => {
+            tracing::info!("root partition grown successfully");
+        }
+        Some(1) => {
+            tracing::info!("root partition already fills disk, no change needed");
+        }
+        _ => {
+            let stderr = String::from_utf8_lossy(&growpart_status.stderr);
+            bail!("growpart failed: {stderr}");
+        }
+    }
+
+    reread_partition_table(target)?;
+
+    tracing::info!("partition expansion complete on {}", target.display());
+    Ok(())
+}
+
+// r[impl installer.write.partitions]
 pub fn verify_partition_table(target: &Path) -> Result<()> {
     let output = Command::new("lsblk")
         .args([
