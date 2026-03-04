@@ -116,10 +116,6 @@ fn connectivity_items(state: &AppState) -> Vec<ListItem<'_>> {
         .collect();
 
     items.push(ListItem::new(Line::from("")));
-    items.push(ListItem::new(Line::from(Span::styled(
-        "  Failures are not blocking.",
-        Style::default().fg(Color::DarkGray),
-    ))));
     items
 }
 
