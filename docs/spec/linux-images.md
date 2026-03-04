@@ -439,16 +439,16 @@ optional `removable` boolean (default false).
 
 ### Scripted TUI Input
 
-r[installer.dryrun.script]
-When `--input-script <path>` is passed, the TUI must read keypress events
-from a newline-delimited text file instead of the terminal. Each line
-describes a single key event using the following tokens:
-
-- `enter`, `esc`, `tab`, `backspace`, `up`, `down`, `left`, `right`,
-  `space` — named special keys.
-- `type:<text>` — emits one `Char` keypress per character of `<text>`.
-- Lines starting with `#` are comments and must be ignored.
-- Empty lines must be ignored.
+> r[installer.dryrun.script]
+> When `--input-script <path>` is passed, the TUI must read keypress events
+> from a newline-delimited text file instead of the terminal. Each line
+> describes a single key event using the following tokens:
+>
+> - `enter`, `esc`, `tab`, `backspace`, `up`, `down`, `left`, `right`,
+>   `space` — named special keys.
+> - `type:<text>` — emits one `Char` keypress per character of `<text>`.
+> - Lines starting with `#` are comments and must be ignored.
+> - Empty lines must be ignored.
 
 r[installer.dryrun.script.headless]
 When `--input-script` is used, the TUI must not initialise the real terminal
