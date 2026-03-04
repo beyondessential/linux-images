@@ -391,17 +391,14 @@ fi
 
 # r[verify image.firewall.ssh]
 if [ -f "$UFW_USER_RULES" ]; then
-    check "ufw allows 22/tcp" grep -q '22/tcp' "$UFW_USER_RULES"
+    check "ufw allows 22/tcp" grep -q '\-p tcp --dport 22' "$UFW_USER_RULES"
 fi
 
 # r[verify image.firewall.http]
 if [ -f "$UFW_USER_RULES" ]; then
-    check "ufw allows 80/tcp" grep -q '80/tcp' "$UFW_USER_RULES"
-    check "ufw allows 443/tcp" grep -q '443/tcp' "$UFW_USER_RULES"
-fi
-if [ -f "$UFW_USER6_RULES" ] || [ -f "$UFW_USER_RULES" ]; then
-    RULES_FOR_UDP="${UFW_USER_RULES}"
-    check "ufw allows 443/udp" grep -q '443/udp' "$RULES_FOR_UDP"
+    check "ufw allows 80/tcp" grep -q '\-p tcp --dport 80' "$UFW_USER_RULES"
+    check "ufw allows 443/tcp" grep -q '\-p tcp --dport 443' "$UFW_USER_RULES"
+    check "ufw allows 443/udp" grep -q '\-p udp --dport 443' "$UFW_USER_RULES"
 fi
 
 # r[verify image.packages.bes-tools]
