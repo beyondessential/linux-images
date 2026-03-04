@@ -5,6 +5,12 @@ use std::time::Duration;
 use crate::config::{FirstbootConfig, Variant};
 use crate::disk::BlockDevice;
 use crate::net::{self, CheckPhase, CheckResult, GithubKeysResult, NetcheckResult};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetPane {
+    Connectivity,
+    Tailscale,
+}
 use crate::writer::WriteProgress;
 
 mod render;
@@ -73,7 +79,9 @@ pub struct AppState {
     pub netcheck_phase: CheckPhase,
     pub netcheck_result: Option<NetcheckResult>,
     pub netcheck_rx: Option<mpsc::Receiver<NetcheckResult>>,
-    pub netcheck_scroll: u16,
+
+    pub net_pane: NetPane,
+    pub net_scroll: u16,
 
     // r[impl installer.tui.ssh-keys.github]
     pub ssh_github_input: String,
@@ -189,7 +197,8 @@ impl AppState {
             netcheck_phase: CheckPhase::NotStarted,
             netcheck_result: None,
             netcheck_rx: None,
-            netcheck_scroll: 0,
+            net_pane: NetPane::Connectivity,
+            net_scroll: 0,
             ssh_github_input: String::new(),
             ssh_github_focus: false,
             ssh_github_fetching: false,
@@ -343,7 +352,9 @@ impl AppState {
     pub fn start_tailscale_netcheck(&mut self) {
         self.netcheck_phase = CheckPhase::Running;
         self.netcheck_result = None;
-        self.netcheck_scroll = 0;
+        if self.net_pane == NetPane::Tailscale {
+            self.net_scroll = 0;
+        }
         self.netcheck_rx = Some(net::spawn_tailscale_netcheck());
     }
 
@@ -357,14 +368,22 @@ impl AppState {
             Ok(result) => {
                 self.netcheck_result = Some(result);
                 self.netcheck_phase = CheckPhase::Done;
-                self.netcheck_scroll = 0;
+                if self.net_pane == NetPane::Tailscale {
+                    self.net_scroll = 0;
+                }
                 true
             }
             Err(_) => false,
         }
     }
 
-    /// Number of lines in the tailscale netcheck output (for scroll bounds).
+    /// Number of lines in the connectivity check results.
+    pub fn net_check_line_count(&self) -> usize {
+        // Each result row + blank + note line
+        self.net_check_total + 2
+    }
+
+    /// Number of lines in the tailscale netcheck output.
     pub fn netcheck_line_count(&self) -> usize {
         match &self.netcheck_result {
             Some(result) => result.output.lines().count(),
@@ -372,17 +391,34 @@ impl AppState {
         }
     }
 
-    /// Scroll the tailscale netcheck output down by one line.
-    pub fn scroll_netcheck_down(&mut self) {
-        let max = self.netcheck_line_count().saturating_sub(1) as u16;
-        if self.netcheck_scroll < max {
-            self.netcheck_scroll += 1;
+    /// Line count for the currently active network pane.
+    fn active_pane_line_count(&self) -> usize {
+        match self.net_pane {
+            NetPane::Connectivity => self.net_check_line_count(),
+            NetPane::Tailscale => self.netcheck_line_count(),
         }
     }
 
-    /// Scroll the tailscale netcheck output up by one line.
-    pub fn scroll_netcheck_up(&mut self) {
-        self.netcheck_scroll = self.netcheck_scroll.saturating_sub(1);
+    /// Scroll the active network pane down by one line.
+    pub fn scroll_net_down(&mut self) {
+        let max = self.active_pane_line_count().saturating_sub(1) as u16;
+        if self.net_scroll < max {
+            self.net_scroll += 1;
+        }
+    }
+
+    /// Scroll the active network pane up by one line.
+    pub fn scroll_net_up(&mut self) {
+        self.net_scroll = self.net_scroll.saturating_sub(1);
+    }
+
+    /// Switch the active network pane and reset scroll.
+    pub fn toggle_net_pane(&mut self) {
+        self.net_pane = match self.net_pane {
+            NetPane::Connectivity => NetPane::Tailscale,
+            NetPane::Tailscale => NetPane::Connectivity,
+        };
+        self.net_scroll = 0;
     }
 
     // r[impl installer.tui.ssh-keys.github]
