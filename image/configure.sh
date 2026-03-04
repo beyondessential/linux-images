@@ -78,7 +78,7 @@ echo "Etc/UTC" > /etc/timezone
 # Install packages from list
 # ============================================================
 # r[image.packages.install]: Install all via apt inside the chroot.
-source packages.sh
+source /tmp/packages.sh
 if [ "${#PACKAGES[@]}" -gt 0 ]; then
     echo "Installing ${#PACKAGES[@]} packages..."
     apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"
