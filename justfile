@@ -317,7 +317,7 @@ compress:
 # Generate SHA256 checksums for all outputs
 # r[image.output.checksum]
 checksum:
-  cd "{{output_dir}}" && sha256sum * | tee SHA256SUMS
+  cd "{{output_dir}}" && sha256sum ubuntu-*-bes-*.* | tee SHA256SUMS
 
 # Build everything: raw + vmdk + qcow2 + compress + checksum
 build: vmdk qcow && compress checksum
