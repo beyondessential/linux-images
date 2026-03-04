@@ -305,28 +305,45 @@ pub fn expand_partitions(target: &Path) -> Result<()> {
 
 // r[impl installer.write.partitions]
 pub fn verify_partition_table(target: &Path) -> Result<()> {
-    let output = Command::new("lsblk")
-        .args([
-            "--json",
-            "--output",
-            "NAME,PARTLABEL,PARTTYPENAME",
-            target.to_str().unwrap_or_default(),
-        ])
+    // Use sfdisk --json to read the GPT directly from the block device.
+    // Unlike lsblk, this doesn't require the kernel to have created
+    // partition device nodes, which makes it work inside containers.
+    let output = Command::new("sfdisk")
+        .args(["--json", target.to_str().unwrap_or_default()])
         .output()
-        .context("running lsblk to verify partitions")?;
+        .context("running sfdisk --json to verify partitions")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("lsblk verification failed: {stderr}");
+        bail!("sfdisk verification failed: {stderr}");
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    tracing::debug!("sfdisk output: {stdout}");
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).context("parsing sfdisk JSON output")?;
+
+    let partitions = parsed
+        .get("partitiontable")
+        .and_then(|pt| pt.get("partitions"))
+        .and_then(|p| p.as_array())
+        .map(|a| a.as_slice())
+        .unwrap_or_default();
+
+    let found_labels: Vec<&str> = partitions
+        .iter()
+        .filter_map(|p| p.get("name").and_then(|n| n.as_str()))
+        .collect();
 
     let expected_labels = ["efi", "xboot", "root"];
     for label in &expected_labels {
-        if !stdout.contains(label) {
+        if !found_labels
+            .iter()
+            .any(|found| found.eq_ignore_ascii_case(label))
+        {
             bail!(
-                "partition verification failed: expected partition with label '{label}' not found"
+                "partition verification failed: expected partition with label '{label}' not found (found: {found_labels:?})"
             );
         }
     }
