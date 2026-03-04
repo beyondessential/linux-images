@@ -12,10 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: cargo-bins/cargo-binstall@main
-
       - name: Install tracey
-        run: cargo binstall --git https://github.com/bearcove/tracey tracey -y
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bearcove/tracey/releases/download/v1.2.0/tracey-installer.sh | sh
 
       # tracey doesn't yet support YAML, so we copy .yml files to .sh
       # extensions and patch the config to include them.
