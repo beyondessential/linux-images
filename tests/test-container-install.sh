@@ -22,6 +22,8 @@
 #   SET_HOSTNAME   — hostname to set, or "" to skip (default: "")
 #   SET_TAILSCALE  — tailscale authkey to set, or "" to skip (default: "")
 #   SET_SSH_KEYS   — SSH public key to set, or "" to skip (default: "")
+#   SET_PASSWORD   — plaintext password for ubuntu user, or "" to skip (default: "")
+#   SET_PASSWORD_HASH — pre-hashed password for ubuntu user, or "" to skip (default: "")
 #
 # Requires: systemd-nspawn, losetup, lsblk, partprobe, cryptsetup,
 #           btrfs-progs, util-linux. Must run as root.
@@ -41,6 +43,8 @@ DISABLE_TPM="${DISABLE_TPM:-true}"
 SET_HOSTNAME="${SET_HOSTNAME:-}"
 SET_TAILSCALE="${SET_TAILSCALE:-}"
 SET_SSH_KEYS="${SET_SSH_KEYS:-}"
+SET_PASSWORD="${SET_PASSWORD:-}"
+SET_PASSWORD_HASH="${SET_PASSWORD_HASH:-}"
 
 TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-10G}"
 
@@ -124,6 +128,8 @@ echo "  disable-tpm:   $DISABLE_TPM"
 echo "  hostname:      ${SET_HOSTNAME:-(not set)}"
 echo "  tailscale:     ${SET_TAILSCALE:+(key provided)}${SET_TAILSCALE:-(not set)}"
 echo "  ssh-keys:      ${SET_SSH_KEYS:+(key provided)}${SET_SSH_KEYS:-(not set)}"
+echo "  password:      ${SET_PASSWORD:+(plaintext provided)}${SET_PASSWORD:-(not set)}"
+echo "  password-hash: ${SET_PASSWORD_HASH:+(hash provided)}${SET_PASSWORD_HASH:-(not set)}"
 echo "  disk size:     $TARGET_DISK_SIZE"
 echo ""
 
@@ -166,7 +172,7 @@ CONFIG_TOML="$WORK_DIR/bes-install.toml"
     echo "disk = \"$LOOP_DEV\""
     echo "disable-tpm = $DISABLE_TPM"
 
-    if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ]; then
+    if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ] || [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ]; then
         echo ""
         echo "[firstboot]"
         if [ -n "$SET_HOSTNAME" ]; then
@@ -179,6 +185,12 @@ CONFIG_TOML="$WORK_DIR/bes-install.toml"
             echo "ssh-authorized-keys = ["
             echo "  \"$SET_SSH_KEYS\","
             echo "]"
+        fi
+        if [ -n "$SET_PASSWORD" ]; then
+            echo "password = \"$SET_PASSWORD\""
+        fi
+        if [ -n "$SET_PASSWORD_HASH" ]; then
+            echo "password-hash = \"$SET_PASSWORD_HASH\""
         fi
     fi
 } > "$CONFIG_TOML"
@@ -440,6 +452,35 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
         else
             echo "    (ssh-keys not configured — skipping SSH checks)"
+        fi
+
+        # --- Password ---
+        # r[verify installer.firstboot.password]
+        if [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ]; then
+            SHADOW_FILE="$VERIFY_MOUNT/etc/shadow"
+            if [ -f "$SHADOW_FILE" ]; then
+                UBUNTU_SHADOW="$(grep '^ubuntu:' "$SHADOW_FILE")"
+                if [ -n "$UBUNTU_SHADOW" ]; then
+                    SHADOW_HASH="$(echo "$UBUNTU_SHADOW" | cut -d: -f2)"
+                    check "ubuntu shadow entry has SHA-512 hash" \
+                        echo "$SHADOW_HASH" | grep -q '^\$6\$'
+
+                    SHADOW_LASTCHANGED="$(echo "$UBUNTU_SHADOW" | cut -d: -f3)"
+                    check "ubuntu password expiry cleared (lastchanged > 0)" \
+                        test "$SHADOW_LASTCHANGED" -gt 0
+
+                    if [ -n "$SET_PASSWORD_HASH" ]; then
+                        check "ubuntu shadow hash matches provided hash" \
+                            test "$SHADOW_HASH" = "$SET_PASSWORD_HASH"
+                    fi
+                else
+                    check "ubuntu user found in shadow" false
+                fi
+            else
+                check "shadow file exists" false
+            fi
+        else
+            echo "    (password not configured — skipping password checks)"
         fi
 
         # --- TPM disable ---

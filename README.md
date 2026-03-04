@@ -23,11 +23,22 @@ network is available.
 
 #### Credentials
 
-Unless overridden with cloud-init, the `ubuntu` user has the default password `bes`.
-The `root` user has no password and its shell is set to `/sbin/nologin`, so direct
-root login is not possible. It's expected that an admin installing the system **logs
-in as the `ubuntu` user at the console** once the install is done. This will prompt for
-a new password to be set. The `ubuntu` user has passwordless `sudo` access.
+The `ubuntu` user is the only login account. The `root` user has no password and
+its shell is set to `/sbin/nologin`, so direct root login is not possible. The
+`ubuntu` user has passwordless `sudo` access.
+
+When installing via the BES Installer, the TUI prompts for a password for the
+`ubuntu` user. If left empty, the image's default password (`bes`, expired) is
+kept and the user will be forced to change it on first console login. A password
+can also be set in the `bes-install.toml` configuration file:
+
+```
+[firstboot]
+# Plaintext (mutually exclusive with password-hash):
+password = "changeme"
+# Or pre-hashed (crypt(3) format, e.g. from mkpasswd):
+password-hash = "$6$rounds=4096$..."
+```
 
 Passwords are not allowed over SSH, only the local or serial console.
 
@@ -143,3 +154,5 @@ All fields are optional. Unknown fields are rejected.
 | `hostname` | string | — | Hostname to set on first boot. Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. |
 | `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`) used to automatically join the Tailscale network on first boot. |
 | `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
+| `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. Mutually exclusive with `password-hash`. |
+| `password-hash` | string | — | Pre-hashed password for the `ubuntu` user in crypt(3) format (e.g. from `mkpasswd --method=sha-512`). Written directly to `/etc/shadow` with the expiry flag cleared. Mutually exclusive with `password`. |

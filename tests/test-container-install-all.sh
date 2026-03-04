@@ -111,8 +111,8 @@ echo ""
 # ============================================================
 # Scenario definitions
 # ============================================================
-# Each scenario is a tab-separated line:
-#   name | variant | disable_tpm | hostname | tailscale_key | ssh_key
+# Each scenario is a pipe-separated line:
+#   name | variant | disable_tpm | hostname | tailscale_key | ssh_key | password | password_hash
 #
 # Empty string means "not set" for optional fields.
 
@@ -120,23 +120,29 @@ SSH_TEST_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTes
 TS_TEST_KEY="tskey-auth-container-test-key-1234567890"
 
 SCENARIOS=(
-    # 1. Metal, full firstboot, TPM disabled
-    "metal-full-disable-tpm|metal|true|test-metal-full|$TS_TEST_KEY|$SSH_TEST_KEY"
+    # 1. Metal, full firstboot, TPM disabled, with plaintext password
+    "metal-full-disable-tpm|metal|true|test-metal-full|$TS_TEST_KEY|$SSH_TEST_KEY|testpass123|"
 
     # 2. Metal, no firstboot, TPM enabled
-    "metal-minimal-tpm-on|metal|false|||"
+    "metal-minimal-tpm-on|metal|false|||||"
 
     # 3. Metal, hostname only, TPM disabled
-    "metal-hostname-only|metal|true|test-metal-hostname||"
+    "metal-hostname-only|metal|true|test-metal-hostname||||"
 
-    # 4. Cloud, full firstboot
-    "cloud-full|cloud|true|test-cloud-full|$TS_TEST_KEY|$SSH_TEST_KEY"
+    # 4. Cloud, full firstboot, with plaintext password
+    "cloud-full|cloud|true|test-cloud-full|$TS_TEST_KEY|$SSH_TEST_KEY|cloudpass456|"
 
     # 5. Cloud, no firstboot
-    "cloud-minimal|cloud|true|||"
+    "cloud-minimal|cloud|true|||||"
 
     # 6. Cloud, tailscale only (no hostname, no SSH)
-    "cloud-tailscale-only|cloud|true||$TS_TEST_KEY|"
+    "cloud-tailscale-only|cloud|true||$TS_TEST_KEY|||"
+
+    # 7. Cloud, password-hash only (pre-hashed, no other firstboot)
+    "cloud-password-hash|cloud|true|||||'\$6\$testrounds\$testhashvalue'"
+
+    # 8. Metal, plaintext password only (no other firstboot)
+    "metal-password-only|metal|true||||pwonly|"
 )
 
 # ============================================================
@@ -153,7 +159,7 @@ echo "=============================="
 echo ""
 
 for i in "${!SCENARIOS[@]}"; do
-    IFS='|' read -r name variant disable_tpm hostname ts_key ssh_key <<< "${SCENARIOS[$i]}"
+    IFS='|' read -r name variant disable_tpm hostname ts_key ssh_key password password_hash <<< "${SCENARIOS[$i]}"
 
     SCENARIO_NUM=$((i + 1))
     echo "[$SCENARIO_NUM/$TOTAL] $name"
@@ -166,6 +172,8 @@ for i in "${!SCENARIOS[@]}"; do
     SET_HOSTNAME="$hostname" \
     SET_TAILSCALE="$ts_key" \
     SET_SSH_KEYS="$ssh_key" \
+    SET_PASSWORD="$password" \
+    SET_PASSWORD_HASH="$password_hash" \
         "$SCRIPT_DIR/test-container-install.sh" "$variant" "$ARCH"
     RC=$?
     set -e
