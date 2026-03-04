@@ -451,6 +451,9 @@ impl AppState {
             Ok(result) => {
                 self.ssh_github_fetching = false;
                 if result.success {
+                    while self.ssh_keys.last().is_some_and(|k| k.trim().is_empty()) {
+                        self.ssh_keys.pop();
+                    }
                     let first_new = self.ssh_keys.len();
                     for key in &result.keys {
                         self.ssh_keys.push(key.clone());
@@ -1339,7 +1342,8 @@ mod tests {
     fn github_key_fetch_appends_to_ssh_keys() {
         let mut state = make_state();
         state.screen = Screen::LoginGithub;
-        state.ssh_keys = vec!["ssh-ed25519 existing-key".into()];
+        // Realistic state: one existing key followed by the trailing blank
+        state.ssh_keys = vec!["ssh-ed25519 existing-key".into(), String::new()];
 
         let (tx, rx) = std::sync::mpsc::channel();
         state.ssh_github_fetching = true;
@@ -1353,11 +1357,10 @@ mod tests {
 
         assert!(state.poll_github_keys());
         assert!(!state.ssh_github_fetching);
-        assert!(state.ssh_keys.contains(&"ssh-rsa fetched-key".to_string()));
-        assert!(
-            state
-                .ssh_keys
-                .contains(&"ssh-ed25519 existing-key".to_string())
+        assert_eq!(
+            state.ssh_keys,
+            vec!["ssh-ed25519 existing-key", "ssh-rsa fetched-key", ""],
+            "trailing blank should be stripped before import, then re-added at the end"
         );
         assert_eq!(
             state.screen,
@@ -1368,6 +1371,33 @@ mod tests {
             state.ssh_key_cursor, 1,
             "cursor should point to the first imported key"
         );
+    }
+
+    // r[verify installer.tui.ssh-keys.github+4]
+    #[test]
+    fn github_key_fetch_from_empty_state_has_no_leading_blank() {
+        let mut state = make_state();
+        state.screen = Screen::LoginGithub;
+        // Default state: just the trailing blank
+        state.ssh_keys = vec![String::new()];
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        state.ssh_github_fetching = true;
+        state.ssh_github_rx = Some(rx);
+        tx.send(crate::net::GithubKeysResult {
+            success: true,
+            keys: vec!["ssh-rsa fetched-key".into()],
+            error: None,
+        })
+        .unwrap();
+
+        assert!(state.poll_github_keys());
+        assert_eq!(
+            state.ssh_keys,
+            vec!["ssh-rsa fetched-key", ""],
+            "empty leading field must be removed, only trailing blank remains"
+        );
+        assert_eq!(state.ssh_key_cursor, 0);
     }
 
     #[test]
