@@ -49,7 +49,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.network-check+2]
+        // r[impl installer.tui.network-check+3]
         Screen::NetworkCheck => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
@@ -60,7 +60,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.network-check+2]
+        // r[impl installer.tui.network-check+3]
         Screen::NetworkResults => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),

@@ -154,31 +154,43 @@ fn tailscale_lines(state: &AppState) -> Vec<Line<'_>> {
 ///
 /// The `intro_text` line is shown at the top. One pane is expanded with
 /// scroll support; the other is collapsed to a single title bar.
-fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_text: &str) {
-    let net_status = match state.net_check_phase {
-        CheckPhase::NotStarted => "Not started",
-        CheckPhase::Running => "Running...",
-        CheckPhase::Done => "Done",
-    };
-    let ts_status = match state.netcheck_phase {
-        CheckPhase::NotStarted => "Not started",
-        CheckPhase::Running => "Running...",
-        CheckPhase::Done => "Done",
-    };
+fn connectivity_status(state: &AppState) -> String {
+    match state.net_check_phase {
+        CheckPhase::NotStarted => "Not started".into(),
+        CheckPhase::Running => "Running...".into(),
+        CheckPhase::Done => {
+            let passed = state
+                .net_check_results
+                .iter()
+                .filter(|r| matches!(r, Some(r) if r.passed))
+                .count();
+            let total = state.net_check_total;
+            if passed == total {
+                "All passed".into()
+            } else {
+                format!("{passed}/{total} passed")
+            }
+        }
+    }
+}
 
+fn tailscale_status(state: &AppState) -> &'static str {
+    match state.netcheck_phase {
+        CheckPhase::NotStarted => "Not started",
+        CheckPhase::Running => "Running...",
+        CheckPhase::Done => match &state.netcheck_result {
+            Some(r) if r.success => "OK",
+            Some(_) => "Failed",
+            None => "Done",
+        },
+    }
+}
+
+// r[impl installer.tui.network-check+3]
+fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_text: &str) {
     let intro = vec![
         Line::from(""),
         Line::from(format!("  {intro_text}")),
-        Line::from(Span::styled(
-            format!(
-                "  Connectivity: {} ({}/{})  |  Tailscale: {}",
-                net_status,
-                state.net_checks_done(),
-                state.net_check_total,
-                ts_status,
-            ),
-            Style::default().fg(Color::DarkGray),
-        )),
         Line::from(""),
     ];
 
@@ -190,33 +202,30 @@ fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_t
     };
 
     let chunks =
-        Layout::vertical([Constraint::Length(5), conn_constraint, ts_constraint]).split(area);
+        Layout::vertical([Constraint::Length(4), conn_constraint, ts_constraint]).split(area);
 
     let intro_paragraph = Paragraph::new(intro);
     frame.render_widget(intro_paragraph, chunks[0]);
 
     // --- Connectivity pane ---
     let conn_active = state.net_pane == NetPane::Connectivity;
-    let conn_border_style = if conn_active {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let conn_status = connectivity_status(state);
     let conn_title = if conn_active {
         let total = state.net_check_line_count();
         let visible = chunks[1].height.saturating_sub(2) as usize;
         if total > visible {
-            format!(" Connectivity (line {}/{}) ", state.net_scroll + 1, total,)
+            format!(
+                " Connectivity -- {conn_status} (line {}/{}) ",
+                state.net_scroll + 1,
+                total,
+            )
         } else {
-            " Connectivity ".to_string()
+            format!(" Connectivity -- {conn_status} ")
         }
     } else {
-        " Connectivity [Tab to expand] ".to_string()
+        format!(" Connectivity -- {conn_status} [Tab to expand] ")
     };
-    let conn_block = Block::default()
-        .title(conn_title)
-        .borders(Borders::ALL)
-        .border_style(conn_border_style);
+    let conn_block = Block::default().title(conn_title).borders(Borders::ALL);
 
     if conn_active {
         let items = connectivity_items(state);
@@ -232,30 +241,23 @@ fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_t
 
     // --- Tailscale pane ---
     let ts_active = state.net_pane == NetPane::Tailscale;
-    let ts_border_style = if ts_active {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let ts_status = tailscale_status(state);
     let ts_title = if ts_active {
         let total = state.netcheck_line_count();
         let visible = chunks[2].height.saturating_sub(2) as usize;
         if total > visible {
             format!(
-                " Tailscale Netcheck (line {}/{}) ",
+                " Tailscale Netcheck -- {ts_status} (line {}/{}) ",
                 state.net_scroll + 1,
                 total,
             )
         } else {
-            " Tailscale Netcheck ".to_string()
+            format!(" Tailscale Netcheck -- {ts_status} ")
         }
     } else {
-        " Tailscale Netcheck [Tab to expand] ".to_string()
+        format!(" Tailscale Netcheck -- {ts_status} [Tab to expand] ")
     };
-    let ts_block = Block::default()
-        .title(ts_title)
-        .borders(Borders::ALL)
-        .border_style(ts_border_style);
+    let ts_block = Block::default().title(ts_title).borders(Borders::ALL);
 
     if ts_active {
         let lines = tailscale_lines(state);
@@ -269,7 +271,7 @@ fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_t
     }
 }
 
-// r[impl installer.tui.network-check+2]
+// r[impl installer.tui.network-check+3]
 fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
     render_net_accordion(
         frame,
@@ -279,14 +281,9 @@ fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
     );
 }
 
-// r[impl installer.tui.network-check+2]
+// r[impl installer.tui.network-check+3]
 fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
-    render_net_accordion(
-        frame,
-        area,
-        state,
-        "Network check results (ran in the background during installation).",
-    );
+    render_net_accordion(frame, area, state, "Network check results");
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -324,7 +321,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Done => "Press any key to reboot",
         Screen::Error(_) => "Press any key to exit",
     };
-    let paragraph = Paragraph::new(hints).style(Style::default().fg(Color::DarkGray));
+    let paragraph = Paragraph::new(hints);
     frame.render_widget(paragraph, area);
 }
 

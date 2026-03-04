@@ -45,7 +45,7 @@ pub struct GithubKeysResult {
     pub error: Option<String>,
 }
 
-// r[impl installer.tui.network-check+2]
+// r[impl installer.tui.network-check+3]
 
 /// The list of endpoints to check, matching the spec.
 pub fn default_endpoints() -> Vec<Endpoint> {
@@ -359,5 +359,18 @@ mod tests {
                 assert!(!ep.expect_200, "{} should accept any HTTP status", ep.label);
             }
         }
+    }
+
+    // r[verify installer.tui.tailscale-netcheck+2]
+    #[test]
+    fn tailscale_netcheck_returns_result_with_output() {
+        let rx = spawn_tailscale_netcheck();
+        let result = rx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("tailscale netcheck should complete within timeout");
+        assert!(
+            !result.output.is_empty(),
+            "netcheck output should not be empty regardless of success or failure"
+        );
     }
 }

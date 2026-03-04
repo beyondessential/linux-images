@@ -204,7 +204,7 @@ the image is for, contact information, and instructions on how to proceed.
 The user presses Enter to proceed to the disk selection screen. The welcome
 screen also offers a `n` keybind to open a dedicated network check screen.
 
-> r[installer.tui.network-check+2]
+> r[installer.tui.network-check+3]
 > The TUI must perform network connectivity checks in the background,
 > starting automatically when the welcome screen is first shown. The checks
 > run against the following endpoints in parallel:
@@ -237,6 +237,16 @@ screen also offers a `n` keybind to open a dedicated network check screen.
 >    `Enter` to proceed to the confirmation screen.
 >
 > Both screens are skipped entirely in automatic mode.
+>
+> The two network panes (Connectivity and Tailscale Netcheck) are displayed
+> as an accordion: the active pane is expanded and the inactive pane is
+> collapsed to a title bar. Both panes use the same border color (normal
+> text, not dimmed or accented) so the active/inactive distinction comes
+> from the expanded-vs-collapsed layout alone. Each pane's title bar
+> includes a status indicator: a spinner or "Running..." while in progress,
+> "All passed" or "N/M passed" when done for connectivity, and "OK" or
+> "Failed" when done for tailscale netcheck. There is no separate summary
+> line outside the panes.
 
 r[installer.tui.tailscale-netcheck+2]
 The TUI must run `tailscale netcheck` in the background (the `tailscale`

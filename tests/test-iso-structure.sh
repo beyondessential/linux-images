@@ -306,6 +306,14 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fail "sgdisk exists in rootfs"
     fi
 
+    # r[verify iso.network-tools]
+    check "curl exists in rootfs" test -x "$SQFS_MNT/usr/bin/curl"
+    if [ -x "$SQFS_MNT/usr/bin/tailscale" ] || [ -x "$SQFS_MNT/usr/sbin/tailscale" ]; then
+        pass "tailscale exists in rootfs"
+    else
+        fail "tailscale exists in rootfs"
+    fi
+
     # r[verify iso.config-partition]
     check "run-besconf.mount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
     check "run-besconf.automount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.automount"

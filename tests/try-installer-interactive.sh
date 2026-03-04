@@ -197,13 +197,13 @@ echo "==> Launching interactive installer in container..."
 echo "    (The installer TUI will take over the terminal.)"
 echo ""
 
-# Use the same nspawn options as tests, but replace --pipe with
-# --console=interactive so the TUI can drive the terminal directly.
+# Similar nspawn options to the automated tests, but with --console=interactive
+# instead of --pipe (so the TUI can drive the terminal) and without
+# --private-network (so network checks and tailscale netcheck work).
 NSPAWN_OPTS=(
     --register=no
     --quiet
     --console=interactive
-    --private-network
     --capability=CAP_SYS_ADMIN
     --system-call-filter=mount
     --property=DeviceAllow='block-loop rwm'

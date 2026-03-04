@@ -68,7 +68,7 @@ pub struct AppState {
     pub timezone_filtered: Vec<usize>,
     pub timezone_cursor: usize,
 
-    // r[impl installer.tui.network-check+2]
+    // r[impl installer.tui.network-check+3]
     pub net_check_phase: CheckPhase,
     pub net_check_results: Vec<Option<CheckResult>>,
     pub net_check_rx: Option<mpsc::Receiver<CheckResult>>,
@@ -299,7 +299,7 @@ impl AppState {
         };
     }
 
-    // r[impl installer.tui.network-check+2]
+    // r[impl installer.tui.network-check+3]
     /// Start (or restart) all network connectivity checks and tailscale netcheck.
     pub fn start_net_checks(&mut self) {
         let endpoints = net::default_endpoints();
@@ -337,14 +337,6 @@ impl AppState {
             self.net_check_phase = CheckPhase::Done;
         }
         received
-    }
-
-    /// Number of checks completed so far.
-    pub fn net_checks_done(&self) -> usize {
-        self.net_check_results
-            .iter()
-            .filter(|r| r.is_some())
-            .count()
     }
 
     // r[impl installer.tui.tailscale-netcheck+2]
@@ -466,7 +458,7 @@ impl AppState {
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
             Screen::Welcome => {
-                // r[impl installer.tui.network-check+2]
+                // r[impl installer.tui.network-check+3]
                 self.ensure_net_checks_started();
                 Screen::DiskSelection
             }
@@ -640,7 +632,7 @@ mod tests {
         assert!(!state.net_checks_started);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn welcome_advances_to_disk_selection() {
         let mut state = make_state();
@@ -649,7 +641,7 @@ mod tests {
         assert!(state.net_checks_started);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn open_network_check_from_welcome() {
         let mut state = make_state();
@@ -658,7 +650,7 @@ mod tests {
         assert!(state.net_checks_started);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn network_check_goes_back_to_welcome() {
         let mut state = make_state();
@@ -667,7 +659,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn network_check_advance_is_noop() {
         let mut state = make_state();
@@ -676,7 +668,7 @@ mod tests {
         assert_eq!(state.screen, Screen::NetworkCheck);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn disk_selection_goes_back_to_welcome() {
         let mut state = make_state();
@@ -685,7 +677,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn timezone_advances_to_network_results() {
         let mut state = make_state();
@@ -695,7 +687,7 @@ mod tests {
         assert_eq!(state.screen, Screen::NetworkResults);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn network_results_advances_to_confirmation() {
         let mut state = make_state();
@@ -704,7 +696,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn network_results_goes_back_to_timezone() {
         let mut state = make_state();
@@ -713,7 +705,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
     }
 
-    // r[verify installer.tui.network-check+2]
+    // r[verify installer.tui.network-check+3]
     #[test]
     fn confirmation_goes_back_to_network_results() {
         let mut state = make_state();
