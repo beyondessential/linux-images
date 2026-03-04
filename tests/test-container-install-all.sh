@@ -37,7 +37,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 MISSING=()
-for cmd in systemd-nspawn xorriso unsquashfs losetup lsblk partprobe; do
+for cmd in systemd-nspawn xorriso unsquashfs losetup lsblk partprobe jq; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -111,50 +111,19 @@ echo ""
 # ============================================================
 # Scenario definitions
 # ============================================================
-# Each scenario is a pipe-separated line:
-#   name | variant | disable_tpm | hostname | tailscale_key | ssh_key | password | password_hash | hostname_from_dhcp | hostname_template | hostname_template_regex
-#
-# Empty string means "not set" for optional fields.
+SCENARIOS_JSON="$SCRIPT_DIR/container-install-scenarios.json"
+if [ ! -f "$SCENARIOS_JSON" ]; then
+    echo "ERROR: scenario definitions not found: $SCENARIOS_JSON"
+    exit 1
+fi
 
-SSH_TEST_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container"
-TS_TEST_KEY="tskey-auth-container-test-key-1234567890"
-
-SCENARIOS=(
-    # 1. Metal, full firstboot, TPM disabled, with plaintext password
-    "metal-full-disable-tpm|metal|true|test-metal-full|$TS_TEST_KEY|$SSH_TEST_KEY|testpass123||||"
-
-    # 2. Metal, minimal firstboot (hostname only), TPM enabled
-    "metal-minimal-tpm-on|metal|false|test-metal-minimal|||||||"
-
-    # 3. Metal, hostname only, TPM disabled
-    "metal-hostname-only|metal|true|test-metal-hostname|||||||"
-
-    # 4. Cloud, full firstboot, with plaintext password
-    "cloud-full|cloud|true|test-cloud-full|$TS_TEST_KEY|$SSH_TEST_KEY|cloudpass456||||"
-
-    # 5. Cloud, no firstboot
-    "cloud-minimal|cloud|true||||||||"
-
-    # 6. Cloud, tailscale only (no hostname, no SSH)
-    "cloud-tailscale-only|cloud|true||$TS_TEST_KEY||||||"
-
-    # 7. Cloud, password-hash only (pre-hashed, no other firstboot)
-    "cloud-password-hash|cloud|true|||||\$6\$testrounds\$testhashvalue|||"
-
-    # 8. Metal, plaintext password + hostname (no other firstboot)
-    "metal-password-only|metal|true|test-metal-pw|||pwonly||||"
-
-    # 9. Metal, DHCP hostname (no static hostname)
-    "metal-dhcp-hostname|metal|true||||||||true||"
-
-    # 10. Metal, hostname template
-    "metal-hostname-template|metal|true||||||test-{hex:6}|^test-[0-9a-f]{6}$"
-)
+# Helper: read a string field from a scenario JSON object, defaulting to "".
+jq_str() { echo "$1" | jq -r "$2 // empty"; }
 
 # ============================================================
 # Run scenarios
 # ============================================================
-TOTAL=${#SCENARIOS[@]}
+TOTAL=$(jq 'length' "$SCENARIOS_JSON")
 PASSED=0
 FAILED=0
 FAILED_NAMES=()
@@ -164,8 +133,12 @@ echo "Running $TOTAL scenarios"
 echo "=============================="
 echo ""
 
-for i in "${!SCENARIOS[@]}"; do
-    IFS='|' read -r name variant disable_tpm hostname ts_key ssh_key password password_hash hostname_from_dhcp hostname_template hostname_template_regex <<< "${SCENARIOS[$i]}"
+for i in $(seq 0 $((TOTAL - 1))); do
+    SCENARIO=$(jq -c ".[$i]" "$SCENARIOS_JSON")
+
+    name=$(jq_str "$SCENARIO" '.name')
+    variant=$(jq_str "$SCENARIO" '.variant')
+    disable_tpm=$(echo "$SCENARIO" | jq -r '."disable-tpm" // true')
 
     SCENARIO_NUM=$((i + 1))
     echo "[$SCENARIO_NUM/$TOTAL] $name"
@@ -175,14 +148,14 @@ for i in "${!SCENARIOS[@]}"; do
     ROOTFS_DIR="$ROOTFS_DIR" \
     IMAGES_DIR="$IMAGES_DIR" \
     DISABLE_TPM="$disable_tpm" \
-    SET_HOSTNAME="$hostname" \
-    SET_HOSTNAME_FROM_DHCP="$hostname_from_dhcp" \
-    SET_HOSTNAME_TEMPLATE="$hostname_template" \
-    SET_HOSTNAME_TEMPLATE_REGEX="$hostname_template_regex" \
-    SET_TAILSCALE="$ts_key" \
-    SET_SSH_KEYS="$ssh_key" \
-    SET_PASSWORD="$password" \
-    SET_PASSWORD_HASH="$password_hash" \
+    SET_HOSTNAME="$(jq_str "$SCENARIO" '.hostname')" \
+    SET_HOSTNAME_FROM_DHCP="$(jq_str "$SCENARIO" '."hostname-from-dhcp"')" \
+    SET_HOSTNAME_TEMPLATE="$(jq_str "$SCENARIO" '."hostname-template"')" \
+    SET_HOSTNAME_TEMPLATE_REGEX="$(jq_str "$SCENARIO" '."hostname-template-regex"')" \
+    SET_TAILSCALE="$(jq_str "$SCENARIO" '.tailscale')" \
+    SET_SSH_KEYS="$(jq_str "$SCENARIO" '."ssh-keys"')" \
+    SET_PASSWORD="$(jq_str "$SCENARIO" '.password')" \
+    SET_PASSWORD_HASH="$(jq_str "$SCENARIO" '."password-hash"')" \
         "$SCRIPT_DIR/test-container-install.sh" "$variant" "$ARCH"
     RC=$?
     set -e

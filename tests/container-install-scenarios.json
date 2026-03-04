@@ -1,0 +1,69 @@
+[
+  {
+    "name": "metal-full-disable-tpm",
+    "variant": "metal",
+    "disable-tpm": true,
+    "hostname": "test-metal-full",
+    "tailscale": "tskey-auth-container-test-key-1234567890",
+    "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
+    "password": "testpass123"
+  },
+  {
+    "name": "metal-minimal-tpm-on",
+    "variant": "metal",
+    "disable-tpm": false,
+    "hostname": "test-metal-minimal"
+  },
+  {
+    "name": "metal-hostname-only",
+    "variant": "metal",
+    "disable-tpm": true,
+    "hostname": "test-metal-hostname"
+  },
+  {
+    "name": "cloud-full",
+    "variant": "cloud",
+    "disable-tpm": true,
+    "hostname": "test-cloud-full",
+    "tailscale": "tskey-auth-container-test-key-1234567890",
+    "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
+    "password": "cloudpass456"
+  },
+  {
+    "name": "cloud-minimal",
+    "variant": "cloud",
+    "disable-tpm": true
+  },
+  {
+    "name": "cloud-tailscale-only",
+    "variant": "cloud",
+    "disable-tpm": true,
+    "tailscale": "tskey-auth-container-test-key-1234567890"
+  },
+  {
+    "name": "cloud-password-hash",
+    "variant": "cloud",
+    "disable-tpm": true,
+    "password-hash": "$6$testrounds$testhashvalue"
+  },
+  {
+    "name": "metal-password-only",
+    "variant": "metal",
+    "disable-tpm": true,
+    "hostname": "test-metal-pw",
+    "password": "pwonly"
+  },
+  {
+    "name": "metal-dhcp-hostname",
+    "variant": "metal",
+    "disable-tpm": true,
+    "hostname-from-dhcp": true
+  },
+  {
+    "name": "metal-hostname-template",
+    "variant": "metal",
+    "disable-tpm": true,
+    "hostname-template": "test-{hex:6}",
+    "hostname-template-regex": "^test-[0-9a-f]{6}$"
+  }
+]

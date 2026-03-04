@@ -48,7 +48,7 @@ jobs:
             debootstrap gdisk dosfstools e2fsprogs btrfs-progs \
             cryptsetup parted util-linux rsync shellcheck \
             ${{ matrix.qemu_pkg }} qemu-utils ${{ matrix.firmware_pkg }} \
-            genisoimage zstd squashfs-tools
+            genisoimage zstd squashfs-tools jq
 
       - name: Run shellcheck # r[impl ci.shellcheck] r[verify ci.shellcheck]
         run: just test-shellcheck

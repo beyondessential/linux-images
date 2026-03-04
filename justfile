@@ -190,6 +190,7 @@ check-deps:
   req qemu-img       "Arch: pacman -S qemu-img / Debian: apt install qemu-utils"
   req zstd           "Arch: pacman -S zstd / Debian: apt install zstd"
   req sha256sum      "Arch: pacman -S coreutils / Debian: apt install coreutils"
+  req jq             "Arch: pacman -S jq / Debian: apt install jq"
   echo ""
 
   echo "=== Required: testing (just test) ==="
