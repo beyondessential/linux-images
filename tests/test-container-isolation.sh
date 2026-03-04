@@ -7,8 +7,6 @@
 # property that containers must satisfy before we trust them for
 # integration testing.
 #
-# r[verify installer.container.isolation]
-#
 # Usage: test-container-isolation.sh <iso>
 #
 # Requires: systemd-nspawn, xorriso, unsquashfs. Must run as root.
@@ -116,10 +114,9 @@ echo "==> Phase 3: Launching container to inspect /dev..."
 
 CONTAINER_DEV_LIST="$WORK_DIR/container-dev-list.txt"
 
-# Run a minimal command inside the container that lists block devices.
-# --register=no avoids needing systemd-machined.
-# --private-network isolates networking.
-# We do NOT bind any host devices — this is the whole point of the test.
+# r[verify installer.container.isolation] (layer 1): launch the container
+# without binding any host block devices. systemd-nspawn provides its own
+# /dev, so only devices explicitly bound in would be visible.
 systemd-nspawn \
     --register=no \
     --quiet \
@@ -179,6 +176,8 @@ done < "$CONTAINER_DEV_LIST"
 
 LEAKED_COUNT=$(wc -l < "$LEAKED_DEVS")
 
+# r[verify installer.container.isolation]: the container must not expose
+# any real host block devices.
 check "no host disk devices visible inside container" test "$LEAKED_COUNT" -eq 0
 
 if [ "$LEAKED_COUNT" -gt 0 ]; then

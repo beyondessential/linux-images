@@ -146,6 +146,7 @@ echo "    Extracted $IMAGE_COUNT disk image(s)"
 # ============================================================
 # Phase 2: Create loopback target disk
 # ============================================================
+# r[impl installer.tui.loop-device]: it's hard to implement a negative
 # r[verify installer.tui.loop-device]
 echo "==> Phase 2: Creating loopback target disk ($TARGET_DISK_SIZE)..."
 
@@ -204,7 +205,6 @@ fi
 # ============================================================
 # Phase 4: Run installer inside systemd-nspawn
 # ============================================================
-# r[verify installer.container.isolation]
 echo "==> Phase 4: Running installer in systemd-nspawn container..."
 
 # Build the list of bind mounts for loop device + partition nodes.
@@ -234,6 +234,10 @@ done
 # We need the partition nodes to be visible inside the container after
 # partprobe runs. The simplest reliable approach: bind-mount the host's
 # /dev/loopN* into the container's /dev/ by overlaying specific paths.
+#
+# r[impl installer.container.isolation] (layer 1): only the loop device is
+# bound into the container. systemd-nspawn provides its own /dev, so no host
+# block devices are visible unless explicitly listed here.
 NSPAWN_BINDS=(
     "--bind=$LOOP_DEV"
 )
@@ -247,11 +251,10 @@ NSPAWN_BINDS+=("--bind-ro=$CONFIG_TOML:/run/besconf/bes-install.toml")
 # Bind-mount the devices JSON
 NSPAWN_BINDS+=("--bind-ro=$DEVICES_JSON:/tmp/devices.json")
 
-# Bind /dev so that partition devices appear after partprobe.
-# This is necessary because nspawn's private /dev won't see new nodes
-# created by the host kernel. Using --bind=/dev exposes host devices,
-# but the --fake-devices flag ensures the installer can't discover them.
-# Combined with the config targeting only the loop device, this is safe.
+# Bind /dev so that partition device nodes appear after partprobe. This is
+# necessary because nspawn's private /dev won't see new nodes created by the
+# host kernel. --fake-devices (layer 2) ensures the installer cannot discover
+# any extra devices exposed by this bind.
 NSPAWN_BINDS+=("--bind=/dev")
 
 INSTALLER_LOG="$WORK_DIR/installer.log"
@@ -262,6 +265,10 @@ echo ""
 # Run the installer. Use --pipe for non-interactive output.
 # --register=no avoids needing systemd-machined.
 # --quiet suppresses nspawn's own status messages.
+# r[impl installer.container.isolation] (layer 2): --fake-devices bypasses
+# lsblk discovery so the installer sees only the loop device.
+# r[impl installer.container.isolation] (layer 3): --private-network prevents
+# any network side-effects from the container.
 set +e
 systemd-nspawn \
     --register=no \

@@ -22,10 +22,10 @@ Pin-Priority: 999
 EOF
 
 apt-get update -q
+# r[image.packages.caddy]
+# r[image.packages.podman]
+# r[image.packages.bestool]
 apt-get install -y \
-    # r[image.packages.caddy]
     caddy \
-    # r[image.packages.podman]
     podman \
-    # r[image.packages.bestool]
     bestool
