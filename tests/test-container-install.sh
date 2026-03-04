@@ -344,11 +344,11 @@ unmount_check() {
     local desc="$1"; shift
     if "$@" >/dev/null 2>&1; then
         echo "    PASS: $desc"
-        ((UNMOUNT_PASS++))
+        UNMOUNT_PASS=$((UNMOUNT_PASS + 1))
     else
         echo "    FAIL: $desc"
         UNMOUNT_ERRORS+=("$desc")
-        ((UNMOUNT_FAIL++))
+        UNMOUNT_FAIL=$((UNMOUNT_FAIL + 1))
     fi
 }
 
