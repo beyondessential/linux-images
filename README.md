@@ -3,7 +3,6 @@
 - On AWS: use the AMI
 - On other clouds or on-premise virtualisation: use the `cloud` images
 - On bare metal: use the `metal` image
-- On bare metal where you have a TPM: use the `metal-encrypted` image
 - On bare metal where you need to install from USB/DVD: use the ISO
 
 ### The disk images
@@ -48,7 +47,6 @@ Cloud providers will likely do this automatically via cloud-init.
 The disk layout is as follows:
 - EFI System Partition, FAT32, label `efi`
 - Extended Boot Partition, ext4, label `xboot`
-- Linux swap space, label `swap`
 - Linux system partition, BTRFS over LUKS, label `root`
 
 The filesystem is BTRFS, and has a subvolume-based inner layout, with the `@` subvolume
@@ -65,38 +63,62 @@ The system partition can be grown or shrunk while online. Shrinking is a manual 
 which may involve data loss, but growing is performed automatically if more space is
 available at boot.
 
-#### For the metal-encrypted variant and the ISO
+#### Full disk encryption
 
-The swap space is encrypted with a random key at boot. This makes "resume" (hibernation)
-impossible — which is fine, as servers shouldn't be hibernated anyway.
+When using the `metal` disk image or selecting it from the ISO, the system partition is
+encrypted with LUKS, and by default has an empty passphrase. This provides no security as-is,
+but if a TPM2 device is present or added to the machine, the system will automatically detect
+it, write its encryption key to the TPM2, and remove the empty passphrase. This binds the disk
+to the machine's TPM2 device, and enables the promise of a full-disk-encryption unattended
+server system when such a device is present.
 
-The system partition is encrypted with LUKS, and by default has an empty passphrase.
-This provides no security as-is, but if a TPM2 device is present or added to the machine,
-the system will automatically detect it, write its encryption key to the TPM2, and
-remove the empty passphrase. This binds the disk to the machine's TPM2 device, and enables
-the promise of a full-disk-encryption unattended server system when such a device is present.
+The `cloud` images don't have encryption, and are expected to be installed in environments
+where encryption at rest is provided by the storage system in some way, such as hardware
+encryption, a cloud provider, or a SAN.
 
-Non-encrypted variants are expected to be installed in environments where encryption at rest
-is provided by the storage system in some way, such as hardware encryption, a cloud provider,
-or a SAN.
+The TPM automatic binding can also be disabled when installing the `metal` variant with the
+ISO's interactive installer; the partition is still encrypted (with an empty passphrase),
+and TPM binding can be done manually.
 
 ### The ISO image
 
-The ISO is a standard Ubuntu Server install ISO "CD" image that has been customized to
-automatically install BES's preferred disk and system layout on boot without any
-interaction required from the user. Simply write it to a USB device (or DVD), boot the
-target machine from it, and it will proceed with the installation.
+The ISO is a custom "Live" ISO image that starts a terminal-based "graphical" interface
+which allows you to interactively select options, and also has an unattended mode via a
+config file when written to a USB device.
 
-The ISO will automatically select the largest SSD, or failing that, the largest hard disk.
-It will overwrite any contents, so make sure you're not connecting any storage you mind
-losing at this stage.
+A minimum of 5GB space is required. If less than that is provided, the install will refuse
+to proceed. You can select a larger disk in the installer.
 
-A minimum of 5GB space is required. If less than that is provided, the install will fail.
-There is no early check for minimum space, so it might take a while and not be obvious.
+Installation requires no internet: all installation files are included on the image.
+If internet is available (the ISO system will attempt to connect using DHCP), then
+additional checks are performed which can help you diagnose common networking issues
+even before installing the system. Failing network checks will not prevent an install
+from going ahead, they're purely informative.
 
-Installation requires internet as additional packages are required during the process.
-The network should be a DHCP subnet with outgoing access.
+### The ISO config file
 
-The resulting system is almost identical to one obtained from the disk images, except
-that the UUIDs of the disks and partition tables are all unique, and the encryption
-master key is randomly generated instead of being fixed.
+When writing the ISO to a USB device, a partition labels BESCONF can be mounted from the
+USB afterwards. This contains a text file named `bes-install.toml`, which can be edited
+in a normal text editor like nodepad. The file can be used to change the defaults of the
+interactive installer, and even to switch the installer to an automatic/unattended mode.
+
+Example of an automatic config:
+
+```toml
+auto = true
+variant = "metal"
+disk = "largest-ssd"
+
+[firstboot]
+hostname = "server-01"
+tailscale-authkey = "tskey-auth-xxxxx"
+```
+
+Example of a config setting custom defaults only:
+
+```toml
+variant = "cloud"
+
+[firstboot]
+hostname = "server-02"
+```
