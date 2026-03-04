@@ -7,17 +7,13 @@
 # This tests the full write + partition-expand + firstboot pipeline without
 # booting a VM, using the exact same rootfs that ships in the live ISO.
 #
-# r[verify installer.container]
-# r[verify installer.container.rootfs]
-# r[verify installer.container.loop-device]
+# r[verify installer.tui.loop-device]
 # r[verify installer.container.isolation]
-# r[verify installer.container.disk-size]
-# r[verify installer.container.verification]
-# r[verify installer.container.verify-partitions]
-# r[verify installer.container.verify-hostname]
-# r[verify installer.container.verify-tailscale]
-# r[verify installer.container.verify-ssh-keys]
-# r[verify installer.container.verify-tpm-disable]
+# r[verify installer.write.partitions]
+# r[verify installer.firstboot.hostname]
+# r[verify installer.firstboot.tailscale-authkey]
+# r[verify installer.firstboot.ssh-keys]
+# r[verify installer.firstboot.tpm-disable]
 #
 # Usage: test-container-install.sh <iso> <variant> [arch]
 #   variant: metal | cloud
@@ -121,7 +117,7 @@ echo ""
 # ============================================================
 # Phase 1: Extract rootfs and images from ISO
 # ============================================================
-# r[verify installer.container.rootfs]
+
 echo "==> Phase 1: Extracting squashfs and images from ISO..."
 
 SQUASHFS="$WORK_DIR/filesystem.squashfs"
@@ -158,7 +154,7 @@ echo "    Extracted $IMAGE_COUNT disk image(s)"
 # ============================================================
 # Phase 2: Create loopback target disk
 # ============================================================
-# r[verify installer.container.loop-device]
+# r[verify installer.tui.loop-device]
 echo "==> Phase 2: Creating loopback target disk ($TARGET_DISK_SIZE)..."
 
 TARGET_IMG="$WORK_DIR/target.img"
@@ -312,7 +308,7 @@ echo "    Installer exited successfully."
 # ============================================================
 # Phase 5: Verify the written disk
 # ============================================================
-# r[verify installer.container.verification]
+
 echo "==> Phase 5: Verifying written disk..."
 
 PASS=0
@@ -346,7 +342,6 @@ check "EFI partition label present" test -n "$(echo "$LSBLK_JSON" | grep "efi")"
 check "xboot partition label present" test -n "$(echo "$LSBLK_JSON" | grep "xboot")"
 check "root partition label present" test -n "$(echo "$LSBLK_JSON" | grep "root")"
 
-# r[verify installer.container.verify-partitions]
 # r[verify installer.write.partitions]
 # Verify that partition 3 (root) was expanded beyond the original image size.
 # The raw image is 8 GiB and the target disk is 16 GiB, so the root partition
@@ -396,7 +391,6 @@ if [ -n "$BTRFS_DEV" ]; then
     if [ $MOUNT_RC -eq 0 ]; then
         check "btrfs root mounted successfully" true
 
-        # r[verify installer.container.verify-hostname]
         # r[verify installer.firstboot.hostname]
         # Hostname: /etc/hostname content and /etc/hosts entry
         if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then
@@ -414,7 +408,6 @@ if [ -n "$BTRFS_DEV" ]; then
             check "/etc/hosts file exists" false
         fi
 
-        # r[verify installer.container.verify-tailscale]
         # r[verify installer.firstboot.tailscale-authkey]
         # Tailscale authkey: file exists, contains key, has 600 perms
         TS_KEY_FILE="$VERIFY_MOUNT/etc/bes/tailscale-authkey"
@@ -428,7 +421,6 @@ if [ -n "$BTRFS_DEV" ]; then
             check "tailscale-authkey file exists" false
         fi
 
-        # r[verify installer.container.verify-ssh-keys]
         # r[verify installer.firstboot.ssh-keys]
         # SSH authorized keys: file exists, contains key, correct perms
         AK_FILE="$VERIFY_MOUNT/home/ubuntu/.ssh/authorized_keys"
@@ -445,7 +437,6 @@ if [ -n "$BTRFS_DEV" ]; then
             check "authorized_keys file exists" false
         fi
 
-        # r[verify installer.container.verify-tpm-disable]
         # r[verify installer.firstboot.tpm-disable]
         # TPM disable check (metal only)
         if [ "$VARIANT" = "metal" ]; then
