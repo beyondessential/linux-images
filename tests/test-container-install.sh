@@ -203,6 +203,19 @@ if [ ! -f "$ROOTFS/etc/os-release" ] && [ ! -f "$ROOTFS/usr/lib/os-release" ]; t
     echo "BES Installer Live" > "$ROOTFS/etc/os-release"
 fi
 
+# r[impl installer.no-reboot]: install a trap script that records if anything
+# calls reboot inside the container. The installer is invoked with --no-reboot,
+# so this sentinel file should never be created.
+REBOOT_SENTINEL="/tmp/bes-reboot-called"
+for reboot_path in /usr/local/sbin/reboot /usr/sbin/reboot /sbin/reboot; do
+    mkdir -p "$ROOTFS/$(dirname "$reboot_path")"
+    cat > "$ROOTFS/$reboot_path" << 'TRAP'
+#!/bin/sh
+touch /tmp/bes-reboot-called
+TRAP
+    chmod +x "$ROOTFS/$reboot_path"
+done
+
 # ============================================================
 # Phase 4: Run installer inside systemd-nspawn
 # ============================================================
@@ -308,6 +321,14 @@ fi
 # r[verify iso.offline]: the installer completed successfully inside a
 # container with --private-network, proving no network access was needed.
 echo "    Installer exited successfully."
+
+# r[verify installer.no-reboot]: the trap script should not have been triggered.
+if [ -f "$ROOTFS/$REBOOT_SENTINEL" ]; then
+    echo "    FAIL: reboot was called despite --no-reboot"
+    exit 1
+else
+    echo "    PASS: reboot was not called (--no-reboot honored)"
+fi
 
 # ============================================================
 # Phase 4b: Verify the installer cleaned up after itself
