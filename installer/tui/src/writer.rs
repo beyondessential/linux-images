@@ -82,7 +82,7 @@ pub fn find_image_path(variant: &str, arch: &str) -> Result<std::path::PathBuf> 
 }
 
 /// Wipe all existing filesystem, RAID, and partition-table signatures from a disk.
-// r[impl installer.write.wipe]
+// r[impl installer.write.partitions]
 pub fn wipe_disk(target: &Path) -> Result<()> {
     tracing::info!("wiping existing signatures on {}", target.display());
 
@@ -218,7 +218,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-// r[impl installer.write.verify]
+// r[impl installer.write.partitions]
 pub fn verify_partition_table(target: &Path) -> Result<()> {
     let output = Command::new("lsblk")
         .args([

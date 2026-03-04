@@ -449,11 +449,10 @@ written and estimated time remaining.
 
 ## Image Writing
 
-r[installer.write.wipe]
+r[installer.write.partitions]
 Before writing an image, the installer must wipe all existing filesystem,
-RAID, and partition-table signatures from the target disk using `wipefs --all`
-and `sgdisk --zap-all`. This prevents stale signatures from interfering with
-the new partition table or causing the kernel to refuse a partition re-read.
+RAID, and partition-table signatures from the target disk.
+After writing the image, the installer must verify the partition table, and expand the disk and root partition to fit.
 
 r[installer.write.source]
 Compressed disk images (`.raw.zst`) must be stored on the ISO filesystem. The
@@ -464,11 +463,6 @@ r[installer.write.decompress-stream]
 The installer must stream-decompress the zstd image directly to the target
 block device, avoiding the need to hold the uncompressed image in memory or
 on a temporary filesystem.
-
-r[installer.write.verify]
-After writing, the installer should read back the partition table from the
-target disk and verify that the expected partitions (efi, xboot, root) are
-present with correct labels.
 
 ## First-Boot Configuration
 
