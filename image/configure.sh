@@ -66,7 +66,7 @@ apt-get install -y -q --no-install-recommends \
     linux-generic
 
 # Generate all English locales
-sed -i '/^# *en_/s/^# *//' /etc/locale.gen
+sed -i '/^# *en_.*UTF-8/s/^# *//' /etc/locale.gen
 locale-gen
 update-locale LANG=en_US.UTF-8
 
