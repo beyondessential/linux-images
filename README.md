@@ -91,7 +91,7 @@ The ISO will automatically select the largest SSD, or failing that, the largest 
 It will overwrite any contents, so make sure you're not connecting any storage you mind
 losing at this stage.
 
-A minimum of 8GB space is required. If less than that is provided, the install will fail.
+A minimum of 5GB space is required. If less than that is provided, the install will fail.
 There is no early check for minimum space, so it might take a while and not be obvious.
 
 Installation requires internet as additional packages are required during the process.

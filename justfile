@@ -294,7 +294,7 @@ raw: _validate-variant _validate-arch _ensure-dirs
   sudo ARCH="{{arch}}" \
        VARIANT="{{variant}}" \
        OUTPUT="{{output_raw}}" \
-       IMAGE_SIZE=8G \
+       IMAGE_SIZE=5G \
        UBUNTU_SUITE="{{ubuntu_suite}}" \
        UBUNTU_MIRROR="{{ubuntu_mirror}}" \
        image/build.sh

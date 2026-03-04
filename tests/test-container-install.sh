@@ -19,7 +19,7 @@ ISO="${1:?Usage: $0 <iso> <variant> [arch]}"
 VARIANT="${2:?Usage: $0 <iso> <variant> [arch]}"
 ARCH="${3:-amd64}"
 
-TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-16G}"
+TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-10G}"
 
 if [ ! -f "$ISO" ]; then
     echo "ERROR: ISO not found: $ISO"
@@ -411,12 +411,12 @@ check "root partition label present" test -n "$(echo "$LSBLK_JSON" | grep "root"
 
 # r[verify installer.write.partitions]
 # Verify that partition 3 (root) was expanded beyond the original image size.
-# The raw image is 8 GiB and the target disk is 16 GiB, so the root partition
-# must be larger than the original (~7.5 GiB after EFI + xboot partitions).
+# The raw image is 5 GiB and the target disk is 10 GiB, so the root partition
+# must be larger than the original (~3.5 GiB after EFI + xboot partitions).
 ROOT_PART_SIZE=$(lsblk --bytes --noheadings --output SIZE "${LOOP_DEV}p3" 2>/dev/null | tr -d '[:space:]')
 ROOT_PART_SIZE="${ROOT_PART_SIZE:-0}"
-# 8 GiB in bytes = 8589934592; root partition should be well above this after expansion
-IMAGE_RAW_SIZE=8589934592
+# 5 GiB in bytes = 5368709120; root partition should be well above this after expansion
+IMAGE_RAW_SIZE=5368709120
 echo "    Root partition size: $ROOT_PART_SIZE bytes (image was $IMAGE_RAW_SIZE bytes)"
 check "root partition expanded beyond image size" test "$ROOT_PART_SIZE" -gt "$IMAGE_RAW_SIZE"
 

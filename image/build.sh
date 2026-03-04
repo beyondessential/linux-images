@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARCH="${ARCH:-amd64}"
 VARIANT="${VARIANT:-metal}"
 OUTPUT="${OUTPUT:-output.raw}"
-IMAGE_SIZE="${IMAGE_SIZE:-8G}"
+IMAGE_SIZE="${IMAGE_SIZE:-5G}"
 UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
 
 # --- Derived values ---
