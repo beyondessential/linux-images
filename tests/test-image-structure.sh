@@ -418,8 +418,8 @@ check "Kopia apt pin configured" test -f "$MNT/etc/apt/preferences.d/99-kopia"
 check "Tailscale signing key installed" test -f "$MNT/usr/share/keyrings/tailscale-archive-keyring.gpg"
 check "Tailscale apt repo configured" test -f "$MNT/etc/apt/sources.list.d/tailscale.list"
 
-# r[verify image.tailscale.pinned]
-check "Tailscale apt pin configured" test -f "$MNT/etc/apt/preferences.d/99-tailscale"
+# r[verify image.packages.tailscale]
+check "Tailscale apt prefer configured" test -f "$MNT/etc/apt/preferences.d/99-tailscale"
 
 # r[verify image.tailscale.auto-update]
 check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-tailscale"
