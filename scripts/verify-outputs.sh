@@ -68,7 +68,7 @@ if [ -f "$VMDK" ]; then
     SIZE=$(stat -c%s "$VMDK")
     check "VMDK image is non-empty" test "$SIZE" -gt 0
     check "VMDK image is recognized by qemu-img" qemu-img info "$VMDK"
-    FORMAT=$(qemu-img info --output=json "$VMDK" 2>/dev/null | grep '"format"' | sed 's/.*: "\(.*\)".*/\1/' || true)
+    FORMAT=$(qemu-img info --output=json "$VMDK" 2>/dev/null | jq -r '.format' || true)
     check "VMDK format is vmdk" test "$FORMAT" = "vmdk"
 fi
 
@@ -79,7 +79,7 @@ if [ -f "$QCOW2" ]; then
     SIZE=$(stat -c%s "$QCOW2")
     check "qcow2 image is non-empty" test "$SIZE" -gt 0
     check "qcow2 image is recognized by qemu-img" qemu-img info "$QCOW2"
-    FORMAT=$(qemu-img info --output=json "$QCOW2" 2>/dev/null | grep '"format"' | sed 's/.*: "\(.*\)".*/\1/' || true)
+    FORMAT=$(qemu-img info --output=json "$QCOW2" 2>/dev/null | jq -r '.format' || true)
     check "qcow2 format is qcow2" test "$FORMAT" = "qcow2"
 fi
 
