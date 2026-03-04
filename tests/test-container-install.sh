@@ -15,6 +15,9 @@
 #           btrfs-progs, util-linux. Must run as root.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/nspawn-opts.sh"
+
 ISO="${1:?Usage: $0 <iso> <variant> [arch]}"
 VARIANT="${2:?Usage: $0 <iso> <variant> [arch]}"
 ARCH="${3:-amd64}"
@@ -287,11 +290,8 @@ echo ""
 # no network proves the ISO is fully self-contained.
 set +e
 systemd-nspawn \
-    --register=no \
-    --quiet \
-    --pipe \
+    "${NSPAWN_COMMON_OPTS[@]}" \
     --directory="$ROOTFS" \
-    --private-network \
     "${NSPAWN_BINDS[@]}" \
     /usr/local/bin/bes-installer \
         --fake-devices /tmp/devices.json \

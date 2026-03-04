@@ -12,6 +12,9 @@
 # Requires: systemd-nspawn, xorriso, unsquashfs. Must run as root.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/nspawn-opts.sh"
+
 ISO="${1:?Usage: $0 <iso>}"
 
 if [ ! -f "$ISO" ]; then
@@ -118,11 +121,8 @@ CONTAINER_DEV_LIST="$WORK_DIR/container-dev-list.txt"
 # without binding any host block devices. systemd-nspawn provides its own
 # /dev, so only devices explicitly bound in would be visible.
 systemd-nspawn \
-    --register=no \
-    --quiet \
-    --pipe \
+    "${NSPAWN_COMMON_OPTS[@]}" \
     --directory="$ROOTFS" \
-    --private-network \
     /bin/sh -c 'find /dev -maxdepth 1 -type b -printf "%f\n" 2>/dev/null | sort' \
     > "$CONTAINER_DEV_LIST" 2>/dev/null || true
 
