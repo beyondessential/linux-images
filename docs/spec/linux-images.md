@@ -454,6 +454,14 @@ r[installer.tui.progress]
 During image writing, the TUI must display a progress bar showing bytes
 written and estimated time remaining.
 
+r[installer.tui.loop-device]
+The installer's TUI and write pipeline must not assume the target device is
+real hardware. It must work correctly when targeting a loop device backed by
+a sparse file (created via `losetup --partscan`). This means no reliance on
+udev events for partition discovery (explicit `partprobe` calls are
+acceptable), no transport-type filtering that would reject loop devices, and
+no SCSI/ATA-specific ioctls.
+
 ## Image Writing
 
 r[installer.write.partitions]
@@ -501,31 +509,12 @@ r[installer.firstboot.unmount]
 After applying configuration, the installer must cleanly unmount all
 filesystems and close any LUKS volumes before prompting for reboot.
 
-## Container Testing
-
-r[installer.container]
-It must be possible to run the installer's full write and first-boot
-pipeline inside a `systemd-nspawn` container, targeting a loopback block
-device, without booting a VM. This enables fast integration testing of
-the real code paths (image writing, partition expansion, LUKS, btrfs
-mount, first-boot file placement) using the same rootfs that ships in
-the live ISO.
-
-r[installer.container.rootfs]
-The test harness must extract the live rootfs directly from a built ISO
-(the squashfs at `/live/filesystem.squashfs`) and the embedded disk
-images (from `/images/`). The container runs against the exact rootfs
-that would boot in production — no separate Dockerfile or package list.
-
-r[installer.container.loop-device]
-The test harness must create a sparse file on the host, attach it as a
-loop device with `losetup --partscan`, and bind-mount the loop device
-and its partition nodes into the container. The installer targets this
-loop device as if it were a real disk.
+## Container Isolation
 
 > r[installer.container.isolation]
-> The container must never have access to the host's real block devices.
-> Safety is enforced by three layers:
+> When the installer is run inside a container (e.g. `systemd-nspawn`) for
+> integration testing, it must never have access to the host's real block
+> devices. Safety is enforced by three layers:
 >
 > 1. `systemd-nspawn` provides its own `/dev`; host block devices are not
 >    present unless explicitly bound in. Only the loop device and its
@@ -534,54 +523,10 @@ loop device as if it were a real disk.
 >    discovery entirely and presents only the loop device.
 > 3. The container runs with `--private-network` to prevent any network
 >    side-effects.
-
-r[installer.container.disk-size]
-The test harness must create a target disk larger than the raw image
-(which is 8 GiB) so that partition expansion is exercised. A 16 GiB
-sparse file is sufficient.
-
-> r[installer.container.verification]
-> After the installer exits, the test harness must verify the results from
-> the host side:
 >
-> 1. Run `partprobe` on the loop device and confirm three partitions exist
->    (EFI, xboot, root) via `lsblk --json`.
-> 2. For the cloud variant: mount the root btrfs partition (subvol `@`) and
->    verify first-boot artefacts. For the metal variant: open the LUKS
->    volume with the empty keyfile, then mount and verify as above.
-> 3. Clean up: unmount, close LUKS if applicable, detach loop device,
->    remove sparse file.
-
-r[installer.container.verify-partitions]
-The test must verify that partition 3 (root) has been expanded to fill
-the target disk. Since the target disk is larger than the original image,
-the root partition's size must be greater than the original image size.
-This verifies `installer.write.partitions`.
-
-r[installer.container.verify-hostname]
-The test config must set a hostname. After the install, the test must
-verify that `/etc/hostname` contains the configured hostname and that
-`/etc/hosts` contains a `127.0.1.1` entry for it. This verifies
-`installer.firstboot.hostname`.
-
-r[installer.container.verify-tailscale]
-The test config must set a `tailscale-authkey`. After the install, the
-test must verify that `/etc/bes/tailscale-authkey` exists, contains the
-configured key, and has permissions `0600`. This verifies
-`installer.firstboot.tailscale-authkey`.
-
-r[installer.container.verify-ssh-keys]
-The test config must set at least one SSH authorized key. After the
-install, the test must verify that
-`/home/ubuntu/.ssh/authorized_keys` contains the key, with file
-permissions `0600` and directory permissions `0700`. This verifies
-`installer.firstboot.ssh-keys`.
-
-r[installer.container.verify-tpm-disable]
-The test config must set `disable-tpm = true`. For the metal variant,
-the test must verify that the
-`setup-tpm-unlock.service` enable symlink has been removed. This
-verifies `installer.firstboot.tpm-disable`.
+> A test must verify this property by launching a container without running
+> the installer and confirming that no host block devices (e.g. `/dev/sda`,
+> `/dev/nvme*`) are visible inside.
 
 # Live ISO
 
