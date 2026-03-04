@@ -322,20 +322,24 @@ When a configuration file is present but `auto` is false or absent, the
 installer must launch the TUI with values from the file pre-filled as
 defaults. The user can override any value.
 
-> r[installer.mode.auto]
-> When `auto = true` and all required fields (`variant`, `disk`) are present,
-> the installer must proceed without any interactive prompts. It must:
+> r[installer.mode.auto+2]
+> When `auto = true` and all required fields are present, the installer must
+> proceed without any interactive prompts. It must:
 >
 > 1. Log its configuration to the console.
 > 2. Display progress during image writing.
 > 3. Apply first-boot configuration.
 > 4. Reboot automatically on success.
 > 5. Print an error and exit with a non-zero status on failure.
+>
+> Required fields: `variant`, `disk`. Additionally, when `variant` is
+> `"metal"`, `firstboot.hostname` is also required (since there is no
+> cloud-init or DHCP-based hostname assignment on bare metal).
 
-r[installer.mode.auto-incomplete]
-When `auto = true` but required fields (`variant` or `disk`) are missing, the
-installer must print an error describing the missing fields and fall back to
-interactive mode.
+r[installer.mode.auto-incomplete+2]
+When `auto = true` but required fields are missing (`variant`, `disk`, or
+`hostname` for the metal variant), the installer must print an error
+describing the missing fields and fall back to interactive mode.
 
 ## Testing Flags
 
@@ -435,10 +439,14 @@ r[installer.tui.tpm-toggle]
 When the `metal` variant is selected, the TUI must offer a toggle to disable
 TPM auto-enrollment.
 
-r[installer.tui.hostname]
+r[installer.tui.hostname+2]
 After variant/TPM configuration, the TUI must present a text input screen
 for the system hostname. The field may be pre-filled from the configuration
-file. The user can leave it empty to skip hostname configuration.
+file. When the `metal` variant is selected, the hostname is required and
+the TUI must not allow the user to advance with an empty field. When the
+`cloud` variant is selected, the hostname is optional; if left empty the
+image's built-in default hostname (`ubuntu`) is kept and is expected to be
+overridden by DHCP or cloud-init at boot.
 
 r[installer.tui.tailscale]
 After the hostname screen, the TUI must present a text input screen for a
