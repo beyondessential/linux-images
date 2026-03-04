@@ -583,6 +583,23 @@ test-e2e: _validate-variant _validate-arch
   fi
   sudo tests/test-e2e-install.sh "$ISO" "{{variant}}" "{{arch}}"
 
+# Run container-based install test: extract ISO rootfs, write to loopback device
+# inside systemd-nspawn, verify results. Much faster than QEMU E2E tests.
+test-container-install: _validate-variant _validate-arch
+  #!/usr/bin/env bash
+  set -euo pipefail
+  ISO="{{output_iso}}"
+  if [ ! -f "$ISO" ]; then
+    echo "ERROR: ISO not found: $ISO"
+    echo "Run 'just iso' first to build the live installer."
+    exit 1
+  fi
+  if ! command -v systemd-nspawn &>/dev/null; then
+    echo "ERROR: systemd-nspawn required (install systemd-container)"
+    exit 1
+  fi
+  sudo tests/test-container-install.sh "$ISO" "{{variant}}" "{{arch}}"
+
 # Run all tests (structure + installer + boot if KVM available)
 test: test-shellcheck installer-test test-structure
   #!/usr/bin/env bash

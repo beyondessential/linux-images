@@ -523,30 +523,30 @@ loop device with `losetup --partscan`, and bind-mount the loop device
 and its partition nodes into the container. The installer targets this
 loop device as if it were a real disk.
 
-r[installer.container.isolation]
-The container must never have access to the host's real block devices.
-Safety is enforced by three layers:
+> r[installer.container.isolation]
+> The container must never have access to the host's real block devices.
+> Safety is enforced by three layers:
+>
+> 1. `systemd-nspawn` provides its own `/dev`; host block devices are not
+>    present unless explicitly bound in. Only the loop device and its
+>    partitions are bound.
+> 2. The installer is invoked with `--fake-devices`, which bypasses `lsblk`
+>    discovery entirely and presents only the loop device.
+> 3. The container runs with `--private-network` to prevent any network
+>    side-effects.
 
-1. `systemd-nspawn` provides its own `/dev`; host block devices are not
-   present unless explicitly bound in. Only the loop device and its
-   partitions are bound.
-2. The installer is invoked with `--fake-devices`, which bypasses `lsblk`
-   discovery entirely and presents only the loop device.
-3. The container runs with `--private-network` to prevent any network
-   side-effects.
-
-r[installer.container.verification]
-After the installer exits, the test harness must verify the results from
-the host side:
-
-1. Run `partprobe` on the loop device and confirm three partitions exist
-   (EFI, xboot, root) via `lsblk --json`.
-2. For the cloud variant: mount the root btrfs partition (subvol `@`) and
-   verify first-boot artefacts (hostname file, SSH keys, etc.).
-3. For the metal variant: open the LUKS volume with the empty keyfile,
-   then mount and verify as above.
-4. Clean up: unmount, close LUKS if applicable, detach loop device,
-   remove sparse file.
+> r[installer.container.verification]
+> After the installer exits, the test harness must verify the results from
+> the host side:
+>
+> 1. Run `partprobe` on the loop device and confirm three partitions exist
+>    (EFI, xboot, root) via `lsblk --json`.
+> 2. For the cloud variant: mount the root btrfs partition (subvol `@`) and
+>    verify first-boot artefacts (hostname file, SSH keys, etc.).
+> 3. For the metal variant: open the LUKS volume with the empty keyfile,
+>    then mount and verify as above.
+> 4. Clean up: unmount, close LUKS if applicable, detach loop device,
+>    remove sparse file.
 
 # Live ISO
 
