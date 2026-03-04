@@ -23,15 +23,15 @@ network is available.
 
 #### Credentials
 
-Unless overridden with cloud-init, the system has the default password `bes` for both
-the `ubuntu` and `root` users. It's expected that an admin installing the system **logs
+Unless overridden with cloud-init, the `ubuntu` user has the default password `bes`.
+The `root` user has no password and its shell is set to `/sbin/nologin`, so direct
+root login is not possible. It's expected that an admin installing the system **logs
 in as the `ubuntu` user at the console** once the install is done. This will prompt for
-a new password to be set. The admin should then run: `sudo su`, which will require a new
-password to be set for the `root` user as well.
+a new password to be set. The `ubuntu` user has passwordless `sudo` access.
 
 Passwords are not allowed over SSH, only the local or serial console.
 
-**Once passwords are set up, the admin must run `ts-up` to connect to Tailscale.**
+**Once the password is set, the admin must run `ts-up` to connect to Tailscale.**
 If so provided by BES, an authentication key should be entered at this stage.
 Otherwise, pressing Enter will display a link (and a QR code containing that link)
 which must be sent to BES for configuration.
