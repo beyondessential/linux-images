@@ -1,0 +1,106 @@
+name: Tracey Spec Validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tracey:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install tracey
+        run: cargo binstall --git https://github.com/bearcove/tracey tracey -y
+
+      # tracey doesn't yet support YAML, so we copy .yml files to .sh
+      # extensions and patch the config to include them.
+      - name: Work around tracey YAML support
+        run: |
+          for f in .github/workflows/*.yml; do
+            cp "$f" "${f%.yml}.sh"
+          done
+          sed -i '/.github\/workflows\/\*\.yml/a\                    .github/workflows/*.sh' .config/tracey/config.styx
+
+      - name: Start tracey web server
+        run: |
+          tracey web --port 3199 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3199/api/status >/dev/null 2>&1; then
+              echo "tracey web server ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::tracey web server failed to start within 30s"
+          exit 1
+
+      - name: Validate spec
+        run: |
+          RESULT="$(curl -sf http://localhost:3199/api/validate)"
+          echo "$RESULT" | jq .
+          ERRORS="$(echo "$RESULT" | jq '.errorCount')"
+          if [ "$ERRORS" -ne 0 ]; then
+            echo "::error::tracey validate found $ERRORS error(s)"
+            exit 1
+          fi
+
+      - name: Check coverage status
+        run: |
+          RESULT="$(curl -sf http://localhost:3199/api/status)"
+          echo "$RESULT" | jq .
+          TOTAL="$(echo "$RESULT" | jq '.impls[0].totalRules')"
+          COVERED="$(echo "$RESULT" | jq '.impls[0].coveredRules')"
+          VERIFIED="$(echo "$RESULT" | jq '.impls[0].verifiedRules')"
+          STALE="$(echo "$RESULT" | jq '.impls[0].staleRules')"
+          echo "Coverage: $COVERED/$TOTAL implemented, $VERIFIED/$TOTAL verified, $STALE stale"
+
+          if [ "$STALE" -ne 0 ]; then
+            echo "::error::$STALE stale reference(s) found"
+            exit 1
+          fi
+
+      - name: Check for uncovered rules
+        run: |
+          RESULT="$(curl -sf http://localhost:3199/api/uncovered)"
+          COUNT="$(echo "$RESULT" | jq '.uncoveredCount')"
+          if [ "$COUNT" -ne 0 ]; then
+            echo "$RESULT" | jq '.bySection[] | .section as $s | .rules[] | "\($s): \(.id.base)"'
+            echo "::warning::$COUNT spec rule(s) have no implementation reference"
+          else
+            echo "All rules have implementation references"
+          fi
+
+      - name: Check for untested rules
+        run: |
+          RESULT="$(curl -sf http://localhost:3199/api/untested)"
+          COUNT="$(echo "$RESULT" | jq '.untestedCount')"
+          if [ "$COUNT" -ne 0 ]; then
+            echo "$RESULT" | jq '.bySection[] | .section as $s | .rules[] | "\($s): \(.id.base)"'
+            echo "::warning::$COUNT implemented rule(s) have no verification reference"
+          else
+            echo "All implemented rules have verification references"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          STATUS="$(curl -sf http://localhost:3199/api/status 2>/dev/null || echo '{}')"
+          TOTAL="$(echo "$STATUS" | jq '.impls[0].totalRules // 0')"
+          COVERED="$(echo "$STATUS" | jq '.impls[0].coveredRules // 0')"
+          VERIFIED="$(echo "$STATUS" | jq '.impls[0].verifiedRules // 0')"
+          STALE="$(echo "$STATUS" | jq '.impls[0].staleRules // 0')"
+
+          {
+            echo "## Tracey Spec Coverage"
+            echo ""
+            echo "| Metric | Count |"
+            echo "|--------|-------|"
+            echo "| Total rules | $TOTAL |"
+            echo "| Implemented | $COVERED |"
+            echo "| Verified | $VERIFIED |"
+            echo "| Stale | $STALE |"
+          } >> "$GITHUB_STEP_SUMMARY"
