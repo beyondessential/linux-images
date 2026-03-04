@@ -47,6 +47,7 @@ SET_TAILSCALE="${SET_TAILSCALE:-}"
 SET_SSH_KEYS="${SET_SSH_KEYS:-}"
 SET_PASSWORD="${SET_PASSWORD:-}"
 SET_PASSWORD_HASH="${SET_PASSWORD_HASH:-}"
+SET_TIMEZONE="${SET_TIMEZONE:-}"
 
 TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-10G}"
 
@@ -134,6 +135,7 @@ echo "  tailscale:     ${SET_TAILSCALE:+(key provided)}${SET_TAILSCALE:-(not set
 echo "  ssh-keys:      ${SET_SSH_KEYS:+(key provided)}${SET_SSH_KEYS:-(not set)}"
 echo "  password:      ${SET_PASSWORD:+(plaintext provided)}${SET_PASSWORD:-(not set)}"
 echo "  password-hash: ${SET_PASSWORD_HASH:+(hash provided)}${SET_PASSWORD_HASH:-(not set)}"
+echo "  timezone:      ${SET_TIMEZONE:-(not set, defaults to UTC)}"
 echo "  disk size:     $TARGET_DISK_SIZE"
 echo ""
 
@@ -176,7 +178,7 @@ CONFIG_TOML="$WORK_DIR/bes-install.toml"
     echo "disk = \"$LOOP_DEV\""
     echo "disable-tpm = $DISABLE_TPM"
 
-    if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_HOSTNAME_FROM_DHCP" ] || [ -n "$SET_HOSTNAME_TEMPLATE" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ] || [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ]; then
+    if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_HOSTNAME_FROM_DHCP" ] || [ -n "$SET_HOSTNAME_TEMPLATE" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ] || [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ] || [ -n "$SET_TIMEZONE" ]; then
         echo ""
         echo "[firstboot]"
         if [ -n "$SET_HOSTNAME" ]; then
@@ -201,6 +203,9 @@ CONFIG_TOML="$WORK_DIR/bes-install.toml"
         fi
         if [ -n "$SET_PASSWORD_HASH" ]; then
             echo "password-hash = \"$SET_PASSWORD_HASH\""
+        fi
+        if [ -n "$SET_TIMEZONE" ]; then
+            echo "timezone = \"$SET_TIMEZONE\""
         fi
     fi
 } > "$CONFIG_TOML"
@@ -527,6 +532,43 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
         else
             echo "    (password not configured — skipping password checks)"
+        fi
+
+        # --- Timezone ---
+        # r[verify installer.firstboot.timezone]
+        if [ -n "$SET_TIMEZONE" ]; then
+            LOCALTIME_LINK="$VERIFY_MOUNT/etc/localtime"
+            if [ -L "$LOCALTIME_LINK" ]; then
+                LOCALTIME_TARGET="$(readlink "$LOCALTIME_LINK")"
+                check "localtime symlink points to $SET_TIMEZONE" \
+                    test "$LOCALTIME_TARGET" = "/usr/share/zoneinfo/$SET_TIMEZONE"
+            else
+                check "localtime is a symlink" false
+            fi
+
+            TIMEZONE_FILE="$VERIFY_MOUNT/etc/timezone"
+            if [ -f "$TIMEZONE_FILE" ]; then
+                ACTUAL_TZ="$(tr -d '[:space:]' < "$TIMEZONE_FILE")"
+                check "timezone file contains '$SET_TIMEZONE'" \
+                    test "$ACTUAL_TZ" = "$SET_TIMEZONE"
+            else
+                check "timezone file exists" false
+            fi
+        else
+            # Even without explicit timezone, installer should set UTC
+            LOCALTIME_LINK="$VERIFY_MOUNT/etc/localtime"
+            if [ -L "$LOCALTIME_LINK" ]; then
+                LOCALTIME_TARGET="$(readlink "$LOCALTIME_LINK")"
+                check "localtime symlink points to UTC (default)" \
+                    test "$LOCALTIME_TARGET" = "/usr/share/zoneinfo/UTC"
+            fi
+
+            TIMEZONE_FILE="$VERIFY_MOUNT/etc/timezone"
+            if [ -f "$TIMEZONE_FILE" ]; then
+                ACTUAL_TZ="$(tr -d '[:space:]' < "$TIMEZONE_FILE")"
+                check "timezone file contains 'UTC' (default)" \
+                    test "$ACTUAL_TZ" = "UTC"
+            fi
         fi
 
         # --- TPM disable ---

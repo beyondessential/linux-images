@@ -6,7 +6,8 @@
     "hostname": "test-metal-full",
     "tailscale": "tskey-auth-container-test-key-1234567890",
     "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
-    "password": "testpass123"
+    "password": "testpass123",
+    "timezone": "America/New_York"
   },
   {
     "name": "metal-minimal-tpm-on",
@@ -27,7 +28,8 @@
     "hostname": "test-cloud-full",
     "tailscale": "tskey-auth-container-test-key-1234567890",
     "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
-    "password": "cloudpass456"
+    "password": "cloudpass456",
+    "timezone": "Pacific/Auckland"
   },
   {
     "name": "cloud-minimal",
@@ -65,5 +67,17 @@
     "disable-tpm": true,
     "hostname-template": "test-{hex:6}",
     "hostname-template-regex": "^test-[0-9a-f]{6}$"
+  },
+  {
+    "name": "metal-timezone-custom",
+    "variant": "metal",
+    "disable-tpm": true,
+    "hostname": "test-metal-tz",
+    "timezone": "Europe/London"
+  },
+  {
+    "name": "cloud-timezone-default",
+    "variant": "cloud",
+    "disable-tpm": true
   }
 ]

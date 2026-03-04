@@ -165,6 +165,7 @@ for i in $(seq 0 $((TOTAL - 1))); do
     SET_SSH_KEYS="$(jq_str "$SCENARIO" '."ssh-keys"')" \
     SET_PASSWORD="$(jq_str "$SCENARIO" '.password')" \
     SET_PASSWORD_HASH="$(jq_str "$SCENARIO" '."password-hash"')" \
+    SET_TIMEZONE="$(jq_str "$SCENARIO" '.timezone')" \
         "$SCRIPT_DIR/test-container-install.sh" "$variant" "$ARCH"
     RC=$?
     set -e
