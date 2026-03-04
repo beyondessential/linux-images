@@ -58,31 +58,29 @@ jobs:
           STALE="$(echo "$RESULT" | jq '.impls[0].staleRules')"
           echo "Coverage: $COVERED/$TOTAL implemented, $VERIFIED/$TOTAL verified, $STALE stale"
 
+          FAILED=0
+
           if [ "$STALE" -ne 0 ]; then
             echo "::error::$STALE stale reference(s) found"
+            FAILED=1
+          fi
+
+          if [ "$COVERED" -ne "$TOTAL" ]; then
+            UNCOVERED="$(curl -sf http://localhost:3199/api/uncovered)"
+            echo "$UNCOVERED" | jq '.bySection[] | .section as $s | .rules[] | "\($s): \(.id.base)"'
+            echo "::error::Only $COVERED/$TOTAL rules have implementation references"
+            FAILED=1
+          fi
+
+          if [ "$VERIFIED" -ne "$TOTAL" ]; then
+            UNTESTED="$(curl -sf http://localhost:3199/api/untested)"
+            echo "$UNTESTED" | jq '.bySection[] | .section as $s | .rules[] | "\($s): \(.id.base)"'
+            echo "::error::Only $VERIFIED/$TOTAL rules have verification references"
+            FAILED=1
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
             exit 1
-          fi
-
-      - name: Check for uncovered rules
-        run: |
-          RESULT="$(curl -sf http://localhost:3199/api/uncovered)"
-          COUNT="$(echo "$RESULT" | jq '.uncoveredCount')"
-          if [ "$COUNT" -ne 0 ]; then
-            echo "$RESULT" | jq '.bySection[] | .section as $s | .rules[] | "\($s): \(.id.base)"'
-            echo "::warning::$COUNT spec rule(s) have no implementation reference"
-          else
-            echo "All rules have implementation references"
-          fi
-
-      - name: Check for untested rules
-        run: |
-          RESULT="$(curl -sf http://localhost:3199/api/untested)"
-          COUNT="$(echo "$RESULT" | jq '.untestedCount')"
-          if [ "$COUNT" -ne 0 ]; then
-            echo "$RESULT" | jq '.bySection[] | .section as $s | .rules[] | "\($s): \(.id.base)"'
-            echo "::warning::$COUNT implemented rule(s) have no verification reference"
-          else
-            echo "All implemented rules have verification references"
           fi
 
       - name: Summary
