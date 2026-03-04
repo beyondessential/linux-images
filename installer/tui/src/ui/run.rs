@@ -248,8 +248,8 @@ pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState 
 
 fn start_write_worker(image_path: &Path, state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
     let source = image_path.to_path_buf();
-    let target = match state.selected_disk() {
-        Some(d) => d.path.clone(),
+    let (target, disk_size) = match state.selected_disk() {
+        Some(d) => (d.path.clone(), d.size_bytes),
         None => {
             let _ = tx.send(WorkerMessage::WriteError("no disk selected".into()));
             return;
@@ -258,6 +258,14 @@ fn start_write_worker(image_path: &Path, state: &AppState, tx: &mpsc::Sender<Wor
     let tx = tx.clone();
 
     thread::spawn(move || {
+        // r[impl installer.write.disk-size-check]
+        if let Err(e) = writer::image_uncompressed_size(&source)
+            .and_then(|image_size| writer::check_disk_size(image_size, disk_size))
+        {
+            let _ = tx.send(WorkerMessage::WriteError(format!("{e:#}")));
+            return;
+        }
+
         let result = writer::write_image(&source, &target, &mut |progress| {
             let _ = tx.send(WorkerMessage::Progress(progress.into()));
         });

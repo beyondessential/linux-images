@@ -241,6 +241,11 @@ fn run_auto(
         }
     }
 
+    // r[impl installer.write.disk-size-check]
+    let image_size =
+        writer::image_uncompressed_size(&image_path).context("reading uncompressed image size")?;
+    writer::check_disk_size(image_size, target.size_bytes).context("disk size check")?;
+
     eprintln!();
     eprintln!("writing image...");
 

@@ -81,6 +81,38 @@ pub fn find_image_path(variant: &str, arch: &str) -> Result<std::path::PathBuf> 
     bail!("no .raw.zst image found for variant={variant} arch={arch}");
 }
 
+// r[impl installer.write.disk-size-check]
+/// Read the uncompressed content size from a `.raw.zst` file's frame header.
+pub fn image_uncompressed_size(source: &Path) -> Result<u64> {
+    // ZSTD_FRAMEHEADERSIZE_MAX is 18 bytes; read a bit more to be safe.
+    let mut buf = [0u8; 32];
+    let mut f = File::open(source).with_context(|| format!("opening {}", source.display()))?;
+    let n = f
+        .read(&mut buf)
+        .with_context(|| format!("reading zstd frame header from {}", source.display()))?;
+    zstd::zstd_safe::get_frame_content_size(&buf[..n])
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "error reading zstd frame content size from {}: {e}",
+                source.display()
+            )
+        })?
+        .ok_or_else(|| anyhow::anyhow!("zstd frame in {} has no content size", source.display()))
+}
+
+// r[impl installer.write.disk-size-check]
+/// Verify that the target disk is large enough for the uncompressed image.
+pub fn check_disk_size(image_size: u64, disk_size: u64) -> Result<()> {
+    if disk_size < image_size {
+        bail!(
+            "target disk is too small: image requires {} but disk is only {}",
+            format_size(image_size),
+            format_size(disk_size),
+        );
+    }
+    Ok(())
+}
+
 /// Wipe all existing filesystem, RAID, and partition-table signatures from a disk.
 // r[impl installer.write.partitions]
 pub fn wipe_disk(target: &Path) -> Result<()> {
@@ -140,14 +172,7 @@ pub fn write_image(
 ) -> Result<()> {
     wipe_disk(target).context("wiping target disk before writing")?;
 
-    let compressed_size = std::fs::metadata(source)
-        .with_context(|| format!("stat {}", source.display()))?
-        .len();
-
-    // Estimate uncompressed size from the compressed size. zstd typically achieves
-    // 3-5x compression on disk images; we use 4x as a rough estimate. The progress
-    // bar will adjust if we overshoot.
-    let estimated_total = compressed_size * 4;
+    let total_bytes = image_uncompressed_size(source).ok();
 
     let input =
         File::open(source).with_context(|| format!("opening source image {}", source.display()))?;
@@ -175,7 +200,7 @@ pub fn write_image(
 
         on_progress(&WriteProgress {
             bytes_written,
-            total_bytes: Some(estimated_total),
+            total_bytes,
             elapsed: start.elapsed(),
         });
     }
@@ -410,5 +435,52 @@ mod tests {
         assert_eq!(format_size(1024 * 1024 * 512), "512.0 MiB");
         assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GiB");
         assert_eq!(format_size(8 * 1024 * 1024 * 1024), "8.00 GiB");
+    }
+
+    // r[verify installer.write.disk-size-check]
+    #[test]
+    fn check_disk_size_ok_when_equal() {
+        assert!(check_disk_size(5 * 1024 * 1024 * 1024, 5 * 1024 * 1024 * 1024).is_ok());
+    }
+
+    // r[verify installer.write.disk-size-check]
+    #[test]
+    fn check_disk_size_ok_when_larger() {
+        assert!(check_disk_size(5 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024).is_ok());
+    }
+
+    // r[verify installer.write.disk-size-check]
+    #[test]
+    fn check_disk_size_fails_when_too_small() {
+        let result = check_disk_size(5 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("too small"), "expected 'too small' in: {msg}");
+        assert!(msg.contains("5.00 GiB"), "expected image size in: {msg}");
+        assert!(msg.contains("4.00 GiB"), "expected disk size in: {msg}");
+    }
+
+    // r[verify installer.write.disk-size-check]
+    #[test]
+    fn image_uncompressed_size_reads_zstd_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.raw.zst");
+
+        let original = vec![0xABu8; 4096];
+        let compressed = zstd::bulk::compress(&original, 3).unwrap();
+        std::fs::write(&path, &compressed).unwrap();
+
+        let size = image_uncompressed_size(&path).unwrap();
+        assert_eq!(size, 4096);
+    }
+
+    // r[verify installer.write.disk-size-check]
+    #[test]
+    fn image_uncompressed_size_fails_on_non_zstd() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("garbage.zst");
+        std::fs::write(&path, b"this is not zstd data").unwrap();
+
+        assert!(image_uncompressed_size(&path).is_err());
     }
 }

@@ -474,6 +474,12 @@ Compressed disk images (`.raw.zst`) must be stored on the ISO filesystem. The
 installer must select the correct image for the running CPU architecture and
 chosen variant.
 
+r[installer.write.disk-size-check]
+Before writing, the installer must read the uncompressed image size from the
+zstd frame header and verify that the target disk is at least that large. If
+the disk is too small, the installer must refuse to write and report the
+image size and disk size in the error message.
+
 r[installer.write.decompress-stream]
 The installer must stream-decompress the zstd image directly to the target
 block device, avoiding the need to hold the uncompressed image in memory or
