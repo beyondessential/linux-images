@@ -95,6 +95,11 @@ pub fn apply_firstboot(target: &MountedTarget, config: &FirstbootConfig) -> Resu
 }
 
 // r[impl installer.firstboot.timezone]
+pub fn apply_timezone_default(target: &MountedTarget) -> Result<()> {
+    apply_timezone(target.path(), "UTC")
+}
+
+// r[impl installer.firstboot.timezone]
 fn apply_timezone(root: &Path, timezone: &str) -> Result<()> {
     let zoneinfo_path = format!("/usr/share/zoneinfo/{timezone}");
     let localtime_path = root.join("etc/localtime");

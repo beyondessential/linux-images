@@ -348,12 +348,16 @@ fn run_auto(
     eprintln!("expanding partitions to fill disk...");
     writer::expand_partitions(&target.path).context("expanding partitions")?;
 
-    if cfg.firstboot.is_some() || (variant == config::Variant::Metal && cfg.disable_tpm) {
+    {
         eprintln!("applying first-boot configuration...");
         let mounted = firstboot::mount_target(&target.path, variant)?;
 
         if let Some(ref fb) = cfg.firstboot {
             firstboot::apply_firstboot(&mounted, fb)?;
+        } else {
+            // r[impl installer.firstboot.timezone]
+            // Even without a [firstboot] section, always set timezone to UTC.
+            firstboot::apply_timezone_default(&mounted)?;
         }
         if variant == config::Variant::Metal && cfg.disable_tpm {
             firstboot::apply_tpm_disable(&mounted)?;
