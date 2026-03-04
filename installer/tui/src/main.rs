@@ -239,6 +239,9 @@ fn run_auto(
         if !fb.ssh_authorized_keys.is_empty() {
             eprintln!("  ssh keys:   {}", fb.ssh_authorized_keys.len());
         }
+        if fb.has_password() {
+            eprintln!("  password:   custom password set");
+        }
     }
 
     // r[impl installer.write.disk-size-check]

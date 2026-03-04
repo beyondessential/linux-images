@@ -121,6 +121,49 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
+        // r[impl installer.tui.password]
+        Screen::Password => match key.code {
+            KeyCode::Esc => {
+                if state.password_confirming {
+                    state.password_confirming = false;
+                    state.password_mismatch = false;
+                } else {
+                    state.go_back();
+                }
+            }
+            KeyCode::Enter | KeyCode::Tab => {
+                if !state.password_confirming {
+                    state.password_confirming = true;
+                    state.password_mismatch = false;
+                } else if state.password_input.is_empty() && state.password_confirm_input.is_empty()
+                {
+                    state.password_confirming = false;
+                    state.password_mismatch = false;
+                    state.advance();
+                } else if state.password_matches() {
+                    state.password_mismatch = false;
+                    state.advance();
+                } else {
+                    state.password_mismatch = true;
+                }
+            }
+            KeyCode::Backspace => {
+                if state.password_confirming {
+                    state.password_confirm_input.pop();
+                } else {
+                    state.password_input.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if state.password_confirming {
+                    state.password_confirm_input.push(c);
+                } else {
+                    state.password_input.push(c);
+                }
+            }
+            _ => {}
+        },
+
         Screen::Confirmation => match key.code {
             KeyCode::Char('q') if state.confirm_input.is_empty() => return KeyAction::Quit,
             KeyCode::Esc => {
@@ -422,8 +465,11 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip -> SshKeys
             press(KeyCode::Enter),
-            // SshKeys: skip -> Confirmation
+            // SshKeys: skip -> Password
             press(KeyCode::Tab),
+            // Password: skip (empty) — Enter moves to confirm field, Enter again advances
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             // Confirmation: type "yes" and confirm
             press(KeyCode::Char('y')),
             press(KeyCode::Char('e')),
@@ -458,6 +504,9 @@ mod tests {
             press(KeyCode::Enter),
             // SshKeys: advance
             press(KeyCode::Tab),
+            // Password: skip (empty) — Enter moves to confirm field, Enter again advances
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             // Confirmation: type "yes" and confirm
             press(KeyCode::Char('y')),
             press(KeyCode::Char('e')),
@@ -512,6 +561,8 @@ mod tests {
             hostname: Some("old-host".into()),
             tailscale_authkey: None,
             ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: None,
         };
         let devices = vec![BlockDevice {
             path: PathBuf::from("/dev/sda"),
@@ -567,12 +618,104 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Tab),
+            // Password: skip — Enter moves to confirm field, Enter again advances
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             // Now on Confirmation — go back
             press(KeyCode::Esc),
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::SshKeys);
+        assert_eq!(final_state.screen, Screen::Password);
+    }
+
+    // r[verify installer.tui.password]
+    #[test]
+    fn scripted_password_entry_matching() {
+        let state = make_state();
+        let events = vec![
+            // Walk to Password screen
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Tab),
+            // Now on Password screen — type password
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('e')),
+            press(KeyCode::Char('c')),
+            // Tab to confirm field
+            press(KeyCode::Tab),
+            // Type matching confirmation
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('e')),
+            press(KeyCode::Char('c')),
+            // Enter to advance
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.password_input, "sec");
+        assert!(!final_state.password_mismatch);
+    }
+
+    // r[verify installer.tui.password]
+    #[test]
+    fn scripted_password_mismatch_blocks_advance() {
+        let state = make_state();
+        let events = vec![
+            // Walk to Password screen
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Tab),
+            // Type password
+            press(KeyCode::Char('a')),
+            press(KeyCode::Char('b')),
+            // Tab to confirm field
+            press(KeyCode::Tab),
+            // Type different confirmation
+            press(KeyCode::Char('x')),
+            press(KeyCode::Char('y')),
+            // Enter — should NOT advance due to mismatch
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Password);
+        assert!(final_state.password_mismatch);
+    }
+
+    // r[verify installer.tui.password]
+    #[test]
+    fn scripted_password_esc_from_confirm_returns_to_first_field() {
+        let state = make_state();
+        let events = vec![
+            // Walk to Password screen
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Tab),
+            // Type password
+            press(KeyCode::Char('a')),
+            // Tab to confirm
+            press(KeyCode::Tab),
+            // Esc goes back to first field (not previous screen)
+            press(KeyCode::Esc),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Password);
+        assert!(!final_state.password_confirming);
     }
 
     // r[verify installer.dryrun.script.headless]

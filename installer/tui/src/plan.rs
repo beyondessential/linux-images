@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::config::{FirstbootConfig, OperatingMode, Variant};
 use crate::disk::BlockDevice;
 
-// r[impl installer.dryrun.schema]
+// r[impl installer.dryrun.schema+2]
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallPlan {
     pub mode: String,
@@ -25,11 +25,13 @@ pub struct DiskInfo {
     pub transport: String,
 }
 
+// r[impl installer.dryrun.schema+2]
 #[derive(Debug, Clone, Serialize)]
 pub struct FirstbootInfo {
     pub hostname: Option<String>,
     pub tailscale_authkey: bool,
     pub ssh_authorized_keys_count: usize,
+    pub password_set: bool,
 }
 
 impl From<&BlockDevice> for DiskInfo {
@@ -49,6 +51,7 @@ impl From<&FirstbootConfig> for FirstbootInfo {
             hostname: fb.hostname.clone(),
             tailscale_authkey: fb.tailscale_authkey.is_some(),
             ssh_authorized_keys_count: fb.ssh_authorized_keys.len(),
+            password_set: fb.has_password(),
         }
     }
 }
@@ -117,10 +120,12 @@ mod tests {
             hostname: Some("server-01".into()),
             tailscale_authkey: Some("tskey-auth-xxxxx".into()),
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
+            password: Some("changeme".into()),
+            password_hash: None,
         }
     }
 
-    // r[verify installer.dryrun.schema]
+    // r[verify installer.dryrun.schema+2]
     #[test]
     fn plan_serializes_full() {
         let dev = sample_device();
@@ -146,6 +151,7 @@ mod tests {
         assert_eq!(json["firstboot"]["hostname"], "server-01");
         assert!(json["firstboot"]["tailscale_authkey"].as_bool().unwrap());
         assert_eq!(json["firstboot"]["ssh_authorized_keys_count"], 2);
+        assert!(json["firstboot"]["password_set"].as_bool().unwrap());
         assert_eq!(
             json["image_path"],
             "/run/live/medium/images/metal-amd64.raw.zst"
@@ -153,7 +159,7 @@ mod tests {
         assert!(json["config_warnings"].as_array().unwrap().is_empty());
     }
 
-    // r[verify installer.dryrun.schema]
+    // r[verify installer.dryrun.schema+2]
     #[test]
     fn plan_serializes_minimal() {
         let plan = InstallPlan::new(
@@ -175,13 +181,15 @@ mod tests {
         assert_eq!(json["config_warnings"][0], "some warning");
     }
 
-    // r[verify installer.dryrun.schema]
+    // r[verify installer.dryrun.schema+2]
     #[test]
     fn firstboot_info_hides_authkey_value() {
         let fb = FirstbootConfig {
             hostname: None,
             tailscale_authkey: Some("tskey-auth-secret-value".into()),
             ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: None,
         };
         let info = FirstbootInfo::from(&fb);
         assert!(info.tailscale_authkey);
@@ -191,19 +199,50 @@ mod tests {
         assert!(json["tailscale_authkey"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema]
+    // r[verify installer.dryrun.schema+2]
     #[test]
     fn firstboot_info_no_authkey() {
         let fb = FirstbootConfig {
             hostname: Some("host".into()),
             tailscale_authkey: None,
             ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: None,
         };
         let info = FirstbootInfo::from(&fb);
         assert!(!info.tailscale_authkey);
+        assert!(!info.password_set);
     }
 
-    // r[verify installer.dryrun.schema]
+    // r[verify installer.dryrun.schema+2]
+    #[test]
+    fn firstboot_info_password_set_from_plaintext() {
+        let fb = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec![],
+            password: Some("secret".into()),
+            password_hash: None,
+        };
+        let info = FirstbootInfo::from(&fb);
+        assert!(info.password_set);
+    }
+
+    // r[verify installer.dryrun.schema+2]
+    #[test]
+    fn firstboot_info_password_set_from_hash() {
+        let fb = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: Some("$6$rounds=4096$salt$hash".into()),
+        };
+        let info = FirstbootInfo::from(&fb);
+        assert!(info.password_set);
+    }
+
+    // r[verify installer.dryrun.schema+2]
     #[test]
     fn disk_info_from_block_device() {
         let dev = sample_device();
@@ -214,7 +253,7 @@ mod tests {
         assert_eq!(info.transport, "NVMe");
     }
 
-    // r[verify installer.dryrun.schema]
+    // r[verify installer.dryrun.schema+2]
     #[test]
     fn all_operating_modes_map_correctly() {
         let dev = sample_device();

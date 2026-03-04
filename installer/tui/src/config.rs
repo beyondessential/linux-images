@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-// r[impl installer.config.schema]
+// r[impl installer.config.schema+2]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
@@ -100,6 +100,17 @@ pub struct FirstbootConfig {
 
     #[serde(default, rename = "ssh-authorized-keys")]
     pub ssh_authorized_keys: Vec<String>,
+
+    pub password: Option<String>,
+
+    #[serde(default, rename = "password-hash")]
+    pub password_hash: Option<String>,
+}
+
+impl FirstbootConfig {
+    pub fn has_password(&self) -> bool {
+        self.password.is_some() || self.password_hash.is_some()
+    }
 }
 
 // r[impl installer.mode.interactive]
@@ -197,6 +208,12 @@ impl InstallConfig {
                     issues.push(format!("firstboot.ssh-authorized-keys[{i}] is empty"));
                 }
             }
+
+            if fb.password.is_some() && fb.password_hash.is_some() {
+                issues.push(
+                    "firstboot.password and firstboot.password-hash are mutually exclusive".into(),
+                );
+            }
         }
 
         issues
@@ -229,14 +246,14 @@ pub fn find_config_file() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn parse_empty_config() {
         let config = InstallConfig::from_toml("").unwrap();
         assert_eq!(config, InstallConfig::default());
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn parse_full_config() {
         let toml = r#"
@@ -249,6 +266,7 @@ mod tests {
             hostname = "server-01"
             tailscale-authkey = "tskey-auth-xxxxx"
             ssh-authorized-keys = ["ssh-ed25519 AAAA... admin@example.com"]
+            password = "changeme"
         "#;
         let config = InstallConfig::from_toml(toml).unwrap();
         assert!(config.auto);
@@ -266,16 +284,18 @@ mod tests {
             fb.ssh_authorized_keys,
             vec!["ssh-ed25519 AAAA... admin@example.com"]
         );
+        assert_eq!(fb.password.as_deref(), Some("changeme"));
+        assert_eq!(fb.password_hash, None);
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn parse_cloud_variant() {
         let config = InstallConfig::from_toml(r#"variant = "cloud""#).unwrap();
         assert_eq!(config.variant, Some(Variant::Cloud));
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn parse_disk_path() {
         let config = InstallConfig::from_toml(r#"disk = "/dev/nvme0n1""#).unwrap();
@@ -285,7 +305,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn parse_disk_strategies() {
         for (input, expected) in [
@@ -298,14 +318,14 @@ mod tests {
         }
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn parse_invalid_variant_rejected() {
         let result = InstallConfig::from_toml(r#"variant = "bad""#);
         assert!(result.is_err());
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn parse_unknown_field_rejected() {
         let result = InstallConfig::from_toml(r#"bogus = true"#);
@@ -381,7 +401,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn validate_disable_tpm_cloud_warns() {
         let config = InstallConfig {
@@ -397,7 +417,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn validate_bad_hostname() {
         let config = InstallConfig {
@@ -411,7 +431,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("not a valid hostname")));
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn validate_long_hostname() {
         let config = InstallConfig {
@@ -425,7 +445,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("too long")));
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn validate_empty_ssh_key() {
         let config = InstallConfig {
@@ -439,7 +459,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("empty")));
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn validate_good_config_has_no_issues() {
         let config = InstallConfig {
@@ -451,20 +471,22 @@ mod tests {
                 hostname: Some("server-01".into()),
                 tailscale_authkey: Some("tskey-auth-xxxxx".into()),
                 ssh_authorized_keys: vec!["ssh-ed25519 AAAA... admin@example.com".into()],
+                password: Some("changeme".into()),
+                password_hash: None,
             }),
         };
         let issues = config.validate();
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn variant_display() {
         assert_eq!(Variant::Metal.to_string(), "metal");
         assert_eq!(Variant::Cloud.to_string(), "cloud");
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn disk_selector_display() {
         assert_eq!(
@@ -477,7 +499,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema]
+    // r[verify installer.config.schema+2]
     #[test]
     fn parse_minimal_firstboot() {
         let config = InstallConfig::from_toml(
@@ -528,6 +550,39 @@ mod tests {
         let path = dir.path().join("bes-install.toml");
         std::fs::write(&path, "this is not valid toml {{{{").unwrap();
         assert!(InstallConfig::load_from_file(&path).is_err());
+    }
+
+    // r[verify installer.config.schema+2]
+    #[test]
+    fn parse_password_hash() {
+        let config = InstallConfig::from_toml(
+            r#"
+            [firstboot]
+            password-hash = "$6$rounds=4096$salt$hash"
+        "#,
+        )
+        .unwrap();
+        let fb = config.firstboot.unwrap();
+        assert_eq!(fb.password, None);
+        assert_eq!(
+            fb.password_hash.as_deref(),
+            Some("$6$rounds=4096$salt$hash")
+        );
+    }
+
+    // r[verify installer.config.schema+2]
+    #[test]
+    fn validate_password_and_hash_mutually_exclusive() {
+        let config = InstallConfig {
+            firstboot: Some(FirstbootConfig {
+                password: Some("changeme".into()),
+                password_hash: Some("$6$rounds=4096$salt$hash".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.contains("mutually exclusive")));
     }
 
     // r[verify installer.mode.interactive]

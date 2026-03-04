@@ -29,6 +29,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::Hostname => render_hostname(frame, chunks[1], state),
         Screen::Tailscale => render_tailscale(frame, chunks[1], state),
         Screen::SshKeys => render_ssh_keys(frame, chunks[1], state),
+        Screen::Password => render_password(frame, chunks[1], state),
         Screen::Confirmation => render_confirmation(frame, chunks[1], state),
         Screen::Writing => render_writing(frame, chunks[1], state),
         Screen::FirstbootApply => render_firstboot(frame, chunks[1]),
@@ -42,15 +43,16 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
         Screen::Welcome => "Welcome",
-        Screen::DiskSelection => "1/7 Select Target Disk",
-        Screen::VariantSelection => "2/7 Select Variant",
-        Screen::TpmToggle => "2/7 TPM Configuration",
-        Screen::Hostname => "3/7 Hostname",
-        Screen::Tailscale => "4/7 Tailscale",
-        Screen::SshKeys => "5/7 SSH Keys",
-        Screen::Confirmation => "6/7 Confirm",
-        Screen::Writing => "7/7 Writing Image",
-        Screen::FirstbootApply => "7/7 Applying Configuration",
+        Screen::DiskSelection => "1/8 Select Target Disk",
+        Screen::VariantSelection => "2/8 Select Variant",
+        Screen::TpmToggle => "2/8 TPM Configuration",
+        Screen::Hostname => "3/8 Hostname",
+        Screen::Tailscale => "4/8 Tailscale",
+        Screen::SshKeys => "5/8 SSH Keys",
+        Screen::Password => "6/8 Password",
+        Screen::Confirmation => "7/8 Confirm",
+        Screen::Writing => "8/8 Writing Image",
+        Screen::FirstbootApply => "8/8 Applying Configuration",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
     };
@@ -75,6 +77,13 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Hostname => "Enter: next | Esc: back",
         Screen::Tailscale => "Enter: next | Esc: back",
         Screen::SshKeys => "Tab: next | Enter: new line | Esc: back",
+        Screen::Password => {
+            if state.password_confirming {
+                "Enter: confirm | Esc: back to password"
+            } else {
+                "Enter/Tab: next | Esc: back"
+            }
+        }
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit",
         Screen::Writing => "Please wait...",
         Screen::FirstbootApply => "Please wait...",
@@ -299,6 +308,10 @@ fn render_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
+fn mask(input: &str) -> String {
+    "*".repeat(input.len())
+}
+
 // r[impl installer.tui.ssh-keys]
 fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
@@ -352,6 +365,77 @@ fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 // r[impl installer.tui.confirmation]
+// r[impl installer.tui.password]
+fn render_password(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from("  Set a password for the 'ubuntu' user."),
+        Line::from("  Leave both fields empty to keep the default password (expired)."),
+        Line::from(""),
+    ];
+
+    let password_label = if state.password_confirming {
+        Span::raw("  Password: ")
+    } else {
+        Span::styled(
+            "  Password: ",
+            Style::default().add_modifier(Modifier::BOLD),
+        )
+    };
+
+    let masked = mask(&state.password_input);
+    let mut password_line = vec![
+        password_label,
+        Span::styled(
+            masked,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if !state.password_confirming {
+        password_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+    }
+    lines.push(Line::from(password_line));
+
+    let confirm_label = if state.password_confirming {
+        Span::styled(
+            "  Confirm:  ",
+            Style::default().add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::raw("  Confirm:  ")
+    };
+
+    let confirm_masked = mask(&state.password_confirm_input);
+    let mut confirm_line = vec![
+        confirm_label,
+        Span::styled(
+            confirm_masked,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if state.password_confirming {
+        confirm_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+    }
+    lines.push(Line::from(confirm_line));
+
+    if state.password_mismatch {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Passwords do not match.",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    let block = Block::default().title(" Password ").borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
+}
+
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -415,6 +499,15 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
                 Span::raw("  SSH keys:     "),
                 Span::styled(
                     format!("{} key(s)", fb.ssh_authorized_keys.len()),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+        if fb.password.is_some() || fb.password_hash.is_some() {
+            lines.push(Line::from(vec![
+                Span::raw("  Password:     "),
+                Span::styled(
+                    "custom password set",
                     Style::default().add_modifier(Modifier::BOLD),
                 ),
             ]));

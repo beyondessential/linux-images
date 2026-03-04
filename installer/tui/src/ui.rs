@@ -19,6 +19,7 @@ pub enum Screen {
     Hostname,
     Tailscale,
     SshKeys,
+    Password,
     Confirmation,
     Writing,
     FirstbootApply,
@@ -40,6 +41,12 @@ pub struct AppState {
     pub hostname_input: String,
     pub tailscale_input: String,
     pub ssh_keys_input: String,
+    pub password_input: String,
+    pub password_confirm_input: String,
+    pub password_confirming: bool,
+    pub password_mismatch: bool,
+    /// Pre-hashed password from config file (takes precedence over plaintext).
+    pub config_password_hash: Option<String>,
 }
 
 // r[impl installer.tui.progress]
@@ -72,14 +79,16 @@ impl AppState {
         default_disk_index: Option<usize>,
         build_info: String,
     ) -> Self {
-        let (hostname_input, tailscale_input, ssh_keys_input) = match firstboot {
-            Some(ref fb) => (
-                fb.hostname.clone().unwrap_or_default(),
-                fb.tailscale_authkey.clone().unwrap_or_default(),
-                fb.ssh_authorized_keys.join("\n"),
-            ),
-            None => (String::new(), String::new(), String::new()),
-        };
+        let (hostname_input, tailscale_input, ssh_keys_input, config_password_hash) =
+            match firstboot {
+                Some(ref fb) => (
+                    fb.hostname.clone().unwrap_or_default(),
+                    fb.tailscale_authkey.clone().unwrap_or_default(),
+                    fb.ssh_authorized_keys.join("\n"),
+                    fb.password_hash.clone(),
+                ),
+                None => (String::new(), String::new(), String::new(), None),
+            };
 
         Self {
             screen: Screen::Welcome,
@@ -94,12 +103,18 @@ impl AppState {
             hostname_input,
             tailscale_input,
             ssh_keys_input,
+            password_input: String::new(),
+            password_confirm_input: String::new(),
+            password_confirming: false,
+            password_mismatch: false,
+            config_password_hash,
         }
     }
 
     // r[impl installer.tui.hostname]
     // r[impl installer.tui.tailscale]
     // r[impl installer.tui.ssh-keys]
+    // r[impl installer.tui.password]
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
     pub fn firstboot_config(&self) -> Option<FirstbootConfig> {
@@ -122,7 +137,20 @@ impl AppState {
             .filter(|l| !l.is_empty())
             .collect();
 
-        if hostname.is_none() && tailscale_authkey.is_none() && ssh_authorized_keys.is_empty() {
+        let password = if self.password_input.is_empty() {
+            None
+        } else {
+            Some(self.password_input.clone())
+        };
+
+        let password_hash = self.config_password_hash.clone();
+
+        if hostname.is_none()
+            && tailscale_authkey.is_none()
+            && ssh_authorized_keys.is_empty()
+            && password.is_none()
+            && password_hash.is_none()
+        {
             return None;
         }
 
@@ -130,6 +158,8 @@ impl AppState {
             hostname,
             tailscale_authkey,
             ssh_authorized_keys,
+            password,
+            password_hash,
         })
     }
 
@@ -162,6 +192,7 @@ impl AppState {
     }
 
     // r[impl installer.tui.tpm-toggle]
+    // r[impl installer.tui.password]
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
             Screen::Welcome => Screen::DiskSelection,
@@ -171,7 +202,8 @@ impl AppState {
             Screen::TpmToggle => Screen::Hostname,
             Screen::Hostname => Screen::Tailscale,
             Screen::Tailscale => Screen::SshKeys,
-            Screen::SshKeys => Screen::Confirmation,
+            Screen::SshKeys => Screen::Password,
+            Screen::Password => Screen::Confirmation,
             Screen::Confirmation => Screen::Writing,
             Screen::Writing => Screen::FirstbootApply,
             Screen::FirstbootApply => Screen::Done,
@@ -193,7 +225,8 @@ impl AppState {
             }
             Screen::Tailscale => Screen::Hostname,
             Screen::SshKeys => Screen::Tailscale,
-            Screen::Confirmation => Screen::SshKeys,
+            Screen::Password => Screen::SshKeys,
+            Screen::Confirmation => Screen::Password,
             _ => return,
         };
     }
@@ -207,6 +240,18 @@ impl AppState {
         self.confirm_input
             .trim()
             .eq_ignore_ascii_case(self.confirmation_text())
+    }
+
+    // r[impl installer.tui.password]
+    pub fn password_matches(&self) -> bool {
+        self.password_input == self.password_confirm_input
+    }
+
+    /// Whether a password has been provided (either typed interactively
+    /// or via the config file as a hash).
+    #[cfg(test)]
+    pub fn has_password(&self) -> bool {
+        !self.password_input.is_empty() || self.config_password_hash.is_some()
     }
 }
 
@@ -294,6 +339,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tpm-toggle]
+    // r[verify installer.tui.password]
     #[test]
     fn advance_metal_flow() {
         let mut state = make_state();
@@ -313,10 +359,13 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::SshKeys);
         state.advance();
+        assert_eq!(state.screen, Screen::Password);
+        state.advance();
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
     // r[verify installer.tui.variant-selection]
+    // r[verify installer.tui.password]
     #[test]
     fn advance_cloud_skips_tpm() {
         let mut state = make_state();
@@ -334,16 +383,21 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::SshKeys);
         state.advance();
+        assert_eq!(state.screen, Screen::Password);
+        state.advance();
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
     // r[verify installer.tui.tpm-toggle]
+    // r[verify installer.tui.password]
     #[test]
     fn go_back_through_metal_flow() {
         let mut state = make_state();
         state.variant = Variant::Metal;
         state.screen = Screen::Confirmation;
 
+        state.go_back();
+        assert_eq!(state.screen, Screen::Password);
         state.go_back();
         assert_eq!(state.screen, Screen::SshKeys);
         state.go_back();
@@ -361,12 +415,15 @@ mod tests {
     }
 
     // r[verify installer.tui.variant-selection]
+    // r[verify installer.tui.password]
     #[test]
     fn go_back_cloud_skips_tpm() {
         let mut state = make_state();
         state.variant = Variant::Cloud;
         state.screen = Screen::Confirmation;
 
+        state.go_back();
+        assert_eq!(state.screen, Screen::Password);
         state.go_back();
         assert_eq!(state.screen, Screen::SshKeys);
         state.go_back();
@@ -418,6 +475,8 @@ mod tests {
             hostname: Some("myhost".into()),
             tailscale_authkey: None,
             ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: None,
         };
         let state = AppState::new(
             devices,
@@ -448,6 +507,8 @@ mod tests {
             hostname: None,
             tailscale_authkey: Some("tskey-auth-xxx".into()),
             ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: None,
         };
         let state = AppState::new(
             devices,
@@ -476,6 +537,8 @@ mod tests {
             hostname: None,
             tailscale_authkey: None,
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
+            password: None,
+            password_hash: None,
         };
         let state = AppState::new(
             devices,
@@ -503,6 +566,8 @@ mod tests {
         assert_eq!(fb.hostname.as_deref(), Some("server-01"));
         assert!(fb.tailscale_authkey.is_none());
         assert!(fb.ssh_authorized_keys.is_empty());
+        assert!(fb.password.is_none());
+        assert!(fb.password_hash.is_none());
     }
 
     // r[verify installer.tui.tailscale]
@@ -513,11 +578,14 @@ mod tests {
         state.hostname_input = "host".into();
         state.tailscale_input = "tskey-auth-123".into();
         state.ssh_keys_input = "ssh-ed25519 AAAA\nssh-rsa BBBB\n".into();
+        state.password_input = "s3cret".into();
 
         let fb = state.firstboot_config().unwrap();
         assert_eq!(fb.hostname.as_deref(), Some("host"));
         assert_eq!(fb.tailscale_authkey.as_deref(), Some("tskey-auth-123"));
         assert_eq!(fb.ssh_authorized_keys.len(), 2);
+        assert_eq!(fb.password.as_deref(), Some("s3cret"));
+        assert!(fb.password_hash.is_none());
     }
 
     // r[verify installer.tui.hostname]
@@ -528,5 +596,65 @@ mod tests {
         state.tailscale_input = "  ".into();
         state.ssh_keys_input = "\n\n".into();
         assert!(state.firstboot_config().is_none());
+    }
+
+    // r[verify installer.tui.password]
+    #[test]
+    fn password_match_logic() {
+        let mut state = make_state();
+        assert!(state.password_matches());
+
+        state.password_input = "secret".into();
+        state.password_confirm_input = "secret".into();
+        assert!(state.password_matches());
+
+        state.password_confirm_input = "wrong".into();
+        assert!(!state.password_matches());
+    }
+
+    // r[verify installer.tui.password]
+    #[test]
+    fn has_password_from_input() {
+        let mut state = make_state();
+        assert!(!state.has_password());
+
+        state.password_input = "secret".into();
+        assert!(state.has_password());
+    }
+
+    // r[verify installer.tui.password]
+    #[test]
+    fn has_password_from_config_hash() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: Some("$6$rounds=4096$salt$hash".into()),
+        };
+        let state = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+        );
+        assert!(state.has_password());
+        let fb = state.firstboot_config().unwrap();
+        assert!(fb.password.is_none());
+        assert_eq!(
+            fb.password_hash.as_deref(),
+            Some("$6$rounds=4096$salt$hash")
+        );
     }
 }

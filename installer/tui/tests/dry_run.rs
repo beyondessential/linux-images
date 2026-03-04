@@ -110,7 +110,7 @@ fn installer() -> assert_cmd::Command {
 
 // r[verify installer.dryrun]
 // r[verify installer.dryrun.output]
-// r[verify installer.dryrun.schema]
+// r[verify installer.dryrun.schema+2]
 // r[verify installer.mode.auto]
 #[test]
 fn auto_full_config_produces_correct_plan() {
@@ -161,8 +161,8 @@ fn auto_full_config_produces_correct_plan() {
     assert!(plan["config_warnings"].as_array().unwrap().is_empty());
 }
 
-// r[verify installer.dryrun.schema]
-// r[verify installer.config.schema]
+// r[verify installer.dryrun.schema+2]
+// r[verify installer.config.schema+2]
 #[test]
 fn auto_disk_path_resolves_correctly() {
     let f = Fixture::new();
@@ -197,8 +197,8 @@ fn auto_disk_path_resolves_correctly() {
     assert_eq!(plan["disk"]["model"], "WD Blue");
 }
 
-// r[verify installer.dryrun.schema]
-// r[verify installer.config.schema]
+// r[verify installer.dryrun.schema+2]
+// r[verify installer.config.schema+2]
 // r[verify image.tpm.disableable]
 #[test]
 fn auto_disable_tpm_reflected_in_plan() {
@@ -232,7 +232,7 @@ fn auto_disable_tpm_reflected_in_plan() {
     assert!(plan["disable_tpm"].as_bool().unwrap());
 }
 
-// r[verify installer.dryrun.schema]
+// r[verify installer.dryrun.schema+2]
 #[test]
 fn auto_cloud_variant_no_firstboot() {
     let f = Fixture::new();
@@ -266,7 +266,7 @@ fn auto_cloud_variant_no_firstboot() {
     assert!(!plan["disable_tpm"].as_bool().unwrap());
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 // r[verify image.tpm.disableable]
 #[test]
 fn auto_disable_tpm_on_cloud_emits_warning() {
@@ -306,7 +306,7 @@ fn auto_disable_tpm_on_cloud_emits_warning() {
     );
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn auto_bad_hostname_emits_warning() {
     let f = Fixture::new();
@@ -484,6 +484,9 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -513,6 +516,7 @@ enter
     assert_eq!(plan["firstboot"]["hostname"], "prefilled-host");
     assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 1);
+    assert!(!plan["firstboot"]["password_set"].as_bool().unwrap());
 }
 
 // r[verify installer.mode.prefilled]
@@ -557,6 +561,9 @@ enter
 enter
 # SSH keys
 tab
+# Password: skip (empty)
+enter
+enter
 # Confirm
 type:yes
 enter
@@ -617,6 +624,9 @@ enter
 # SSH keys
 type:ssh-ed25519 AAAA testkey
 tab
+# Password: skip (empty)
+enter
+enter
 # Confirm
 type:yes
 enter
@@ -666,6 +676,9 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -712,6 +725,9 @@ type:ssh-ed25519 AAAA key1
 enter
 type:ssh-rsa BBBB key2
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -755,6 +771,8 @@ enter
 enter
 enter
 tab
+enter
+enter
 type:yes
 enter
 ",
@@ -795,6 +813,9 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -892,7 +913,12 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 # Now on Confirmation, go back
+esc
+# Back on Password, go back
 esc
 # Back on SshKeys, go back again
 esc
@@ -901,6 +927,9 @@ type:tskey-auth-late
 enter
 # SshKeys, skip
 tab
+# Password: skip (empty)
+enter
+enter
 # Confirmation
 type:yes
 enter
@@ -930,7 +959,7 @@ enter
 // Disk selection strategy tests (auto mode)
 // ---------------------------------------------------------------------------
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn strategy_largest_ssd_picks_biggest_nvme() {
     let f = Fixture::new();
@@ -963,7 +992,7 @@ fn strategy_largest_ssd_picks_biggest_nvme() {
     assert_eq!(plan["disk"]["model"], "Big NVMe");
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn strategy_largest_picks_biggest_overall() {
     let f = Fixture::new();
@@ -996,7 +1025,7 @@ fn strategy_largest_picks_biggest_overall() {
     assert_eq!(plan["disk"]["size_bytes"], 2000000000000u64);
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn strategy_smallest_picks_smallest_overall() {
     let f = Fixture::new();
@@ -1029,7 +1058,7 @@ fn strategy_smallest_picks_smallest_overall() {
     assert_eq!(plan["disk"]["size_bytes"], 500000000000u64);
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn strategy_disk_path_selects_exact_device() {
     let f = Fixture::new();
@@ -1122,7 +1151,7 @@ fn error_invalid_devices_json() {
         .stderr(predicates::str::contains("fake devices"));
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn error_invalid_config_toml() {
     let f = Fixture::new();
@@ -1144,7 +1173,7 @@ fn error_invalid_config_toml() {
         .stderr(predicates::str::contains("parsing config"));
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn error_unknown_config_field() {
     let f = Fixture::new();
@@ -1166,7 +1195,7 @@ fn error_unknown_config_field() {
         .stderr(predicates::str::contains("parsing config"));
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn error_invalid_variant_in_config() {
     let f = Fixture::new();
@@ -1363,7 +1392,7 @@ fn dry_run_output_to_stdout() {
 // Schema completeness tests
 // ---------------------------------------------------------------------------
 
-// r[verify installer.dryrun.schema]
+// r[verify installer.dryrun.schema+2]
 #[test]
 fn plan_contains_all_required_fields() {
     let f = Fixture::new();
@@ -1424,7 +1453,7 @@ fn plan_contains_all_required_fields() {
     }
 }
 
-// r[verify installer.dryrun.schema]
+// r[verify installer.dryrun.schema+2]
 #[test]
 fn plan_tailscale_authkey_is_bool_not_string() {
     let f = Fixture::new();
@@ -1612,7 +1641,7 @@ fn fake_devices_transport_aliases_accepted() {
 // Config edge cases
 // ---------------------------------------------------------------------------
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn empty_config_file_treated_as_prefilled() {
     let f = Fixture::new();
@@ -1639,7 +1668,7 @@ fn empty_config_file_treated_as_prefilled() {
     assert_eq!(plan["mode"], "prefilled");
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn auto_with_minimal_firstboot() {
     let f = Fixture::new();
@@ -1676,7 +1705,7 @@ fn auto_with_minimal_firstboot() {
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 0);
 }
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn auto_with_only_ssh_keys() {
     let f = Fixture::new();
@@ -1739,6 +1768,9 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -1783,6 +1815,9 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -1825,6 +1860,9 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -1865,6 +1903,9 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -1909,6 +1950,9 @@ type:d
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -1953,6 +1997,9 @@ type:ssh-ed25519 AAAA key1
 enter
 type:ssh-rsa BBBB key2
 tab
+# Password: skip (empty)
+enter
+enter
 type:yes
 enter
 ",
@@ -1994,6 +2041,9 @@ enter
 enter
 enter
 tab
+# Password: skip (empty)
+enter
+enter
 type:no
 enter
 ",
@@ -2023,7 +2073,7 @@ enter
 // Multiple config warnings
 // ---------------------------------------------------------------------------
 
-// r[verify installer.config.schema]
+// r[verify installer.config.schema+2]
 #[test]
 fn multiple_validation_warnings_collected() {
     let f = Fixture::new();

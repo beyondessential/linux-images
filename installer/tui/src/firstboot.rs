@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+use sha_crypt::{Sha512Params, sha512_simple};
 
 use crate::config::{FirstbootConfig, Variant};
 
@@ -81,6 +82,10 @@ pub fn apply_firstboot(target: &MountedTarget, config: &FirstbootConfig) -> Resu
         apply_ssh_keys(root, &config.ssh_authorized_keys)?;
     }
 
+    if config.has_password() {
+        apply_password(root, config)?;
+    }
+
     Ok(())
 }
 
@@ -103,6 +108,75 @@ pub fn apply_tpm_disable(target: &MountedTarget) -> Result<()> {
         tracing::info!("setup-tpm-unlock.service symlink not present, nothing to remove");
     }
 
+    Ok(())
+}
+
+// r[impl installer.firstboot.password]
+fn apply_password(root: &Path, config: &FirstbootConfig) -> Result<()> {
+    let hash = if let Some(ref h) = config.password_hash {
+        h.clone()
+    } else if let Some(ref plaintext) = config.password {
+        let params = Sha512Params::new(5000).expect("valid rounds");
+        sha512_simple(plaintext, &params)
+            .map_err(|e| anyhow::anyhow!("hashing password with SHA-512 crypt: {e:?}"))?
+    } else {
+        bail!("apply_password called with no password or password_hash set");
+    };
+
+    let shadow_path = root.join("etc/shadow");
+    let contents = fs::read_to_string(&shadow_path).context("reading target /etc/shadow")?;
+
+    let mut found = false;
+    let new_contents: String = contents
+        .lines()
+        .map(|line| {
+            if line.starts_with("ubuntu:") {
+                found = true;
+                let fields: Vec<&str> = line.split(':').collect();
+                if fields.len() >= 9 {
+                    // fields: name:hash:lastchanged:min:max:warn:inactive:expire:reserved
+                    // Set the hash, clear the expiry by setting lastchanged to days-since-epoch
+                    let days_since_epoch = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                        / 86400;
+                    format!(
+                        "{}:{}:{}:{}:{}:{}:{}:{}:{}",
+                        fields[0],
+                        hash,
+                        days_since_epoch,
+                        fields[3],
+                        fields[4],
+                        fields[5],
+                        fields[6],
+                        fields[7],
+                        fields[8],
+                    )
+                } else {
+                    format!("ubuntu:{hash}:{}", &fields[2..].join(":"))
+                }
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if !found {
+        bail!("user 'ubuntu' not found in target /etc/shadow");
+    }
+
+    // Preserve trailing newline if original had one
+    let new_contents = if contents.ends_with('\n') && !new_contents.ends_with('\n') {
+        format!("{new_contents}\n")
+    } else {
+        new_contents
+    };
+
+    fs::write(&shadow_path, &new_contents).context("writing target /etc/shadow")?;
+
+    tracing::info!("set password for ubuntu user");
     Ok(())
 }
 
@@ -282,6 +356,114 @@ mod tests {
     fn partition_path_loop() {
         let p = partition_path(Path::new("/dev/loop0"), 2).unwrap();
         assert_eq!(p, PathBuf::from("/dev/loop0p2"));
+    }
+
+    // r[verify installer.firstboot.password]
+    #[test]
+    fn apply_password_plaintext() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+        fs::write(
+            etc.join("shadow"),
+            "root:!:19900:0:99999:7:::\nubuntu:$6$old$oldhash:0:0:99999:7:::\n",
+        )
+        .unwrap();
+
+        let config = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec![],
+            password: Some("newsecret".into()),
+            password_hash: None,
+        };
+        apply_password(dir.path(), &config).unwrap();
+
+        let shadow = fs::read_to_string(etc.join("shadow")).unwrap();
+        let ubuntu_line = shadow.lines().find(|l| l.starts_with("ubuntu:")).unwrap();
+        let fields: Vec<&str> = ubuntu_line.split(':').collect();
+        assert!(
+            fields[1].starts_with("$6$"),
+            "expected SHA-512 hash, got: {}",
+            fields[1]
+        );
+        // lastchanged should be non-zero (not expired)
+        let lastchanged: u64 = fields[2].parse().unwrap();
+        assert!(lastchanged > 0);
+        assert!(shadow.ends_with('\n'));
+    }
+
+    // r[verify installer.firstboot.password]
+    #[test]
+    fn apply_password_hash_direct() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+        fs::write(
+            etc.join("shadow"),
+            "root:!:19900:0:99999:7:::\nubuntu:$6$old$oldhash:0:0:99999:7:::\n",
+        )
+        .unwrap();
+
+        let config = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: Some("$6$custom$myhash".into()),
+        };
+        apply_password(dir.path(), &config).unwrap();
+
+        let shadow = fs::read_to_string(etc.join("shadow")).unwrap();
+        let ubuntu_line = shadow.lines().find(|l| l.starts_with("ubuntu:")).unwrap();
+        let fields: Vec<&str> = ubuntu_line.split(':').collect();
+        assert_eq!(fields[1], "$6$custom$myhash");
+    }
+
+    // r[verify installer.firstboot.password]
+    #[test]
+    fn apply_password_user_not_found_in_shadow() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+        fs::write(etc.join("shadow"), "root:!:19900:0:99999:7:::\n").unwrap();
+
+        let config = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec![],
+            password: Some("test".into()),
+            password_hash: None,
+        };
+        assert!(apply_password(dir.path(), &config).is_err());
+    }
+
+    // r[verify installer.firstboot.password]
+    #[test]
+    fn apply_password_preserves_other_users() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+        fs::write(
+            etc.join("shadow"),
+            "root:!:19900:0:99999:7:::\nubuntu:$6$old$oldhash:0:0:99999:7:::\ndaemon:*:19900:0:99999:7:::\n",
+        )
+        .unwrap();
+
+        let config = FirstbootConfig {
+            hostname: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: vec![],
+            password: None,
+            password_hash: Some("$6$new$newhash".into()),
+        };
+        apply_password(dir.path(), &config).unwrap();
+
+        let shadow = fs::read_to_string(etc.join("shadow")).unwrap();
+        assert!(shadow.starts_with("root:!:19900:0:99999:7:::"));
+        assert!(shadow.contains("daemon:*:19900:0:99999:7:::"));
+        let ubuntu_line = shadow.lines().find(|l| l.starts_with("ubuntu:")).unwrap();
+        assert!(ubuntu_line.contains("$6$new$newhash"));
     }
 
     // r[verify installer.firstboot.ssh-keys]
