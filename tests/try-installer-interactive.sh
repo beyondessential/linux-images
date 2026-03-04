@@ -1,0 +1,221 @@
+#!/bin/bash
+#
+# Launch the interactive TUI installer inside a systemd-nspawn container
+# with a loopback target disk, so it can be tried out directly in a
+# terminal without spinning up a VM.
+#
+# Usage: try-installer-interactive.sh <iso> <arch> [disk-size]
+#   arch:      amd64 | arm64
+#   disk-size: size of the loopback target disk (default: 10G)
+#
+# Requires: systemd-nspawn, xorriso, unsquashfs, losetup, lsblk.
+#           Must run as root.
+set -euo pipefail
+
+ISO="${1:?Usage: $0 <iso> <arch> [disk-size]}"
+ARCH="${2:?Usage: $0 <iso> <arch> [disk-size]}"
+TARGET_DISK_SIZE="${3:-10G}"
+
+if [ ! -f "$ISO" ]; then
+    echo "ERROR: ISO not found: $ISO"
+    exit 1
+fi
+
+case "$ARCH" in
+    amd64|arm64) ;;
+    *)
+        echo "ERROR: arch must be amd64 or arm64 (got: $ARCH)"
+        exit 1
+        ;;
+esac
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: must run as root"
+    exit 1
+fi
+
+MISSING=()
+for cmd in systemd-nspawn xorriso unsquashfs losetup lsblk; do
+    command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
+done
+if [ "${#MISSING[@]}" -gt 0 ]; then
+    echo "ERROR: missing required commands: ${MISSING[*]}"
+    exit 1
+fi
+
+# ============================================================
+# State tracking for cleanup
+# ============================================================
+WORK_DIR=""
+LOOP_DEV=""
+
+cleanup() {
+    local exit_code=$?
+    set +e
+
+    if [ -n "$LOOP_DEV" ]; then
+        losetup -d "$LOOP_DEV" 2>/dev/null
+    fi
+
+    if [ -n "$WORK_DIR" ]; then
+        rm -rf "$WORK_DIR"
+    fi
+
+    exit "$exit_code"
+}
+trap cleanup EXIT
+
+WORK_DIR="$(mktemp -d -t bes-try-installer-XXXXXX)"
+
+echo "=============================="
+echo "BES Interactive Installer Trial"
+echo "=============================="
+echo "ISO:        $ISO"
+echo "Arch:       $ARCH"
+echo "Disk size:  $TARGET_DISK_SIZE"
+echo "Work dir:   $WORK_DIR"
+echo "=============================="
+echo ""
+
+# ============================================================
+# Phase 1: Extract rootfs and images from ISO
+# ============================================================
+echo "==> Extracting rootfs and images from ISO..."
+
+SQUASHFS="$WORK_DIR/filesystem.squashfs"
+ROOTFS_DIR="$WORK_DIR/rootfs"
+IMAGES_DIR="$WORK_DIR/images"
+
+xorriso -osirrox on -indev "$ISO" \
+    -extract /live/filesystem.squashfs "$SQUASHFS" \
+    2>/dev/null
+
+if [ ! -f "$SQUASHFS" ]; then
+    echo "ERROR: failed to extract /live/filesystem.squashfs from ISO"
+    exit 1
+fi
+
+echo "    Extracted squashfs: $(du -h "$SQUASHFS" | cut -f1)"
+
+unsquashfs -d "$ROOTFS_DIR" -f "$SQUASHFS" >/dev/null 2>&1
+rm -f "$SQUASHFS"
+echo "    Unpacked rootfs to $ROOTFS_DIR"
+
+mkdir -p "$IMAGES_DIR"
+xorriso -osirrox on -indev "$ISO" \
+    -extract /images "$IMAGES_DIR" \
+    2>/dev/null
+
+IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.raw.zst' | wc -l)
+if [ "$IMAGE_COUNT" -eq 0 ]; then
+    echo "ERROR: no .raw.zst images found in ISO /images/"
+    exit 1
+fi
+echo "    Extracted $IMAGE_COUNT disk image(s)"
+echo ""
+
+# ============================================================
+# Phase 2: Create loopback target disk
+# ============================================================
+echo "==> Creating loopback target disk ($TARGET_DISK_SIZE)..."
+
+TARGET_IMG="$WORK_DIR/target.img"
+truncate -s "$TARGET_DISK_SIZE" "$TARGET_IMG"
+
+LOOP_DEV="$(losetup --show --find --partscan "$TARGET_IMG")"
+echo "    Loop device: $LOOP_DEV"
+
+LOOP_SIZE_BYTES=$(blockdev --getsize64 "$LOOP_DEV")
+
+# ============================================================
+# Phase 3: Generate fake devices JSON
+# ============================================================
+echo "==> Generating fake devices list..."
+
+DEVICES_JSON="$WORK_DIR/devices.json"
+cat > "$DEVICES_JSON" << EOF
+[
+  {
+    "path": "$LOOP_DEV",
+    "size_bytes": $LOOP_SIZE_BYTES,
+    "model": "Test Loopback Disk",
+    "transport": "virtio"
+  }
+]
+EOF
+
+echo "    $DEVICES_JSON"
+echo ""
+
+# ============================================================
+# Phase 4: Prepare rootfs
+# ============================================================
+echo "==> Preparing rootfs..."
+
+if [ ! -f "$ROOTFS_DIR/etc/os-release" ] && [ ! -f "$ROOTFS_DIR/usr/lib/os-release" ]; then
+    echo "BES Installer Live" > "$ROOTFS_DIR/etc/os-release"
+fi
+
+# Install a reboot trap so the container does not actually reboot the host.
+for reboot_path in /usr/local/sbin/reboot /usr/sbin/reboot /sbin/reboot; do
+    mkdir -p "$ROOTFS_DIR/$(dirname "$reboot_path")"
+    cat > "$ROOTFS_DIR/$reboot_path" << 'TRAP'
+#!/bin/sh
+echo ""
+echo "========================================="
+echo "  Installation complete (reboot caught)"
+echo "========================================="
+echo ""
+TRAP
+    chmod +x "$ROOTFS_DIR/$reboot_path"
+done
+
+echo "    Rootfs ready"
+echo ""
+
+# ============================================================
+# Phase 5: Launch interactive installer
+# ============================================================
+echo "==> Launching interactive installer in container..."
+echo "    (The installer TUI will take over the terminal.)"
+echo ""
+
+# Use the same nspawn options as tests, but replace --pipe with
+# --console=interactive so the TUI can drive the terminal directly.
+NSPAWN_OPTS=(
+    --register=no
+    --quiet
+    --console=interactive
+    --private-network
+    --capability=CAP_SYS_ADMIN
+    --system-call-filter=mount
+    --property=DeviceAllow='block-loop rwm'
+    --property=DeviceAllow='block-blkext rwm'
+    --property=DeviceAllow='char-misc rwm'
+    --property=DeviceAllow='block-device-mapper rwm'
+)
+
+NSPAWN_BINDS=(
+    "--bind=$LOOP_DEV"
+    "--bind-ro=$IMAGES_DIR:/run/live/medium/images"
+    "--bind-ro=$DEVICES_JSON:/tmp/devices.json"
+    "--bind=/dev"
+)
+
+set +e
+systemd-nspawn \
+    "${NSPAWN_OPTS[@]}" \
+    --directory="$ROOTFS_DIR" \
+    "${NSPAWN_BINDS[@]}" \
+    /usr/local/bin/bes-installer \
+        --fake-devices /tmp/devices.json \
+        --no-reboot
+RC=$?
+set -e
+
+echo ""
+if [ $RC -eq 0 ]; then
+    echo "Installer exited successfully."
+else
+    echo "Installer exited with code $RC."
+fi

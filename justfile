@@ -7,6 +7,7 @@ variant := "metal"
 qemu_memory := "4096"
 qemu_cores := "2"
 container_test_variant := ""
+try_disk_size := "10G"
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 ubuntu_mirror := if arch == "arm64" {
@@ -27,6 +28,7 @@ _default:
   @echo "Variable: ubuntu_mirror={{ubuntu_mirror}}"
   @echo "Variable: qemu_memory={{qemu_memory}}"
   @echo "Variable: qemu_cores={{qemu_cores}}"
+  @echo "Variable: try_disk_size={{try_disk_size}}"
 
 _validate-variant:
   #!/usr/bin/env bash
@@ -617,6 +619,24 @@ test-container-isolation: _validate-arch
     exit 1
   fi
   sudo tests/test-container-isolation.sh "$ISO"
+
+# Launch the interactive TUI installer inside a systemd-nspawn container
+# with a loopback target disk, for manual testing without a VM.
+# Override disk size: just try_disk_size=20G try-installer
+try-installer: _validate-arch
+  #!/usr/bin/env bash
+  set -euo pipefail
+  ISO="{{output_iso}}"
+  if [ ! -f "$ISO" ]; then
+    echo "ERROR: ISO not found: $ISO"
+    echo "Run 'just iso' first to build the live installer."
+    exit 1
+  fi
+  if ! command -v systemd-nspawn &>/dev/null; then
+    echo "ERROR: systemd-nspawn required (install systemd-container)"
+    exit 1
+  fi
+  sudo tests/try-installer-interactive.sh "$ISO" "{{arch}}" "{{try_disk_size}}"
 
 # Run all tests (structure + installer + boot if KVM available)
 test: test-shellcheck installer-test test-structure
