@@ -97,7 +97,7 @@ from going ahead, they're purely informative.
 
 ### The ISO config file
 
-When writing the ISO to a USB device, a partition labels BESCONF can be mounted from the
+When writing the ISO to a USB device, a partition labelled BESCONF can be mounted from the
 USB afterwards. This contains a text file named `bes-install.toml`, which can be edited
 in a normal text editor like nodepad. The file can be used to change the defaults of the
 interactive installer, and even to switch the installer to an automatic/unattended mode.
