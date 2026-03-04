@@ -41,6 +41,8 @@ IMAGES_DIR="${IMAGES_DIR:?IMAGES_DIR must be set}"
 SCENARIO_NAME="${SCENARIO_NAME:-unnamed}"
 DISABLE_TPM="${DISABLE_TPM:-true}"
 SET_HOSTNAME="${SET_HOSTNAME:-}"
+SET_HOSTNAME_FROM_DHCP="${SET_HOSTNAME_FROM_DHCP:-}"
+SET_HOSTNAME_TEMPLATE="${SET_HOSTNAME_TEMPLATE:-}"
 SET_TAILSCALE="${SET_TAILSCALE:-}"
 SET_SSH_KEYS="${SET_SSH_KEYS:-}"
 SET_PASSWORD="${SET_PASSWORD:-}"
@@ -126,6 +128,8 @@ echo "  variant:       $VARIANT"
 echo "  arch:          $ARCH"
 echo "  disable-tpm:   $DISABLE_TPM"
 echo "  hostname:      ${SET_HOSTNAME:-(not set)}"
+echo "  hostname-dhcp: ${SET_HOSTNAME_FROM_DHCP:-(not set)}"
+echo "  hostname-tmpl: ${SET_HOSTNAME_TEMPLATE:-(not set)}"
 echo "  tailscale:     ${SET_TAILSCALE:+(key provided)}${SET_TAILSCALE:-(not set)}"
 echo "  ssh-keys:      ${SET_SSH_KEYS:+(key provided)}${SET_SSH_KEYS:-(not set)}"
 echo "  password:      ${SET_PASSWORD:+(plaintext provided)}${SET_PASSWORD:-(not set)}"
@@ -172,11 +176,17 @@ CONFIG_TOML="$WORK_DIR/bes-install.toml"
     echo "disk = \"$LOOP_DEV\""
     echo "disable-tpm = $DISABLE_TPM"
 
-    if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ] || [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ]; then
+    if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_HOSTNAME_FROM_DHCP" ] || [ -n "$SET_HOSTNAME_TEMPLATE" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ] || [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ]; then
         echo ""
         echo "[firstboot]"
         if [ -n "$SET_HOSTNAME" ]; then
             echo "hostname = \"$SET_HOSTNAME\""
+        fi
+        if [ -n "$SET_HOSTNAME_FROM_DHCP" ]; then
+            echo "hostname-from-dhcp = true"
+        fi
+        if [ -n "$SET_HOSTNAME_TEMPLATE" ]; then
+            echo "hostname-template = \"$SET_HOSTNAME_TEMPLATE\""
         fi
         if [ -n "$SET_TAILSCALE" ]; then
             echo "tailscale-authkey = \"$SET_TAILSCALE\""
@@ -395,7 +405,43 @@ if [ -n "$BTRFS_DEV" ]; then
 
         # --- Hostname ---
         # r[verify installer.firstboot.hostname]
-        if [ -n "$SET_HOSTNAME" ]; then
+        if [ -n "$SET_HOSTNAME_FROM_DHCP" ]; then
+            # DHCP hostname: /etc/hostname must be empty
+            if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then
+                HOSTNAME_SIZE="$(stat -c%s "$VERIFY_MOUNT/etc/hostname")"
+                check "hostname file is empty (DHCP mode)" \
+                    test "$HOSTNAME_SIZE" = "0"
+            else
+                check "hostname file exists" false
+            fi
+
+            if [ -f "$VERIFY_MOUNT/etc/hosts" ]; then
+                if grep -q "127.0.1.1" "$VERIFY_MOUNT/etc/hosts"; then
+                    check "no 127.0.1.1 line in /etc/hosts (DHCP mode)" false
+                else
+                    check "no 127.0.1.1 line in /etc/hosts (DHCP mode)" true
+                fi
+            fi
+        elif [ -n "$SET_HOSTNAME_TEMPLATE" ]; then
+            # Template hostname: /etc/hostname must be non-empty and match pattern
+            if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then
+                ACTUAL_HOSTNAME="$(tr -d '[:space:]' < "$VERIFY_MOUNT/etc/hostname")"
+                check "hostname is non-empty (template mode)" \
+                    test -n "$ACTUAL_HOSTNAME"
+                # Extract the pattern from the template for basic validation.
+                # For "test-{hex:6}" we check ^test-[0-9a-f]{6}$
+                TEMPLATE_REGEX="${SET_HOSTNAME_TEMPLATE_REGEX:-}"
+                if [ -n "$TEMPLATE_REGEX" ]; then
+                    if echo "$ACTUAL_HOSTNAME" | grep -qE "$TEMPLATE_REGEX"; then
+                        check "hostname matches template pattern '$TEMPLATE_REGEX'" true
+                    else
+                        check "hostname '$ACTUAL_HOSTNAME' matches template pattern '$TEMPLATE_REGEX'" false
+                    fi
+                fi
+            else
+                check "hostname file exists" false
+            fi
+        elif [ -n "$SET_HOSTNAME" ]; then
             if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then
                 ACTUAL_HOSTNAME="$(tr -d '[:space:]' < "$VERIFY_MOUNT/etc/hostname")"
                 check "hostname is '$SET_HOSTNAME'" \

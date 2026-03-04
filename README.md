@@ -26,9 +26,15 @@ network is available.
 The disk images ship with a default hostname of `ubuntu`. What happens to this
 hostname depends on the variant and how the image is installed:
 
-- **Metal variant (TUI or auto install):** the installer requires a hostname.
-  The TUI will not allow advancing past the hostname screen with an empty field,
-  and `auto = true` configs must include `hostname` in the `[firstboot]` table.
+- **Metal variant (direct image write, no installer):** the image ships with an
+  empty `/etc/hostname`, so the system automatically picks up a DHCP-provided
+  hostname. If DHCP does not provide one, `hostnamectl` shows
+  `Static hostname: n/a` and the transient hostname is `localhost`.
+- **Metal variant (TUI or auto install):** the installer requires a hostname
+  strategy. The user can type a static hostname, toggle the "Use DHCP hostname"
+  checkbox (Tab/Space on the hostname screen), or use a `hostname-template` in
+  the config file. In auto mode, one of `hostname`, `hostname-from-dhcp = true`,
+  or `hostname-template` must be present in the `[firstboot]` table.
 - **Cloud variant (TUI install):** the hostname is optional in the TUI. If left
   empty, the default `ubuntu` hostname is kept. It is expected to be overridden
   at boot by DHCP or cloud-init metadata from the cloud provider.
@@ -140,6 +146,28 @@ hostname = "server-01"
 tailscale-authkey = "tskey-auth-xxxxx"
 ```
 
+Example using DHCP hostname (metal variant, no static hostname):
+
+```toml
+auto = true
+variant = "metal"
+disk = "largest-ssd"
+
+[firstboot]
+hostname-from-dhcp = true
+```
+
+Example using a hostname template (generates a unique hostname per install):
+
+```toml
+auto = true
+variant = "metal"
+disk = "largest-ssd"
+
+[firstboot]
+hostname-template = "tamanu-{hex:6}"
+```
+
 Example of a config setting custom defaults only:
 
 ```toml
@@ -157,7 +185,7 @@ All fields are optional. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `variant` and `disk`; additionally, the `metal` variant requires `hostname` in the `[firstboot]` table. |
+| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `variant` and `disk`; additionally, the `metal` variant requires a hostname strategy (`hostname`, `hostname-from-dhcp`, or `hostname-template`) in the `[firstboot]` table. |
 | `variant` | string | — | Image variant to install. `"metal"` for full-disk encryption (LUKS2) with optional TPM auto-unlock, or `"cloud"` for no encryption (intended for environments with host-level disk encryption). |
 | `disk` | string | — | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
 | `disable-tpm` | boolean | `false` | Disable automatic TPM2 enrollment on first boot. Only meaningful with the `metal` variant; ignored (with a warning) for `cloud`. The LUKS volume is still created but will not be bound to the TPM. |
@@ -166,7 +194,9 @@ All fields are optional. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `hostname` | string | — | Hostname to set on first boot. Required for the `metal` variant (in both TUI and auto mode); optional for `cloud` (defaults to `ubuntu`, typically overridden by DHCP/cloud-init). Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. |
+| `hostname` | string | — | Hostname to set on first boot. Required for the `metal` variant unless `hostname-from-dhcp` or `hostname-template` is used; optional for `cloud` (defaults to `ubuntu`, typically overridden by DHCP/cloud-init). Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Mutually exclusive with `hostname-from-dhcp` and `hostname-template`. |
+| `hostname-from-dhcp` | boolean | `false` | Use the DHCP-provided hostname instead of a static one. When enabled, `/etc/hostname` is left empty so that `systemd-hostnamed` accepts the transient hostname from DHCP. Mutually exclusive with `hostname` and `hostname-template`. |
+| `hostname-template` | string | — | Generate a unique hostname from a template pattern. The template contains literal characters and `{hex:N}` or `{num:N}` placeholders (e.g. `"tamanu-{hex:6}"` produces `"tamanu-a3f1b2"`). Must contain at least one placeholder; literals must be `[a-z0-9-]`; result must not exceed 63 characters. Mutually exclusive with `hostname` and `hostname-from-dhcp`. |
 | `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`) used to automatically join the Tailscale network on first boot. |
 | `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
 | `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. Mutually exclusive with `password-hash`. |
