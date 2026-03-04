@@ -76,6 +76,8 @@ jobs:
           name: image-${{ matrix.variant }}-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/${{ matrix.variant }}/*
           if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   installer:
     strategy:
@@ -135,6 +137,8 @@ jobs:
           name: installer-${{ matrix.arch }}
           path: installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer
           if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   iso:
     needs: [images, installer]
@@ -207,6 +211,8 @@ jobs:
           name: iso-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/bes-installer-*.iso
           if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   container-test:
     needs: [iso]
