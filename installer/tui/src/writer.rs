@@ -82,22 +82,56 @@ pub fn find_image_path(variant: &str, arch: &str) -> Result<std::path::PathBuf> 
 }
 
 // r[impl installer.write.disk-size-check]
-/// Read the uncompressed content size from a `.raw.zst` file's frame header.
+/// Read the total uncompressed content size from a `.raw.zst` file by summing
+/// the content sizes of all zstd frames. A zstd file can contain multiple
+/// frames (e.g. when compressed with `--threads`), so we iterate through each
+/// one using `get_frame_content_size` to read the header and
+/// `find_frame_compressed_size` to skip to the next frame.
 pub fn image_uncompressed_size(source: &Path) -> Result<u64> {
-    // ZSTD_FRAMEHEADERSIZE_MAX is 18 bytes; read a bit more to be safe.
-    let mut buf = [0u8; 32];
-    let mut f = File::open(source).with_context(|| format!("opening {}", source.display()))?;
-    let n = f
-        .read(&mut buf)
-        .with_context(|| format!("reading zstd frame header from {}", source.display()))?;
-    zstd::zstd_safe::get_frame_content_size(&buf[..n])
-        .map_err(|e| {
+    let data = std::fs::read(source)
+        .with_context(|| format!("reading compressed image {}", source.display()))?;
+
+    let mut total: u64 = 0;
+    let mut offset: usize = 0;
+
+    while offset < data.len() {
+        let remaining = &data[offset..];
+
+        let content_size = zstd::zstd_safe::get_frame_content_size(remaining)
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "error reading zstd frame content size at offset {offset} in {}: {e}",
+                    source.display()
+                )
+            })?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "zstd frame at offset {offset} in {} has no content size",
+                    source.display()
+                )
+            })?;
+        total = total.checked_add(content_size).ok_or_else(|| {
             anyhow::anyhow!(
-                "error reading zstd frame content size from {}: {e}",
+                "total uncompressed size overflows u64 for {}",
                 source.display()
             )
-        })?
-        .ok_or_else(|| anyhow::anyhow!("zstd frame in {} has no content size", source.display()))
+        })?;
+
+        let frame_compressed_size = zstd::zstd_safe::find_frame_compressed_size(remaining)
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "error finding compressed frame size at offset {offset} in {}: {e}",
+                    source.display()
+                )
+            })?;
+        offset += frame_compressed_size;
+    }
+
+    if total == 0 {
+        bail!("no zstd frames found in {}", source.display());
+    }
+
+    Ok(total)
 }
 
 // r[impl installer.write.disk-size-check]
@@ -462,7 +496,7 @@ mod tests {
 
     // r[verify installer.write.disk-size-check]
     #[test]
-    fn image_uncompressed_size_reads_zstd_header() {
+    fn image_uncompressed_size_single_frame() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.raw.zst");
 
@@ -476,10 +510,39 @@ mod tests {
 
     // r[verify installer.write.disk-size-check]
     #[test]
+    fn image_uncompressed_size_multiple_frames() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("multi.raw.zst");
+
+        let frame1_data = vec![0xAAu8; 3000];
+        let frame2_data = vec![0xBBu8; 5000];
+        let frame3_data = vec![0xCCu8; 2000];
+
+        let mut combined = zstd::bulk::compress(&frame1_data, 3).unwrap();
+        combined.extend_from_slice(&zstd::bulk::compress(&frame2_data, 3).unwrap());
+        combined.extend_from_slice(&zstd::bulk::compress(&frame3_data, 3).unwrap());
+        std::fs::write(&path, &combined).unwrap();
+
+        let size = image_uncompressed_size(&path).unwrap();
+        assert_eq!(size, 10000);
+    }
+
+    // r[verify installer.write.disk-size-check]
+    #[test]
     fn image_uncompressed_size_fails_on_non_zstd() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("garbage.zst");
         std::fs::write(&path, b"this is not zstd data").unwrap();
+
+        assert!(image_uncompressed_size(&path).is_err());
+    }
+
+    // r[verify installer.write.disk-size-check]
+    #[test]
+    fn image_uncompressed_size_fails_on_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.zst");
+        std::fs::write(&path, b"").unwrap();
 
         assert!(image_uncompressed_size(&path).is_err());
     }
