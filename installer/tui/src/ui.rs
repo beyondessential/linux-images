@@ -178,7 +178,7 @@ impl AppState {
             .position(|z| z == &timezone_selected)
             .unwrap_or(0);
 
-        Self {
+        let mut state = Self {
             screen: Screen::Welcome,
             selected_disk_index: default_disk_index.unwrap_or(0),
             devices,
@@ -218,12 +218,14 @@ impl AppState {
             ssh_github_fetching: false,
             ssh_github_error: None,
             ssh_github_rx: None,
-        }
+        };
+        state.ensure_trailing_blank();
+        state
     }
 
     // r[impl installer.tui.hostname+2]
     // r[impl installer.tui.tailscale+3]
-    // r[impl installer.tui.ssh-keys+3]
+    // r[impl installer.tui.ssh-keys+4]
     // r[impl installer.tui.password+3]
     // r[impl installer.tui.timezone]
     /// Build a `FirstbootConfig` from the current interactive input fields.
@@ -454,6 +456,7 @@ impl AppState {
                         self.ssh_keys.push(key.clone());
                     }
                     self.ssh_github_error = None;
+                    self.ensure_trailing_blank();
                     self.ssh_key_cursor = first_new;
                     self.screen = Screen::LoginSshKeys;
                 } else {
@@ -544,7 +547,7 @@ impl AppState {
             .any(|r| matches!(r, Some(r) if r.label == "github.com" && r.passed))
     }
 
-    // r[impl installer.tui.ssh-keys+3]
+    // r[impl installer.tui.ssh-keys+4]
 
     /// Recognized SSH public key type prefixes.
     const SSH_KEY_PREFIXES: &[&str] = &[
@@ -582,6 +585,15 @@ impl AppState {
         }
         if self.ssh_key_cursor >= self.ssh_keys.len() {
             self.ssh_key_cursor = 0;
+        }
+    }
+
+    /// Ensure the ssh_keys list always has a trailing blank entry.
+    /// If the last entry is non-empty, a new blank entry is appended.
+    /// Does not move the cursor.
+    pub fn ensure_trailing_blank(&mut self) {
+        if self.ssh_keys.is_empty() || !self.ssh_keys.last().unwrap().trim().is_empty() {
+            self.ssh_keys.push(String::new());
         }
     }
 
@@ -933,7 +945,7 @@ mod tests {
         assert_eq!(state.screen, Screen::VariantSelection);
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn login_sub_screens_go_back_to_login() {
         let mut state = make_state();
@@ -950,7 +962,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Login);
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn login_sub_screens_do_not_advance() {
         let mut state = make_state();
@@ -1051,7 +1063,7 @@ mod tests {
         assert_eq!(state.tailscale_input, "tskey-auth-xxx");
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn ssh_keys_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1078,7 +1090,7 @@ mod tests {
         );
         assert_eq!(
             state.ssh_keys,
-            vec!["ssh-ed25519 AAAA key1", "ssh-rsa BBBB key2"]
+            vec!["ssh-ed25519 AAAA key1", "ssh-rsa BBBB key2", ""]
         );
     }
 
@@ -1098,7 +1110,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tailscale+3]
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn firstboot_config_all_fields() {
         let mut state = make_state();
@@ -1392,7 +1404,7 @@ mod tests {
         assert!(state.ssh_github_error.is_some());
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn filter_ssh_keys_removes_invalid() {
         let mut state = make_state();
@@ -1408,7 +1420,7 @@ mod tests {
         assert_eq!(state.ssh_keys[1], "ssh-rsa BBBB key2");
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn filter_ssh_keys_ensures_one_empty() {
         let mut state = make_state();
@@ -1417,7 +1429,65 @@ mod tests {
         assert_eq!(state.ssh_keys, vec![String::new()]);
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
+    #[test]
+    fn ensure_trailing_blank_appends_when_last_nonempty() {
+        let mut state = make_state();
+        state.ssh_keys = vec!["ssh-ed25519 AAAA key1".into()];
+        state.ensure_trailing_blank();
+        assert_eq!(state.ssh_keys, vec!["ssh-ed25519 AAAA key1", ""]);
+    }
+
+    // r[verify installer.tui.ssh-keys+4]
+    #[test]
+    fn ensure_trailing_blank_noop_when_last_empty() {
+        let mut state = make_state();
+        state.ssh_keys = vec!["ssh-ed25519 AAAA key1".into(), String::new()];
+        state.ensure_trailing_blank();
+        assert_eq!(state.ssh_keys, vec!["ssh-ed25519 AAAA key1", ""]);
+    }
+
+    // r[verify installer.tui.ssh-keys+4]
+    #[test]
+    fn ensure_trailing_blank_on_empty_vec() {
+        let mut state = make_state();
+        state.ssh_keys = vec![];
+        state.ensure_trailing_blank();
+        assert_eq!(state.ssh_keys, vec![String::new()]);
+    }
+
+    // r[verify installer.tui.ssh-keys+4]
+    #[test]
+    fn constructor_has_trailing_blank_with_prefilled_keys() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
+            ..Default::default()
+        };
+        let state = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+        );
+        assert_eq!(
+            state.ssh_keys,
+            vec!["ssh-ed25519 AAAA key1", "ssh-rsa BBBB key2", ""]
+        );
+    }
+
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn ssh_key_summary_with_comment() {
         let summary =
@@ -1426,7 +1496,7 @@ mod tests {
         assert!(summary.contains("me@host"));
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn ssh_key_summary_empty() {
         assert_eq!(AppState::ssh_key_summary(""), "(empty)");

@@ -295,22 +295,25 @@ for a Tailscale auth key. The field may be pre-filled from the configuration
 file. The user can leave it empty to skip Tailscale configuration. Enter or
 Esc returns to the Login screen.
 
-r[installer.tui.ssh-keys+3]
+r[installer.tui.ssh-keys+4]
 The SSH keys sub-screen is accessed via the `Alt+s` keybind from the Login
-screen. It displays a growing list of individual key entry fields. The
-selected field is expanded for editing as a bordered text input; non-selected
-fields are collapsed to a one-line summary showing the key type, start of
-the key material, and the comment (if any). Empty entries are shown as
-`(empty)` in gray. Tab from a non-empty field adds a new empty field below;
-Tab from an empty field cycles forward through existing fields (wrapping).
-Shift+Tab cycles backward. Enter or Esc returns to the Login screen after
-filtering out empty and invalid entries. A minimal validity check requires
-the line to start with a recognized key type prefix (`ssh-rsa`,
-`ssh-ed25519`, `ssh-dss`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`,
-`ecdsa-sha2-nistp521`, `sk-ssh-ed25519@openssh.com`,
-`sk-ecdsa-sha2-nistp256@openssh.com`) followed by a space and at least one
-more non-whitespace character. After filtering, if the vec is empty, a
-single empty string is re-added so the screen always has at least one field.
+screen. It displays a list of individual key entry fields with a trailing
+blank field always present at the end. The selected field is expanded for
+editing as a bordered text input; non-selected fields are collapsed to a
+one-line summary showing the key type, start of the key material, and the
+comment (if any). Empty entries are shown as `(empty)` in gray. When the
+user types into the trailing blank field, a new blank field is automatically
+appended so there is always a blank field at the end. Tab cycles forward
+through the fields (wrapping from the last to the first). Shift+Tab cycles
+backward (wrapping from the first to the last). Enter or Esc returns to the
+Login screen after filtering out empty and invalid entries. A minimal
+validity check requires the line to start with a recognized key type prefix
+(`ssh-rsa`, `ssh-ed25519`, `ssh-dss`, `ecdsa-sha2-nistp256`,
+`ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`,
+`sk-ssh-ed25519@openssh.com`, `sk-ecdsa-sha2-nistp256@openssh.com`)
+followed by a space and at least one more non-whitespace character. After
+filtering, if the vec is empty, a single empty string is re-added so the
+screen always has at least one field.
 
 r[installer.tui.ssh-keys.github+4]
 The GitHub import sub-screen is accessed via the `Alt+g` keybind from the Login

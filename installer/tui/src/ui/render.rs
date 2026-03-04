@@ -311,9 +311,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
             h
         }
         Screen::LoginTailscale => "Enter: done | Esc: back".into(),
-        Screen::LoginSshKeys => {
-            "Tab: new key / next | Shift+Tab: prev | Enter: done | Esc: back".into()
-        }
+        Screen::LoginSshKeys => "Tab: next | Shift+Tab: prev | Enter: done | Esc: back".into(),
         Screen::LoginGithub => "Enter: fetch keys | Esc: back".into(),
         Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back".into(),
         Screen::NetworkResults => {
@@ -563,7 +561,7 @@ fn mask(input: &str) -> String {
 
 // r[impl installer.tui.password+3]
 // r[impl installer.tui.tailscale+3]
-// r[impl installer.tui.ssh-keys+3]
+// r[impl installer.tui.ssh-keys+4]
 fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
@@ -697,11 +695,13 @@ fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.ssh-keys+3]
+// r[impl installer.tui.ssh-keys+4]
 fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     let intro_lines = vec![
         Line::from(""),
-        Line::from("  SSH authorized keys. Tab to add a new key, Shift+Tab to go back."),
+        Line::from(
+            "  SSH authorized keys. Tab/Shift+Tab to navigate. Type in the blank field to add a key.",
+        ),
         Line::from("  Leave empty to skip."),
         Line::from(""),
     ];

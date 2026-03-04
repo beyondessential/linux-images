@@ -127,7 +127,7 @@ enter
 
 // r[verify installer.tui.hostname+2]
 // r[verify installer.tui.tailscale+3]
-// r[verify installer.tui.ssh-keys+3]
+// r[verify installer.tui.ssh-keys+4]
 #[test]
 fn interactive_firstboot_fields_captured() {
     let f = Fixture::new();
@@ -192,7 +192,7 @@ enter
 
 // r[verify installer.tui.hostname+2]
 // r[verify installer.tui.tailscale+3]
-// r[verify installer.tui.ssh-keys+3]
+// r[verify installer.tui.ssh-keys+4]
 #[test]
 fn interactive_empty_firstboot_is_null() {
     let f = Fixture::new();

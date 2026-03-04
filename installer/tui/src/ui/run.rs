@@ -130,7 +130,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.password+3]
         // r[impl installer.tui.tailscale+3]
-        // r[impl installer.tui.ssh-keys+3]
+        // r[impl installer.tui.ssh-keys+4]
         // r[impl installer.tui.ssh-keys.github+4]
         Screen::Login => match key.code {
             KeyCode::Esc => {
@@ -199,23 +199,15 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.ssh-keys+3]
+        // r[impl installer.tui.ssh-keys+4]
         Screen::LoginSshKeys => match key.code {
             KeyCode::Esc | KeyCode::Enter => {
                 state.filter_ssh_keys();
                 state.screen = Screen::Login;
             }
             KeyCode::Tab => {
-                let current = &state.ssh_keys[state.ssh_key_cursor];
-                if !current.trim().is_empty() {
-                    state
-                        .ssh_keys
-                        .insert(state.ssh_key_cursor + 1, String::new());
-                    state.ssh_key_cursor += 1;
-                } else {
-                    let len = state.ssh_keys.len();
-                    state.ssh_key_cursor = (state.ssh_key_cursor + 1) % len;
-                }
+                let len = state.ssh_keys.len();
+                state.ssh_key_cursor = (state.ssh_key_cursor + 1) % len;
             }
             KeyCode::BackTab => {
                 if state.ssh_key_cursor == 0 {
@@ -229,6 +221,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             }
             KeyCode::Char(c) => {
                 state.ssh_keys[state.ssh_key_cursor].push(c);
+                state.ensure_trailing_blank();
             }
             _ => {}
         },
@@ -1326,7 +1319,7 @@ mod tests {
         assert_eq!(final_state.tailscale_input, "tsk");
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
     fn scripted_login_ssh_keys_sub_screen() {
         let state = make_state();
@@ -1367,9 +1360,9 @@ mod tests {
         assert_eq!(final_state.ssh_keys, vec!["ssh-ed25519 AAAA"]);
     }
 
-    // r[verify installer.tui.ssh-keys+3]
+    // r[verify installer.tui.ssh-keys+4]
     #[test]
-    fn scripted_login_ssh_keys_tab_adds_new_field() {
+    fn scripted_login_ssh_keys_tab_cycles_and_trailing_blank() {
         let state = make_state();
         let events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
@@ -1395,9 +1388,9 @@ mod tests {
             press(KeyCode::Char('B')),
             press(KeyCode::Char('B')),
             press(KeyCode::Char('B')),
-            // Tab adds a new field (current is non-empty)
+            // Tab cycles to next field (the auto-appended trailing blank)
             press(KeyCode::Tab),
-            // Type second key
+            // Type second key in the trailing blank field
             press(KeyCode::Char('s')),
             press(KeyCode::Char('s')),
             press(KeyCode::Char('h')),

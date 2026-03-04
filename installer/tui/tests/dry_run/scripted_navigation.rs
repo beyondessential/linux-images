@@ -251,7 +251,7 @@ enter
     assert_eq!(plan["firstboot"]["hostname"], "bad");
 }
 
-// r[verify installer.tui.ssh-keys+3]
+// r[verify installer.tui.ssh-keys+4]
 #[test]
 fn scripted_multiline_ssh_keys() {
     let f = Fixture::new();
