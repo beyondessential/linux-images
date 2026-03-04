@@ -213,6 +213,19 @@ cloud-init must not have network configs in the image.
 r[image.cloud-init.no-machineid]
 The /etc/machine-id file must be blank in the image so it's unique per install.
 
+## Hostname
+
+r[image.hostname.metal-dhcp]
+The metal image must ship with an empty `/etc/hostname` (zero bytes) so that
+`systemd-hostnamed` accepts DHCP-provided transient hostnames. `/etc/hosts`
+must contain only `localhost` entries (no `127.0.1.1` line).
+
+r[image.hostname.cloud-default]
+The cloud image must ship with `ubuntu` as the static hostname in
+`/etc/hostname`. Cloud-init with `create_hostname_file: false` prevents
+cloud-init from touching this file; the hostname comes from DHCP or instance
+metadata at runtime.
+
 ## Encryption (Metal Variant)
 
 ### LUKS
@@ -295,6 +308,12 @@ the first file found:
 >
 > [firstboot]
 > hostname = "server-01"
+> # Use DHCP-provided hostname instead of a static one.
+> # Mutually exclusive with hostname and hostname-template.
+> hostname-from-dhcp = true
+> # Generate a hostname from a template pattern.
+> # Mutually exclusive with hostname and hostname-from-dhcp.
+> hostname-template = "tamanu-{hex:6}"
 > tailscale-authkey = "tskey-auth-xxxxx"
 > ssh-authorized-keys = [
 >   "ssh-ed25519 AAAA... admin@example.com",
@@ -308,7 +327,20 @@ the first file found:
 >
 > All fields are optional. The `[firstboot]` table and all its fields are
 > optional. `password` and `password-hash` are mutually exclusive; if both
-> are present the installer must report a validation error.
+> are present the installer must report a validation error. The three
+> hostname fields — `hostname`, `hostname-from-dhcp`, and
+> `hostname-template` — are mutually exclusive; if more than one is present
+> the installer must report a validation error.
+
+r[installer.config.hostname-template]
+The `hostname-template` field value is a string containing literal characters
+and placeholder expressions enclosed in `{...}`. Supported placeholders:
+`{hex:N}` (N-character lowercase hex string, 1 <= N <= 32) and `{num:N}`
+(N-digit zero-padded decimal string, 1 <= N <= 10). The template must
+contain at least one placeholder, literal portions must consist only of
+`[a-z0-9-]`, the template must not start or end with a hyphen, and the
+fully expanded hostname must not exceed 63 characters. Values are generated
+from a cryptographically secure random source.
 
 ## Operating Modes
 
@@ -333,12 +365,13 @@ defaults. The user can override any value.
 > 5. Print an error and exit with a non-zero status on failure.
 >
 > Required fields: `variant`, `disk`. Additionally, when `variant` is
-> `"metal"`, `firstboot.hostname` is also required (since there is no
-> cloud-init or DHCP-based hostname assignment on bare metal).
+> `"metal"`, at least one hostname strategy must be specified:
+> `firstboot.hostname`, `firstboot.hostname-from-dhcp = true`, or
+> `firstboot.hostname-template`.
 
 r[installer.mode.auto-incomplete+2]
 When `auto = true` but required fields are missing (`variant`, `disk`, or
-`hostname` for the metal variant), the installer must print an error
+a hostname strategy for the metal variant), the installer must print an error
 describing the missing fields and fall back to interactive mode.
 
 ## Testing Flags
@@ -378,6 +411,7 @@ plan. If omitted, the plan is written to stdout.
 >   "disable_tpm": false,
 >   "firstboot": {
 >     "hostname": "server-01",
+>     "hostname_from_template": false,
 >     "tailscale_authkey": true,
 >     "ssh_authorized_keys_count": 2,
 >     "password_set": true
@@ -390,7 +424,10 @@ plan. If omitted, the plan is written to stdout.
 > The `firstboot` field is `null` when no first-boot configuration is set.
 > `tailscale_authkey` is a boolean (true when a key is provided) to avoid
 > leaking secrets into test output. `password_set` is a boolean (true when
-> a password or password hash is provided).
+> a password or password hash is provided). When `hostname-from-dhcp` is
+> chosen, `hostname` is the sentinel string `"dhcp"`. When a hostname was
+> generated from a template, `hostname_from_template` is `true`; otherwise
+> it is `false`.
 
 r[installer.dryrun.devices]
 In dry-run mode the installer must still detect real block devices (via
@@ -442,11 +479,17 @@ TPM auto-enrollment.
 r[installer.tui.hostname+2]
 After variant/TPM configuration, the TUI must present a text input screen
 for the system hostname. The field may be pre-filled from the configuration
-file. When the `metal` variant is selected, the hostname is required and
-the TUI must not allow the user to advance with an empty field. When the
-`cloud` variant is selected, the hostname is optional; if left empty the
-image's built-in default hostname (`ubuntu`) is kept and is expected to be
-overridden by DHCP or cloud-init at boot.
+file. When the `metal` variant is selected, a toggle/checkbox below the text
+input allows the user to opt into DHCP hostname assignment instead of typing
+a static hostname. When the toggle is ON, the text input is visually dimmed
+and the screen displays a note explaining that the system will get its
+hostname from DHCP. The user can advance when either the toggle is ON or a
+non-empty hostname is entered. When the `cloud` variant is selected, the
+toggle is not shown and the hostname is optional; if left empty the image's
+built-in default hostname (`ubuntu`) is kept and is expected to be overridden
+by DHCP or cloud-init at boot. If the configuration file contains a
+`hostname-template`, the installer resolves it to a concrete hostname at
+startup and pre-fills the text input with the result.
 
 r[installer.tui.tailscale]
 After the hostname screen, the TUI must present a text input screen for a
@@ -518,8 +561,12 @@ BTRFS partition (subvol `@`) to apply first-boot configuration. For the metal
 variant, it must unlock the LUKS volume using the empty keyfile first.
 
 r[installer.firstboot.hostname]
-If `hostname` is set, the installer must write it to `/etc/hostname` on the
-installed system.
+If `hostname` is set (including hostnames generated from a template), the
+installer must write it to `/etc/hostname` and add a `127.0.1.1` entry to
+`/etc/hosts` on the installed system. If `hostname-from-dhcp` is true, the
+installer must write an empty `/etc/hostname` (truncate) and remove any
+`127.0.1.1` line from `/etc/hosts`. If neither is set (cloud only), the
+installer must leave `/etc/hostname` as-is.
 
 r[installer.firstboot.tailscale-authkey]
 If `tailscale-authkey` is set, the installer must write the key to

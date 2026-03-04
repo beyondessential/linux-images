@@ -298,11 +298,20 @@ grub-install \
     --removable
 
 # ============================================================
-# Hostname (cleared — set by DHCP or cloud-init or installer)
+# Hostname
 # ============================================================
-echo "ubuntu" > /etc/hostname
-echo "127.0.0.1 localhost" > /etc/hosts
-echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
+if [ "$VARIANT" = "metal" ]; then
+    # r[image.hostname.metal-dhcp]
+    : > /etc/hostname
+    echo "127.0.0.1 localhost" > /etc/hosts
+    echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
+else
+    # r[image.hostname.cloud-default]
+    echo "ubuntu" > /etc/hostname
+    echo "127.0.0.1 localhost" > /etc/hosts
+    echo "127.0.1.1 ubuntu" >> /etc/hosts
+    echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
+fi
 
 # ============================================================
 # Final package cleanup
