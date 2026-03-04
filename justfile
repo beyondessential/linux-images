@@ -290,6 +290,11 @@ raw: _validate-variant _validate-arch _ensure-dirs
     echo "Raw image already exists: {{output_raw}} (skipping build)"
     exit 0
   fi
+  if [ -f "{{output_raw}}.zst" ]; then
+    echo "Decompressing {{output_raw}}.zst -> {{output_raw}}"
+    zstd -d --keep "{{output_raw}}.zst" -o "{{output_raw}}"
+    exit 0
+  fi
   echo "Building raw image: {{output_raw}}"
   sudo ARCH="{{arch}}" \
        VARIANT="{{variant}}" \
@@ -311,8 +316,14 @@ qcow: raw
 
 # Compress raw image with zstd
 compress:
-  stat --format='%s' '{{output_raw}}' > '{{output_raw + ".size"}}'
-  zstd -6 --rm -o '{{output_raw + ".zst"}}' '{{output_raw}}'
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if [ -f "{{output_raw}}.zst" ] && [ ! -f "{{output_raw}}" ]; then
+    echo "Already compressed: {{output_raw}}.zst (skipping)"
+    exit 0
+  fi
+  stat --format='%s' '{{output_raw}}' > '{{output_raw}}.size'
+  zstd -6 --rm -o '{{output_raw}}.zst' '{{output_raw}}'
 
 # Generate SHA256 checksums for all outputs
 # r[image.output.checksum]
