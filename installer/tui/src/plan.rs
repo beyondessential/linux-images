@@ -266,6 +266,7 @@ mod tests {
                 OperatingMode::AutoIncomplete {
                     missing_variant: true,
                     missing_disk: true,
+                    missing_hostname: false,
                 },
                 "auto-incomplete",
             ),

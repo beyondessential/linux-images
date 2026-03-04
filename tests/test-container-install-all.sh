@@ -123,8 +123,8 @@ SCENARIOS=(
     # 1. Metal, full firstboot, TPM disabled, with plaintext password
     "metal-full-disable-tpm|metal|true|test-metal-full|$TS_TEST_KEY|$SSH_TEST_KEY|testpass123|"
 
-    # 2. Metal, no firstboot, TPM enabled
-    "metal-minimal-tpm-on|metal|false|||||"
+    # 2. Metal, minimal firstboot (hostname only), TPM enabled
+    "metal-minimal-tpm-on|metal|false|test-metal-minimal||||"
 
     # 3. Metal, hostname only, TPM disabled
     "metal-hostname-only|metal|true|test-metal-hostname||||"
@@ -141,8 +141,8 @@ SCENARIOS=(
     # 7. Cloud, password-hash only (pre-hashed, no other firstboot)
     "cloud-password-hash|cloud|true|||||\$6\$testrounds\$testhashvalue"
 
-    # 8. Metal, plaintext password only (no other firstboot)
-    "metal-password-only|metal|true||||pwonly|"
+    # 8. Metal, plaintext password + hostname (no other firstboot)
+    "metal-password-only|metal|true|test-metal-pw|||pwonly|"
 )
 
 # ============================================================

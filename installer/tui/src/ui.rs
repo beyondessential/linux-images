@@ -111,7 +111,7 @@ impl AppState {
         }
     }
 
-    // r[impl installer.tui.hostname]
+    // r[impl installer.tui.hostname+2]
     // r[impl installer.tui.tailscale]
     // r[impl installer.tui.ssh-keys]
     // r[impl installer.tui.password]
@@ -240,6 +240,11 @@ impl AppState {
         self.confirm_input
             .trim()
             .eq_ignore_ascii_case(self.confirmation_text())
+    }
+
+    // r[impl installer.tui.hostname+2]
+    pub fn hostname_required(&self) -> bool {
+        self.variant == Variant::Metal
     }
 
     // r[impl installer.tui.password]
@@ -460,7 +465,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Error("test".into()));
     }
 
-    // r[verify installer.tui.hostname]
+    // r[verify installer.tui.hostname+2]
     #[test]
     fn hostname_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -555,7 +560,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname]
+    // r[verify installer.tui.hostname+2]
     #[test]
     fn firstboot_config_from_inputs() {
         let mut state = make_state();
@@ -588,7 +593,7 @@ mod tests {
         assert!(fb.password_hash.is_none());
     }
 
-    // r[verify installer.tui.hostname]
+    // r[verify installer.tui.hostname+2]
     #[test]
     fn firstboot_config_empty_strings_are_none() {
         let mut state = make_state();
@@ -656,5 +661,21 @@ mod tests {
             fb.password_hash.as_deref(),
             Some("$6$rounds=4096$salt$hash")
         );
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn hostname_required_for_metal() {
+        let mut state = make_state();
+        state.variant = Variant::Metal;
+        assert!(state.hostname_required());
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn hostname_not_required_for_cloud() {
+        let mut state = make_state();
+        state.variant = Variant::Cloud;
+        assert!(!state.hostname_required());
     }
 }

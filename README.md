@@ -21,6 +21,21 @@ cloud-init user-data is enabled, allowing e.g. cloud images to be configured by
 cloud providers for networking purposes at first boot. Otherwise it's assumed a DHCP
 network is available.
 
+#### Hostname
+
+The disk images ship with a default hostname of `ubuntu`. What happens to this
+hostname depends on the variant and how the image is installed:
+
+- **Metal variant (TUI or auto install):** the installer requires a hostname.
+  The TUI will not allow advancing past the hostname screen with an empty field,
+  and `auto = true` configs must include `hostname` in the `[firstboot]` table.
+- **Cloud variant (TUI install):** the hostname is optional in the TUI. If left
+  empty, the default `ubuntu` hostname is kept. It is expected to be overridden
+  at boot by DHCP or cloud-init metadata from the cloud provider.
+- **Cloud variant (direct image write, no installer):** the image boots with
+  hostname `ubuntu`. Cloud providers typically override this via cloud-init
+  instance metadata or DHCP.
+
 #### Credentials
 
 The `ubuntu` user is the only login account. The `root` user has no password and
@@ -142,7 +157,7 @@ All fields are optional. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto` | boolean | `false` | Run fully automatically without prompts. Requires at minimum `variant` and `disk` to be set. |
+| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `variant` and `disk`; additionally, the `metal` variant requires `hostname` in the `[firstboot]` table. |
 | `variant` | string | — | Image variant to install. `"metal"` for full-disk encryption (LUKS2) with optional TPM auto-unlock, or `"cloud"` for no encryption (intended for environments with host-level disk encryption). |
 | `disk` | string | — | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
 | `disable-tpm` | boolean | `false` | Disable automatic TPM2 enrollment on first boot. Only meaningful with the `metal` variant; ignored (with a warning) for `cloud`. The LUKS volume is still created but will not be bound to the TPM. |
@@ -151,7 +166,7 @@ All fields are optional. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `hostname` | string | — | Hostname to set on first boot. Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. |
+| `hostname` | string | — | Hostname to set on first boot. Required for the `metal` variant (in both TUI and auto mode); optional for `cloud` (defaults to `ubuntu`, typically overridden by DHCP/cloud-init). Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. |
 | `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`) used to automatically join the Tailscale network on first boot. |
 | `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
 | `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. Mutually exclusive with `password-hash`. |

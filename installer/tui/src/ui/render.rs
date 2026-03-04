@@ -249,12 +249,19 @@ fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.hostname]
+// r[impl installer.tui.hostname+2]
+// r[impl installer.tui.hostname+2]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
-    let lines = vec![
+    let hint = if state.hostname_required() {
+        "  A hostname is required for the metal variant."
+    } else {
+        "  Leave empty to skip (default: ubuntu, overridden by DHCP/cloud-init)."
+    };
+
+    let mut lines = vec![
         Line::from(""),
         Line::from("  Enter the hostname for this system."),
-        Line::from("  Leave empty to skip hostname configuration."),
+        Line::from(hint),
         Line::from(""),
         Line::from(vec![
             Span::raw("  Hostname: "),
@@ -267,6 +274,14 @@ fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
             Span::styled("_", Style::default().fg(Color::DarkGray)),
         ]),
     ];
+
+    if state.hostname_required() && state.hostname_input.trim().is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Hostname cannot be empty for the metal variant.",
+            Style::default().fg(Color::Red),
+        )));
+    }
 
     let block = Block::default().title(" Hostname ").borders(Borders::ALL);
 

@@ -124,10 +124,11 @@ fn run(cli: Cli) -> Result<()> {
             config_warnings,
             &cli,
         ),
-        // r[impl installer.mode.auto-incomplete]
+        // r[impl installer.mode.auto-incomplete+2]
         config::OperatingMode::AutoIncomplete {
             missing_variant,
             missing_disk,
+            missing_hostname,
         } => {
             let mut missing = Vec::new();
             if missing_variant {
@@ -135,6 +136,9 @@ fn run(cli: Cli) -> Result<()> {
             }
             if missing_disk {
                 missing.push("disk");
+            }
+            if missing_hostname {
+                missing.push("hostname (required for metal variant)");
             }
             eprintln!(
                 "auto mode requested but required fields are missing: {}",
@@ -184,7 +188,7 @@ fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMod
     }
 }
 
-// r[impl installer.mode.auto]
+// r[impl installer.mode.auto+2]
 fn run_auto(
     cfg: config::InstallConfig,
     arch: &str,

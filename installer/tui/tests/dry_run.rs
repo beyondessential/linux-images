@@ -111,7 +111,7 @@ fn installer() -> assert_cmd::Command {
 // r[verify installer.dryrun]
 // r[verify installer.dryrun.output]
 // r[verify installer.dryrun.schema+2]
-// r[verify installer.mode.auto]
+// r[verify installer.mode.auto+2]
 #[test]
 fn auto_full_config_produces_correct_plan() {
     let f = Fixture::new();
@@ -210,6 +210,9 @@ fn auto_disable_tpm_reflected_in_plan() {
         variant = "metal"
         disk = "largest-ssd"
         disable-tpm = true
+
+        [firstboot]
+        hostname = "test-tpm"
     "#,
     );
 
@@ -314,7 +317,7 @@ fn auto_bad_hostname_emits_warning() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        variant = "cloud"
         disk = "largest-ssd"
 
         [firstboot]
@@ -351,7 +354,7 @@ fn auto_bad_hostname_emits_warning() {
 // Auto-incomplete tests
 // ---------------------------------------------------------------------------
 
-// r[verify installer.mode.auto-incomplete]
+// r[verify installer.mode.auto-incomplete+2]
 #[test]
 fn auto_incomplete_missing_variant_falls_back() {
     let f = Fixture::new();
@@ -362,7 +365,9 @@ fn auto_incomplete_missing_variant_falls_back() {
         disk = "largest-ssd"
     "#,
     );
-    let script = f.write_script("enter\nenter\nenter\nenter\nenter\nenter\ntab\ntype:yes\nenter\n");
+    let script = f.write_script(
+        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\ntype:yes\nenter\n",
+    );
 
     installer()
         .args([
@@ -386,7 +391,7 @@ fn auto_incomplete_missing_variant_falls_back() {
     assert_eq!(plan["mode"], "auto-incomplete");
 }
 
-// r[verify installer.mode.auto-incomplete]
+// r[verify installer.mode.auto-incomplete+2]
 #[test]
 fn auto_incomplete_missing_disk_falls_back() {
     let f = Fixture::new();
@@ -397,8 +402,9 @@ fn auto_incomplete_missing_disk_falls_back() {
         variant = "metal"
     "#,
     );
-    let script =
-        f.write_script("enter\nenter\nenter\nenter\nenter\nenter\nenter\ntab\ntype:yes\nenter\n");
+    let script = f.write_script(
+        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\ntype:yes\nenter\n",
+    );
 
     installer()
         .args([
@@ -416,19 +422,21 @@ fn auto_incomplete_missing_disk_falls_back() {
         ])
         .assert()
         .success()
-        .stderr(predicates::str::contains("disk"));
+        .stderr(predicates::str::contains("disk").and(predicates::str::contains("hostname")));
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto-incomplete");
 }
 
-// r[verify installer.mode.auto-incomplete]
+// r[verify installer.mode.auto-incomplete+2]
 #[test]
 fn auto_incomplete_missing_both_falls_back() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config("auto = true\n");
-    let script = f.write_script("enter\nenter\nenter\nenter\nenter\nenter\ntab\ntype:yes\nenter\n");
+    let script = f.write_script(
+        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\ntype:yes\nenter\n",
+    );
 
     installer()
         .args([
@@ -704,7 +712,7 @@ enter
     assert!(!plan["disable_tpm"].as_bool().unwrap());
 }
 
-// r[verify installer.tui.hostname]
+// r[verify installer.tui.hostname+2]
 // r[verify installer.tui.tailscale]
 // r[verify installer.tui.ssh-keys]
 #[test]
@@ -754,19 +762,20 @@ enter
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.hostname]
+// r[verify installer.tui.hostname+2]
 // r[verify installer.tui.tailscale]
 // r[verify installer.tui.ssh-keys]
 #[test]
 fn interactive_empty_firstboot_is_null() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Skip all optional firstboot fields
+    // Use cloud variant so hostname is optional — all empty firstboot fields yield null
     let script = f.write_script(
         "\
 enter
 enter
-enter
+# Toggle to cloud (hostname optional)
+down
 enter
 enter
 enter
@@ -810,6 +819,8 @@ down
 enter
 enter
 enter
+# Hostname: type 'h' (required for metal)
+type:h
 enter
 enter
 tab
@@ -969,6 +980,9 @@ fn strategy_largest_ssd_picks_biggest_nvme() {
         auto = true
         variant = "metal"
         disk = "largest-ssd"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1002,6 +1016,9 @@ fn strategy_largest_picks_biggest_overall() {
         auto = true
         variant = "metal"
         disk = "largest"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1035,6 +1052,9 @@ fn strategy_smallest_picks_smallest_overall() {
         auto = true
         variant = "metal"
         disk = "smallest"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1269,6 +1289,9 @@ fn error_disk_path_not_found() {
         auto = true
         variant = "metal"
         disk = "/dev/nonexistent"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1299,6 +1322,9 @@ fn error_no_ssds_for_largest_ssd_strategy() {
         auto = true
         variant = "metal"
         disk = "largest-ssd"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1331,6 +1357,9 @@ fn dry_run_output_to_file() {
         auto = true
         variant = "metal"
         disk = "largest-ssd"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1364,6 +1393,9 @@ fn dry_run_output_to_stdout() {
         auto = true
         variant = "metal"
         disk = "largest-ssd"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1465,6 +1497,7 @@ fn plan_tailscale_authkey_is_bool_not_string() {
         disk = "largest-ssd"
 
         [firstboot]
+        hostname = "test-host"
         tailscale-authkey = "tskey-auth-secret-should-not-appear"
     "#,
     );
@@ -1577,6 +1610,9 @@ fn fake_devices_removable_field_optional() {
         auto = true
         variant = "metal"
         disk = "largest-ssd"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1615,6 +1651,9 @@ fn fake_devices_transport_aliases_accepted() {
         auto = true
         variant = "metal"
         disk = "largest"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 
@@ -1717,6 +1756,7 @@ fn auto_with_only_ssh_keys() {
         disk = "largest-ssd"
 
         [firstboot]
+        hostname = "test-host"
         ssh-authorized-keys = [
             "ssh-ed25519 AAAA k1",
             "ssh-ed25519 BBBB k2",
@@ -1741,7 +1781,7 @@ fn auto_with_only_ssh_keys() {
         .success();
 
     let plan = f.read_plan();
-    assert!(plan["firstboot"]["hostname"].is_null());
+    assert_eq!(plan["firstboot"]["hostname"], "test-host");
     assert!(!plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 3);
 }
@@ -1765,6 +1805,8 @@ enter
 space
 space
 enter
+# Hostname: type 'h' (required for metal)
+type:h
 enter
 enter
 tab
@@ -1812,6 +1854,8 @@ down
 enter
 # Now we should be on TpmToggle (metal flow)
 enter
+# Hostname: type 'h' (required for metal)
+type:h
 enter
 enter
 tab
@@ -1857,6 +1901,8 @@ down
 enter
 enter
 enter
+# Hostname: type 'h' (required for metal)
+type:h
 enter
 enter
 tab
@@ -1900,6 +1946,8 @@ up
 enter
 enter
 enter
+# Hostname: type 'h' (required for metal)
+type:h
 enter
 enter
 tab
@@ -1930,7 +1978,7 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/sda");
 }
 
-// r[verify installer.tui.hostname]
+// r[verify installer.tui.hostname+2]
 #[test]
 fn scripted_hostname_with_backspace_correction() {
     let f = Fixture::new();
@@ -2038,6 +2086,8 @@ enter
 enter
 enter
 enter
+# Hostname: type 'h' (required for metal)
+type:h
 enter
 enter
 tab
@@ -2128,6 +2178,9 @@ fn dry_run_image_path_is_null_when_no_images() {
         auto = true
         variant = "metal"
         disk = "largest-ssd"
+
+        [firstboot]
+        hostname = "test-host"
     "#,
     );
 

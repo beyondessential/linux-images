@@ -115,8 +115,8 @@ impl FirstbootConfig {
 
 // r[impl installer.mode.interactive]
 // r[impl installer.mode.prefilled]
-// r[impl installer.mode.auto]
-// r[impl installer.mode.auto-incomplete]
+// r[impl installer.mode.auto+2]
+// r[impl installer.mode.auto-incomplete+2]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperatingMode {
     Interactive,
@@ -125,6 +125,7 @@ pub enum OperatingMode {
     AutoIncomplete {
         missing_variant: bool,
         missing_disk: bool,
+        missing_hostname: bool,
     },
 }
 
@@ -158,16 +159,29 @@ impl InstallConfig {
         toml::from_str(s).context("parsing TOML config")
     }
 
+    // r[impl installer.mode.auto+2]
+    // r[impl installer.mode.auto-incomplete+2]
     pub fn mode(&self) -> OperatingMode {
         if !self.auto {
             return OperatingMode::Prefilled;
         }
-        if self.variant.is_some() && self.disk.is_some() {
+
+        let missing_variant = self.variant.is_none();
+        let missing_disk = self.disk.is_none();
+        let missing_hostname = self.variant == Some(Variant::Metal)
+            && self
+                .firstboot
+                .as_ref()
+                .and_then(|fb| fb.hostname.as_deref())
+                .is_none_or(|h| h.trim().is_empty());
+
+        if !missing_variant && !missing_disk && !missing_hostname {
             OperatingMode::Auto
         } else {
             OperatingMode::AutoIncomplete {
-                missing_variant: self.variant.is_none(),
-                missing_disk: self.disk.is_none(),
+                missing_variant,
+                missing_disk,
+                missing_hostname,
             }
         }
     }
@@ -339,19 +353,52 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Prefilled);
     }
 
-    // r[verify installer.mode.auto]
+    // r[verify installer.mode.auto+2]
     #[test]
-    fn mode_auto_when_complete() {
+    fn mode_auto_when_complete_cloud() {
         let config = InstallConfig {
             auto: true,
-            variant: Some(Variant::Metal),
+            variant: Some(Variant::Cloud),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.mode.auto-incomplete]
+    #[test]
+    fn mode_auto_when_complete_metal_with_hostname() {
+        let config = InstallConfig {
+            auto: true,
+            variant: Some(Variant::Metal),
+            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
+            firstboot: Some(FirstbootConfig {
+                hostname: Some("my-server".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(config.mode(), OperatingMode::Auto);
+    }
+
+    #[test]
+    fn mode_auto_incomplete_metal_missing_hostname() {
+        let config = InstallConfig {
+            auto: true,
+            variant: Some(Variant::Metal),
+            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.mode(),
+            OperatingMode::AutoIncomplete {
+                missing_variant: false,
+                missing_disk: false,
+                missing_hostname: true,
+            }
+        );
+    }
+
+    // r[verify installer.mode.auto-incomplete+2]
     #[test]
     fn mode_auto_incomplete_missing_variant() {
         let config = InstallConfig {
@@ -364,11 +411,12 @@ mod tests {
             OperatingMode::AutoIncomplete {
                 missing_variant: true,
                 missing_disk: false,
+                missing_hostname: false,
             }
         );
     }
 
-    // r[verify installer.mode.auto-incomplete]
+    // r[verify installer.mode.auto-incomplete+2]
     #[test]
     fn mode_auto_incomplete_missing_disk() {
         let config = InstallConfig {
@@ -381,11 +429,12 @@ mod tests {
             OperatingMode::AutoIncomplete {
                 missing_variant: false,
                 missing_disk: true,
+                missing_hostname: false,
             }
         );
     }
 
-    // r[verify installer.mode.auto-incomplete]
+    // r[verify installer.mode.auto-incomplete+2]
     #[test]
     fn mode_auto_incomplete_missing_both() {
         let config = InstallConfig {
@@ -397,6 +446,7 @@ mod tests {
             OperatingMode::AutoIncomplete {
                 missing_variant: true,
                 missing_disk: true,
+                missing_hostname: false,
             }
         );
     }
@@ -587,8 +637,8 @@ mod tests {
 
     // r[verify installer.mode.interactive]
     // r[verify installer.mode.prefilled]
-    // r[verify installer.mode.auto]
-    // r[verify installer.mode.auto-incomplete]
+    // r[verify installer.mode.auto+2]
+    // r[verify installer.mode.auto-incomplete+2]
     #[test]
     fn operating_mode_display() {
         assert_eq!(OperatingMode::Interactive.to_string(), "interactive");
@@ -598,6 +648,7 @@ mod tests {
             OperatingMode::AutoIncomplete {
                 missing_variant: true,
                 missing_disk: true,
+                missing_hostname: false,
             }
             .to_string(),
             "automatic (incomplete config)"

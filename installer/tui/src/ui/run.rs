@@ -79,10 +79,16 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname]
+        // r[impl installer.tui.hostname+2]
         Screen::Hostname => match key.code {
             KeyCode::Esc => state.go_back(),
-            KeyCode::Enter => state.advance(),
+            KeyCode::Enter => {
+                if state.hostname_required() && state.hostname_input.trim().is_empty() {
+                    // Block advance — render will show the hint
+                } else {
+                    state.advance();
+                }
+            }
             KeyCode::Backspace => {
                 state.hostname_input.pop();
             }
@@ -615,6 +621,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
+            // Hostname: type "h" (required for metal) then advance
+            press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Tab),
@@ -639,6 +647,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
+            // Hostname: type "h" (required for metal) then advance
+            press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Tab),
@@ -672,6 +682,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
+            // Hostname: type "h" (required for metal) then advance
+            press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Tab),
@@ -702,6 +714,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
+            // Hostname: type "h" (required for metal) then advance
+            press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Tab),
@@ -716,6 +730,71 @@ mod tests {
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Password);
         assert!(!final_state.password_confirming);
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn scripted_metal_empty_hostname_blocks_advance() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: press Enter with empty input — should NOT advance
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Hostname);
+        assert_eq!(final_state.variant, Variant::Metal);
+        assert!(final_state.hostname_input.is_empty());
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn scripted_metal_hostname_typed_allows_advance() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type a name then advance
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('r')),
+            press(KeyCode::Char('v')),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert_eq!(final_state.hostname_input, "srv");
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn scripted_cloud_empty_hostname_allows_advance() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection
+            press(KeyCode::Enter),
+            // DiskSelection -> VariantSelection
+            press(KeyCode::Enter),
+            // Toggle to Cloud
+            press(KeyCode::Down),
+            // VariantSelection -> Hostname (skips TpmToggle)
+            press(KeyCode::Enter),
+            // Hostname: press Enter with empty input — should advance for cloud
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert_eq!(final_state.variant, Variant::Cloud);
+        assert!(final_state.hostname_input.is_empty());
     }
 
     // r[verify installer.dryrun.script.headless]
