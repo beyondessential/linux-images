@@ -283,16 +283,11 @@ clean:
 
 # Build a raw disk image via debootstrap + chroot
 # r[image.output.raw]
-raw: _validate-variant _validate-arch _ensure-dirs
+raw: _ensure-raw
   #!/usr/bin/env bash
   set -euo pipefail
   if [ -f "{{output_raw}}" ]; then
     echo "Raw image already exists: {{output_raw}} (skipping build)"
-    exit 0
-  fi
-  if [ -f "{{output_raw}}.zst" ]; then
-    echo "Decompressing {{output_raw}}.zst -> {{output_raw}}"
-    zstd -d --keep "{{output_raw}}.zst" -o "{{output_raw}}"
     exit 0
   fi
   echo "Building raw image: {{output_raw}}"
@@ -364,16 +359,8 @@ test-shellcheck:
   echo "All scripts passed shellcheck."
 
 # Verify image structure by loopback-mounting (requires sudo)
-test-structure: _validate-variant _validate-arch
-  #!/usr/bin/env bash
-  set -euo pipefail
-  IMAGE="{{output_raw}}"
-  if [ ! -f "$IMAGE" ]; then
-    echo "ERROR: image not found: $IMAGE"
-    echo "Run 'just raw' first to build the image."
-    exit 1
-  fi
-  sudo tests/test-image-structure.sh "$IMAGE" "{{variant}}" "{{arch}}"
+test-structure: _ensure-raw
+  sudo tests/test-image-structure.sh "{{output_raw}}" "{{variant}}" "{{arch}}"
 
 # Verify ISO structure without booting (requires sudo)
 iso-test-structure: _validate-arch
@@ -522,20 +509,13 @@ _make-test-cloud-init: _ensure-dirs
     "$CI_DIR/meta-data" "$CI_DIR/user-data"
 
 # Boot the image in QEMU and run cloud-init smoke tests
-test-boot: _validate-variant _validate-arch _prepare-firmware _make-test-cloud-init
+test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
   #!/usr/bin/env bash
   set -euo pipefail
 
-  IMAGE="{{output_raw}}"
-  if [ ! -f "$IMAGE" ]; then
-    echo "ERROR: image not found: $IMAGE"
-    echo "Run 'just raw' first."
-    exit 1
-  fi
-
   # Make a copy so we don't modify the original
   TEST_IMAGE="{{work_dir}}/test-boot.raw"
-  cp "$IMAGE" "$TEST_IMAGE"
+  cp "{{output_raw}}" "$TEST_IMAGE"
 
   # Grow the test image so grow-root-filesystem has something to do
   qemu-img resize "$TEST_IMAGE" 12G
@@ -646,3 +626,19 @@ test: test-shellcheck installer-test test-structure
 
 _ensure-dirs:
   @mkdir -p "{{work_dir}}" "{{output_dir}}"
+
+# Ensure the raw image exists, decompressing from .zst if needed
+_ensure-raw: _validate-variant _validate-arch _ensure-dirs
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if [ -f "{{output_raw}}" ]; then
+    exit 0
+  fi
+  if [ -f "{{output_raw}}.zst" ]; then
+    echo "Decompressing {{output_raw}}.zst -> {{output_raw}}"
+    zstd -d --keep "{{output_raw}}.zst" -o "{{output_raw}}"
+    exit 0
+  fi
+  echo "ERROR: no raw image found (looked for {{output_raw}} and {{output_raw}}.zst)"
+  echo "Run 'just raw' first to build the image."
+  exit 1
