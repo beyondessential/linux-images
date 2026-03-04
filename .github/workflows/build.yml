@@ -68,13 +68,13 @@ jobs:
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} verify-outputs
 
       - name: List outputs
-        run: ls -lh output/${{ matrix.arch }}/
+        run: ls -lh output/${{ matrix.arch }}/${{ matrix.variant }}/
 
       - name: Upload image artifacts
         uses: actions/upload-artifact@v7
         with:
           name: image-${{ matrix.variant }}-${{ matrix.arch }}
-          path: output/${{ matrix.arch }}/*
+          path: output/${{ matrix.arch }}/${{ matrix.variant }}/*
           if-no-files-found: error
 
   installer:
@@ -164,13 +164,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: image-metal-${{ matrix.arch }}
-          path: output/${{ matrix.arch }}/
+          path: output/${{ matrix.arch }}/metal/
 
       - name: Download cloud image
         uses: actions/download-artifact@v8
         with:
           name: image-cloud-${{ matrix.arch }}
-          path: output/${{ matrix.arch }}/
+          path: output/${{ matrix.arch }}/cloud/
 
       - name: Download installer binary
         uses: actions/download-artifact@v8
@@ -184,7 +184,7 @@ jobs:
       - name: List inputs
         run: |
           echo "=== Images ==="
-          ls -lh output/${{ matrix.arch }}/*.raw.zst || true
+          ls -lhR output/${{ matrix.arch }}/metal/ output/${{ matrix.arch }}/cloud/ || true
           echo "=== Installer ==="
           ls -lh installer-bin/
 

@@ -44,12 +44,13 @@ _validate-arch:
 filestem := "ubuntu-" + ubuntu_version + "-bes-" + variant + "-" + arch + "-" + datetime_utc("%Y%m%d")
 
 work_dir := "working" / arch
-output_dir := "output" / arch
+output_arch_dir := "output" / arch
+output_dir := output_arch_dir / variant
 
 output_raw := output_dir / filestem + ".raw"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
-output_iso := output_dir / "bes-installer-" + arch + ".iso"
+output_iso := output_arch_dir / "bes-installer-" + arch + ".iso"
 
 # --- Rust installer settings ---
 cargo_target := if arch == "amd64" {
@@ -121,11 +122,11 @@ iso: _validate-arch installer-build
   set -euo pipefail
 
   # Verify we have images for both variants
-  METAL_IMAGE="$(find "{{output_dir}}" -maxdepth 1 -name '*-metal-*.raw.zst' | head -1)"
-  CLOUD_IMAGE="$(find "{{output_dir}}" -maxdepth 1 -name '*-cloud-*.raw.zst' | head -1)"
+  METAL_IMAGE="$(find "{{output_arch_dir}}" -name '*-metal-*.raw.zst' | head -1)"
+  CLOUD_IMAGE="$(find "{{output_arch_dir}}" -name '*-cloud-*.raw.zst' | head -1)"
 
   if [ -z "$METAL_IMAGE" ] || [ -z "$CLOUD_IMAGE" ]; then
-    echo "ERROR: need both metal and cloud .raw.zst images in {{output_dir}}"
+    echo "ERROR: need both metal and cloud .raw.zst images under {{output_arch_dir}}"
     echo "Run 'just arch={{arch}} variant=metal build' and 'just arch={{arch}} variant=cloud build' first."
     exit 1
   fi
@@ -133,7 +134,7 @@ iso: _validate-arch installer-build
   sudo ARCH="{{arch}}" \
        OUTPUT="{{output_iso}}" \
        INSTALLER_BIN="{{installer_bin}}" \
-       IMAGE_DIR="{{output_dir}}" \
+       IMAGE_DIR="{{output_arch_dir}}" \
        UBUNTU_SUITE="{{ubuntu_suite}}" \
        UBUNTU_MIRROR="{{ubuntu_mirror}}" \
        iso/build-iso.sh
@@ -274,8 +275,8 @@ check-deps:
 
 # Remove all build artifacts
 clean:
-  mkdir -p "{{work_dir}}" "{{output_dir}}"
-  rm -rf "{{work_dir}}"/* "{{output_dir}}"/* || true
+  mkdir -p "{{work_dir}}" "{{output_arch_dir}}"
+  rm -rf "{{work_dir}}"/* "{{output_arch_dir}}"/* || true
 
 # ============================================================
 # Image building (Phase 1)

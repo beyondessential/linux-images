@@ -65,7 +65,7 @@ fi
 IMAGE_FILES=()
 while IFS= read -r -d '' f; do
     IMAGE_FILES+=("$f")
-done < <(find "$IMAGE_DIR" -maxdepth 1 -name "*.raw.zst" -print0)
+done < <(find "$IMAGE_DIR" -name "*.raw.zst" -print0)
 
 if [ "${#IMAGE_FILES[@]}" -eq 0 ]; then
     echo "ERROR: no .raw.zst images found in $IMAGE_DIR"
