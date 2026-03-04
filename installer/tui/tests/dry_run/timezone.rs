@@ -121,10 +121,6 @@ fn scripted_timezone_search_and_select() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant: toggle to cloud (no hostname required)
@@ -142,6 +138,8 @@ enter
 enter
 # Timezone: search for 'auck', select first match
 type:auck
+enter
+# NetworkResults
 enter
 # Confirm
 type:yes
@@ -182,10 +180,6 @@ fn scripted_timezone_navigate_and_select() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant: toggle to cloud
@@ -204,6 +198,8 @@ enter
 # Timezone: up twice from UTC(3) -> Europe/London(1), then select
 up
 up
+enter
+# NetworkResults
 enter
 type:yes
 enter

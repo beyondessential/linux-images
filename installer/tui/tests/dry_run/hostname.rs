@@ -316,16 +316,29 @@ fn scripted_metal_dhcp_toggle_produces_dhcp_sentinel() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let script = f.write_script(
-        "# Walk to hostname screen and toggle DHCP
+        "# Welcome -> DiskSelection
 enter
+# DiskSelection -> VariantSelection (Metal default)
 enter
+# VariantSelection -> TpmToggle
 enter
+# TpmToggle -> Hostname
 enter
+# Hostname: toggle DHCP on
 tab
+# Hostname -> Tailscale
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance to Password
 tab
+tab
+# Password: skip (empty)
 enter
+enter
+# Timezone: accept default
+enter
+# NetworkResults
 enter
 type:yes
 enter

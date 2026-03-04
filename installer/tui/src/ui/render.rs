@@ -25,7 +25,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     match &state.screen {
         Screen::Welcome => render_welcome(frame, chunks[1], state),
         Screen::NetworkCheck => render_network_check(frame, chunks[1], state),
-        Screen::TailscaleNetcheck => render_tailscale_netcheck(frame, chunks[1], state),
+        Screen::NetworkResults => render_network_results(frame, chunks[1], state),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
         Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
         Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
@@ -48,18 +48,18 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
         Screen::Welcome => "Welcome",
         Screen::NetworkCheck => "Network Check",
-        Screen::TailscaleNetcheck => "Tailscale Netcheck",
-        Screen::DiskSelection => "1/9 Select Target Disk",
-        Screen::VariantSelection => "2/9 Select Variant",
-        Screen::TpmToggle => "2/9 TPM Configuration",
-        Screen::Hostname => "3/9 Hostname",
-        Screen::Tailscale => "4/9 Tailscale",
-        Screen::SshKeys => "5/9 SSH Keys",
-        Screen::Password => "6/9 Password",
-        Screen::Timezone => "7/9 Timezone",
-        Screen::Confirmation => "8/9 Confirm",
-        Screen::Writing => "9/9 Writing Image",
-        Screen::FirstbootApply => "9/9 Applying Configuration",
+        Screen::DiskSelection => "1/8 Select Target Disk",
+        Screen::VariantSelection => "2/8 Select Variant",
+        Screen::TpmToggle => "2/8 TPM Configuration",
+        Screen::Hostname => "3/8 Hostname",
+        Screen::Tailscale => "4/8 Tailscale",
+        Screen::SshKeys => "5/8 SSH Keys",
+        Screen::Password => "6/8 Password",
+        Screen::Timezone => "7/8 Timezone",
+        Screen::NetworkResults => "Network Results",
+        Screen::Confirmation => "8/8 Confirm",
+        Screen::Writing => "Writing Image",
+        Screen::FirstbootApply => "Applying Configuration",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
     };
@@ -75,14 +75,24 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(block, area);
 }
 
-// r[impl installer.tui.network-check]
+// r[impl installer.tui.network-check+2]
 fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
-    let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
+    let chunks = Layout::vertical([
+        Constraint::Length(5),
+        Constraint::Min(0),
+        Constraint::Min(0),
+    ])
+    .split(area);
 
-    let status_text = match state.net_check_phase {
+    let net_status = match state.net_check_phase {
         CheckPhase::NotStarted => "Checks have not started yet.",
         CheckPhase::Running => "Running connectivity checks...",
         CheckPhase::Done => "All checks complete.",
+    };
+    let ts_status = match state.netcheck_phase {
+        CheckPhase::NotStarted => "Tailscale netcheck not started.",
+        CheckPhase::Running => "Running tailscale netcheck...",
+        CheckPhase::Done => "Tailscale netcheck complete.",
     };
 
     let intro = vec![
@@ -90,10 +100,11 @@ fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from("  Checking network connectivity to endpoints needed for deployment."),
         Line::from(Span::styled(
             format!(
-                "  {} ({}/{})",
-                status_text,
+                "  {} ({}/{})  |  {}",
+                net_status,
                 state.net_checks_done(),
-                state.net_check_total
+                state.net_check_total,
+                ts_status,
             ),
             Style::default().fg(Color::DarkGray),
         )),
@@ -156,30 +167,8 @@ fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let list = List::new(all_items).block(block);
     frame.render_widget(list, chunks[1]);
-}
 
-// r[impl installer.tui.tailscale-netcheck]
-fn render_tailscale_netcheck(frame: &mut Frame, area: Rect, state: &AppState) {
-    let chunks = Layout::vertical([Constraint::Length(4), Constraint::Min(0)]).split(area);
-
-    let status_text = match state.netcheck_phase {
-        CheckPhase::NotStarted => "Not started.",
-        CheckPhase::Running => "Running tailscale netcheck...",
-        CheckPhase::Done => "Complete.",
-    };
-
-    let intro = vec![
-        Line::from(""),
-        Line::from("  Tailscale network diagnostics."),
-        Line::from(Span::styled(
-            format!("  {status_text}"),
-            Style::default().fg(Color::DarkGray),
-        )),
-    ];
-    let intro_paragraph = Paragraph::new(intro);
-    frame.render_widget(intro_paragraph, chunks[0]);
-
-    let output_lines: Vec<Line> = match &state.netcheck_result {
+    let ts_lines: Vec<Line> = match &state.netcheck_result {
         Some(result) => {
             let color = if result.success {
                 Color::White
@@ -195,33 +184,150 @@ fn render_tailscale_netcheck(frame: &mut Frame, area: Rect, state: &AppState) {
         None => {
             if state.netcheck_phase == CheckPhase::Running {
                 vec![Line::from(Span::styled(
-                    "  Waiting for results...",
+                    "  Waiting for tailscale netcheck results...",
                     Style::default().fg(Color::DarkGray),
                 ))]
             } else {
                 vec![Line::from(Span::styled(
-                    "  Press 'r' to run, or Enter to skip.",
+                    "  Tailscale netcheck has not run.",
                     Style::default().fg(Color::DarkGray),
                 ))]
             }
         }
     };
 
-    let block = Block::default()
+    let ts_block = Block::default()
         .title(" Tailscale Netcheck ")
         .borders(Borders::ALL);
-
-    let paragraph = Paragraph::new(output_lines)
-        .block(block)
+    let ts_paragraph = Paragraph::new(ts_lines)
+        .block(ts_block)
         .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, chunks[1]);
+    frame.render_widget(ts_paragraph, chunks[2]);
+}
+
+// r[impl installer.tui.network-check+2]
+fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
+    let chunks = Layout::vertical([
+        Constraint::Length(5),
+        Constraint::Min(0),
+        Constraint::Min(0),
+    ])
+    .split(area);
+
+    let net_status = match state.net_check_phase {
+        CheckPhase::NotStarted => "Checks have not started.",
+        CheckPhase::Running => "Running connectivity checks...",
+        CheckPhase::Done => "Connectivity checks complete.",
+    };
+    let ts_status = match state.netcheck_phase {
+        CheckPhase::NotStarted => "Tailscale netcheck not started.",
+        CheckPhase::Running => "Running tailscale netcheck...",
+        CheckPhase::Done => "Tailscale netcheck complete.",
+    };
+
+    let intro = vec![
+        Line::from(""),
+        Line::from("  Network check results (ran in the background during installation)."),
+        Line::from(Span::styled(
+            format!(
+                "  Connectivity: {} ({}/{})  |  {}",
+                net_status,
+                state.net_checks_done(),
+                state.net_check_total,
+                ts_status,
+            ),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+    ];
+    let intro_paragraph = Paragraph::new(intro);
+    frame.render_widget(intro_paragraph, chunks[0]);
+
+    let items: Vec<ListItem> = state
+        .net_check_results
+        .iter()
+        .enumerate()
+        .map(|(i, result)| match result {
+            Some(r) => {
+                let (icon, color) = if r.passed {
+                    ("PASS", Color::Green)
+                } else {
+                    ("FAIL", Color::Red)
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("  [{icon}] "), Style::default().fg(color)),
+                    Span::raw(&r.label),
+                    Span::styled(
+                        format!("  ({})", r.detail),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]))
+            }
+            None => {
+                let label = if i < state.net_check_total - 1 {
+                    crate::net::default_endpoints()
+                        .get(i)
+                        .map(|e| e.label.as_str())
+                        .unwrap_or("?")
+                        .to_string()
+                } else {
+                    "pool.ntp.org:123 (NTP/UDP)".to_string()
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled("  [ .. ] ", Style::default().fg(Color::DarkGray)),
+                    Span::raw(label),
+                ]))
+            }
+        })
+        .collect();
+
+    let block = Block::default()
+        .title(" Connectivity ")
+        .borders(Borders::ALL);
+    let list = List::new(items).block(block);
+    frame.render_widget(list, chunks[1]);
+
+    let ts_lines: Vec<Line> = match &state.netcheck_result {
+        Some(result) => {
+            let color = if result.success {
+                Color::White
+            } else {
+                Color::Red
+            };
+            result
+                .output
+                .lines()
+                .map(|l| Line::from(Span::styled(format!("  {l}"), Style::default().fg(color))))
+                .collect()
+        }
+        None => {
+            if state.netcheck_phase == CheckPhase::Running {
+                vec![Line::from(Span::styled(
+                    "  Waiting for tailscale netcheck results...",
+                    Style::default().fg(Color::DarkGray),
+                ))]
+            } else {
+                vec![Line::from(Span::styled(
+                    "  Tailscale netcheck has not run.",
+                    Style::default().fg(Color::DarkGray),
+                ))]
+            }
+        }
+    };
+
+    let ts_block = Block::default()
+        .title(" Tailscale Netcheck ")
+        .borders(Borders::ALL);
+    let ts_paragraph = Paragraph::new(ts_lines)
+        .block(ts_block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(ts_paragraph, chunks[2]);
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     let hints = match &state.screen {
-        Screen::Welcome => "Enter: start | q: quit",
-        Screen::NetworkCheck => "Enter: next | r: re-run | Esc: back | q: quit",
-        Screen::TailscaleNetcheck => "Enter: next | r: re-run | Esc: back | q: quit",
+        Screen::Welcome => "Enter: start | n: network check | q: quit",
+        Screen::NetworkCheck => "r: re-run | Esc: back | q: quit",
         Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit",
@@ -242,6 +348,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
             }
         }
         Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back",
+        Screen::NetworkResults => "Enter: next | r: re-run | Esc: back | q: quit",
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit",
         Screen::Writing => "Please wait...",
         Screen::FirstbootApply => "Please wait...",
@@ -252,7 +359,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.welcome+2]
+// r[impl installer.tui.welcome+3]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut description = vec![
         Line::from(""),
@@ -293,13 +400,15 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     description.push(Line::from(""));
-    description.push(Line::from("  Press Enter to begin."));
+    description.push(Line::from(
+        "  Press Enter to begin, or 'n' for a network check.",
+    ));
 
     let paragraph = Paragraph::new(description).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.disk-detection+2]
+// r[impl installer.tui.disk-detection+3]
 fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     let items: Vec<ListItem> = state
         .devices
@@ -632,7 +741,7 @@ fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(github_paragraph, chunks[2]);
 }
 
-// r[impl installer.tui.confirmation]
+// r[impl installer.tui.confirmation+2]
 // r[impl installer.tui.password]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {

@@ -10,10 +10,6 @@ fn scripted_tpm_toggle_twice_leaves_enabled() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant
@@ -32,6 +28,8 @@ tab
 tab
 # Password: skip (empty)
 enter
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -67,10 +65,6 @@ fn scripted_variant_toggle_back_to_metal() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Toggle variant: metal->cloud
@@ -90,6 +84,8 @@ tab
 tab
 # Password: skip (empty)
 enter
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -115,7 +111,7 @@ enter
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.disk-detection+2]
+// r[verify installer.tui.disk-detection+3]
 #[test]
 fn scripted_disk_wrap_around() {
     let f = Fixture::new();
@@ -125,10 +121,6 @@ fn scripted_disk_wrap_around() {
     let script = f.write_script(
         "\
 # Welcome
-enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
 enter
 # Disk: down twice wraps back to index 0
 down
@@ -148,6 +140,8 @@ tab
 tab
 # Password: skip (empty)
 enter
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -173,7 +167,7 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
-// r[verify installer.tui.disk-detection+2]
+// r[verify installer.tui.disk-detection+3]
 #[test]
 fn scripted_disk_up_wraps_to_last() {
     let f = Fixture::new();
@@ -182,10 +176,6 @@ fn scripted_disk_up_wraps_to_last() {
     let script = f.write_script(
         "\
 # Welcome
-enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
 enter
 # Disk: up wraps to last
 up
@@ -204,6 +194,8 @@ tab
 tab
 # Password: skip (empty)
 enter
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -238,10 +230,6 @@ fn scripted_hostname_with_backspace_correction() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant: toggle to cloud
@@ -261,6 +249,8 @@ tab
 tab
 # Password: skip (empty)
 enter
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -295,10 +285,6 @@ fn scripted_multiline_ssh_keys() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant: toggle to cloud
@@ -317,6 +303,8 @@ tab
 tab
 # Password: skip (empty)
 enter
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -342,7 +330,7 @@ enter
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.confirmation]
+// r[verify installer.tui.confirmation+2]
 #[test]
 fn scripted_wrong_confirmation_does_not_advance() {
     let f = Fixture::new();
@@ -353,10 +341,6 @@ fn scripted_wrong_confirmation_does_not_advance() {
     let script = f.write_script(
         "\
 # Welcome
-enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
 enter
 # Disk
 enter
@@ -374,6 +358,8 @@ tab
 tab
 # Password: skip (empty)
 enter
+enter
+# NetworkResults
 enter
 type:no
 enter

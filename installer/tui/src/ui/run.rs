@@ -44,24 +44,24 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     match &state.screen {
         Screen::Welcome => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('n') => state.open_network_check(),
             KeyCode::Enter => state.advance(),
             _ => {}
         },
 
-        // r[impl installer.tui.network-check]
+        // r[impl installer.tui.network-check+2]
         Screen::NetworkCheck => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
-            KeyCode::Enter => state.advance(),
             _ => {}
         },
 
-        // r[impl installer.tui.tailscale-netcheck]
-        Screen::TailscaleNetcheck => match key.code {
+        // r[impl installer.tui.network-check+2]
+        Screen::NetworkResults => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
-            KeyCode::Char('r') => state.start_tailscale_netcheck(),
+            KeyCode::Char('r') => state.start_net_checks(),
             KeyCode::Enter => state.advance(),
             _ => {}
         },
@@ -550,11 +550,7 @@ mod tests {
     fn scripted_walk_through_metal_flow() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck
-            press(KeyCode::Enter),
-            // NetworkCheck -> TailscaleNetcheck
-            press(KeyCode::Enter),
-            // TailscaleNetcheck -> DiskSelection
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
@@ -579,7 +575,9 @@ mod tests {
             // Password: skip (empty) — Enter moves to confirm field, Enter again advances
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Timezone: accept default (UTC) -> Confirmation
+            // Timezone: accept default (UTC) -> NetworkResults
+            press(KeyCode::Enter),
+            // NetworkResults -> Confirmation
             press(KeyCode::Enter),
             // Confirmation: type "yes" and confirm
             press(KeyCode::Char('y')),
@@ -603,9 +601,7 @@ mod tests {
     fn scripted_cloud_skips_tpm() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
@@ -622,7 +618,9 @@ mod tests {
             // Password: skip
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Timezone: accept default -> Confirmation
+            // Timezone: accept default -> NetworkResults
+            press(KeyCode::Enter),
+            // NetworkResults -> Confirmation
             press(KeyCode::Enter),
             // Confirmation: type "yes" and confirm
             press(KeyCode::Char('y')),
@@ -658,9 +656,7 @@ mod tests {
     fn scripted_disk_navigation() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // Navigate down to second disk
             press(KeyCode::Down),
@@ -704,9 +700,7 @@ mod tests {
         );
 
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -734,9 +728,7 @@ mod tests {
     fn scripted_go_back_from_confirmation() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
@@ -753,14 +745,16 @@ mod tests {
             // Password: skip
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Timezone: accept default
+            // Timezone: accept default -> NetworkResults
             press(KeyCode::Enter),
-            // Confirmation: go back -> Timezone
+            // NetworkResults -> Confirmation
+            press(KeyCode::Enter),
+            // Confirmation: go back -> NetworkResults
             press(KeyCode::Esc),
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Timezone);
+        assert_eq!(final_state.screen, Screen::NetworkResults);
     }
 
     // r[verify installer.tui.password]
@@ -768,9 +762,7 @@ mod tests {
     fn scripted_password_entry_matching() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
@@ -807,9 +799,7 @@ mod tests {
     fn scripted_password_mismatch_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
@@ -845,9 +835,7 @@ mod tests {
     fn scripted_password_esc_from_confirm_returns_to_first_field() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
@@ -879,9 +867,7 @@ mod tests {
     fn scripted_metal_empty_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -901,9 +887,7 @@ mod tests {
     fn scripted_metal_hostname_typed_allows_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -925,9 +909,7 @@ mod tests {
     fn scripted_cloud_empty_hostname_allows_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
@@ -950,9 +932,7 @@ mod tests {
     fn scripted_metal_dhcp_toggle_allows_advance_with_empty_hostname() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -973,9 +953,7 @@ mod tests {
     fn scripted_metal_dhcp_toggle_via_space() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -995,9 +973,7 @@ mod tests {
     fn scripted_metal_dhcp_toggle_on_off_requires_hostname() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1020,9 +996,7 @@ mod tests {
     fn scripted_metal_dhcp_on_ignores_typing() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1047,9 +1021,7 @@ mod tests {
     fn scripted_cloud_tab_does_not_toggle_dhcp() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
@@ -1087,9 +1059,7 @@ mod tests {
     fn scripted_timezone_accept_default_utc() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1105,12 +1075,12 @@ mod tests {
             // Password: skip
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Timezone: accept default (UTC) -> Confirmation
+            // Timezone: accept default (UTC) -> NetworkResults
             press(KeyCode::Enter),
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.screen, Screen::NetworkResults);
         assert_eq!(final_state.timezone_selected, "UTC");
     }
 
@@ -1119,9 +1089,7 @@ mod tests {
     fn scripted_timezone_navigate_down_and_select() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1145,7 +1113,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.screen, Screen::NetworkResults);
         assert_eq!(final_state.timezone_selected, "Pacific/Auckland");
     }
 
@@ -1154,9 +1122,7 @@ mod tests {
     fn scripted_timezone_search_filters_list() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1181,7 +1147,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.screen, Screen::NetworkResults);
         assert_eq!(final_state.timezone_selected, "Pacific/Auckland");
     }
 
@@ -1190,9 +1156,7 @@ mod tests {
     fn scripted_timezone_search_backspace_widens_filter() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1220,7 +1184,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.screen, Screen::NetworkResults);
         // After clearing the filter, cursor resets to 0 which is the first sorted entry
         assert_eq!(final_state.timezone_selected, "America/New_York");
     }
@@ -1230,9 +1194,7 @@ mod tests {
     fn scripted_timezone_esc_goes_back_to_password() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1261,9 +1223,7 @@ mod tests {
     fn scripted_timezone_down_does_not_go_past_end() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1291,7 +1251,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.screen, Screen::NetworkResults);
         // Should still be UTC (last in sorted list, can't go past it)
         assert_eq!(final_state.timezone_selected, "UTC");
     }
@@ -1301,9 +1261,7 @@ mod tests {
     fn scripted_timezone_up_does_not_go_before_start() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1331,7 +1289,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.screen, Screen::NetworkResults);
         assert_eq!(final_state.timezone_selected, "America/New_York");
     }
 
@@ -1340,9 +1298,7 @@ mod tests {
     fn scripted_timezone_search_then_navigate() {
         let state = make_state();
         let events = vec![
-            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1366,7 +1322,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.screen, Screen::NetworkResults);
         // "o" matches: America/New_York (index 0 in filtered), Europe/London (index 1)
         // Down moves cursor to 1 -> Europe/London
         assert_eq!(final_state.timezone_selected, "Europe/London");

@@ -45,7 +45,7 @@ pub struct GithubKeysResult {
     pub error: Option<String>,
 }
 
-// r[impl installer.tui.network-check]
+// r[impl installer.tui.network-check+2]
 
 /// The list of endpoints to check, matching the spec.
 pub fn default_endpoints() -> Vec<Endpoint> {
@@ -195,7 +195,7 @@ pub fn total_check_count(endpoints: &[Endpoint]) -> usize {
     endpoints.len() + 1
 }
 
-// r[impl installer.tui.tailscale-netcheck]
+// r[impl installer.tui.tailscale-netcheck+2]
 
 /// Run `tailscale netcheck` and return the output.
 pub fn spawn_tailscale_netcheck() -> mpsc::Receiver<NetcheckResult> {

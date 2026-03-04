@@ -198,44 +198,59 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome+2]
+r[installer.tui.welcome+3]
 The TUI must open with a welcome screen that displays a description of what
 the image is for, contact information, and instructions on how to proceed.
-The user presses Enter to proceed to the network check screen.
+The user presses Enter to proceed to the disk selection screen. The welcome
+screen also offers a `n` keybind to open a dedicated network check screen.
 
-r[installer.tui.network-check]
-After the welcome screen, the TUI must present a network connectivity check
-screen. This screen is skipped entirely in automatic mode. The screen
-performs connectivity checks against the following endpoints in parallel:
+> r[installer.tui.network-check+2]
+> The TUI must perform network connectivity checks in the background,
+> starting automatically when the welcome screen is first shown. The checks
+> run against the following endpoints in parallel:
+>
+> - `https://ghcr.io/` — expects HTTP 200
+> - `https://meta.tamanu.app/` — expects HTTP 200
+> - `https://tools.ops.tamanu.io/` — any HTTP response (even 403) is a pass
+> - `https://clients.ops.tamanu.io/` — any HTTP response is a pass
+> - `https://servers.ops.tamanu.io/` — any HTTP response is a pass
+> - An NTP server (`pool.ntp.org`) over UDP port 123 — a UDP socket connect succeeds
+>
+> Each check has a 5-second timeout. Results are displayed as a list with a
+> pass/fail indicator next to each endpoint. Failures are not blocking.
+>
+> The network check results are presented in two places:
+>
+> 1. **Dedicated network check screen** — accessible from the welcome screen
+>    via the `n` keybind. This screen first checks whether any network
+>    interface has connectivity. If there is no network at all, a message is
+>    shown to the user. Otherwise the individual endpoint check results are
+>    displayed live as they complete, followed by the output of
+>    `tailscale netcheck`. The user can press `r` to re-run all checks, and
+>    `Esc` to return to the welcome screen.
+>
+> 2. **Pre-summary network results screen** — shown between the timezone
+>    screen and the confirmation screen. This screen displays the results of
+>    the background checks (which were started on the welcome screen and have
+>    likely completed by now). If the checks have not yet finished, the
+>    screen shows progress. The user can press `r` to re-run all checks, and
+>    `Enter` to proceed to the confirmation screen.
+>
+> Both screens are skipped entirely in automatic mode.
 
-- `https://ghcr.io/` — expects HTTP 200
-- `https://meta.tamanu.app/` — expects HTTP 200
-- `https://tools.ops.tamanu.io/` — any HTTP response (even 403) is a pass
-- `https://clients.ops.tamanu.io/` — any HTTP response is a pass
-- `https://servers.ops.tamanu.io/` — any HTTP response is a pass
-- An NTP server (`pool.ntp.org`) over UDP port 123 — a UDP socket connect succeeds
+r[installer.tui.tailscale-netcheck+2]
+The TUI must run `tailscale netcheck` in the background (the `tailscale`
+binary must be available on the live ISO). The check starts automatically
+alongside the network connectivity checks when the welcome screen is first
+shown. If the `tailscale` binary is not found or the command fails, the
+result stores an appropriate error message. The tailscale netcheck output is
+displayed on both the dedicated network check screen and the pre-summary
+network results screen, below the endpoint check results.
 
-Each check has a 5-second timeout. Results are displayed as a list with a
-pass/fail indicator next to each endpoint. All checks run automatically when
-the screen is entered. Failures are not blocking — the user can press Enter
-to proceed regardless of the results. A note explains that these endpoints
-will be needed later for application deployment and that network issues can
-be resolved while the installation continues. The user can press `r` to
-re-run all checks.
-
-r[installer.tui.tailscale-netcheck]
-After the network check screen, the TUI must present a Tailscale network
-diagnostic screen. This screen is skipped entirely in automatic mode. The
-screen runs `tailscale netcheck` (the `tailscale` binary must be available
-on the live ISO) and displays the output. The check runs automatically when
-the screen is entered. If the `tailscale` binary is not found or the command
-fails, the screen displays an appropriate message. The user presses Enter to
-proceed or Esc to go back. The user can press `r` to re-run the check.
-
-r[installer.tui.disk-detection+2]
-After the Tailscale netcheck screen (or the welcome screen in automatic
-mode), the TUI must detect available block devices and display their device
-path, size, model name, and transport type (SSD, HDD, NVMe, USB, etc.).
+r[installer.tui.disk-detection+3]
+After the welcome screen (or automatically in automatic mode), the TUI must
+detect available block devices and display their device path, size, model
+name, and transport type (SSD, HDD, NVMe, USB, etc.).
 
 r[installer.tui.variant-selection]
 The TUI must present a choice between the `metal` and `cloud` variants with
@@ -302,11 +317,12 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation]
-Before writing, the TUI must show a summary screen listing: target disk
-(path, model, size), chosen variant, TPM enrollment status, and any
-first-boot configuration. The summary must clearly state that all data on
-the target disk will be destroyed. The user must type an explicit confirmation
+r[installer.tui.confirmation+2]
+After the timezone screen, and after the pre-summary network results screen,
+the TUI must show a summary screen listing: target disk (path, model, size),
+chosen variant, TPM enrollment status, and any first-boot configuration. The
+summary must clearly state that all data on the target disk will be
+destroyed. The user must type an explicit confirmation
 (not just press Enter).
 
 r[installer.tui.progress]

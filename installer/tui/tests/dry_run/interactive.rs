@@ -10,10 +10,6 @@ fn interactive_metal_full_flow() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk: accept first
 enter
 # Variant: accept metal default
@@ -36,6 +32,8 @@ tab
 enter
 enter
 # Timezone: accept default (UTC)
+enter
+# NetworkResults
 enter
 # Confirm
 type:yes
@@ -85,10 +83,6 @@ fn interactive_cloud_skips_tpm_screen() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant: toggle to cloud
@@ -105,6 +99,8 @@ tab
 enter
 enter
 # Timezone: accept default (UTC)
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -145,10 +141,6 @@ fn interactive_firstboot_fields_captured() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant: toggle to cloud
@@ -168,6 +160,8 @@ tab
 enter
 enter
 # Timezone: accept default (UTC)
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -211,10 +205,6 @@ fn interactive_empty_firstboot_is_null() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Toggle to cloud (hostname optional)
@@ -231,6 +221,8 @@ tab
 enter
 enter
 # Timezone: accept default (UTC)
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -259,7 +251,7 @@ enter
     assert!(plan["firstboot"].is_null());
 }
 
-// r[verify installer.tui.disk-detection+2]
+// r[verify installer.tui.disk-detection+3]
 #[test]
 fn interactive_selects_second_disk() {
     let f = Fixture::new();
@@ -267,10 +259,6 @@ fn interactive_selects_second_disk() {
     let script = f.write_script(
         "\
 # Welcome
-enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
 enter
 # Navigate to second disk
 down
@@ -291,6 +279,8 @@ tab
 enter
 enter
 # Timezone: accept default (UTC)
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -376,7 +366,7 @@ fn interactive_empty_script_uses_initial_state() {
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.confirmation]
+// r[verify installer.tui.confirmation+2]
 #[test]
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();
@@ -386,10 +376,6 @@ fn interactive_go_back_from_confirmation_and_change() {
     let script = f.write_script(
         "\
 # Welcome
-enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
 enter
 # Disk
 enter
@@ -408,7 +394,11 @@ enter
 enter
 # Timezone: accept default (UTC)
 enter
+# NetworkResults
+enter
 # Now on Confirmation, go back
+esc
+# Back on NetworkResults, go back
 esc
 # Back on Timezone, go back
 esc
@@ -426,6 +416,8 @@ tab
 enter
 enter
 # Timezone: accept default (UTC)
+enter
+# NetworkResults
 enter
 # Confirmation
 type:yes

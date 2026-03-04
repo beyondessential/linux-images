@@ -23,10 +23,6 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant
@@ -44,6 +40,8 @@ tab
 enter
 enter
 # Timezone: accept default (UTC)
+enter
+# NetworkResults
 enter
 type:yes
 enter
@@ -102,10 +100,6 @@ fn prefilled_overriding_values_via_tui() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk: move down to second, accept
 down
 enter
@@ -130,6 +124,8 @@ tab
 tab
 # Password: skip (empty)
 enter
+enter
+# NetworkResults
 enter
 # Confirm
 type:yes
@@ -181,10 +177,6 @@ fn prefilled_timezone_from_config() {
         "\
 # Welcome
 enter
-# NetworkCheck
-enter
-# TailscaleNetcheck
-enter
 # Disk
 enter
 # Variant
@@ -200,6 +192,8 @@ tab
 enter
 enter
 # Timezone: accept prefilled Europe/London
+enter
+# NetworkResults
 enter
 type:yes
 enter
