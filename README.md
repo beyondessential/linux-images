@@ -122,3 +122,24 @@ variant = "cloud"
 [firstboot]
 hostname = "server-02"
 ```
+
+### `bes-install.toml` field reference
+
+All fields are optional. Unknown fields are rejected.
+
+#### Top-level fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `auto` | boolean | `false` | Run fully automatically without prompts. Requires at minimum `variant` and `disk` to be set. |
+| `variant` | string | — | Image variant to install. `"metal"` for full-disk encryption (LUKS2) with optional TPM auto-unlock, or `"cloud"` for no encryption (intended for environments with host-level disk encryption). |
+| `disk` | string | — | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
+| `disable-tpm` | boolean | `false` | Disable automatic TPM2 enrollment on first boot. Only meaningful with the `metal` variant; ignored (with a warning) for `cloud`. The LUKS volume is still created but will not be bound to the TPM. |
+
+#### `[firstboot]` table
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `hostname` | string | — | Hostname to set on first boot. Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. |
+| `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`) used to automatically join the Tailscale network on first boot. |
+| `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
