@@ -3,8 +3,9 @@
 # Driver for container-based installer integration tests.
 # Extracts the ISO once, then runs multiple scenarios against it.
 #
-# Usage: test-container-install-all.sh <iso> <arch>
+# Usage: test-container-install-all.sh <iso> <arch> [variant-filter]
 #   arch: amd64 | arm64
+#   variant-filter: "metal", "cloud", or omit to run all
 #
 # Each scenario runs test-container-install.sh with different environment
 # variables controlling variant, TPM, hostname, tailscale, and SSH keys.
@@ -15,8 +16,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ISO="${1:?Usage: $0 <iso> <arch>}"
-ARCH="${2:?Usage: $0 <iso> <arch>}"
+ISO="${1:?Usage: $0 <iso> <arch> [variant-filter]}"
+ARCH="${2:?Usage: $0 <iso> <arch> [variant-filter]}"
+VARIANT_FILTER="${3:-}"
 
 if [ ! -f "$ISO" ]; then
     echo "ERROR: ISO not found: $ISO"
@@ -120,21 +122,28 @@ fi
 # Helper: read a string field from a scenario JSON object, defaulting to "".
 jq_str() { echo "$1" | jq -r "$2 // empty"; }
 
+# Apply variant filter if specified.
+if [ -n "$VARIANT_FILTER" ]; then
+    SCENARIOS_FILTERED=$(jq -c "[.[] | select(.variant == \"$VARIANT_FILTER\")]" "$SCENARIOS_JSON")
+else
+    SCENARIOS_FILTERED=$(jq -c '.' "$SCENARIOS_JSON")
+fi
+
 # ============================================================
 # Run scenarios
 # ============================================================
-TOTAL=$(jq 'length' "$SCENARIOS_JSON")
+TOTAL=$(echo "$SCENARIOS_FILTERED" | jq 'length')
 PASSED=0
 FAILED=0
 FAILED_NAMES=()
 
 echo "=============================="
-echo "Running $TOTAL scenarios"
+echo "Running $TOTAL scenarios${VARIANT_FILTER:+ (variant=$VARIANT_FILTER)}"
 echo "=============================="
 echo ""
 
 for i in $(seq 0 $((TOTAL - 1))); do
-    SCENARIO=$(jq -c ".[$i]" "$SCENARIOS_JSON")
+    SCENARIO=$(echo "$SCENARIOS_FILTERED" | jq -c ".[$i]")
 
     name=$(jq_str "$SCENARIO" '.name')
     variant=$(jq_str "$SCENARIO" '.variant')

@@ -6,6 +6,7 @@ arch := "amd64"
 variant := "metal"
 qemu_memory := "4096"
 qemu_cores := "2"
+container_test_variant := ""
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 ubuntu_mirror := if arch == "arm64" {
@@ -598,7 +599,7 @@ test-container-install: _validate-arch
     echo "ERROR: systemd-nspawn required (install systemd-container)"
     exit 1
   fi
-  sudo tests/test-container-install-all.sh "$ISO" "{{arch}}"
+  sudo tests/test-container-install-all.sh "$ISO" "{{arch}}" "{{container_test_variant}}"
 
 # Run container isolation test: verify that no host block devices are
 # visible inside a systemd-nspawn container. Does not run the installer.
