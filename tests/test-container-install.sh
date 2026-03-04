@@ -269,7 +269,9 @@ echo ""
 # r[impl installer.container.isolation] (layer 2): --fake-devices bypasses
 # lsblk discovery so the installer sees only the loop device.
 # r[impl installer.container.isolation] (layer 3): --private-network prevents
-# any network side-effects from the container.
+# any network side-effects from the container. This also serves as the
+# enforcement mechanism for r[verify iso.offline]: a successful install with
+# no network proves the ISO is fully self-contained.
 set +e
 systemd-nspawn \
     --register=no \
@@ -303,6 +305,8 @@ if [ $INSTALLER_RC -ne 0 ]; then
     exit 1
 fi
 
+# r[verify iso.offline]: the installer completed successfully inside a
+# container with --private-network, proving no network access was needed.
 echo "    Installer exited successfully."
 
 # ============================================================
