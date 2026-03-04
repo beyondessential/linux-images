@@ -1,3 +1,4 @@
+# r[impl ci.uptodate] Keep all `uses:` actions up to date (see dependabot.yml)
 name: Tracey Spec Validation
 
 on:
@@ -7,7 +8,7 @@ on:
 
 jobs:
   tracey:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
     steps:
       - uses: actions/checkout@v6
 
@@ -20,10 +21,11 @@ jobs:
       # extensions and patch the config to include them.
       - name: Work around tracey YAML support
         run: |
-          for f in .github/workflows/*.yml; do
+          for f in .github/workflows/*.yml .github/*.yml; do
             cp "$f" "${f%.yml}.sh"
           done
           sed -i '/.github\/workflows\/\*\.yml/a\                    .github/workflows/*.sh' .config/tracey/config.styx
+          sed -i '/.github\/workflows\/\*\.sh/a\                    .github/*.sh' .config/tracey/config.styx
 
       - name: Start tracey web server
         run: |

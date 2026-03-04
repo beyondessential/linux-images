@@ -1,3 +1,4 @@
+# r[impl ci.uptodate] Keep all `uses:` actions up to date (see dependabot.yml)
 name: Build Images
 
 on:
@@ -10,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  UBUNTU_SUITE: noble
+  UBUNTU_SUITE: noble # r[impl ci.output-suite] r[verify ci.output-suite]
   UBUNTU_MIRROR: http://us.archive.ubuntu.com/ubuntu
   UBUNTU_PORTS_MIRROR: http://ports.ubuntu.com/ubuntu-ports
 
@@ -19,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        arch: [amd64, arm64] # r[impl ci.output-arch] r[verify ci.output-arch]
         variant: [metal, cloud]
         include:
           - arch: amd64
@@ -31,7 +32,7 @@ jobs:
             qemu_pkg: qemu-system-arm
             firmware_pkg: qemu-efi-aarch64
     runs-on: ${{ matrix.runner }}
-    # r[verify ci.output-arch] r[verify ci.output-suite]
+
     steps:
       - uses: actions/checkout@v6
       - uses: extractions/setup-just@v3
@@ -45,7 +46,7 @@ jobs:
             ${{ matrix.qemu_pkg }} qemu-utils ${{ matrix.firmware_pkg }} \
             genisoimage zstd squashfs-tools
 
-      - name: Run shellcheck # r[verify ci.shellcheck]
+      - name: Run shellcheck # r[impl ci.shellcheck] r[verify ci.shellcheck]
         run: just test-shellcheck
 
       - name: Build raw image
@@ -88,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # r[verify ci.rust-stable]
+      # r[impl ci.rust-stable] r[verify ci.rust-stable]
       - name: Install Rust toolchain via rustup
         run: |
           rustup update stable
@@ -100,12 +101,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends musl-tools
 
-      # r[verify ci.rust-cache]
+      # r[impl ci.rust-cache] r[verify ci.rust-cache]
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: installer/tui
 
-      - name: Run cargo test # r[verify ci.unit-test]
+      - name: Run cargo test # r[impl ci.unit-test] r[verify ci.unit-test]
         run: cd installer/tui && cargo test
 
       - name: Run cargo clippy
