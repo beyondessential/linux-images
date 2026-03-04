@@ -41,6 +41,13 @@ impl Fixture {
         self.write("script.txt", script)
     }
 
+    fn write_timezones(&self) -> PathBuf {
+        self.write(
+            "timezones.txt",
+            "America/New_York\nEurope/London\nPacific/Auckland\nUTC\n",
+        )
+    }
+
     fn plan_path(&self) -> PathBuf {
         self.path("plan.json")
     }
@@ -366,8 +373,9 @@ fn auto_incomplete_missing_variant_falls_back() {
     "#,
     );
     let script = f.write_script(
-        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\ntype:yes\nenter\n",
+        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
@@ -375,6 +383,8 @@ fn auto_incomplete_missing_variant_falls_back() {
             config.to_str().unwrap(),
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -403,8 +413,9 @@ fn auto_incomplete_missing_disk_falls_back() {
     "#,
     );
     let script = f.write_script(
-        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\ntype:yes\nenter\n",
+        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
@@ -412,6 +423,8 @@ fn auto_incomplete_missing_disk_falls_back() {
             config.to_str().unwrap(),
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -435,8 +448,9 @@ fn auto_incomplete_missing_both_falls_back() {
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config("auto = true\n");
     let script = f.write_script(
-        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\ntype:yes\nenter\n",
+        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
@@ -444,6 +458,8 @@ fn auto_incomplete_missing_both_falls_back() {
             config.to_str().unwrap(),
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -495,10 +511,13 @@ tab
 # Password: skip (empty)
 enter
 enter
+# Timezone: accept default (UTC)
+enter
 type:yes
 enter
 ",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
@@ -506,6 +525,8 @@ enter
             config.to_str().unwrap(),
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -525,6 +546,7 @@ enter
     assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 1);
     assert!(!plan["firstboot"]["password_set"].as_bool().unwrap());
+    assert_eq!(plan["firstboot"]["timezone"], "UTC");
 }
 
 // r[verify installer.mode.prefilled]
@@ -635,16 +657,21 @@ tab
 # Password: skip (empty)
 enter
 enter
+# Timezone: accept default (UTC)
+enter
 # Confirm
 type:yes
 enter
 ",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -664,6 +691,7 @@ enter
     assert_eq!(plan["firstboot"]["hostname"], "my-server");
     assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 1);
+    assert_eq!(plan["firstboot"]["timezone"], "UTC");
 }
 
 // r[verify installer.mode.interactive]
@@ -687,15 +715,20 @@ tab
 # Password: skip (empty)
 enter
 enter
+# Timezone: accept default (UTC)
+enter
 type:yes
 enter
 ",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -736,15 +769,20 @@ tab
 # Password: skip (empty)
 enter
 enter
+# Timezone: accept default (UTC)
+enter
 type:yes
 enter
 ",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -760,6 +798,7 @@ enter
     assert_eq!(plan["firstboot"]["hostname"], "my-host");
     assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
+    assert_eq!(plan["firstboot"]["timezone"], "UTC");
 }
 
 // r[verify installer.tui.hostname+2]
@@ -782,15 +821,20 @@ enter
 tab
 enter
 enter
+# Timezone: accept default (UTC)
+enter
 type:yes
 enter
 ",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -827,15 +871,20 @@ tab
 # Password: skip (empty)
 enter
 enter
+# Timezone: accept default (UTC)
+enter
 type:yes
 enter
 ",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",
@@ -913,7 +962,7 @@ fn interactive_empty_script_uses_initial_state() {
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Walk to confirmation, go back to ssh keys, go back to tailscale,
+    // Walk to confirmation, go back through timezone/password to tailscale,
     // type a key, then walk forward again and confirm.
     let script = f.write_script(
         "\
@@ -927,7 +976,11 @@ tab
 # Password: skip (empty)
 enter
 enter
+# Timezone: accept default (UTC)
+enter
 # Now on Confirmation, go back
+esc
+# Back on Timezone, go back
 esc
 # Back on Password, go back
 esc
@@ -941,16 +994,21 @@ tab
 # Password: skip (empty)
 enter
 enter
+# Timezone: accept default (UTC)
+enter
 # Confirmation
 type:yes
 enter
 ",
     );
+    let timezones = f.write_timezones();
 
     installer()
         .args([
             "--fake-devices",
             devices.to_str().unwrap(),
+            "--fake-timezones",
+            timezones.to_str().unwrap(),
             "--input-script",
             script.to_str().unwrap(),
             "--dry-run",

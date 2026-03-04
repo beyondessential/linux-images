@@ -30,6 +30,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::Tailscale => render_tailscale(frame, chunks[1], state),
         Screen::SshKeys => render_ssh_keys(frame, chunks[1], state),
         Screen::Password => render_password(frame, chunks[1], state),
+        Screen::Timezone => render_timezone(frame, chunks[1], state),
         Screen::Confirmation => render_confirmation(frame, chunks[1], state),
         Screen::Writing => render_writing(frame, chunks[1], state),
         Screen::FirstbootApply => render_firstboot(frame, chunks[1]),
@@ -43,16 +44,17 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
         Screen::Welcome => "Welcome",
-        Screen::DiskSelection => "1/8 Select Target Disk",
-        Screen::VariantSelection => "2/8 Select Variant",
-        Screen::TpmToggle => "2/8 TPM Configuration",
-        Screen::Hostname => "3/8 Hostname",
-        Screen::Tailscale => "4/8 Tailscale",
-        Screen::SshKeys => "5/8 SSH Keys",
-        Screen::Password => "6/8 Password",
-        Screen::Confirmation => "7/8 Confirm",
-        Screen::Writing => "8/8 Writing Image",
-        Screen::FirstbootApply => "8/8 Applying Configuration",
+        Screen::DiskSelection => "1/9 Select Target Disk",
+        Screen::VariantSelection => "2/9 Select Variant",
+        Screen::TpmToggle => "2/9 TPM Configuration",
+        Screen::Hostname => "3/9 Hostname",
+        Screen::Tailscale => "4/9 Tailscale",
+        Screen::SshKeys => "5/9 SSH Keys",
+        Screen::Password => "6/9 Password",
+        Screen::Timezone => "7/9 Timezone",
+        Screen::Confirmation => "8/9 Confirm",
+        Screen::Writing => "9/9 Writing Image",
+        Screen::FirstbootApply => "9/9 Applying Configuration",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
     };
@@ -84,6 +86,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
                 "Enter/Tab: next | Esc: back"
             }
         }
+        Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back",
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit",
         Screen::Writing => "Please wait...",
         Screen::FirstbootApply => "Please wait...",
@@ -411,6 +414,75 @@ fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
 
 // r[impl installer.tui.confirmation]
 // r[impl installer.tui.password]
+// r[impl installer.tui.timezone]
+fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
+    let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
+
+    let intro = vec![
+        Line::from(""),
+        Line::from("  Select the system timezone."),
+        Line::from(vec![
+            Span::raw("  Search: "),
+            Span::styled(
+                &state.timezone_search,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("_", Style::default().fg(Color::DarkGray)),
+            Span::raw(format!(
+                "  ({} match{})",
+                state.timezone_filtered.len(),
+                if state.timezone_filtered.len() == 1 {
+                    ""
+                } else {
+                    "es"
+                }
+            )),
+        ]),
+        Line::from(""),
+    ];
+    let intro_paragraph = Paragraph::new(intro);
+    frame.render_widget(intro_paragraph, chunks[0]);
+
+    let visible_height = chunks[1].height.saturating_sub(2) as usize;
+    let cursor = state.timezone_cursor;
+    let scroll_offset = if visible_height == 0 {
+        0
+    } else if cursor >= visible_height {
+        cursor - visible_height + 1
+    } else {
+        0
+    };
+
+    let items: Vec<ListItem> = state
+        .timezone_filtered
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .take(visible_height.max(1))
+        .map(|(i, &tz_idx)| {
+            let tz = &state.available_timezones[tz_idx];
+            let style = if i == cursor {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(format!("  {tz}")).style(style)
+        })
+        .collect();
+
+    let block = Block::default()
+        .title(format!(" Timezone [{}] ", state.timezone_selected))
+        .borders(Borders::ALL);
+
+    let list = List::new(items).block(block);
+    frame.render_widget(list, chunks[1]);
+}
+
 fn render_password(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
@@ -520,6 +592,13 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(vec![
             Span::raw("  TPM enroll:   "),
             Span::styled(tpm_status, Style::default().add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::raw("  Timezone:     "),
+            Span::styled(
+                state.effective_timezone(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
         ]),
     ];
 

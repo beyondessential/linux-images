@@ -113,6 +113,9 @@ pub struct FirstbootConfig {
 
     #[serde(default, rename = "password-hash")]
     pub password_hash: Option<String>,
+
+    /// IANA timezone (e.g. "America/New_York"). Defaults to "UTC".
+    pub timezone: Option<String>,
 }
 
 impl FirstbootConfig {
@@ -602,6 +605,7 @@ mod tests {
                 ssh_authorized_keys: vec!["ssh-ed25519 AAAA... admin@example.com".into()],
                 password: Some("changeme".into()),
                 password_hash: None,
+                timezone: None,
             }),
         };
         let issues = config.validate();

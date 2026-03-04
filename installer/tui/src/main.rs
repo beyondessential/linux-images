@@ -13,6 +13,7 @@ mod firstboot;
 mod hostname_template;
 mod plan;
 mod script;
+mod timezone;
 mod ui;
 mod writer;
 
@@ -54,6 +55,13 @@ struct Cli {
     #[arg(long)]
     input_script: Option<PathBuf>,
 
+    // r[impl installer.tui.timezone]
+    /// Path to a text file of timezone names (one per line) for testing.
+    /// When given, the installer reads timezones from this file instead of
+    /// parsing /usr/share/zoneinfo/zone1970.tab.
+    #[arg(long)]
+    fake_timezones: Option<PathBuf>,
+
     // r[impl installer.no-reboot]
     /// Do not reboot after a successful installation. Exit cleanly instead.
     #[arg(long)]
@@ -88,6 +96,15 @@ fn run(cli: Cli) -> Result<()> {
     let (mut install_config, mode) = load_config(&cli)?;
 
     resolve_hostname_template(&mut install_config)?;
+
+    // r[impl installer.tui.timezone]
+    let available_timezones = if let Some(ref fake_path) = cli.fake_timezones {
+        tracing::info!("loading fake timezones from {}", fake_path.display());
+        timezone::load_from_file(fake_path)?
+    } else {
+        timezone::load_system_timezones()
+    };
+    tracing::info!("loaded {} timezones", available_timezones.len());
 
     let arch = detect_arch();
     tracing::info!("detected architecture: {arch}");
@@ -154,6 +171,7 @@ fn run(cli: Cli) -> Result<()> {
                 &arch,
                 devices,
                 boot_device,
+                available_timezones,
                 config_warnings,
                 &cli,
             )
@@ -164,6 +182,7 @@ fn run(cli: Cli) -> Result<()> {
             &arch,
             devices,
             boot_device,
+            available_timezones,
             config_warnings,
             &cli,
         ),
@@ -229,6 +248,12 @@ fn run_auto(
         Some(writer::find_image_path(&variant.to_string(), arch)?)
     };
 
+    let effective_timezone = cfg
+        .firstboot
+        .as_ref()
+        .and_then(|fb| fb.timezone.as_deref())
+        .unwrap_or("UTC");
+
     // r[impl installer.dryrun]
     if cli.dry_run {
         let plan = plan::InstallPlan::new(
@@ -238,6 +263,7 @@ fn run_auto(
             cfg.disable_tpm,
             cfg.firstboot.as_ref(),
             hostname_from_template,
+            effective_timezone,
             image_path,
             config_warnings,
         );
@@ -261,6 +287,11 @@ fn run_auto(
             eprintln!("  hostname:   (from DHCP)");
         } else if let Some(ref h) = fb.hostname {
             eprintln!("  hostname:   {h}");
+        }
+        if let Some(ref tz) = fb.timezone {
+            eprintln!("  timezone:   {tz}");
+        } else {
+            eprintln!("  timezone:   UTC");
         }
         if fb.tailscale_authkey.is_some() {
             eprintln!("  tailscale:  auth key provided");
@@ -325,12 +356,17 @@ fn run_auto(
 
 // r[impl installer.mode.interactive]
 // r[impl installer.mode.prefilled]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "collecting all state needed to launch the interactive TUI"
+)]
 fn run_interactive(
     cfg: config::InstallConfig,
     mode: &config::OperatingMode,
     arch: &str,
     devices: Vec<disk::BlockDevice>,
     boot_device: Option<PathBuf>,
+    available_timezones: Vec<String>,
     config_warnings: Vec<String>,
     cli: &Cli,
 ) -> Result<()> {
@@ -363,6 +399,7 @@ fn run_interactive(
         boot_device,
         default_disk_index,
         build_info,
+        available_timezones,
     );
 
     // r[impl installer.dryrun.script]
@@ -418,6 +455,7 @@ fn plan_from_tui_state(
         state.disable_tpm,
         firstboot.as_ref(),
         state.hostname_from_template || hostname_from_template,
+        state.effective_timezone(),
         image_path.clone(),
         config_warnings.to_vec(),
     )

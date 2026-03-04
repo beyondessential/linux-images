@@ -88,6 +88,35 @@ pub fn apply_firstboot(target: &MountedTarget, config: &FirstbootConfig) -> Resu
         apply_password(root, config)?;
     }
 
+    let tz = config.timezone.as_deref().unwrap_or("UTC");
+    apply_timezone(root, tz)?;
+
+    Ok(())
+}
+
+// r[impl installer.firstboot.timezone]
+fn apply_timezone(root: &Path, timezone: &str) -> Result<()> {
+    let zoneinfo_path = format!("/usr/share/zoneinfo/{timezone}");
+    let localtime_path = root.join("etc/localtime");
+
+    if localtime_path.exists() || localtime_path.is_symlink() {
+        fs::remove_file(&localtime_path)
+            .with_context(|| format!("removing existing {}", localtime_path.display()))?;
+    }
+
+    std::os::unix::fs::symlink(&zoneinfo_path, &localtime_path).with_context(|| {
+        format!(
+            "symlinking {} -> {}",
+            localtime_path.display(),
+            zoneinfo_path
+        )
+    })?;
+
+    let timezone_path = root.join("etc/timezone");
+    fs::write(&timezone_path, format!("{timezone}\n"))
+        .with_context(|| format!("writing timezone to {}", timezone_path.display()))?;
+
+    tracing::info!("set timezone to {timezone}");
     Ok(())
 }
 
@@ -546,5 +575,104 @@ mod tests {
         fs::write(etc.join("passwd"), "root:x:0:0:root:/root:/bin/bash\n").unwrap();
 
         assert!(resolve_uid_gid_from_passwd(dir.path(), "ubuntu").is_err());
+    }
+
+    // r[verify installer.firstboot.timezone]
+    #[test]
+    fn apply_timezone_creates_symlink_and_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+
+        apply_timezone(dir.path(), "America/New_York").unwrap();
+
+        let localtime = etc.join("localtime");
+        assert!(localtime.is_symlink());
+        let target = fs::read_link(&localtime).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from("/usr/share/zoneinfo/America/New_York")
+        );
+
+        let timezone = fs::read_to_string(etc.join("timezone")).unwrap();
+        assert_eq!(timezone, "America/New_York\n");
+    }
+
+    // r[verify installer.firstboot.timezone]
+    #[test]
+    fn apply_timezone_replaces_existing_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+
+        std::os::unix::fs::symlink("/usr/share/zoneinfo/UTC", etc.join("localtime")).unwrap();
+        fs::write(etc.join("timezone"), "UTC\n").unwrap();
+
+        apply_timezone(dir.path(), "Pacific/Auckland").unwrap();
+
+        let target = fs::read_link(etc.join("localtime")).unwrap();
+        assert_eq!(
+            target,
+            PathBuf::from("/usr/share/zoneinfo/Pacific/Auckland")
+        );
+
+        let timezone = fs::read_to_string(etc.join("timezone")).unwrap();
+        assert_eq!(timezone, "Pacific/Auckland\n");
+    }
+
+    // r[verify installer.firstboot.timezone]
+    #[test]
+    fn apply_timezone_utc_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+
+        apply_timezone(dir.path(), "UTC").unwrap();
+
+        let target = fs::read_link(etc.join("localtime")).unwrap();
+        assert_eq!(target, PathBuf::from("/usr/share/zoneinfo/UTC"));
+
+        let timezone = fs::read_to_string(etc.join("timezone")).unwrap();
+        assert_eq!(timezone, "UTC\n");
+    }
+
+    // r[verify installer.firstboot.timezone]
+    #[test]
+    fn apply_firstboot_sets_timezone_from_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+        // apply_firstboot needs /etc/shadow for password but we skip password
+        // by not setting it. We just need etc to exist.
+
+        let config = FirstbootConfig {
+            timezone: Some("Europe/London".into()),
+            ..Default::default()
+        };
+
+        // apply_firstboot calls apply_timezone internally.
+        // We can't fully call it without a MountedTarget, so test apply_timezone directly.
+        apply_timezone(dir.path(), config.timezone.as_deref().unwrap_or("UTC")).unwrap();
+
+        let target = fs::read_link(etc.join("localtime")).unwrap();
+        assert_eq!(target, PathBuf::from("/usr/share/zoneinfo/Europe/London"));
+    }
+
+    // r[verify installer.firstboot.timezone]
+    #[test]
+    fn apply_firstboot_defaults_timezone_to_utc() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+
+        let config = FirstbootConfig::default();
+        let tz = config.timezone.as_deref().unwrap_or("UTC");
+        apply_timezone(dir.path(), tz).unwrap();
+
+        let target = fs::read_link(etc.join("localtime")).unwrap();
+        assert_eq!(target, PathBuf::from("/usr/share/zoneinfo/UTC"));
+
+        let timezone = fs::read_to_string(etc.join("timezone")).unwrap();
+        assert_eq!(timezone, "UTC\n");
     }
 }

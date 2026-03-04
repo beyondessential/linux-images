@@ -33,6 +33,7 @@ pub struct FirstbootInfo {
     pub tailscale_authkey: bool,
     pub ssh_authorized_keys_count: usize,
     pub password_set: bool,
+    pub timezone: String,
 }
 
 impl From<&BlockDevice> for DiskInfo {
@@ -47,7 +48,7 @@ impl From<&BlockDevice> for DiskInfo {
 }
 
 impl FirstbootInfo {
-    pub fn from_config(fb: &FirstbootConfig, hostname_from_template: bool) -> Self {
+    pub fn from_config(fb: &FirstbootConfig, hostname_from_template: bool, timezone: &str) -> Self {
         let hostname = if fb.hostname_from_dhcp {
             Some("dhcp".to_string())
         } else {
@@ -59,6 +60,7 @@ impl FirstbootInfo {
             tailscale_authkey: fb.tailscale_authkey.is_some(),
             ssh_authorized_keys_count: fb.ssh_authorized_keys.len(),
             password_set: fb.has_password(),
+            timezone: timezone.to_string(),
         }
     }
 }
@@ -75,6 +77,7 @@ impl InstallPlan {
         disable_tpm: bool,
         firstboot: Option<&FirstbootConfig>,
         hostname_from_template: bool,
+        timezone: &str,
         image_path: Option<PathBuf>,
         config_warnings: Vec<String>,
     ) -> Self {
@@ -90,7 +93,8 @@ impl InstallPlan {
             variant: variant.to_string(),
             disk: disk.map(DiskInfo::from),
             disable_tpm,
-            firstboot: firstboot.map(|fb| FirstbootInfo::from_config(fb, hostname_from_template)),
+            firstboot: firstboot
+                .map(|fb| FirstbootInfo::from_config(fb, hostname_from_template, timezone)),
             image_path,
             config_warnings,
         }
@@ -149,6 +153,7 @@ mod tests {
             false,
             Some(&fb),
             false,
+            "America/New_York",
             Some(PathBuf::from("/run/live/medium/images/metal-amd64.raw.zst")),
             vec![],
         );
@@ -170,6 +175,7 @@ mod tests {
         assert!(json["firstboot"]["tailscale_authkey"].as_bool().unwrap());
         assert_eq!(json["firstboot"]["ssh_authorized_keys_count"], 2);
         assert!(json["firstboot"]["password_set"].as_bool().unwrap());
+        assert_eq!(json["firstboot"]["timezone"], "America/New_York");
         assert_eq!(
             json["image_path"],
             "/run/live/medium/images/metal-amd64.raw.zst"
@@ -187,6 +193,7 @@ mod tests {
             false,
             None,
             false,
+            "UTC",
             None,
             vec!["some warning".into()],
         );
@@ -207,7 +214,7 @@ mod tests {
             tailscale_authkey: Some("tskey-auth-secret-value".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false);
+        let info = FirstbootInfo::from_config(&fb, false, "UTC");
         assert!(info.tailscale_authkey);
 
         let json = serde_json::to_value(&info).unwrap();
@@ -222,7 +229,7 @@ mod tests {
             hostname: Some("host".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false);
+        let info = FirstbootInfo::from_config(&fb, false, "UTC");
         assert!(!info.tailscale_authkey);
         assert!(!info.password_set);
     }
@@ -234,7 +241,7 @@ mod tests {
             password: Some("secret".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false);
+        let info = FirstbootInfo::from_config(&fb, false, "UTC");
         assert!(info.password_set);
     }
 
@@ -245,7 +252,7 @@ mod tests {
             password_hash: Some("$6$rounds=4096$salt$hash".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false);
+        let info = FirstbootInfo::from_config(&fb, false, "UTC");
         assert!(info.password_set);
     }
 
@@ -287,6 +294,7 @@ mod tests {
                 false,
                 None,
                 false,
+                "UTC",
                 None,
                 vec![],
             );
@@ -307,6 +315,7 @@ mod tests {
             true,
             None,
             false,
+            "UTC",
             None,
             vec![],
         );
@@ -326,7 +335,7 @@ mod tests {
             hostname_from_dhcp: true,
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false);
+        let info = FirstbootInfo::from_config(&fb, false, "UTC");
         assert_eq!(info.hostname.as_deref(), Some("dhcp"));
         assert!(!info.hostname_from_template);
     }
@@ -338,8 +347,17 @@ mod tests {
             hostname: Some("srv-a1b2c3".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, true);
+        let info = FirstbootInfo::from_config(&fb, true, "Pacific/Auckland");
         assert_eq!(info.hostname.as_deref(), Some("srv-a1b2c3"));
         assert!(info.hostname_from_template);
+        assert_eq!(info.timezone, "Pacific/Auckland");
+    }
+
+    // r[verify installer.dryrun.schema+2]
+    #[test]
+    fn firstboot_info_timezone_default() {
+        let fb = FirstbootConfig::default();
+        let info = FirstbootInfo::from_config(&fb, false, "UTC");
+        assert_eq!(info.timezone, "UTC");
     }
 }

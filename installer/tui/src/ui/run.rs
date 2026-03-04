@@ -176,6 +176,34 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
+        // r[impl installer.tui.timezone]
+        Screen::Timezone => match key.code {
+            KeyCode::Esc => state.go_back(),
+            KeyCode::Enter => {
+                state.timezone_selected = state.timezone_highlighted().to_string();
+                state.advance();
+            }
+            KeyCode::Up => {
+                if state.timezone_cursor > 0 {
+                    state.timezone_cursor -= 1;
+                }
+            }
+            KeyCode::Down => {
+                if state.timezone_cursor + 1 < state.timezone_filtered.len() {
+                    state.timezone_cursor += 1;
+                }
+            }
+            KeyCode::Backspace => {
+                state.timezone_search.pop();
+                state.update_timezone_filter();
+            }
+            KeyCode::Char(c) => {
+                state.timezone_search.push(c);
+                state.update_timezone_filter();
+            }
+            _ => {}
+        },
+
         Screen::Confirmation => match key.code {
             KeyCode::Char('q') if state.confirm_input.is_empty() => return KeyAction::Quit,
             KeyCode::Esc => {
@@ -450,6 +478,12 @@ mod tests {
             None,
             None,
             String::new(),
+            vec![
+                "America/New_York".into(),
+                "Europe/London".into(),
+                "Pacific/Auckland".into(),
+                "UTC".into(),
+            ],
         )
     }
 
@@ -482,6 +516,8 @@ mod tests {
             // Password: skip (empty) — Enter moves to confirm field, Enter again advances
             press(KeyCode::Enter),
             press(KeyCode::Enter),
+            // Timezone: accept default (UTC) -> Confirmation
+            press(KeyCode::Enter),
             // Confirmation: type "yes" and confirm
             press(KeyCode::Char('y')),
             press(KeyCode::Char('e')),
@@ -496,6 +532,7 @@ mod tests {
         assert_eq!(final_state.hostname_input, "myhost");
         assert_eq!(final_state.selected_disk_index, 0);
         assert!(final_state.is_confirmed());
+        assert_eq!(final_state.timezone_selected, "UTC");
     }
 
     // r[verify installer.dryrun.script.headless]
@@ -503,21 +540,23 @@ mod tests {
     fn scripted_cloud_skips_tpm() {
         let state = make_state();
         let events = vec![
+            // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
-            // Toggle to Cloud
+            // VariantSelection: toggle to Cloud, then advance (skip TpmToggle)
             press(KeyCode::Down),
-            // VariantSelection -> Hostname (skips TpmToggle)
             press(KeyCode::Enter),
-            // Hostname: advance
+            // Hostname: skip (cloud) -> Tailscale
             press(KeyCode::Enter),
-            // Tailscale: advance
+            // Tailscale: skip -> SshKeys
             press(KeyCode::Enter),
-            // SshKeys: advance
+            // SshKeys: skip -> Password
             press(KeyCode::Tab),
-            // Password: skip (empty) — Enter moves to confirm field, Enter again advances
+            // Password: skip
             press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone: accept default -> Confirmation
             press(KeyCode::Enter),
             // Confirmation: type "yes" and confirm
             press(KeyCode::Char('y')),
@@ -588,6 +627,12 @@ mod tests {
             None,
             None,
             String::new(),
+            vec![
+                "America/New_York".into(),
+                "Europe/London".into(),
+                "Pacific/Auckland".into(),
+                "UTC".into(),
+            ],
         );
 
         let events = vec![
@@ -619,25 +664,25 @@ mod tests {
     fn scripted_go_back_from_confirmation() {
         let state = make_state();
         let events = vec![
-            // Walk to Confirmation
+            // Walk to Confirmation screen
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname: type "h" (required for metal) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Tab),
-            // Password: skip — Enter moves to confirm field, Enter again advances
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Now on Confirmation — go back
+            // Timezone: accept default
+            press(KeyCode::Enter),
+            // Confirmation: go back -> Timezone
             press(KeyCode::Esc),
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Password);
+        assert_eq!(final_state.screen, Screen::Timezone);
     }
 
     // r[verify installer.tui.password]
@@ -650,28 +695,25 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname: type "h" (required for metal) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Tab),
-            // Now on Password screen — type password
-            press(KeyCode::Char('s')),
-            press(KeyCode::Char('e')),
+            // Password: type "abc", tab/enter to confirm field, type "abc", enter
+            press(KeyCode::Char('a')),
+            press(KeyCode::Char('b')),
             press(KeyCode::Char('c')),
-            // Tab to confirm field
-            press(KeyCode::Tab),
-            // Type matching confirmation
-            press(KeyCode::Char('s')),
-            press(KeyCode::Char('e')),
+            press(KeyCode::Enter),
+            press(KeyCode::Char('a')),
+            press(KeyCode::Char('b')),
             press(KeyCode::Char('c')),
-            // Enter to advance
             press(KeyCode::Enter),
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Confirmation);
-        assert_eq!(final_state.password_input, "sec");
+        assert_eq!(final_state.screen, Screen::Timezone);
+        assert_eq!(final_state.password_input, "abc");
+        assert_eq!(final_state.password_confirm_input, "abc");
         assert!(!final_state.password_mismatch);
     }
 
@@ -925,5 +967,271 @@ mod tests {
         let action = handle_key(release, &mut state);
         assert!(matches!(action, KeyAction::Continue));
         assert_eq!(state.screen, Screen::Welcome);
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn scripted_timezone_accept_default_utc() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Tailscale: skip
+            press(KeyCode::Enter),
+            // SshKeys: skip
+            press(KeyCode::Tab),
+            // Password: skip
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone: accept default (UTC) -> Confirmation
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.timezone_selected, "UTC");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn scripted_timezone_navigate_down_and_select() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Tailscale: skip
+            press(KeyCode::Enter),
+            // SshKeys: skip
+            press(KeyCode::Tab),
+            // Password: skip
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone list (sorted): America/New_York=0, Europe/London=1,
+            // Pacific/Auckland=2, UTC=3. Cursor starts at UTC (index 3).
+            // Up once moves to Pacific/Auckland (index 2).
+            press(KeyCode::Up),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.timezone_selected, "Pacific/Auckland");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn scripted_timezone_search_filters_list() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Tailscale: skip
+            press(KeyCode::Enter),
+            // SshKeys: skip
+            press(KeyCode::Tab),
+            // Password: skip
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone: type "auckland" to filter, then select first match
+            press(KeyCode::Char('a')),
+            press(KeyCode::Char('u')),
+            press(KeyCode::Char('c')),
+            press(KeyCode::Char('k')),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.timezone_selected, "Pacific/Auckland");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn scripted_timezone_search_backspace_widens_filter() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Tailscale: skip
+            press(KeyCode::Enter),
+            // SshKeys: skip
+            press(KeyCode::Tab),
+            // Password: skip
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone: type "zzz" (matches nothing), then backspace all, then select
+            press(KeyCode::Char('z')),
+            press(KeyCode::Char('z')),
+            press(KeyCode::Char('z')),
+            press(KeyCode::Backspace),
+            press(KeyCode::Backspace),
+            press(KeyCode::Backspace),
+            // Filter is now empty again — all timezones visible, cursor at 0
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Confirmation);
+        // After clearing the filter, cursor resets to 0 which is the first sorted entry
+        assert_eq!(final_state.timezone_selected, "America/New_York");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn scripted_timezone_esc_goes_back_to_password() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Tailscale: skip
+            press(KeyCode::Enter),
+            // SshKeys: skip
+            press(KeyCode::Tab),
+            // Password: skip
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone: press Esc to go back
+            press(KeyCode::Esc),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Password);
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn scripted_timezone_down_does_not_go_past_end() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Tailscale: skip
+            press(KeyCode::Enter),
+            // SshKeys: skip
+            press(KeyCode::Tab),
+            // Password: skip
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone: press Down many times (more than list length), then select
+            // List has 4 entries: America/New_York, Europe/London, Pacific/Auckland, UTC
+            // Cursor starts at UTC (index 3). Down should not go past 3.
+            press(KeyCode::Down),
+            press(KeyCode::Down),
+            press(KeyCode::Down),
+            press(KeyCode::Down),
+            press(KeyCode::Down),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Confirmation);
+        // Should still be UTC (last in sorted list, can't go past it)
+        assert_eq!(final_state.timezone_selected, "UTC");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn scripted_timezone_up_does_not_go_before_start() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Tailscale: skip
+            press(KeyCode::Enter),
+            // SshKeys: skip
+            press(KeyCode::Tab),
+            // Password: skip
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone: press Up many times (more than cursor position), then select
+            // Cursor starts at UTC (index 3 in sorted list).
+            press(KeyCode::Up),
+            press(KeyCode::Up),
+            press(KeyCode::Up),
+            press(KeyCode::Up),
+            press(KeyCode::Up),
+            press(KeyCode::Up),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Confirmation);
+        assert_eq!(final_state.timezone_selected, "America/New_York");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn scripted_timezone_search_then_navigate() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Tailscale: skip
+            press(KeyCode::Enter),
+            // SshKeys: skip
+            press(KeyCode::Tab),
+            // Password: skip
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Timezone: type "o" — matches America/New_York and Europe/London
+            press(KeyCode::Char('o')),
+            // Navigate down to second match and select
+            press(KeyCode::Down),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Confirmation);
+        // "o" matches: America/New_York (index 0 in filtered), Europe/London (index 1)
+        // Down moves cursor to 1 -> Europe/London
+        assert_eq!(final_state.timezone_selected, "Europe/London");
     }
 }

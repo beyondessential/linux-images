@@ -20,6 +20,7 @@ pub enum Screen {
     Tailscale,
     SshKeys,
     Password,
+    Timezone,
     Confirmation,
     Writing,
     FirstbootApply,
@@ -49,6 +50,13 @@ pub struct AppState {
     pub password_mismatch: bool,
     /// Pre-hashed password from config file (takes precedence over plaintext).
     pub config_password_hash: Option<String>,
+
+    // r[impl installer.tui.timezone]
+    pub available_timezones: Vec<String>,
+    pub timezone_search: String,
+    pub timezone_selected: String,
+    pub timezone_filtered: Vec<usize>,
+    pub timezone_cursor: usize,
 }
 
 // r[impl installer.tui.progress]
@@ -72,6 +80,10 @@ impl From<&WriteProgress> for ProgressSnapshot {
 }
 
 impl AppState {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor collecting all initial state fields"
+    )]
     pub fn new(
         devices: Vec<BlockDevice>,
         variant: Variant,
@@ -80,6 +92,7 @@ impl AppState {
         boot_device: Option<PathBuf>,
         default_disk_index: Option<usize>,
         build_info: String,
+        available_timezones: Vec<String>,
     ) -> Self {
         let (
             hostname_input,
@@ -88,6 +101,7 @@ impl AppState {
             tailscale_input,
             ssh_keys_input,
             config_password_hash,
+            timezone_from_config,
         ) = match firstboot {
             Some(ref fb) => (
                 fb.hostname.clone().unwrap_or_default(),
@@ -96,6 +110,7 @@ impl AppState {
                 fb.tailscale_authkey.clone().unwrap_or_default(),
                 fb.ssh_authorized_keys.join("\n"),
                 fb.password_hash.clone(),
+                fb.timezone.clone(),
             ),
             None => (
                 String::new(),
@@ -104,8 +119,16 @@ impl AppState {
                 String::new(),
                 String::new(),
                 None,
+                None,
             ),
         };
+
+        let timezone_selected = timezone_from_config.unwrap_or_else(|| "UTC".to_string());
+        let timezone_filtered: Vec<usize> = (0..available_timezones.len()).collect();
+        let timezone_cursor = available_timezones
+            .iter()
+            .position(|z| z == &timezone_selected)
+            .unwrap_or(0);
 
         Self {
             screen: Screen::Welcome,
@@ -127,6 +150,11 @@ impl AppState {
             password_confirming: false,
             password_mismatch: false,
             config_password_hash,
+            available_timezones,
+            timezone_search: String::new(),
+            timezone_selected,
+            timezone_filtered,
+            timezone_cursor,
         }
     }
 
@@ -134,6 +162,7 @@ impl AppState {
     // r[impl installer.tui.tailscale]
     // r[impl installer.tui.ssh-keys]
     // r[impl installer.tui.password]
+    // r[impl installer.tui.timezone]
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
     pub fn firstboot_config(&self) -> Option<FirstbootConfig> {
@@ -164,12 +193,19 @@ impl AppState {
 
         let password_hash = self.config_password_hash.clone();
 
+        let timezone = if self.timezone_selected == "UTC" {
+            None
+        } else {
+            Some(self.timezone_selected.clone())
+        };
+
         if hostname.is_none()
             && !self.hostname_from_dhcp
             && tailscale_authkey.is_none()
             && ssh_authorized_keys.is_empty()
             && password.is_none()
             && password_hash.is_none()
+            && timezone.is_none()
         {
             return None;
         }
@@ -182,6 +218,7 @@ impl AppState {
             ssh_authorized_keys,
             password,
             password_hash,
+            timezone,
         })
     }
 
@@ -215,6 +252,7 @@ impl AppState {
 
     // r[impl installer.tui.tpm-toggle]
     // r[impl installer.tui.password]
+    // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
             Screen::Welcome => Screen::DiskSelection,
@@ -225,7 +263,8 @@ impl AppState {
             Screen::Hostname => Screen::Tailscale,
             Screen::Tailscale => Screen::SshKeys,
             Screen::SshKeys => Screen::Password,
-            Screen::Password => Screen::Confirmation,
+            Screen::Password => Screen::Timezone,
+            Screen::Timezone => Screen::Confirmation,
             Screen::Confirmation => Screen::Writing,
             Screen::Writing => Screen::FirstbootApply,
             Screen::FirstbootApply => Screen::Done,
@@ -248,7 +287,8 @@ impl AppState {
             Screen::Tailscale => Screen::Hostname,
             Screen::SshKeys => Screen::Tailscale,
             Screen::Password => Screen::SshKeys,
-            Screen::Confirmation => Screen::Password,
+            Screen::Timezone => Screen::Password,
+            Screen::Confirmation => Screen::Timezone,
             _ => return,
         };
     }
@@ -280,11 +320,55 @@ impl AppState {
     pub fn has_password(&self) -> bool {
         !self.password_input.is_empty() || self.config_password_hash.is_some()
     }
+
+    // r[impl installer.tui.timezone]
+    /// Re-filter the timezone list based on the current search string.
+    pub fn update_timezone_filter(&mut self) {
+        let query = self.timezone_search.to_lowercase();
+        self.timezone_filtered = self
+            .available_timezones
+            .iter()
+            .enumerate()
+            .filter(|(_, tz)| {
+                if query.is_empty() {
+                    return true;
+                }
+                tz.to_lowercase().contains(&query)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if self.timezone_cursor >= self.timezone_filtered.len() {
+            self.timezone_cursor = 0;
+        }
+    }
+
+    /// Return the currently highlighted timezone name, or the selected one.
+    pub fn timezone_highlighted(&self) -> &str {
+        if let Some(&idx) = self.timezone_filtered.get(self.timezone_cursor) {
+            &self.available_timezones[idx]
+        } else {
+            &self.timezone_selected
+        }
+    }
+
+    /// The effective timezone for the install plan (always has a value).
+    pub fn effective_timezone(&self) -> &str {
+        &self.timezone_selected
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_timezones() -> Vec<String> {
+        vec![
+            "America/New_York".into(),
+            "Europe/London".into(),
+            "Pacific/Auckland".into(),
+            "UTC".into(),
+        ]
+    }
 
     fn make_state() -> AppState {
         use crate::disk::TransportType;
@@ -312,6 +396,7 @@ mod tests {
             None,
             None,
             String::new(),
+            test_timezones(),
         )
     }
 
@@ -388,11 +473,14 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::Password);
         state.advance();
+        assert_eq!(state.screen, Screen::Timezone);
+        state.advance();
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
     // r[verify installer.tui.variant-selection]
     // r[verify installer.tui.password]
+    // r[verify installer.tui.timezone]
     #[test]
     fn advance_cloud_skips_tpm() {
         let mut state = make_state();
@@ -412,17 +500,22 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::Password);
         state.advance();
+        assert_eq!(state.screen, Screen::Timezone);
+        state.advance();
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
     // r[verify installer.tui.tpm-toggle]
     // r[verify installer.tui.password]
+    // r[verify installer.tui.timezone]
     #[test]
     fn go_back_through_metal_flow() {
         let mut state = make_state();
         state.variant = Variant::Metal;
         state.screen = Screen::Confirmation;
 
+        state.go_back();
+        assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Password);
         state.go_back();
@@ -443,12 +536,15 @@ mod tests {
 
     // r[verify installer.tui.variant-selection]
     // r[verify installer.tui.password]
+    // r[verify installer.tui.timezone]
     #[test]
     fn go_back_cloud_skips_tpm() {
         let mut state = make_state();
         state.variant = Variant::Cloud;
         state.screen = Screen::Confirmation;
 
+        state.go_back();
+        assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Password);
         state.go_back();
@@ -510,6 +606,7 @@ mod tests {
             None,
             None,
             String::new(),
+            test_timezones(),
         );
         assert_eq!(state.hostname_input, "myhost");
         assert_eq!(state.tailscale_input, "");
@@ -539,6 +636,7 @@ mod tests {
             None,
             None,
             String::new(),
+            test_timezones(),
         );
         assert_eq!(state.tailscale_input, "tskey-auth-xxx");
     }
@@ -566,6 +664,7 @@ mod tests {
             None,
             None,
             String::new(),
+            test_timezones(),
         );
         assert_eq!(
             state.ssh_keys_input,
@@ -663,6 +762,7 @@ mod tests {
             None,
             None,
             String::new(),
+            test_timezones(),
         );
         assert!(state.has_password());
         let fb = state.firstboot_config().unwrap();
@@ -740,8 +840,105 @@ mod tests {
             None,
             None,
             String::new(),
+            test_timezones(),
         );
         assert!(state.hostname_from_template);
         assert_eq!(state.hostname_input, "resolved-name");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn timezone_defaults_to_utc() {
+        let state = make_state();
+        assert_eq!(state.timezone_selected, "UTC");
+        assert_eq!(state.effective_timezone(), "UTC");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn timezone_prefilled_from_config() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            timezone: Some("Pacific/Auckland".into()),
+            ..Default::default()
+        };
+        let state = AppState::new(
+            devices,
+            Variant::Metal,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+        );
+        assert_eq!(state.timezone_selected, "Pacific/Auckland");
+        assert_eq!(state.effective_timezone(), "Pacific/Auckland");
+        assert_eq!(state.timezone_cursor, 2);
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn timezone_filter_narrows_list() {
+        let mut state = make_state();
+        state.timezone_search = "auck".into();
+        state.update_timezone_filter();
+        assert_eq!(state.timezone_filtered.len(), 1);
+        assert_eq!(state.timezone_highlighted(), "Pacific/Auckland");
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn timezone_filter_empty_shows_all() {
+        let mut state = make_state();
+        state.timezone_search = String::new();
+        state.update_timezone_filter();
+        assert_eq!(state.timezone_filtered.len(), 4);
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn timezone_filter_no_match() {
+        let mut state = make_state();
+        state.timezone_search = "zzz".into();
+        state.update_timezone_filter();
+        assert_eq!(state.timezone_filtered.len(), 0);
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn firstboot_config_includes_non_utc_timezone() {
+        let mut state = make_state();
+        state.hostname_input = "host".into();
+        state.timezone_selected = "Europe/London".into();
+        let fb = state.firstboot_config().unwrap();
+        assert_eq!(fb.timezone.as_deref(), Some("Europe/London"));
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn firstboot_config_utc_timezone_is_none() {
+        let mut state = make_state();
+        state.hostname_input = "host".into();
+        state.timezone_selected = "UTC".into();
+        let fb = state.firstboot_config().unwrap();
+        assert!(fb.timezone.is_none());
+    }
+
+    // r[verify installer.tui.timezone]
+    #[test]
+    fn firstboot_config_timezone_alone_triggers_some() {
+        let mut state = make_state();
+        state.timezone_selected = "Asia/Tokyo".into();
+        let fb = state.firstboot_config();
+        assert!(fb.is_some());
+        assert_eq!(fb.unwrap().timezone.as_deref(), Some("Asia/Tokyo"));
     }
 }

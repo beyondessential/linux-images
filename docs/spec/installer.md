@@ -48,6 +48,8 @@
 > # Pre-hashed password for the ubuntu user (crypt(3) format, e.g. from mkpasswd).
 > # Mutually exclusive with password.
 > password-hash = "$6$rounds=4096$..."
+> # IANA timezone (e.g. "America/New_York"). Defaults to "UTC".
+> timezone = "Pacific/Auckland"
 > ```
 >
 > All fields are optional. The `[firstboot]` table and all its fields are
@@ -139,7 +141,8 @@ plan. If omitted, the plan is written to stdout.
 >     "hostname_from_template": false,
 >     "tailscale_authkey": true,
 >     "ssh_authorized_keys_count": 2,
->     "password_set": true
+>     "password_set": true,
+>     "timezone": "UTC"
 >   },
 >   "image_path": "/run/live/medium/images/metal-amd64.raw.zst",
 >   "config_warnings": []
@@ -152,7 +155,8 @@ plan. If omitted, the plan is written to stdout.
 > a password or password hash is provided). When `hostname-from-dhcp` is
 > chosen, `hostname` is the sentinel string `"dhcp"`. When a hostname was
 > generated from a template, `hostname_from_template` is `true`; otherwise
-> it is `false`.
+> it is `false`. `timezone` is always present in the `firstboot` object and
+> defaults to `"UTC"`.
 
 r[installer.dryrun.devices]
 In dry-run mode the installer must still detect real block devices (via
@@ -236,6 +240,17 @@ field is left empty, the image's existing default password (`bes`, expired)
 is kept. When a password is provided via the configuration file (`password`
 or `password-hash`), this screen is skipped in prefilled and auto modes.
 
+r[installer.tui.timezone]
+After the password screen, the TUI must present a timezone selection screen.
+The screen displays a searchable list of IANA timezones read from the
+system's `/usr/share/zoneinfo` (specifically by parsing
+`/usr/share/zoneinfo/zone1970.tab`). The user types to filter the list and
+uses Up/Down arrows to navigate the filtered results. Enter selects the
+highlighted timezone and advances to the next screen. The field defaults to
+`UTC` and may be pre-filled from the configuration file. If a
+`--fake-timezones <path>` flag is given, the installer reads timezone names
+(one per line) from that file instead of the system tzdata.
+
 r[installer.tui.confirmation]
 Before writing, the TUI must show a summary screen listing: target disk
 (path, model, size), chosen variant, TPM enrollment status, and any
@@ -311,6 +326,12 @@ system. When a plaintext password is given, it must be hashed with SHA-512
 crypt (`$6$`). When a pre-hashed password is given, it must be written
 directly. In either case, the password expiry flag must be cleared so that
 the user is not forced to change the password on first login.
+
+r[installer.firstboot.timezone]
+The installer must set the system timezone on the installed system by
+creating a symlink at `/etc/localtime` pointing to the corresponding
+file under `/usr/share/zoneinfo/` and writing the timezone name to
+`/etc/timezone`. The default timezone is `UTC`.
 
 r[installer.firstboot.tpm-disable]
 If `disable-tpm` is true, the installer must remove the
