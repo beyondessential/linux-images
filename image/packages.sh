@@ -30,6 +30,9 @@ PACKAGES=(
     cron
     sudo
 
+    # APT key management
+    gnupg
+
     # for dracut modules
     tpm2-tools
     nvme-cli
