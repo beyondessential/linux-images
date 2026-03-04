@@ -42,13 +42,34 @@ hostname depends on the variant and how the image is installed:
   hostname `ubuntu`. Cloud providers typically override this via cloud-init
   instance metadata or DHCP.
 
+#### Timezone
+
+The system timezone defaults to `UTC`. When installing via the ISO Installer,
+the TUI presents a searchable timezone selection screen after the password
+screen. The list is populated from the system's IANA timezone database
+(`/usr/share/zoneinfo/zone1970.tab`). The user can type to filter the list
+and use Up/Down arrows to navigate. Pressing Enter selects the highlighted
+timezone.
+
+The timezone can also be set in the `bes-install.toml` configuration file:
+
+```
+[firstboot]
+timezone = "Pacific/Auckland"
+```
+
+If not specified, the timezone defaults to `UTC`. The installer writes the
+selected timezone by creating a symlink at `/etc/localtime` pointing to the
+corresponding file under `/usr/share/zoneinfo/` and writing the timezone
+name to `/etc/timezone`.
+
 #### Credentials
 
 The `ubuntu` user is the only login account. The `root` user has no password and
 its shell is set to `/sbin/nologin`, so direct root login is not possible. The
 `ubuntu` user has passwordless `sudo` access.
 
-When installing via the BES Installer, the TUI prompts for a password for the
+When installing via the ISO Installer, the TUI prompts for a password for the
 `ubuntu` user. If left empty, the image's default password (`bes`, expired) is
 kept and the user will be forced to change it on first console login. A password
 can also be set in the `bes-install.toml` configuration file:
@@ -201,3 +222,4 @@ All fields are optional. Unknown fields are rejected.
 | `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
 | `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. Mutually exclusive with `password-hash`. |
 | `password-hash` | string | — | Pre-hashed password for the `ubuntu` user in crypt(3) format (e.g. from `mkpasswd --method=sha-512`). Written directly to `/etc/shadow` with the expiry flag cleared. Mutually exclusive with `password`. |
+| `timezone` | string | `"UTC"` | IANA timezone for the installed system (e.g. `"Pacific/Auckland"`, `"America/New_York"`). The installer creates a symlink at `/etc/localtime` pointing to `/usr/share/zoneinfo/<timezone>` and writes the name to `/etc/timezone`. In the TUI, a searchable list of timezones is presented; type to filter and use Up/Down to navigate. |
