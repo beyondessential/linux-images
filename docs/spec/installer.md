@@ -188,14 +188,44 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome]
+r[installer.tui.welcome+2]
 The TUI must open with a welcome screen that displays a description of what
 the image is for, contact information, and instructions on how to proceed.
-The user presses Enter to proceed to disk selection.
+The user presses Enter to proceed to the network check screen.
 
-r[installer.tui.disk-detection]
-The TUI must detect available block devices and display their device path,
-size, model name, and transport type (SSD, HDD, NVMe, USB, etc.).
+r[installer.tui.network-check]
+After the welcome screen, the TUI must present a network connectivity check
+screen. This screen is skipped entirely in automatic mode. The screen
+performs connectivity checks against the following endpoints in parallel:
+
+- `https://ghcr.io/` — expects HTTP 200
+- `https://meta.tamanu.app/` — expects HTTP 200
+- `https://tools.ops.tamanu.io/` — any HTTP response (even 403) is a pass
+- `https://clients.ops.tamanu.io/` — any HTTP response is a pass
+- `https://servers.ops.tamanu.io/` — any HTTP response is a pass
+- An NTP server (`pool.ntp.org`) over UDP port 123 — a UDP socket connect succeeds
+
+Each check has a 5-second timeout. Results are displayed as a list with a
+pass/fail indicator next to each endpoint. All checks run automatically when
+the screen is entered. Failures are not blocking — the user can press Enter
+to proceed regardless of the results. A note explains that these endpoints
+will be needed later for application deployment and that network issues can
+be resolved while the installation continues. The user can press `r` to
+re-run all checks.
+
+r[installer.tui.tailscale-netcheck]
+After the network check screen, the TUI must present a Tailscale network
+diagnostic screen. This screen is skipped entirely in automatic mode. The
+screen runs `tailscale netcheck` (the `tailscale` binary must be available
+on the live ISO) and displays the output. The check runs automatically when
+the screen is entered. If the `tailscale` binary is not found or the command
+fails, the screen displays an appropriate message. The user presses Enter to
+proceed or Esc to go back. The user can press `r` to re-run the check.
+
+r[installer.tui.disk-detection+2]
+After the Tailscale netcheck screen (or the welcome screen in automatic
+mode), the TUI must detect available block devices and display their device
+path, size, model name, and transport type (SSD, HDD, NVMe, USB, etc.).
 
 r[installer.tui.variant-selection]
 The TUI must present a choice between the `metal` and `cloud` variants with
@@ -230,6 +260,17 @@ After the Tailscale screen, the TUI must present a multi-line text input
 screen for SSH authorized keys (one per line). The field may be pre-filled
 from the configuration file. The user can leave it empty to skip SSH key
 configuration.
+
+r[installer.tui.ssh-keys.github]
+The SSH keys screen must also offer a GitHub username lookup. A secondary
+text input (toggled via Tab) allows the user to type a GitHub username.
+When the user presses Enter on the GitHub input, the installer fetches
+`https://github.com/<username>.keys`. If the fetch succeeds and returns
+one or more keys, they are appended to the SSH keys text area (one per
+line). If the fetch fails or returns no keys, an inline error is displayed.
+The fetch must time out after 5 seconds. This feature is only available
+when the live environment has network access; if the fetch fails due to
+a network error the user can still proceed with manually pasted keys.
 
 r[installer.tui.password]
 After the SSH keys screen, the TUI must present a password input screen for

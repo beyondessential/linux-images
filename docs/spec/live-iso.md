@@ -27,6 +27,12 @@ The live environment must be minimal: a kernel, an initramfs, and just enough
 userspace to run the TUI installer (block device utilities, zstd, and
 cryptsetup for LUKS operations).
 
+r[iso.network-tools]
+The live environment must include `curl` (for HTTPS connectivity checks and
+GitHub SSH key lookups) and `tailscale` (for running `tailscale netcheck`
+diagnostics during installation). These are used by the interactive TUI
+screens for network checks and are not required for offline installation.
+
 r[iso.offline]
 The live ISO must be fully functional without network connectivity. No
 packages or data are downloaded during the installation process.
