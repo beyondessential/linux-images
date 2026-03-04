@@ -216,7 +216,6 @@ NSPAWN_BINDS=(
     "--bind=$LOOP_DEV"
     "--bind-ro=$IMAGES_DIR:/run/live/medium/images"
     "--bind-ro=$DEVICES_JSON:/tmp/devices.json"
-    "--bind=/dev"
 )
 
 set +e
