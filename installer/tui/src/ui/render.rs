@@ -196,11 +196,19 @@ fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
         }
     };
 
-    let ts_block = Block::default()
-        .title(" Tailscale Netcheck ")
-        .borders(Borders::ALL);
+    let ts_title = if state.netcheck_line_count() > chunks[2].height.saturating_sub(2) as usize {
+        format!(
+            " Tailscale Netcheck (line {}/{}) ",
+            state.netcheck_scroll + 1,
+            state.netcheck_line_count()
+        )
+    } else {
+        " Tailscale Netcheck ".to_string()
+    };
+    let ts_block = Block::default().title(ts_title).borders(Borders::ALL);
     let ts_paragraph = Paragraph::new(ts_lines)
         .block(ts_block)
+        .scroll((state.netcheck_scroll, 0))
         .wrap(Wrap { trim: false });
     frame.render_widget(ts_paragraph, chunks[2]);
 }
@@ -227,7 +235,7 @@ fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let intro = vec![
         Line::from(""),
-        Line::from("  Network check results (ran in the background during installation)."),
+        Line::from("  Network check results"),
         Line::from(Span::styled(
             format!(
                 "  Connectivity: {} ({}/{})  |  {}",
@@ -315,11 +323,19 @@ fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
         }
     };
 
-    let ts_block = Block::default()
-        .title(" Tailscale Netcheck ")
-        .borders(Borders::ALL);
+    let ts_title = if state.netcheck_line_count() > chunks[2].height.saturating_sub(2) as usize {
+        format!(
+            " Tailscale Netcheck (line {}/{}) ",
+            state.netcheck_scroll + 1,
+            state.netcheck_line_count()
+        )
+    } else {
+        " Tailscale Netcheck ".to_string()
+    };
+    let ts_block = Block::default().title(ts_title).borders(Borders::ALL);
     let ts_paragraph = Paragraph::new(ts_lines)
         .block(ts_block)
+        .scroll((state.netcheck_scroll, 0))
         .wrap(Wrap { trim: false });
     frame.render_widget(ts_paragraph, chunks[2]);
 }
@@ -327,7 +343,7 @@ fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     let hints = match &state.screen {
         Screen::Welcome => "Enter: start | n: network check | q: quit",
-        Screen::NetworkCheck => "r: re-run | Esc: back | q: quit",
+        Screen::NetworkCheck => "Up/Down: scroll | r: re-run | Esc: back | q: quit",
         Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit",
@@ -348,7 +364,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
             }
         }
         Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back",
-        Screen::NetworkResults => "Enter: next | r: re-run | Esc: back | q: quit",
+        Screen::NetworkResults => "Up/Down: scroll | Enter: next | r: re-run | Esc: back | q: quit",
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit",
         Screen::Writing => "Please wait...",
         Screen::FirstbootApply => "Please wait...",

@@ -73,6 +73,7 @@ pub struct AppState {
     pub netcheck_phase: CheckPhase,
     pub netcheck_result: Option<NetcheckResult>,
     pub netcheck_rx: Option<mpsc::Receiver<NetcheckResult>>,
+    pub netcheck_scroll: u16,
 
     // r[impl installer.tui.ssh-keys.github]
     pub ssh_github_input: String,
@@ -188,6 +189,7 @@ impl AppState {
             netcheck_phase: CheckPhase::NotStarted,
             netcheck_result: None,
             netcheck_rx: None,
+            netcheck_scroll: 0,
             ssh_github_input: String::new(),
             ssh_github_focus: false,
             ssh_github_fetching: false,
@@ -341,6 +343,7 @@ impl AppState {
     pub fn start_tailscale_netcheck(&mut self) {
         self.netcheck_phase = CheckPhase::Running;
         self.netcheck_result = None;
+        self.netcheck_scroll = 0;
         self.netcheck_rx = Some(net::spawn_tailscale_netcheck());
     }
 
@@ -354,10 +357,32 @@ impl AppState {
             Ok(result) => {
                 self.netcheck_result = Some(result);
                 self.netcheck_phase = CheckPhase::Done;
+                self.netcheck_scroll = 0;
                 true
             }
             Err(_) => false,
         }
+    }
+
+    /// Number of lines in the tailscale netcheck output (for scroll bounds).
+    pub fn netcheck_line_count(&self) -> usize {
+        match &self.netcheck_result {
+            Some(result) => result.output.lines().count(),
+            None => 1,
+        }
+    }
+
+    /// Scroll the tailscale netcheck output down by one line.
+    pub fn scroll_netcheck_down(&mut self) {
+        let max = self.netcheck_line_count().saturating_sub(1) as u16;
+        if self.netcheck_scroll < max {
+            self.netcheck_scroll += 1;
+        }
+    }
+
+    /// Scroll the tailscale netcheck output up by one line.
+    pub fn scroll_netcheck_up(&mut self) {
+        self.netcheck_scroll = self.netcheck_scroll.saturating_sub(1);
     }
 
     // r[impl installer.tui.ssh-keys.github]

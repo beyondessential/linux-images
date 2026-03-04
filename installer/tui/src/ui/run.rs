@@ -54,6 +54,8 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
+            KeyCode::Up | KeyCode::Char('k') => state.scroll_netcheck_up(),
+            KeyCode::Down | KeyCode::Char('j') => state.scroll_netcheck_down(),
             _ => {}
         },
 
@@ -62,6 +64,8 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
+            KeyCode::Up | KeyCode::Char('k') => state.scroll_netcheck_up(),
+            KeyCode::Down | KeyCode::Char('j') => state.scroll_netcheck_down(),
             KeyCode::Enter => state.advance(),
             _ => {}
         },
