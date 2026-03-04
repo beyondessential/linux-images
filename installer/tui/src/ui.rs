@@ -85,7 +85,7 @@ pub struct AppState {
     pub net_pane: NetPane,
     pub net_scroll: u16,
 
-    // r[impl installer.tui.ssh-keys.github+3]
+    // r[impl installer.tui.ssh-keys.github+4]
     pub ssh_github_input: String,
     pub ssh_github_fetching: bool,
     pub ssh_github_error: Option<String>,
@@ -427,7 +427,7 @@ impl AppState {
         self.net_scroll = 0;
     }
 
-    // r[impl installer.tui.ssh-keys.github+3]
+    // r[impl installer.tui.ssh-keys.github+4]
     /// Start fetching SSH keys for the current GitHub username.
     pub fn start_github_key_fetch(&mut self) {
         if self.ssh_github_input.trim().is_empty() {
@@ -449,10 +449,13 @@ impl AppState {
             Ok(result) => {
                 self.ssh_github_fetching = false;
                 if result.success {
+                    let first_new = self.ssh_keys.len();
                     for key in &result.keys {
                         self.ssh_keys.push(key.clone());
                     }
                     self.ssh_github_error = None;
+                    self.ssh_key_cursor = first_new;
+                    self.screen = Screen::LoginSshKeys;
                 } else {
                     self.ssh_github_error = result.error;
                 }
@@ -1319,10 +1322,11 @@ mod tests {
         assert_eq!(state.timezone_filtered.len(), 0);
     }
 
-    // r[verify installer.tui.ssh-keys.github+3]
+    // r[verify installer.tui.ssh-keys.github+4]
     #[test]
     fn github_key_fetch_appends_to_ssh_keys() {
         let mut state = make_state();
+        state.screen = Screen::LoginGithub;
         state.ssh_keys = vec!["ssh-ed25519 existing-key".into()];
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -1343,11 +1347,21 @@ mod tests {
                 .ssh_keys
                 .contains(&"ssh-ed25519 existing-key".to_string())
         );
+        assert_eq!(
+            state.screen,
+            Screen::LoginSshKeys,
+            "should navigate to SSH Keys sub-screen after successful fetch"
+        );
+        assert_eq!(
+            state.ssh_key_cursor, 1,
+            "cursor should point to the first imported key"
+        );
     }
 
     #[test]
     fn github_key_fetch_error_sets_message() {
         let mut state = make_state();
+        state.screen = Screen::LoginGithub;
 
         let (tx, rx) = std::sync::mpsc::channel();
         state.ssh_github_fetching = true;
@@ -1362,6 +1376,11 @@ mod tests {
         assert!(state.poll_github_keys());
         assert!(!state.ssh_github_fetching);
         assert_eq!(state.ssh_github_error.as_deref(), Some("user not found"));
+        assert_eq!(
+            state.screen,
+            Screen::LoginGithub,
+            "should stay on GitHub screen when fetch fails"
+        );
     }
 
     #[test]

@@ -754,7 +754,7 @@ fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, chunks[1]);
 }
 
-// r[impl installer.tui.ssh-keys.github+3]
+// r[impl installer.tui.ssh-keys.github+4]
 fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),

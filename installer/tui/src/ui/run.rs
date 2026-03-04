@@ -131,7 +131,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         // r[impl installer.tui.password+3]
         // r[impl installer.tui.tailscale+3]
         // r[impl installer.tui.ssh-keys+3]
-        // r[impl installer.tui.ssh-keys.github+3]
+        // r[impl installer.tui.ssh-keys.github+4]
         Screen::Login => match key.code {
             KeyCode::Esc => {
                 if state.password_confirming {
@@ -233,7 +233,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.ssh-keys.github+3]
+        // r[impl installer.tui.ssh-keys.github+4]
         Screen::LoginGithub => match key.code {
             KeyCode::Esc => {
                 state.screen = Screen::Login;

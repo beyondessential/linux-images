@@ -312,13 +312,14 @@ the line to start with a recognized key type prefix (`ssh-rsa`,
 more non-whitespace character. After filtering, if the vec is empty, a
 single empty string is re-added so the screen always has at least one field.
 
-r[installer.tui.ssh-keys.github+3]
+r[installer.tui.ssh-keys.github+4]
 The GitHub import sub-screen is accessed via the `Alt+g` keybind from the Login
 screen, only when `github.com` is reachable per the background network
 checks. It presents a text input for a GitHub username. When the user
 presses Enter, the installer fetches `https://github.com/<username>.keys`.
 If the fetch succeeds and returns one or more keys, they are appended as
-individual entries in the SSH keys list, then the screen returns to Login.
+individual entries in the SSH keys list, then the screen navigates to the
+SSH Keys sub-screen so the user can review the imported keys.
 If the fetch fails or returns no keys, an inline error is displayed. The
 fetch must time out after 5 seconds. Esc returns to the Login screen.
 
