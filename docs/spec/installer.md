@@ -204,7 +204,7 @@ the image is for, contact information, and instructions on how to proceed.
 The user presses Enter to proceed to the disk selection screen. The welcome
 screen also offers a `n` keybind to open a dedicated network check screen.
 
-> r[installer.tui.network-check+3]
+> r[installer.tui.network-check+4]
 > The TUI must perform network connectivity checks in the background,
 > starting automatically when the welcome screen is first shown. The checks
 > run against the following endpoints in parallel:
@@ -214,6 +214,7 @@ screen also offers a `n` keybind to open a dedicated network check screen.
 > - `https://tools.ops.tamanu.io/` — any HTTP response (even 403) is a pass
 > - `https://clients.ops.tamanu.io/` — any HTTP response is a pass
 > - `https://servers.ops.tamanu.io/` — any HTTP response is a pass
+> - `https://github.com/` — any HTTP response is a pass
 > - An NTP server (`pool.ntp.org`) over UDP port 123 — a UDP socket connect succeeds
 >
 > Each check has a 5-second timeout. Results are displayed as a list with a
@@ -285,36 +286,54 @@ by DHCP or cloud-init at boot. If the configuration file contains a
 `hostname-template`, the installer resolves it to a concrete hostname at
 startup and pre-fills the text input with the result.
 
-r[installer.tui.tailscale]
-After the hostname screen, the TUI must present a text input screen for a
-Tailscale auth key. The field may be pre-filled from the configuration file.
-The user can leave it empty to skip Tailscale configuration.
+r[installer.tui.tailscale+2]
+After the hostname screen, the TUI presents a Login screen. The Login screen
+has inline password entry and keybinds to open sub-screens for Tailscale
+auth key, SSH keys, and GitHub SSH key import. The Tailscale sub-screen is
+accessed via the `t` keybind from the Login screen and presents a text input
+for a Tailscale auth key. The field may be pre-filled from the configuration
+file. The user can leave it empty to skip Tailscale configuration. Enter or
+Esc returns to the Login screen.
 
-r[installer.tui.ssh-keys]
-After the Tailscale screen, the TUI must present a multi-line text input
-screen for SSH authorized keys (one per line). The field may be pre-filled
-from the configuration file. The user can leave it empty to skip SSH key
-configuration.
+r[installer.tui.ssh-keys+2]
+The SSH keys sub-screen is accessed via the `s` keybind from the Login
+screen. It displays a growing list of individual key entry fields. The
+selected field is expanded for editing as a bordered text input; non-selected
+fields are collapsed to a one-line summary showing the key type, start of
+the key material, and the comment (if any). Empty entries are shown as
+`(empty)` in gray. Tab from a non-empty field adds a new empty field below;
+Tab from an empty field cycles forward through existing fields (wrapping).
+Shift+Tab cycles backward. Enter or Esc returns to the Login screen after
+filtering out empty and invalid entries. A minimal validity check requires
+the line to start with a recognized key type prefix (`ssh-rsa`,
+`ssh-ed25519`, `ssh-dss`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`,
+`ecdsa-sha2-nistp521`, `sk-ssh-ed25519@openssh.com`,
+`sk-ecdsa-sha2-nistp256@openssh.com`) followed by a space and at least one
+more non-whitespace character. After filtering, if the vec is empty, a
+single empty string is re-added so the screen always has at least one field.
 
-r[installer.tui.ssh-keys.github]
-The SSH keys screen must also offer a GitHub username lookup. A secondary
-text input (toggled via Tab) allows the user to type a GitHub username.
-When the user presses Enter on the GitHub input, the installer fetches
-`https://github.com/<username>.keys`. If the fetch succeeds and returns
-one or more keys, they are appended to the SSH keys text area (one per
-line). If the fetch fails or returns no keys, an inline error is displayed.
-The fetch must time out after 5 seconds. This feature is only available
-when the live environment has network access; if the fetch fails due to
-a network error the user can still proceed with manually pasted keys.
+r[installer.tui.ssh-keys.github+2]
+The GitHub import sub-screen is accessed via the `g` keybind from the Login
+screen, only when `github.com` is reachable per the background network
+checks. It presents a text input for a GitHub username. When the user
+presses Enter, the installer fetches `https://github.com/<username>.keys`.
+If the fetch succeeds and returns one or more keys, they are appended as
+individual entries in the SSH keys list, then the screen returns to Login.
+If the fetch fails or returns no keys, an inline error is displayed. The
+fetch must time out after 5 seconds. Esc returns to the Login screen.
 
-r[installer.tui.password]
-After the SSH keys screen, the TUI must present a password input screen for
-the `ubuntu` user. The user types a password, then confirms it by typing it
-again. Both fields are masked (displayed as asterisks). If the two entries
-do not match, the TUI must display an inline error and not advance. If the
-field is left empty, the image's existing default password (`bes`, expired)
-is kept. When a password is provided via the configuration file (`password`
-or `password-hash`), this screen is skipped in prefilled and auto modes.
+r[installer.tui.password+2]
+Password entry is inline on the Login screen. The user types a password,
+then confirms it by typing it again. Both fields are masked (displayed as
+asterisks). If the two entries do not match, the TUI must display an inline
+error and not advance. If the field is left empty, the image's existing
+default password (`bes`, expired) is kept. When a password is provided via
+the configuration file (`password` or `password-hash`), this screen is
+skipped in prefilled and auto modes. Below the password fields, the Login
+screen shows keybind hints for the sub-screens (`t`: Tailscale, `s`: SSH
+keys, `g`: GitHub import). A yellow `*` indicator is appended to each hint
+when a value is set (Tailscale auth key is non-empty, or SSH keys are
+present). The `g` hint is only shown when `github.com` is reachable.
 
 r[installer.tui.timezone]
 After the password screen, the TUI must present a timezone selection screen.
@@ -327,13 +346,13 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+2]
+r[installer.tui.confirmation+3]
 After the timezone screen, and after the pre-summary network results screen,
 the TUI must show a summary screen listing: target disk (path, model, size),
 chosen variant, TPM enrollment status, and any first-boot configuration. The
 summary must clearly state that all data on the target disk will be
 destroyed. The user must type an explicit confirmation
-(not just press Enter).
+(not just press Enter). The confirmation screen is step 6/6.
 
 r[installer.tui.progress]
 During image writing, the TUI must display a progress bar showing bytes
