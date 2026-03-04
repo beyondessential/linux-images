@@ -4,17 +4,21 @@
 # with a loopback target disk, so it can be tried out directly in a
 # terminal without spinning up a VM.
 #
-# Usage: try-installer-interactive.sh <iso> <arch> [disk-size]
-#   arch:      amd64 | arm64
-#   disk-size: size of the loopback target disk (default: 10G)
+# Usage: try-installer-interactive.sh <iso> <arch> [disk-size] [installer-bin]
+#   arch:          amd64 | arm64
+#   disk-size:     size of the loopback target disk (default: 10G)
+#   installer-bin: path to a locally-built bes-installer binary; when given,
+#                  this replaces the binary baked into the ISO, so you can
+#                  iterate on the installer without rebuilding the whole ISO.
 #
 # Requires: systemd-nspawn, xorriso, unsquashfs, losetup, lsblk.
 #           Must run as root.
 set -euo pipefail
 
-ISO="${1:?Usage: $0 <iso> <arch> [disk-size]}"
-ARCH="${2:?Usage: $0 <iso> <arch> [disk-size]}"
+ISO="${1:?Usage: $0 <iso> <arch> [disk-size] [installer-bin]}"
+ARCH="${2:?Usage: $0 <iso> <arch> [disk-size] [installer-bin]}"
 TARGET_DISK_SIZE="${3:-10G}"
+INSTALLER_BIN="${4:-}"
 
 if [ ! -f "$ISO" ]; then
     echo "ERROR: ISO not found: $ISO"
@@ -73,6 +77,11 @@ echo "=============================="
 echo "ISO:        $ISO"
 echo "Arch:       $ARCH"
 echo "Disk size:  $TARGET_DISK_SIZE"
+if [ -n "$INSTALLER_BIN" ]; then
+echo "Installer:  $INSTALLER_BIN (override)"
+else
+echo "Installer:  (from ISO)"
+fi
 echo "Work dir:   $WORK_DIR"
 echo "=============================="
 echo ""
@@ -169,6 +178,14 @@ echo ""
 TRAP
     chmod +x "$ROOTFS_DIR/$reboot_path"
 done
+
+# If a local installer binary was provided, copy it into the rootfs,
+# replacing the one that was baked into the ISO.
+if [ -n "$INSTALLER_BIN" ]; then
+    cp "$INSTALLER_BIN" "$ROOTFS_DIR/usr/local/bin/bes-installer"
+    chmod +x "$ROOTFS_DIR/usr/local/bin/bes-installer"
+    echo "    Replaced installer binary with $INSTALLER_BIN"
+fi
 
 echo "    Rootfs ready"
 echo ""

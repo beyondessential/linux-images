@@ -622,8 +622,10 @@ test-container-isolation: _validate-arch
 
 # Launch the interactive TUI installer inside a systemd-nspawn container
 # with a loopback target disk, for manual testing without a VM.
+# The installer is always rebuilt first, so local code changes are picked
+# up without rebuilding the entire ISO.
 # Override disk size: just try_disk_size=20G try-installer
-try-installer: _validate-arch
+try-installer: _validate-arch installer-build
   #!/usr/bin/env bash
   set -euo pipefail
   ISO="{{output_iso}}"
@@ -636,7 +638,7 @@ try-installer: _validate-arch
     echo "ERROR: systemd-nspawn required (install systemd-container)"
     exit 1
   fi
-  sudo tests/try-installer-interactive.sh "$ISO" "{{arch}}" "{{try_disk_size}}"
+  sudo tests/try-installer-interactive.sh "$ISO" "{{arch}}" "{{try_disk_size}}" "{{installer_bin}}"
 
 # Run all tests (structure + installer + boot if KVM available)
 test: test-shellcheck installer-test test-structure
