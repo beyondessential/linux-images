@@ -262,13 +262,13 @@ EOF
 chmod 440 /etc/sudoers.d/90-cloud-init-users
 
 # Ensure there's no unminimize message in the MOTD
-rm -rvf /mnt/image-root/etc/update-motd.d/60-unminimize
+rm -rvf /etc/update-motd.d/60-unminimize
 
 # r[image.cloud-init.no-network]
-rm -rvf /mnt/image-root/etc/cloud/cloud.cfg.d/90-installer-network.cfg
+rm -rvf /etc/cloud/cloud.cfg.d/90-installer-network.cfg
 
 # r[image.cloud-init.no-machineid]
-truncate -s0 /mnt/image-root/etc/machine-id
+: > /etc/machine-id
 
 # ============================================================
 # Generate initramfs and install bootloader
