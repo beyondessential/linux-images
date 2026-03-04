@@ -7,14 +7,6 @@
 # This tests the full write + partition-expand + firstboot pipeline without
 # booting a VM, using the exact same rootfs that ships in the live ISO.
 #
-# r[verify installer.tui.loop-device]
-# r[verify installer.container.isolation]
-# r[verify installer.write.partitions]
-# r[verify installer.firstboot.hostname]
-# r[verify installer.firstboot.tailscale-authkey]
-# r[verify installer.firstboot.ssh-keys]
-# r[verify installer.firstboot.tpm-disable]
-#
 # Usage: test-container-install.sh <iso> <variant> [arch]
 #   variant: metal | cloud
 #   arch:    amd64 | arm64 (default: amd64)
