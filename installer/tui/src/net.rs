@@ -239,7 +239,7 @@ pub fn spawn_tailscale_netcheck() -> mpsc::Receiver<NetcheckResult> {
     rx
 }
 
-// r[impl installer.tui.ssh-keys.github+2]
+// r[impl installer.tui.ssh-keys.github+3]
 
 /// Fetch SSH public keys for a GitHub user.
 pub fn spawn_github_key_fetch(username: &str) -> mpsc::Receiver<GithubKeysResult> {

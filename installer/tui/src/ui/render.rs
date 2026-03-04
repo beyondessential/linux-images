@@ -299,9 +299,9 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit".into(),
         Screen::Hostname => "Enter: next | Esc: back".into(),
         Screen::Login => {
-            let mut h = String::from("t: tailscale | s: ssh keys");
+            let mut h = String::from("Alt+t: tailscale | Alt+s: ssh keys");
             if state.github_reachable() {
-                h.push_str(" | g: github");
+                h.push_str(" | Alt+g: github");
             }
             if state.password_confirming {
                 h.push_str(" | Enter: confirm | Esc: back to password");
@@ -561,9 +561,9 @@ fn mask(input: &str) -> String {
     "*".repeat(input.len())
 }
 
-// r[impl installer.tui.password+2]
-// r[impl installer.tui.tailscale+2]
-// r[impl installer.tui.ssh-keys+2]
+// r[impl installer.tui.password+3]
+// r[impl installer.tui.tailscale+3]
+// r[impl installer.tui.ssh-keys+3]
 fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
@@ -637,7 +637,7 @@ fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::raw("")
     };
     lines.push(Line::from(vec![
-        Span::raw("    t  Tailscale auth key"),
+        Span::raw("    Alt+t  Tailscale auth key"),
         ts_indicator,
     ]));
 
@@ -647,12 +647,12 @@ fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::raw("")
     };
     lines.push(Line::from(vec![
-        Span::raw("    s  SSH authorized keys"),
+        Span::raw("    Alt+s  SSH authorized keys"),
         ssh_indicator,
     ]));
 
     if state.github_reachable() {
-        lines.push(Line::from("    g  Import SSH keys from GitHub"));
+        lines.push(Line::from("    Alt+g  Import SSH keys from GitHub"));
     }
 
     let block = Block::default().title(" Login ").borders(Borders::ALL);
@@ -661,7 +661,7 @@ fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.tailscale+2]
+// r[impl installer.tui.tailscale+3]
 fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
     let lines = vec![
         Line::from(""),
@@ -697,7 +697,7 @@ fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.ssh-keys+2]
+// r[impl installer.tui.ssh-keys+3]
 fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     let intro_lines = vec![
         Line::from(""),
@@ -754,7 +754,7 @@ fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, chunks[1]);
 }
 
-// r[impl installer.tui.ssh-keys.github+2]
+// r[impl installer.tui.ssh-keys.github+3]
 fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
@@ -796,7 +796,7 @@ fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 // r[impl installer.tui.confirmation+3]
-// r[impl installer.tui.password+2]
+// r[impl installer.tui.password+3]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);

@@ -251,7 +251,7 @@ enter
     assert_eq!(plan["firstboot"]["hostname"], "bad");
 }
 
-// r[verify installer.tui.ssh-keys+2]
+// r[verify installer.tui.ssh-keys+3]
 #[test]
 fn scripted_multiline_ssh_keys() {
     let f = Fixture::new();
@@ -269,7 +269,7 @@ enter
 enter
 
 # Login: enter ssh keys sub-screen
-type:s
+alt:s
 type:ssh-ed25519 AAAA key1
 tab
 type:ssh-rsa BBBB key2

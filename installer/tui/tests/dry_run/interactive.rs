@@ -21,11 +21,11 @@ enter
 type:my-server
 enter
 # Login: enter tailscale sub-screen
-type:t
+alt:t
 type:tskey-auth-test
 enter
 # Login: enter ssh keys sub-screen
-type:s
+alt:s
 type:ssh-ed25519 AAAA testkey
 enter
 # Login: skip password (empty)
@@ -126,8 +126,8 @@ enter
 }
 
 // r[verify installer.tui.hostname+2]
-// r[verify installer.tui.tailscale+2]
-// r[verify installer.tui.ssh-keys+2]
+// r[verify installer.tui.tailscale+3]
+// r[verify installer.tui.ssh-keys+3]
 #[test]
 fn interactive_firstboot_fields_captured() {
     let f = Fixture::new();
@@ -144,11 +144,11 @@ enter
 type:my-host
 enter
 # Login: enter tailscale sub-screen
-type:t
+alt:t
 type:tskey-auth-mykey
 enter
 # Login: enter ssh keys sub-screen
-type:s
+alt:s
 type:ssh-ed25519 AAAA key1
 tab
 type:ssh-rsa BBBB key2
@@ -191,8 +191,8 @@ enter
 }
 
 // r[verify installer.tui.hostname+2]
-// r[verify installer.tui.tailscale+2]
-// r[verify installer.tui.ssh-keys+2]
+// r[verify installer.tui.tailscale+3]
+// r[verify installer.tui.ssh-keys+3]
 #[test]
 fn interactive_empty_firstboot_is_null() {
     let f = Fixture::new();
@@ -385,7 +385,7 @@ esc
 # Back on Timezone, go back
 esc
 # Back on Login, enter tailscale sub-screen
-type:t
+alt:t
 type:tskey-auth-late
 enter
 # Login: skip password (still empty)

@@ -85,7 +85,7 @@ pub struct AppState {
     pub net_pane: NetPane,
     pub net_scroll: u16,
 
-    // r[impl installer.tui.ssh-keys.github+2]
+    // r[impl installer.tui.ssh-keys.github+3]
     pub ssh_github_input: String,
     pub ssh_github_fetching: bool,
     pub ssh_github_error: Option<String>,
@@ -222,9 +222,9 @@ impl AppState {
     }
 
     // r[impl installer.tui.hostname+2]
-    // r[impl installer.tui.tailscale+2]
-    // r[impl installer.tui.ssh-keys+2]
-    // r[impl installer.tui.password+2]
+    // r[impl installer.tui.tailscale+3]
+    // r[impl installer.tui.ssh-keys+3]
+    // r[impl installer.tui.password+3]
     // r[impl installer.tui.timezone]
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
@@ -427,7 +427,7 @@ impl AppState {
         self.net_scroll = 0;
     }
 
-    // r[impl installer.tui.ssh-keys.github+2]
+    // r[impl installer.tui.ssh-keys.github+3]
     /// Start fetching SSH keys for the current GitHub username.
     pub fn start_github_key_fetch(&mut self) {
         if self.ssh_github_input.trim().is_empty() {
@@ -463,7 +463,7 @@ impl AppState {
     }
 
     // r[impl installer.tui.tpm-toggle]
-    // r[impl installer.tui.password+2]
+    // r[impl installer.tui.password+3]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
@@ -541,7 +541,7 @@ impl AppState {
             .any(|r| matches!(r, Some(r) if r.label == "github.com" && r.passed))
     }
 
-    // r[impl installer.tui.ssh-keys+2]
+    // r[impl installer.tui.ssh-keys+3]
 
     /// Recognized SSH public key type prefixes.
     const SSH_KEY_PREFIXES: &[&str] = &[
@@ -621,7 +621,7 @@ impl AppState {
         }
     }
 
-    // r[impl installer.tui.password+2]
+    // r[impl installer.tui.password+3]
     pub fn password_matches(&self) -> bool {
         self.password_input == self.password_confirm_input
     }
@@ -832,7 +832,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tpm-toggle]
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     #[test]
     fn advance_metal_flow() {
         let mut state = make_state();
@@ -858,7 +858,7 @@ mod tests {
     }
 
     // r[verify installer.tui.variant-selection]
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     // r[verify installer.tui.timezone]
     #[test]
     fn advance_cloud_skips_tpm() {
@@ -883,7 +883,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tpm-toggle]
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     // r[verify installer.tui.timezone]
     #[test]
     fn go_back_through_metal_flow() {
@@ -910,7 +910,7 @@ mod tests {
     }
 
     // r[verify installer.tui.variant-selection]
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     // r[verify installer.tui.timezone]
     #[test]
     fn go_back_cloud_skips_tpm() {
@@ -930,7 +930,7 @@ mod tests {
         assert_eq!(state.screen, Screen::VariantSelection);
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn login_sub_screens_go_back_to_login() {
         let mut state = make_state();
@@ -947,7 +947,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Login);
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn login_sub_screens_do_not_advance() {
         let mut state = make_state();
@@ -1020,7 +1020,7 @@ mod tests {
         assert_eq!(state.ssh_keys, vec![String::new()]);
     }
 
-    // r[verify installer.tui.tailscale+2]
+    // r[verify installer.tui.tailscale+3]
     #[test]
     fn tailscale_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1048,7 +1048,7 @@ mod tests {
         assert_eq!(state.tailscale_input, "tskey-auth-xxx");
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn ssh_keys_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1094,8 +1094,8 @@ mod tests {
         assert!(fb.password_hash.is_none());
     }
 
-    // r[verify installer.tui.tailscale+2]
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.tailscale+3]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn firstboot_config_all_fields() {
         let mut state = make_state();
@@ -1122,7 +1122,7 @@ mod tests {
         assert!(state.firstboot_config().is_none());
     }
 
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     #[test]
     fn password_match_logic() {
         let mut state = make_state();
@@ -1136,7 +1136,7 @@ mod tests {
         assert!(!state.password_matches());
     }
 
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     #[test]
     fn has_password_from_input() {
         let mut state = make_state();
@@ -1146,7 +1146,7 @@ mod tests {
         assert!(state.has_password());
     }
 
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     #[test]
     fn has_password_from_config_hash() {
         use crate::disk::TransportType;
@@ -1319,7 +1319,7 @@ mod tests {
         assert_eq!(state.timezone_filtered.len(), 0);
     }
 
-    // r[verify installer.tui.ssh-keys.github+2]
+    // r[verify installer.tui.ssh-keys.github+3]
     #[test]
     fn github_key_fetch_appends_to_ssh_keys() {
         let mut state = make_state();
@@ -1373,7 +1373,7 @@ mod tests {
         assert!(state.ssh_github_error.is_some());
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn filter_ssh_keys_removes_invalid() {
         let mut state = make_state();
@@ -1389,7 +1389,7 @@ mod tests {
         assert_eq!(state.ssh_keys[1], "ssh-rsa BBBB key2");
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn filter_ssh_keys_ensures_one_empty() {
         let mut state = make_state();
@@ -1398,7 +1398,7 @@ mod tests {
         assert_eq!(state.ssh_keys, vec![String::new()]);
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn ssh_key_summary_with_comment() {
         let summary =
@@ -1407,7 +1407,7 @@ mod tests {
         assert!(summary.contains("me@host"));
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn ssh_key_summary_empty() {
         assert_eq!(AppState::ssh_key_summary(""), "(empty)");

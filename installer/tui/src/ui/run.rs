@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
 use ratatui::Terminal;
@@ -128,10 +128,10 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.password+2]
-        // r[impl installer.tui.tailscale+2]
-        // r[impl installer.tui.ssh-keys+2]
-        // r[impl installer.tui.ssh-keys.github+2]
+        // r[impl installer.tui.password+3]
+        // r[impl installer.tui.tailscale+3]
+        // r[impl installer.tui.ssh-keys+3]
+        // r[impl installer.tui.ssh-keys.github+3]
         Screen::Login => match key.code {
             KeyCode::Esc => {
                 if state.password_confirming {
@@ -141,13 +141,15 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                     state.go_back();
                 }
             }
-            KeyCode::Char('t') if !state.password_confirming => {
+            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::ALT) => {
                 state.screen = Screen::LoginTailscale;
             }
-            KeyCode::Char('s') if !state.password_confirming => {
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::ALT) => {
                 state.screen = Screen::LoginSshKeys;
             }
-            KeyCode::Char('g') if !state.password_confirming && state.github_reachable() => {
+            KeyCode::Char('g')
+                if key.modifiers.contains(KeyModifiers::ALT) && state.github_reachable() =>
+            {
                 state.screen = Screen::LoginGithub;
             }
             KeyCode::Enter | KeyCode::Tab => {
@@ -183,7 +185,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.tailscale+2]
+        // r[impl installer.tui.tailscale+3]
         Screen::LoginTailscale => match key.code {
             KeyCode::Esc | KeyCode::Enter => {
                 state.screen = Screen::Login;
@@ -197,7 +199,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.ssh-keys+2]
+        // r[impl installer.tui.ssh-keys+3]
         Screen::LoginSshKeys => match key.code {
             KeyCode::Esc | KeyCode::Enter => {
                 state.filter_ssh_keys();
@@ -231,7 +233,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.ssh-keys.github+2]
+        // r[impl installer.tui.ssh-keys.github+3]
         Screen::LoginGithub => match key.code {
             KeyCode::Esc => {
                 state.screen = Screen::Login;
@@ -540,6 +542,15 @@ mod tests {
         }
     }
 
+    fn alt(c: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::ALT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        }
+    }
+
     fn make_state() -> AppState {
         let devices = vec![
             BlockDevice {
@@ -771,7 +782,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::NetworkResults);
     }
 
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     #[test]
     fn scripted_password_entry_matching() {
         let state = make_state();
@@ -803,7 +814,7 @@ mod tests {
         assert!(!final_state.password_mismatch);
     }
 
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     #[test]
     fn scripted_password_mismatch_blocks_advance() {
         let state = make_state();
@@ -834,7 +845,7 @@ mod tests {
         assert!(final_state.password_mismatch);
     }
 
-    // r[verify installer.tui.password+2]
+    // r[verify installer.tui.password+3]
     #[test]
     fn scripted_password_esc_from_confirm_returns_to_first_field() {
         let state = make_state();
@@ -1287,7 +1298,7 @@ mod tests {
         assert_eq!(final_state.timezone_selected, "Europe/London");
     }
 
-    // r[verify installer.tui.tailscale+2]
+    // r[verify installer.tui.tailscale+3]
     #[test]
     fn scripted_login_tailscale_sub_screen() {
         let state = make_state();
@@ -1300,8 +1311,8 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: press 't' to enter tailscale sub-screen
-            press(KeyCode::Char('t')),
+            // Login: press Alt+t to enter tailscale sub-screen
+            alt('t'),
             // Type auth key
             press(KeyCode::Char('t')),
             press(KeyCode::Char('s')),
@@ -1315,7 +1326,7 @@ mod tests {
         assert_eq!(final_state.tailscale_input, "tsk");
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn scripted_login_ssh_keys_sub_screen() {
         let state = make_state();
@@ -1328,8 +1339,8 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: press 's' to enter ssh keys sub-screen
-            press(KeyCode::Char('s')),
+            // Login: press Alt+s to enter ssh keys sub-screen
+            alt('s'),
             // Type a key
             press(KeyCode::Char('s')),
             press(KeyCode::Char('s')),
@@ -1356,7 +1367,7 @@ mod tests {
         assert_eq!(final_state.ssh_keys, vec!["ssh-ed25519 AAAA"]);
     }
 
-    // r[verify installer.tui.ssh-keys+2]
+    // r[verify installer.tui.ssh-keys+3]
     #[test]
     fn scripted_login_ssh_keys_tab_adds_new_field() {
         let state = make_state();
@@ -1369,8 +1380,8 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: press 's' to enter ssh keys sub-screen
-            press(KeyCode::Char('s')),
+            // Login: press Alt+s to enter ssh keys sub-screen
+            alt('s'),
             // Type first key
             press(KeyCode::Char('s')),
             press(KeyCode::Char('s')),
