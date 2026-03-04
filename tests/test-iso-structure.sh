@@ -70,6 +70,8 @@ ISO_MNT=""
 SQFS_MNT=""
 BESCONF_MNT=""
 LOOP_DEVICE=""
+DD_IMG=""
+DD_LOOP=""
 ISO_MOUNTED=0
 SQFS_MOUNTED=0
 BESCONF_MOUNTED=0
@@ -80,6 +82,8 @@ cleanup() {
     [ "$SQFS_MOUNTED" -eq 1 ] && umount "$SQFS_MNT" 2>/dev/null
     [ "$ISO_MOUNTED" -eq 1 ] && umount "$ISO_MNT" 2>/dev/null
     [ -n "$LOOP_DEVICE" ] && losetup -d "$LOOP_DEVICE" 2>/dev/null
+    [ -n "$DD_LOOP" ] && losetup -d "$DD_LOOP" 2>/dev/null
+    [ -n "$DD_IMG" ] && rm -f "$DD_IMG"
     [ -n "$ISO_MNT" ] && rmdir "$ISO_MNT" 2>/dev/null
     [ -n "$SQFS_MNT" ] && rmdir "$SQFS_MNT" 2>/dev/null
     [ -n "$BESCONF_MNT" ] && rmdir "$BESCONF_MNT" 2>/dev/null
@@ -379,6 +383,66 @@ fi
 
 losetup -d "$LOOP_DEVICE"
 LOOP_DEVICE=""
+
+# ============================================================
+# 7. USB dd write verification
+# ============================================================
+echo ""
+echo "--- USB dd Write ---"
+
+# r[verify iso.usb]: write the ISO to a sparse file via dd (simulating a
+# USB write), then verify the result has a valid GPT with an EFI System
+# Partition. This proves the hybrid layout survives a raw block copy.
+DD_IMG="$(mktemp -t bes-dd-usb-XXXXXX.img)"
+dd if="$ISO" of="$DD_IMG" bs=4M status=none
+check "dd write succeeds" test -f "$DD_IMG"
+
+DD_LOOP="$(losetup -f --show -P "$DD_IMG")"
+partprobe "$DD_LOOP" 2>/dev/null || true
+udevadm settle 2>/dev/null || true
+sleep 1
+
+# The dd output must have a valid GPT
+if sgdisk -p "$DD_LOOP" 2>/dev/null | grep -q "^Number"; then
+    pass "dd output has valid GPT"
+else
+    fail "dd output has valid GPT"
+fi
+
+# The dd output must contain an EFI System Partition
+DD_ESP_FOUND=0
+while IFS= read -r line; do
+    if echo "$line" | grep -qi "EF00\|C12A7328-F81F-11D2-BA4B-00A0C93EC93B\|EFI [Ss]ystem"; then
+        DD_ESP_FOUND=1
+        break
+    fi
+done < <(sgdisk -p "$DD_LOOP" 2>/dev/null || true)
+if [ "$DD_ESP_FOUND" -eq 1 ]; then
+    pass "dd output GPT contains EFI System Partition"
+else
+    fail "dd output GPT contains EFI System Partition"
+fi
+
+# The BESCONF partition must also survive the dd
+DD_BESCONF_FOUND=0
+for part in "${DD_LOOP}p"*; do
+    [ -b "$part" ] || continue
+    LABEL="$(blkid -o value -s LABEL "$part" 2>/dev/null || true)"
+    if [ "$LABEL" = "BESCONF" ]; then
+        DD_BESCONF_FOUND=1
+        break
+    fi
+done
+if [ "$DD_BESCONF_FOUND" -eq 1 ]; then
+    pass "dd output contains BESCONF partition"
+else
+    fail "dd output contains BESCONF partition"
+fi
+
+losetup -d "$DD_LOOP"
+DD_LOOP=""
+rm -f "$DD_IMG"
+DD_IMG=""
 
 # ============================================================
 # Results
