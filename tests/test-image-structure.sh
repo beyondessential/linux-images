@@ -634,8 +634,8 @@ if [ -x "$MNT/usr/bin/dpkg-query" ]; then
     check_pkg_version kopia    0.22.0 "image.packages.kopia"
     # r[verify image.packages.tailscale]
     check_pkg_version tailscale 1.92.0 "image.packages.tailscale"
-    # r[verify image.packages.bestool]
-    check_pkg_version bestool  2.0.0  "image.packages.bestool"
+    # r[verify image.packages.bestool+2]
+    check_pkg_version bestool  1.4.0  "image.packages.bestool"
 
     # r[verify image.boot.dracut]
     # shellcheck disable=SC2016

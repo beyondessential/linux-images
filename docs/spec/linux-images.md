@@ -102,8 +102,8 @@ r[image.packages.tailscale]
 Tailscale version >=1.92.0 must be pre-installed.
 The official Tailscale apt repository must be configured and preferred.
 
-r[image.packages.bestool]
-bestool version >=2.0.0 must be pre-installed.
+r[image.packages.bestool+2]
+bestool version >=1.4.0 must be pre-installed.
 
 ## Bootloader
 

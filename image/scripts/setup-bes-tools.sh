@@ -24,7 +24,7 @@ EOF
 apt-get update -q
 # r[image.packages.caddy]
 # r[image.packages.podman]
-# r[image.packages.bestool]
+# r[image.packages.bestool+2]
 apt-get install -y \
     caddy \
     podman \
