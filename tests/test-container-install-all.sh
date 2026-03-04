@@ -139,7 +139,7 @@ SCENARIOS=(
     "cloud-tailscale-only|cloud|true||$TS_TEST_KEY|||"
 
     # 7. Cloud, password-hash only (pre-hashed, no other firstboot)
-    "cloud-password-hash|cloud|true|||||'\$6\$testrounds\$testhashvalue'"
+    "cloud-password-hash|cloud|true|||||\$6\$testrounds\$testhashvalue"
 
     # 8. Metal, plaintext password only (no other firstboot)
     "metal-password-only|metal|true||||pwonly|"
