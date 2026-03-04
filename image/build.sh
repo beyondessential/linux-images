@@ -318,7 +318,7 @@ rm -f "$MNT/etc/resolv.conf"
 ln -snf /run/systemd/resolve/stub-resolv.conf "$MNT/etc/resolv.conf"
 
 # r[image.base.machine-id]
-truncate -s 0 "$MNT/etc/machine-id"
+: > "$MNT/etc/machine-id"
 
 # r[image.cloud-init.no-network]
 rm -rf "$MNT/etc/cloud/cloud.cfg.d/90-installer-network.cfg"
