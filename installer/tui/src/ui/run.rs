@@ -30,6 +30,7 @@ enum WorkerMessage {
 enum KeyAction {
     Continue,
     Quit,
+    Reboot,
     StartWrite,
 }
 
@@ -144,8 +145,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         Screen::Writing | Screen::FirstbootApply => {}
 
         Screen::Done => {
-            reboot();
-            return KeyAction::Quit;
+            return KeyAction::Reboot;
         }
 
         Screen::Error(_) => {
@@ -156,14 +156,14 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     KeyAction::Continue
 }
 
-pub fn run_tui(mut state: AppState, image_path: &Path) -> Result<()> {
+pub fn run_tui(mut state: AppState, image_path: &Path, no_reboot: bool) -> Result<()> {
     terminal::enable_raw_mode().context("enabling raw mode")?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = event_loop(&mut terminal, &mut state, image_path);
+    let result = event_loop(&mut terminal, &mut state, image_path, no_reboot);
 
     terminal::disable_raw_mode().ok();
     execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show).ok();
@@ -175,6 +175,7 @@ fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &mut AppState,
     image_path: &Path,
+    no_reboot: bool,
 ) -> Result<()> {
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
 
@@ -214,6 +215,13 @@ fn event_loop(
         match handle_key(key, state) {
             KeyAction::Continue => {}
             KeyAction::Quit => break,
+            // r[impl installer.no-reboot]
+            KeyAction::Reboot => {
+                if !no_reboot {
+                    reboot();
+                }
+                break;
+            }
             KeyAction::StartWrite => {
                 start_write_worker(image_path, state, &worker_tx);
             }
@@ -231,7 +239,7 @@ fn event_loop(
 pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState {
     for key in events {
         match handle_key(key, &mut state) {
-            KeyAction::Quit | KeyAction::StartWrite => break,
+            KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot => break,
             KeyAction::Continue => {}
         }
     }

@@ -52,6 +52,11 @@ struct Cli {
     /// TUI instead of reading from the terminal.
     #[arg(long)]
     input_script: Option<PathBuf>,
+
+    // r[impl installer.no-reboot]
+    /// Do not reboot after a successful installation. Exit cleanly instead.
+    #[arg(long)]
+    no_reboot: bool,
 }
 
 fn main() -> ExitCode {
@@ -271,8 +276,13 @@ fn run_auto(
         firstboot::unmount_target(mounted)?;
     }
 
-    eprintln!("installation complete, rebooting...");
-    let _ = std::process::Command::new("reboot").status();
+    // r[impl installer.no-reboot]
+    if cli.no_reboot {
+        eprintln!("installation complete (--no-reboot, not rebooting)");
+    } else {
+        eprintln!("installation complete, rebooting...");
+        let _ = std::process::Command::new("reboot").status();
+    }
     Ok(())
 }
 
@@ -335,7 +345,7 @@ fn run_interactive(
     }
 
     let image_path = image_path.unwrap();
-    ui::run_tui(state, &image_path)
+    ui::run_tui(state, &image_path, cli.no_reboot)
 }
 
 fn plan_from_tui_state(
