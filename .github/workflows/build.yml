@@ -70,11 +70,24 @@ jobs:
       - name: List outputs
         run: ls -lh output/${{ matrix.arch }}/${{ matrix.variant }}/
 
-      - name: Upload image artifacts
+      - name: Upload raw image (needed by ISO build)
         uses: actions/upload-artifact@v7
         with:
-          name: image-${{ matrix.variant }}-${{ matrix.arch }}
-          path: output/${{ matrix.arch }}/${{ matrix.variant }}/*
+          name: image-raw-${{ matrix.variant }}-${{ matrix.arch }}
+          path: |
+            output/${{ matrix.arch }}/${{ matrix.variant }}/*.raw.zst
+            output/${{ matrix.arch }}/${{ matrix.variant }}/*.raw.size
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+      - name: Upload converted formats (needed by release)
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-formats-${{ matrix.variant }}-${{ matrix.arch }}
+          path: |
+            output/${{ matrix.arch }}/${{ matrix.variant }}/*.vmdk
+            output/${{ matrix.arch }}/${{ matrix.variant }}/*.qcow2
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -166,16 +179,16 @@ jobs:
             ${{ matrix.grub_pkg }} grub-common \
             parted util-linux zstd cryptsetup xorriso
 
-      - name: Download metal image
+      - name: Download metal raw image
         uses: actions/download-artifact@v8
         with:
-          name: image-metal-${{ matrix.arch }}
+          name: image-raw-metal-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/metal/
 
-      - name: Download cloud image
+      - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: image-cloud-${{ matrix.arch }}
+          name: image-raw-cloud-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/cloud/
 
       - name: Download installer binary
@@ -279,11 +292,14 @@ jobs:
           # Copy image artifacts (raw.zst, vmdk, qcow2)
           for variant in metal cloud; do
             for arch in amd64 arm64; do
-              dir="artifacts/image-${variant}-${arch}"
-              if [ -d "$dir" ]; then
-                cp "$dir"/*.raw.zst release/ 2>/dev/null || true
-                cp "$dir"/*.vmdk release/ 2>/dev/null || true
-                cp "$dir"/*.qcow2 release/ 2>/dev/null || true
+              raw_dir="artifacts/image-raw-${variant}-${arch}"
+              fmt_dir="artifacts/image-formats-${variant}-${arch}"
+              if [ -d "$raw_dir" ]; then
+                cp "$raw_dir"/*.raw.zst release/ 2>/dev/null || true
+              fi
+              if [ -d "$fmt_dir" ]; then
+                cp "$fmt_dir"/*.vmdk release/ 2>/dev/null || true
+                cp "$fmt_dir"/*.qcow2 release/ 2>/dev/null || true
               fi
             done
           done
