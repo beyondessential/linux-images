@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::hostname_template;
+
 // r[impl installer.config.schema+2]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -95,6 +97,12 @@ impl<'de> Deserialize<'de> for DiskSelector {
 pub struct FirstbootConfig {
     pub hostname: Option<String>,
 
+    #[serde(default, rename = "hostname-from-dhcp")]
+    pub hostname_from_dhcp: bool,
+
+    #[serde(default, rename = "hostname-template")]
+    pub hostname_template: Option<String>,
+
     #[serde(default, rename = "tailscale-authkey")]
     pub tailscale_authkey: Option<String>,
 
@@ -111,6 +119,10 @@ impl FirstbootConfig {
     pub fn has_password(&self) -> bool {
         self.password.is_some() || self.password_hash.is_some()
     }
+
+    pub fn has_hostname_config(&self) -> bool {
+        self.hostname.is_some() || self.hostname_from_dhcp || self.hostname_template.is_some()
+    }
 }
 
 // r[impl installer.mode.interactive]
@@ -125,7 +137,7 @@ pub enum OperatingMode {
     AutoIncomplete {
         missing_variant: bool,
         missing_disk: bool,
-        missing_hostname: bool,
+        missing_hostname: bool, // missing any hostname strategy (hostname, dhcp, or template)
     },
 }
 
@@ -135,7 +147,9 @@ impl fmt::Display for OperatingMode {
             OperatingMode::Interactive => write!(f, "interactive"),
             OperatingMode::Prefilled => write!(f, "prefilled"),
             OperatingMode::Auto => write!(f, "automatic"),
-            OperatingMode::AutoIncomplete { .. } => write!(f, "automatic (incomplete config)"),
+            OperatingMode::AutoIncomplete { .. } => {
+                write!(f, "automatic (incomplete config)")
+            }
         }
     }
 }
@@ -169,11 +183,10 @@ impl InstallConfig {
         let missing_variant = self.variant.is_none();
         let missing_disk = self.disk.is_none();
         let missing_hostname = self.variant == Some(Variant::Metal)
-            && self
+            && !self
                 .firstboot
                 .as_ref()
-                .and_then(|fb| fb.hostname.as_deref())
-                .is_none_or(|h| h.trim().is_empty());
+                .is_some_and(|fb| fb.has_hostname_config());
 
         if !missing_variant && !missing_disk && !missing_hostname {
             OperatingMode::Auto
@@ -194,6 +207,28 @@ impl InstallConfig {
         }
 
         if let Some(ref fb) = self.firstboot {
+            // Three-way mutual exclusivity for hostname fields
+            let hostname_set = fb.hostname.is_some();
+            let dhcp_set = fb.hostname_from_dhcp;
+            let template_set = fb.hostname_template.is_some();
+            let hostname_count = hostname_set as u8 + dhcp_set as u8 + template_set as u8;
+            if hostname_count > 1 {
+                let mut conflicting = Vec::new();
+                if hostname_set {
+                    conflicting.push("firstboot.hostname");
+                }
+                if dhcp_set {
+                    conflicting.push("firstboot.hostname-from-dhcp");
+                }
+                if template_set {
+                    conflicting.push("firstboot.hostname-template");
+                }
+                issues.push(format!(
+                    "{} are mutually exclusive",
+                    conflicting.join(" and ")
+                ));
+            }
+
             if let Some(ref hostname) = fb.hostname {
                 if hostname.is_empty() {
                     issues.push("firstboot.hostname is empty".into());
@@ -215,6 +250,18 @@ impl InstallConfig {
                         hostname
                     ));
                 }
+            }
+
+            if let Some(ref tmpl) = fb.hostname_template
+                && let Err(e) = hostname_template::parse(tmpl)
+            {
+                issues.push(format!("firstboot.hostname-template: {e}"));
+            }
+
+            if fb.hostname_from_dhcp && self.variant == Some(Variant::Cloud) {
+                issues.push(
+                    "hostname-from-dhcp has no special effect with the cloud variant (DHCP hostname is already the default)".into(),
+                );
             }
 
             for (i, key) in fb.ssh_authorized_keys.iter().enumerate() {
@@ -381,6 +428,36 @@ mod tests {
     }
 
     #[test]
+    fn mode_auto_when_complete_metal_with_dhcp() {
+        let config = InstallConfig {
+            auto: true,
+            variant: Some(Variant::Metal),
+            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
+            firstboot: Some(FirstbootConfig {
+                hostname_from_dhcp: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(config.mode(), OperatingMode::Auto);
+    }
+
+    #[test]
+    fn mode_auto_when_complete_metal_with_template() {
+        let config = InstallConfig {
+            auto: true,
+            variant: Some(Variant::Metal),
+            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
+            firstboot: Some(FirstbootConfig {
+                hostname_template: Some("srv-{hex:6}".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(config.mode(), OperatingMode::Auto);
+    }
+
+    #[test]
     fn mode_auto_incomplete_metal_missing_hostname() {
         let config = InstallConfig {
             auto: true,
@@ -519,6 +596,8 @@ mod tests {
             disable_tpm: false,
             firstboot: Some(FirstbootConfig {
                 hostname: Some("server-01".into()),
+                hostname_from_dhcp: false,
+                hostname_template: None,
                 tailscale_authkey: Some("tskey-auth-xxxxx".into()),
                 ssh_authorized_keys: vec!["ssh-ed25519 AAAA... admin@example.com".into()],
                 password: Some("changeme".into()),
@@ -632,7 +711,151 @@ mod tests {
             ..Default::default()
         };
         let issues = config.validate();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("password") && i.contains("mutually exclusive"))
+        );
+    }
+
+    #[test]
+    fn validate_hostname_fields_mutually_exclusive() {
+        let config = InstallConfig {
+            firstboot: Some(FirstbootConfig {
+                hostname: Some("server-01".into()),
+                hostname_from_dhcp: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let issues = config.validate();
         assert!(issues.iter().any(|i| i.contains("mutually exclusive")));
+    }
+
+    #[test]
+    fn validate_hostname_and_template_mutually_exclusive() {
+        let config = InstallConfig {
+            firstboot: Some(FirstbootConfig {
+                hostname: Some("server-01".into()),
+                hostname_template: Some("srv-{hex:6}".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.contains("mutually exclusive")));
+    }
+
+    #[test]
+    fn validate_dhcp_and_template_mutually_exclusive() {
+        let config = InstallConfig {
+            firstboot: Some(FirstbootConfig {
+                hostname_from_dhcp: true,
+                hostname_template: Some("srv-{hex:6}".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(issues.iter().any(|i| i.contains("mutually exclusive")));
+    }
+
+    #[test]
+    fn validate_bad_hostname_template() {
+        let config = InstallConfig {
+            firstboot: Some(FirstbootConfig {
+                hostname_template: Some("".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("firstboot.hostname-template"))
+        );
+    }
+
+    #[test]
+    fn validate_dhcp_on_cloud_warns() {
+        let config = InstallConfig {
+            variant: Some(Variant::Cloud),
+            firstboot: Some(FirstbootConfig {
+                hostname_from_dhcp: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("hostname-from-dhcp has no special effect"))
+        );
+    }
+
+    #[test]
+    fn parse_hostname_from_dhcp() {
+        let config = InstallConfig::from_toml(
+            r#"
+            [firstboot]
+            hostname-from-dhcp = true
+        "#,
+        )
+        .unwrap();
+        let fb = config.firstboot.unwrap();
+        assert!(fb.hostname_from_dhcp);
+        assert_eq!(fb.hostname, None);
+        assert_eq!(fb.hostname_template, None);
+    }
+
+    #[test]
+    fn parse_hostname_template() {
+        let config = InstallConfig::from_toml(
+            r#"
+            [firstboot]
+            hostname-template = "srv-{hex:6}"
+        "#,
+        )
+        .unwrap();
+        let fb = config.firstboot.unwrap();
+        assert_eq!(fb.hostname_template.as_deref(), Some("srv-{hex:6}"));
+        assert_eq!(fb.hostname, None);
+        assert!(!fb.hostname_from_dhcp);
+    }
+
+    #[test]
+    fn has_hostname_config_none() {
+        let fb = FirstbootConfig::default();
+        assert!(!fb.has_hostname_config());
+    }
+
+    #[test]
+    fn has_hostname_config_hostname() {
+        let fb = FirstbootConfig {
+            hostname: Some("test".into()),
+            ..Default::default()
+        };
+        assert!(fb.has_hostname_config());
+    }
+
+    #[test]
+    fn has_hostname_config_dhcp() {
+        let fb = FirstbootConfig {
+            hostname_from_dhcp: true,
+            ..Default::default()
+        };
+        assert!(fb.has_hostname_config());
+    }
+
+    #[test]
+    fn has_hostname_config_template() {
+        let fb = FirstbootConfig {
+            hostname_template: Some("srv-{hex:6}".into()),
+            ..Default::default()
+        };
+        assert!(fb.has_hostname_config());
     }
 
     // r[verify installer.mode.interactive]

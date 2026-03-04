@@ -89,10 +89,16 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                     state.advance();
                 }
             }
-            KeyCode::Backspace => {
+            KeyCode::Tab if state.variant == Variant::Metal => {
+                state.hostname_from_dhcp = !state.hostname_from_dhcp;
+            }
+            KeyCode::Char(' ') if state.variant == Variant::Metal => {
+                state.hostname_from_dhcp = !state.hostname_from_dhcp;
+            }
+            KeyCode::Backspace if !state.hostname_from_dhcp => {
                 state.hostname_input.pop();
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char(c) if !state.hostname_from_dhcp => {
                 state.hostname_input.push(c);
             }
             _ => {}
@@ -565,10 +571,7 @@ mod tests {
     fn scripted_prefilled_hostname_with_backspace() {
         let fb = FirstbootConfig {
             hostname: Some("old-host".into()),
-            tailscale_authkey: None,
-            ssh_authorized_keys: vec![],
-            password: None,
-            password_hash: None,
+            ..Default::default()
         };
         let devices = vec![BlockDevice {
             path: PathBuf::from("/dev/sda"),

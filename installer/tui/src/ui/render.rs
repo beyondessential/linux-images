@@ -250,12 +250,24 @@ fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 // r[impl installer.tui.hostname+2]
-// r[impl installer.tui.hostname+2]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
-    let hint = if state.hostname_required() {
+    let is_metal = state.variant == crate::config::Variant::Metal;
+    let dhcp_active = state.hostname_from_dhcp;
+
+    let hint = if dhcp_active {
+        "  The system will get its hostname from DHCP."
+    } else if is_metal {
         "  A hostname is required for the metal variant."
     } else {
         "  Leave empty to skip (default: ubuntu, overridden by DHCP/cloud-init)."
+    };
+
+    let hostname_style = if dhcp_active {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
     };
 
     let mut lines = vec![
@@ -265,15 +277,33 @@ fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
         Line::from(vec![
             Span::raw("  Hostname: "),
-            Span::styled(
-                &state.hostname_input,
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(&state.hostname_input, hostname_style),
             Span::styled("_", Style::default().fg(Color::DarkGray)),
         ]),
     ];
+
+    if is_metal {
+        lines.push(Line::from(""));
+        let toggle_marker = if dhcp_active { "x" } else { " " };
+        lines.push(Line::from(vec![
+            Span::raw(format!("  [{toggle_marker}] ")),
+            Span::styled(
+                "Use DHCP hostname (no static hostname)",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(Span::styled(
+            "      Tab to switch focus, Space to toggle",
+            Style::default().fg(Color::DarkGray),
+        )));
+        if dhcp_active {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  The static hostname will be empty (shown as n/a by hostnamectl).",
+                Style::default().fg(Color::Cyan),
+            )));
+        }
+    }
 
     if state.hostname_required() && state.hostname_input.trim().is_empty() {
         lines.push(Line::from(""));

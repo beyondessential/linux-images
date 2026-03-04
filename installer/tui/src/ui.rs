@@ -39,6 +39,8 @@ pub struct AppState {
     pub build_info: String,
 
     pub hostname_input: String,
+    pub hostname_from_dhcp: bool,
+    pub hostname_from_template: bool,
     pub tailscale_input: String,
     pub ssh_keys_input: String,
     pub password_input: String,
@@ -79,16 +81,31 @@ impl AppState {
         default_disk_index: Option<usize>,
         build_info: String,
     ) -> Self {
-        let (hostname_input, tailscale_input, ssh_keys_input, config_password_hash) =
-            match firstboot {
-                Some(ref fb) => (
-                    fb.hostname.clone().unwrap_or_default(),
-                    fb.tailscale_authkey.clone().unwrap_or_default(),
-                    fb.ssh_authorized_keys.join("\n"),
-                    fb.password_hash.clone(),
-                ),
-                None => (String::new(), String::new(), String::new(), None),
-            };
+        let (
+            hostname_input,
+            hostname_from_dhcp,
+            hostname_from_template,
+            tailscale_input,
+            ssh_keys_input,
+            config_password_hash,
+        ) = match firstboot {
+            Some(ref fb) => (
+                fb.hostname.clone().unwrap_or_default(),
+                fb.hostname_from_dhcp,
+                fb.hostname_template.is_some(),
+                fb.tailscale_authkey.clone().unwrap_or_default(),
+                fb.ssh_authorized_keys.join("\n"),
+                fb.password_hash.clone(),
+            ),
+            None => (
+                String::new(),
+                false,
+                false,
+                String::new(),
+                String::new(),
+                None,
+            ),
+        };
 
         Self {
             screen: Screen::Welcome,
@@ -101,6 +118,8 @@ impl AppState {
             confirm_input: String::new(),
             build_info,
             hostname_input,
+            hostname_from_dhcp,
+            hostname_from_template,
             tailscale_input,
             ssh_keys_input,
             password_input: String::new(),
@@ -118,10 +137,10 @@ impl AppState {
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
     pub fn firstboot_config(&self) -> Option<FirstbootConfig> {
-        let hostname = if self.hostname_input.trim().is_empty() {
-            None
-        } else {
+        let hostname = if !self.hostname_from_dhcp && !self.hostname_input.trim().is_empty() {
             Some(self.hostname_input.trim().to_string())
+        } else {
+            None
         };
 
         let tailscale_authkey = if self.tailscale_input.trim().is_empty() {
@@ -146,6 +165,7 @@ impl AppState {
         let password_hash = self.config_password_hash.clone();
 
         if hostname.is_none()
+            && !self.hostname_from_dhcp
             && tailscale_authkey.is_none()
             && ssh_authorized_keys.is_empty()
             && password.is_none()
@@ -156,6 +176,8 @@ impl AppState {
 
         Some(FirstbootConfig {
             hostname,
+            hostname_from_dhcp: self.hostname_from_dhcp,
+            hostname_template: None,
             tailscale_authkey,
             ssh_authorized_keys,
             password,
@@ -244,7 +266,7 @@ impl AppState {
 
     // r[impl installer.tui.hostname+2]
     pub fn hostname_required(&self) -> bool {
-        self.variant == Variant::Metal
+        self.variant == Variant::Metal && !self.hostname_from_dhcp
     }
 
     // r[impl installer.tui.password]
@@ -478,10 +500,7 @@ mod tests {
         }];
         let fb = FirstbootConfig {
             hostname: Some("myhost".into()),
-            tailscale_authkey: None,
-            ssh_authorized_keys: vec![],
-            password: None,
-            password_hash: None,
+            ..Default::default()
         };
         let state = AppState::new(
             devices,
@@ -509,11 +528,8 @@ mod tests {
             removable: false,
         }];
         let fb = FirstbootConfig {
-            hostname: None,
             tailscale_authkey: Some("tskey-auth-xxx".into()),
-            ssh_authorized_keys: vec![],
-            password: None,
-            password_hash: None,
+            ..Default::default()
         };
         let state = AppState::new(
             devices,
@@ -539,11 +555,8 @@ mod tests {
             removable: false,
         }];
         let fb = FirstbootConfig {
-            hostname: None,
-            tailscale_authkey: None,
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
-            password: None,
-            password_hash: None,
+            ..Default::default()
         };
         let state = AppState::new(
             devices,
@@ -639,11 +652,8 @@ mod tests {
             removable: false,
         }];
         let fb = FirstbootConfig {
-            hostname: None,
-            tailscale_authkey: None,
-            ssh_authorized_keys: vec![],
-            password: None,
             password_hash: Some("$6$rounds=4096$salt$hash".into()),
+            ..Default::default()
         };
         let state = AppState::new(
             devices,
@@ -677,5 +687,61 @@ mod tests {
         let mut state = make_state();
         state.variant = Variant::Cloud;
         assert!(!state.hostname_required());
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn hostname_not_required_for_metal_with_dhcp() {
+        let mut state = make_state();
+        state.variant = Variant::Metal;
+        state.hostname_from_dhcp = true;
+        assert!(!state.hostname_required());
+    }
+
+    #[test]
+    fn firstboot_config_with_dhcp_hostname() {
+        let mut state = make_state();
+        state.hostname_from_dhcp = true;
+        let fb = state.firstboot_config().unwrap();
+        assert!(fb.hostname_from_dhcp);
+        assert!(fb.hostname.is_none());
+    }
+
+    #[test]
+    fn firstboot_config_dhcp_overrides_hostname_input() {
+        let mut state = make_state();
+        state.hostname_from_dhcp = true;
+        state.hostname_input = "should-be-ignored".into();
+        let fb = state.firstboot_config().unwrap();
+        assert!(fb.hostname_from_dhcp);
+        assert!(fb.hostname.is_none());
+    }
+
+    #[test]
+    fn hostname_from_template_flag_from_config() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            hostname: Some("resolved-name".into()),
+            hostname_template: Some("srv-{hex:6}".into()),
+            ..Default::default()
+        };
+        let state = AppState::new(
+            devices,
+            Variant::Metal,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+        );
+        assert!(state.hostname_from_template);
+        assert_eq!(state.hostname_input, "resolved-name");
     }
 }

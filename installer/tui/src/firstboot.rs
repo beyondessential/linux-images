@@ -70,7 +70,9 @@ pub fn unmount_target(target: MountedTarget) -> Result<()> {
 pub fn apply_firstboot(target: &MountedTarget, config: &FirstbootConfig) -> Result<()> {
     let root = target.path();
 
-    if let Some(ref hostname) = config.hostname {
+    if config.hostname_from_dhcp {
+        apply_dhcp_hostname(root)?;
+    } else if let Some(ref hostname) = config.hostname {
         apply_hostname(root, hostname)?;
     }
 
@@ -177,6 +179,32 @@ fn apply_password(root: &Path, config: &FirstbootConfig) -> Result<()> {
     fs::write(&shadow_path, &new_contents).context("writing target /etc/shadow")?;
 
     tracing::info!("set password for ubuntu user");
+    Ok(())
+}
+
+// r[impl installer.firstboot.hostname]
+fn apply_dhcp_hostname(root: &Path) -> Result<()> {
+    let hostname_path = root.join("etc/hostname");
+    fs::write(&hostname_path, "")
+        .with_context(|| format!("truncating {}", hostname_path.display()))?;
+
+    let hosts_path = root.join("etc/hosts");
+    if hosts_path.exists() {
+        let contents = fs::read_to_string(&hosts_path).unwrap_or_default();
+        let new_contents: String = contents
+            .lines()
+            .filter(|line| !line.contains("127.0.1.1"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let new_contents = if contents.ends_with('\n') && !new_contents.ends_with('\n') {
+            format!("{new_contents}\n")
+        } else {
+            new_contents
+        };
+        fs::write(&hosts_path, new_contents)?;
+    }
+
+    tracing::info!("set hostname to DHCP (empty /etc/hostname)");
     Ok(())
 }
 
@@ -371,11 +399,8 @@ mod tests {
         .unwrap();
 
         let config = FirstbootConfig {
-            hostname: None,
-            tailscale_authkey: None,
-            ssh_authorized_keys: vec![],
             password: Some("newsecret".into()),
-            password_hash: None,
+            ..Default::default()
         };
         apply_password(dir.path(), &config).unwrap();
 
@@ -406,11 +431,8 @@ mod tests {
         .unwrap();
 
         let config = FirstbootConfig {
-            hostname: None,
-            tailscale_authkey: None,
-            ssh_authorized_keys: vec![],
-            password: None,
             password_hash: Some("$6$custom$myhash".into()),
+            ..Default::default()
         };
         apply_password(dir.path(), &config).unwrap();
 
@@ -429,11 +451,8 @@ mod tests {
         fs::write(etc.join("shadow"), "root:!:19900:0:99999:7:::\n").unwrap();
 
         let config = FirstbootConfig {
-            hostname: None,
-            tailscale_authkey: None,
-            ssh_authorized_keys: vec![],
             password: Some("test".into()),
-            password_hash: None,
+            ..Default::default()
         };
         assert!(apply_password(dir.path(), &config).is_err());
     }
@@ -451,11 +470,8 @@ mod tests {
         .unwrap();
 
         let config = FirstbootConfig {
-            hostname: None,
-            tailscale_authkey: None,
-            ssh_authorized_keys: vec![],
-            password: None,
             password_hash: Some("$6$new$newhash".into()),
+            ..Default::default()
         };
         apply_password(dir.path(), &config).unwrap();
 
@@ -464,6 +480,44 @@ mod tests {
         assert!(shadow.contains("daemon:*:19900:0:99999:7:::"));
         let ubuntu_line = shadow.lines().find(|l| l.starts_with("ubuntu:")).unwrap();
         assert!(ubuntu_line.contains("$6$new$newhash"));
+    }
+
+    // r[verify installer.firstboot.hostname]
+    #[test]
+    fn apply_dhcp_hostname_truncates_etc_hostname() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+        fs::write(etc.join("hostname"), "old-hostname\n").unwrap();
+        fs::write(
+            etc.join("hosts"),
+            "127.0.0.1 localhost\n127.0.1.1 old-hostname\n::1 localhost\n",
+        )
+        .unwrap();
+
+        apply_dhcp_hostname(dir.path()).unwrap();
+
+        let hostname = fs::read_to_string(etc.join("hostname")).unwrap();
+        assert_eq!(hostname, "");
+
+        let hosts = fs::read_to_string(etc.join("hosts")).unwrap();
+        assert!(!hosts.contains("127.0.1.1"));
+        assert!(hosts.contains("127.0.0.1 localhost"));
+        assert!(hosts.contains("::1 localhost"));
+    }
+
+    // r[verify installer.firstboot.hostname]
+    #[test]
+    fn apply_dhcp_hostname_no_hosts_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+        fs::write(etc.join("hostname"), "old-hostname\n").unwrap();
+
+        apply_dhcp_hostname(dir.path()).unwrap();
+
+        let hostname = fs::read_to_string(etc.join("hostname")).unwrap();
+        assert_eq!(hostname, "");
     }
 
     // r[verify installer.firstboot.ssh-keys]

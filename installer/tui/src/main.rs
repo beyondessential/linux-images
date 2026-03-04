@@ -10,6 +10,7 @@ use tracing_subscriber::prelude::*;
 mod config;
 mod disk;
 mod firstboot;
+mod hostname_template;
 mod plan;
 mod script;
 mod ui;
@@ -84,7 +85,9 @@ fn init_logging(log_path: &PathBuf) {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let (install_config, mode) = load_config(&cli)?;
+    let (mut install_config, mode) = load_config(&cli)?;
+
+    resolve_hostname_template(&mut install_config)?;
 
     let arch = detect_arch();
     tracing::info!("detected architecture: {arch}");
@@ -138,7 +141,7 @@ fn run(cli: Cli) -> Result<()> {
                 missing.push("disk");
             }
             if missing_hostname {
-                missing.push("hostname (required for metal variant)");
+                missing.push("hostname strategy (hostname, hostname-from-dhcp, or hostname-template required for metal variant)");
             }
             eprintln!(
                 "auto mode requested but required fields are missing: {}",
@@ -165,6 +168,20 @@ fn run(cli: Cli) -> Result<()> {
             &cli,
         ),
     }
+}
+
+fn resolve_hostname_template(cfg: &mut config::InstallConfig) -> Result<()> {
+    let Some(ref mut fb) = cfg.firstboot else {
+        return Ok(());
+    };
+    let Some(ref tmpl) = fb.hostname_template.clone() else {
+        return Ok(());
+    };
+    let resolved = hostname_template::parse_and_resolve(tmpl)
+        .with_context(|| format!("resolving hostname template '{tmpl}'"))?;
+    tracing::info!("resolved hostname template '{tmpl}' to '{resolved}'");
+    fb.hostname = Some(resolved);
+    Ok(())
 }
 
 fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMode)> {
@@ -200,6 +217,11 @@ fn run_auto(
     let variant = cfg.variant.expect("auto mode requires variant");
     let disk_selector = cfg.disk.as_ref().expect("auto mode requires disk");
 
+    let hostname_from_template = cfg
+        .firstboot
+        .as_ref()
+        .is_some_and(|fb| fb.hostname_template.is_some());
+
     let target = disk::resolve_disk(disk_selector, devices, boot_device.as_ref())?;
     let image_path = if cli.dry_run {
         writer::find_image_path(&variant.to_string(), arch).ok()
@@ -215,6 +237,7 @@ fn run_auto(
             Some(target),
             cfg.disable_tpm,
             cfg.firstboot.as_ref(),
+            hostname_from_template,
             image_path,
             config_warnings,
         );
@@ -234,7 +257,9 @@ fn run_auto(
     eprintln!("  disable-tpm: {}", cfg.disable_tpm);
 
     if let Some(ref fb) = cfg.firstboot {
-        if let Some(ref h) = fb.hostname {
+        if fb.hostname_from_dhcp {
+            eprintln!("  hostname:   (from DHCP)");
+        } else if let Some(ref h) = fb.hostname {
             eprintln!("  hostname:   {h}");
         }
         if fb.tailscale_authkey.is_some() {
@@ -325,6 +350,11 @@ fn run_interactive(
 
     let build_info = read_build_info();
 
+    let hostname_from_template = cfg
+        .firstboot
+        .as_ref()
+        .is_some_and(|fb| fb.hostname_template.is_some());
+
     let state = ui::AppState::new(
         devices,
         variant,
@@ -342,7 +372,13 @@ fn run_interactive(
         let final_state = ui::run_tui_scripted(state, events);
 
         if cli.dry_run {
-            let plan = plan_from_tui_state(&final_state, mode, &image_path, &config_warnings);
+            let plan = plan_from_tui_state(
+                &final_state,
+                mode,
+                hostname_from_template,
+                &image_path,
+                &config_warnings,
+            );
             return emit_plan(&plan, cli);
         }
 
@@ -352,7 +388,13 @@ fn run_interactive(
 
     // r[impl installer.dryrun]
     if cli.dry_run {
-        let plan = plan_from_tui_state(&state, mode, &image_path, &config_warnings);
+        let plan = plan_from_tui_state(
+            &state,
+            mode,
+            hostname_from_template,
+            &image_path,
+            &config_warnings,
+        );
         return emit_plan(&plan, cli);
     }
 
@@ -363,6 +405,7 @@ fn run_interactive(
 fn plan_from_tui_state(
     state: &ui::AppState,
     mode: &config::OperatingMode,
+    hostname_from_template: bool,
     image_path: &Option<PathBuf>,
     config_warnings: &[String],
 ) -> plan::InstallPlan {
@@ -374,6 +417,7 @@ fn plan_from_tui_state(
         disk,
         state.disable_tpm,
         firstboot.as_ref(),
+        state.hostname_from_template || hostname_from_template,
         image_path.clone(),
         config_warnings.to_vec(),
     )
