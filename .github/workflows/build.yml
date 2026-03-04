@@ -242,7 +242,11 @@ jobs:
       - name: List ISO
         run: ls -lh output/${{ matrix.arch }}/
 
-      - name: Run container install test # r[verify installer.container]
+      - name: Run container isolation test # r[verify installer.container.isolation]
+        run: just arch=${{ matrix.arch }} variant=metal test-container-isolation
+        timeout-minutes: 5
+
+      - name: Run container install test
         run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-container-install
         timeout-minutes: 30
 
