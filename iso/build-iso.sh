@@ -209,6 +209,7 @@ chroot "$MNT_ROOTFS" bash -c "
         util-linux \
         parted \
         gdisk \
+        cloud-guest-utils \
         zstd \
         cryptsetup \
         btrfs-progs \

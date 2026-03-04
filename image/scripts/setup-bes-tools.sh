@@ -1,6 +1,4 @@
 #!/bin/bash
-# r[image.packages.bes-tools]
-#
 # Configure the BES tools APT repository.
 # This runs inside the chroot during image build.
 set -euxo pipefail
@@ -12,6 +10,7 @@ curl -fsSL https://tools.ops.tamanu.io/apt/bes-tools.gpg.key \
     | gpg --dearmor -o /etc/apt/keyrings/bes-tools.gpg
 
 # Add bes-tools apt repository
+# r[image.packages.bes-tools]
 echo "deb [signed-by=/etc/apt/keyrings/bes-tools.gpg] https://tools.ops.tamanu.io/apt stable main" \
     > /etc/apt/sources.list.d/bes-tools.list
 
