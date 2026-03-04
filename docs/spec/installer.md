@@ -96,6 +96,16 @@ defaults. The user can override any value.
 > `firstboot.hostname`, `firstboot.hostname-from-dhcp = true`, or
 > `firstboot.hostname-template`.
 
+r[installer.mode.auto.progress]
+In automatic mode, the installer must detect whether standard error is
+connected to a terminal. When it is a terminal (interactive), progress
+updates use a carriage return (`\r`) to overwrite the current line.
+When it is not a terminal (e.g. CI log output), the installer must
+suppress the per-update progress lines entirely and instead print a
+single summary line after the write completes (total bytes written,
+throughput, and elapsed time). This avoids flooding non-interactive
+logs with thousands of nearly-identical progress lines.
+
 r[installer.mode.auto-incomplete+2]
 When `auto = true` but required fields are missing (`variant`, `disk`, or
 a hostname strategy for the metal variant), the installer must print an error

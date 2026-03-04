@@ -1,6 +1,8 @@
 use std::fs::{self, File};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
@@ -313,17 +315,32 @@ fn run_auto(
     eprintln!();
     eprintln!("writing image...");
 
+    // r[impl installer.mode.auto.progress]
+    let interactive = std::io::stderr().is_terminal();
+    let write_start = Instant::now();
     writer::write_image(&image_path, &target.path, &mut |progress| {
-        let pct = progress.fraction().map(|f| f * 100.0).unwrap_or(0.0);
-        let mbps = progress.throughput_mbps();
-        let eta = progress
-            .eta()
-            .map(writer::format_eta)
-            .unwrap_or_else(|| "...".into());
-        eprint!("\r  {pct:5.1}% | {mbps:.1} MiB/s | ETA: {eta}    ");
+        if interactive {
+            let pct = progress.fraction().map(|f| f * 100.0).unwrap_or(0.0);
+            let mbps = progress.throughput_mbps();
+            let eta = progress
+                .eta()
+                .map(writer::format_eta)
+                .unwrap_or_else(|| "...".into());
+            eprint!("\r  {pct:5.1}% | {mbps:.1} MiB/s | ETA: {eta}    ");
+        }
     })
     .context("writing image")?;
-    eprintln!();
+    let write_elapsed = write_start.elapsed();
+
+    // r[impl installer.mode.auto.progress]
+    if interactive {
+        eprintln!();
+    } else {
+        let size_mib = image_size as f64 / (1024.0 * 1024.0);
+        let secs = write_elapsed.as_secs_f64();
+        let mbps = if secs > 0.0 { size_mib / secs } else { 0.0 };
+        eprintln!("write complete: {size_mib:.1} MiB in {secs:.1}s ({mbps:.1} MiB/s)");
+    }
 
     writer::reread_partition_table(&target.path).context("re-reading partition table")?;
     writer::verify_partition_table(&target.path).context("verifying partition table")?;

@@ -254,6 +254,7 @@ NSPAWN_BINDS+=("--bind-ro=$DEVICES_JSON:/tmp/devices.json")
 NSPAWN_BINDS+=("--bind=/dev")
 
 INSTALLER_LOG="$WORK_DIR/installer.log"
+INSTALLER_OUTPUT="$WORK_DIR/installer-output.txt"
 
 echo "    Running installer (variant=$VARIANT, target=$LOOP_DEV)..."
 echo ""
@@ -274,8 +275,8 @@ systemd-nspawn \
         --config /run/besconf/bes-install.toml \
         --log /tmp/installer.log \
         --no-reboot \
-    2>&1
-INSTALLER_RC=$?
+    2>&1 | tee "$INSTALLER_OUTPUT"
+INSTALLER_RC=${PIPESTATUS[0]}
 set -e
 
 if [ -f "$SCENARIO_ROOTFS/tmp/installer.log" ]; then
@@ -362,6 +363,10 @@ sfdisk --json "$LOOP_DEV" 2>/dev/null > "$SFDISK_LABELS" || echo '{}' > "$SFDISK
 check "EFI partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"efi"' "$SFDISK_LABELS"
 check "xboot partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"xboot"' "$SFDISK_LABELS"
 check "root partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"root"' "$SFDISK_LABELS"
+
+# r[verify installer.mode.auto.progress]
+check "non-interactive write summary printed" grep -q "write complete:.*MiB in.*MiB/s" "$INSTALLER_OUTPUT"
+check "no carriage-return progress lines" ! grep -q $'\r' "$INSTALLER_OUTPUT"
 
 # r[verify installer.write.partitions]
 ROOT_PART_SIZE=$(lsblk --bytes --noheadings --output SIZE "${LOOP_DEV}p3" 2>/dev/null | tr -d '[:space:]')
