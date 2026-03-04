@@ -45,7 +45,7 @@ pub struct GithubKeysResult {
     pub error: Option<String>,
 }
 
-// r[impl installer.tui.network-check+3]
+// r[impl installer.tui.network-check+4]
 
 /// The list of endpoints to check, matching the spec.
 pub fn default_endpoints() -> Vec<Endpoint> {
@@ -73,6 +73,11 @@ pub fn default_endpoints() -> Vec<Endpoint> {
         Endpoint {
             label: "servers.ops.tamanu.io".into(),
             url: "https://servers.ops.tamanu.io/".into(),
+            expect_200: false,
+        },
+        Endpoint {
+            label: "github.com".into(),
+            url: "https://github.com/".into(),
             expect_200: false,
         },
     ]
@@ -325,13 +330,13 @@ mod tests {
     #[test]
     fn default_endpoints_has_expected_count() {
         let eps = default_endpoints();
-        assert_eq!(eps.len(), 5);
+        assert_eq!(eps.len(), 6);
     }
 
     #[test]
     fn total_check_count_includes_ntp() {
         let eps = default_endpoints();
-        assert_eq!(total_check_count(&eps), 6);
+        assert_eq!(total_check_count(&eps), 7);
     }
 
     #[test]
