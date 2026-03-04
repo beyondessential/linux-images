@@ -535,6 +535,11 @@ loop device as if it were a real disk.
 > 3. The container runs with `--private-network` to prevent any network
 >    side-effects.
 
+r[installer.container.disk-size]
+The test harness must create a target disk larger than the raw image
+(which is 8 GiB) so that partition expansion is exercised. A 16 GiB
+sparse file is sufficient.
+
 > r[installer.container.verification]
 > After the installer exits, the test harness must verify the results from
 > the host side:
@@ -542,11 +547,41 @@ loop device as if it were a real disk.
 > 1. Run `partprobe` on the loop device and confirm three partitions exist
 >    (EFI, xboot, root) via `lsblk --json`.
 > 2. For the cloud variant: mount the root btrfs partition (subvol `@`) and
->    verify first-boot artefacts (hostname file, SSH keys, etc.).
-> 3. For the metal variant: open the LUKS volume with the empty keyfile,
->    then mount and verify as above.
-> 4. Clean up: unmount, close LUKS if applicable, detach loop device,
+>    verify first-boot artefacts. For the metal variant: open the LUKS
+>    volume with the empty keyfile, then mount and verify as above.
+> 3. Clean up: unmount, close LUKS if applicable, detach loop device,
 >    remove sparse file.
+
+r[installer.container.verify-partitions]
+The test must verify that partition 3 (root) has been expanded to fill
+the target disk. Since the target disk is larger than the original image,
+the root partition's size must be greater than the original image size.
+This verifies `installer.write.partitions`.
+
+r[installer.container.verify-hostname]
+The test config must set a hostname. After the install, the test must
+verify that `/etc/hostname` contains the configured hostname and that
+`/etc/hosts` contains a `127.0.1.1` entry for it. This verifies
+`installer.firstboot.hostname`.
+
+r[installer.container.verify-tailscale]
+The test config must set a `tailscale-authkey`. After the install, the
+test must verify that `/etc/bes/tailscale-authkey` exists, contains the
+configured key, and has permissions `0600`. This verifies
+`installer.firstboot.tailscale-authkey`.
+
+r[installer.container.verify-ssh-keys]
+The test config must set at least one SSH authorized key. After the
+install, the test must verify that
+`/home/ubuntu/.ssh/authorized_keys` contains the key, with file
+permissions `0600` and directory permissions `0700`. This verifies
+`installer.firstboot.ssh-keys`.
+
+r[installer.container.verify-tpm-disable]
+The test config must set `disable-tpm = true`. For the metal variant,
+the test must verify that the
+`setup-tpm-unlock.service` enable symlink has been removed. This
+verifies `installer.firstboot.tpm-disable`.
 
 # Live ISO
 

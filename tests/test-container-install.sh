@@ -11,7 +11,13 @@
 # r[verify installer.container.rootfs]
 # r[verify installer.container.loop-device]
 # r[verify installer.container.isolation]
+# r[verify installer.container.disk-size]
 # r[verify installer.container.verification]
+# r[verify installer.container.verify-partitions]
+# r[verify installer.container.verify-hostname]
+# r[verify installer.container.verify-tailscale]
+# r[verify installer.container.verify-ssh-keys]
+# r[verify installer.container.verify-tpm-disable]
 #
 # Usage: test-container-install.sh <iso> <variant> [arch]
 #   variant: metal | cloud
@@ -25,7 +31,7 @@ ISO="${1:?Usage: $0 <iso> <variant> [arch]}"
 VARIANT="${2:?Usage: $0 <iso> <variant> [arch]}"
 ARCH="${3:-amd64}"
 
-TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-8G}"
+TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-16G}"
 
 if [ ! -f "$ISO" ]; then
     echo "ERROR: ISO not found: $ISO"
@@ -183,6 +189,8 @@ cat > "$DEVICES_JSON" << EOF
 EOF
 echo "    devices.json: $DEVICES_JSON"
 
+TAILSCALE_TEST_KEY="tskey-auth-container-test-key-1234567890"
+
 CONFIG_TOML="$WORK_DIR/bes-install.toml"
 cat > "$CONFIG_TOML" << EOF
 auto = true
@@ -192,6 +200,7 @@ disable-tpm = true
 
 [firstboot]
 hostname = "container-test-$VARIANT"
+tailscale-authkey = "$TAILSCALE_TEST_KEY"
 ssh-authorized-keys = [
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
 ]
@@ -337,6 +346,18 @@ check "EFI partition label present" test -n "$(echo "$LSBLK_JSON" | grep "efi")"
 check "xboot partition label present" test -n "$(echo "$LSBLK_JSON" | grep "xboot")"
 check "root partition label present" test -n "$(echo "$LSBLK_JSON" | grep "root")"
 
+# r[verify installer.container.verify-partitions]
+# r[verify installer.write.partitions]
+# Verify that partition 3 (root) was expanded beyond the original image size.
+# The raw image is 8 GiB and the target disk is 16 GiB, so the root partition
+# must be larger than the original (~7.5 GiB after EFI + xboot partitions).
+ROOT_PART_SIZE=$(lsblk --bytes --noheadings --output SIZE "${LOOP_DEV}p3" 2>/dev/null | tr -d '[:space:]')
+ROOT_PART_SIZE="${ROOT_PART_SIZE:-0}"
+# 8 GiB in bytes = 8589934592; root partition should be well above this after expansion
+IMAGE_RAW_SIZE=8589934592
+echo "    Root partition size: $ROOT_PART_SIZE bytes (image was $IMAGE_RAW_SIZE bytes)"
+check "root partition expanded beyond image size" test "$ROOT_PART_SIZE" -gt "$IMAGE_RAW_SIZE"
+
 # Mount and verify first-boot configuration
 VERIFY_MOUNT="$WORK_DIR/verify-mount"
 mkdir -p "$VERIFY_MOUNT"
@@ -375,7 +396,9 @@ if [ -n "$BTRFS_DEV" ]; then
     if [ $MOUNT_RC -eq 0 ]; then
         check "btrfs root mounted successfully" true
 
-        # Hostname
+        # r[verify installer.container.verify-hostname]
+        # r[verify installer.firstboot.hostname]
+        # Hostname: /etc/hostname content and /etc/hosts entry
         if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then
             ACTUAL_HOSTNAME="$(tr -d '[:space:]' < "$VERIFY_MOUNT/etc/hostname")"
             check "hostname is container-test-$VARIANT" \
@@ -384,7 +407,30 @@ if [ -n "$BTRFS_DEV" ]; then
             check "hostname file exists" false
         fi
 
-        # SSH authorized keys
+        if [ -f "$VERIFY_MOUNT/etc/hosts" ]; then
+            check "/etc/hosts contains 127.0.1.1 entry for hostname" \
+                grep -q "127.0.1.1.*container-test-$VARIANT" "$VERIFY_MOUNT/etc/hosts"
+        else
+            check "/etc/hosts file exists" false
+        fi
+
+        # r[verify installer.container.verify-tailscale]
+        # r[verify installer.firstboot.tailscale-authkey]
+        # Tailscale authkey: file exists, contains key, has 600 perms
+        TS_KEY_FILE="$VERIFY_MOUNT/etc/bes/tailscale-authkey"
+        if [ -f "$TS_KEY_FILE" ]; then
+            check "tailscale-authkey contains configured key" \
+                grep -q "$TAILSCALE_TEST_KEY" "$TS_KEY_FILE"
+
+            TS_PERMS=$(stat -c '%a' "$TS_KEY_FILE")
+            check "tailscale-authkey permissions are 600" test "$TS_PERMS" = "600"
+        else
+            check "tailscale-authkey file exists" false
+        fi
+
+        # r[verify installer.container.verify-ssh-keys]
+        # r[verify installer.firstboot.ssh-keys]
+        # SSH authorized keys: file exists, contains key, correct perms
         AK_FILE="$VERIFY_MOUNT/home/ubuntu/.ssh/authorized_keys"
         if [ -f "$AK_FILE" ]; then
             check "authorized_keys contains test key" \
@@ -399,6 +445,8 @@ if [ -n "$BTRFS_DEV" ]; then
             check "authorized_keys file exists" false
         fi
 
+        # r[verify installer.container.verify-tpm-disable]
+        # r[verify installer.firstboot.tpm-disable]
         # TPM disable check (metal only)
         if [ "$VARIANT" = "metal" ]; then
             TPM_SYMLINK="$VERIFY_MOUNT/etc/systemd/system/multi-user.target.wants/setup-tpm-unlock.service"
