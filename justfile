@@ -580,9 +580,10 @@ test-e2e: _validate-variant _validate-arch
   fi
   sudo tests/test-e2e-install.sh "$ISO" "{{variant}}" "{{arch}}"
 
-# Run container-based install test: extract ISO rootfs, write to loopback device
-# inside systemd-nspawn, verify results. Much faster than QEMU E2E tests.
-test-container-install: _validate-variant _validate-arch
+# Run container-based install test suite: extract ISO rootfs, write to loopback
+# device inside systemd-nspawn, verify results across multiple scenarios.
+# Much faster than QEMU E2E tests.
+test-container-install: _validate-arch
   #!/usr/bin/env bash
   set -euo pipefail
   ISO="{{output_iso}}"
@@ -595,7 +596,7 @@ test-container-install: _validate-variant _validate-arch
     echo "ERROR: systemd-nspawn required (install systemd-container)"
     exit 1
   fi
-  sudo tests/test-container-install.sh "$ISO" "{{variant}}" "{{arch}}"
+  sudo tests/test-container-install-all.sh "$ISO" "{{arch}}"
 
 # Run container isolation test: verify that no host block devices are
 # visible inside a systemd-nspawn container. Does not run the installer.

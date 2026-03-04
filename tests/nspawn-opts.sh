@@ -12,4 +12,6 @@ NSPAWN_COMMON_OPTS=(
     --system-call-filter=mount
     --property=DeviceAllow='block-loop rwm'
     --property=DeviceAllow='block-blkext rwm'
+    --property=DeviceAllow='char-misc rwm'
+    --property=DeviceAllow='block-device-mapper rwm'
 )

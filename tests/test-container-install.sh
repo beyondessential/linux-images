@@ -1,33 +1,48 @@
 #!/bin/bash
 #
-# Container-based installer integration test: extract the live rootfs from
-# a built ISO, create a loopback block device, and run the real installer
-# inside a systemd-nspawn container targeting that loop device.
+# Container-based installer integration test: run the real installer inside
+# a systemd-nspawn container targeting a loopback block device, then verify
+# the written disk.
 #
-# This tests the full write + partition-expand + firstboot pipeline without
-# booting a VM, using the exact same rootfs that ships in the live ISO.
+# This script tests a single scenario. It is normally invoked by
+# test-container-install-all.sh, which extracts the ISO once and runs
+# multiple scenarios against it.
 #
-# Usage: test-container-install.sh <iso> <variant> [arch]
-#   variant: metal | cloud
-#   arch:    amd64 | arm64 (default: amd64)
+# Required arguments:
+#   $1 — variant (metal | cloud)
+#   $2 — arch (amd64 | arm64)
 #
-# Requires: systemd-nspawn, xorriso, unsquashfs, losetup, lsblk, cryptsetup,
+# Required environment:
+#   ROOTFS_DIR   — path to pre-extracted live rootfs
+#   IMAGES_DIR   — path to directory containing .raw.zst images
+#
+# Scenario environment (all optional):
+#   SCENARIO_NAME  — human-readable name (default: "unnamed")
+#   DISABLE_TPM    — "true" or "false" (default: "true")
+#   SET_HOSTNAME   — hostname to set, or "" to skip (default: "")
+#   SET_TAILSCALE  — tailscale authkey to set, or "" to skip (default: "")
+#   SET_SSH_KEYS   — SSH public key to set, or "" to skip (default: "")
+#
+# Requires: systemd-nspawn, losetup, lsblk, partprobe, cryptsetup,
 #           btrfs-progs, util-linux. Must run as root.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/nspawn-opts.sh"
 
-ISO="${1:?Usage: $0 <iso> <variant> [arch]}"
-VARIANT="${2:?Usage: $0 <iso> <variant> [arch]}"
-ARCH="${3:-amd64}"
+VARIANT="${1:?Usage: $0 <variant> <arch>}"
+ARCH="${2:?Usage: $0 <variant> <arch>}"
+
+ROOTFS_DIR="${ROOTFS_DIR:?ROOTFS_DIR must be set}"
+IMAGES_DIR="${IMAGES_DIR:?IMAGES_DIR must be set}"
+
+SCENARIO_NAME="${SCENARIO_NAME:-unnamed}"
+DISABLE_TPM="${DISABLE_TPM:-true}"
+SET_HOSTNAME="${SET_HOSTNAME:-}"
+SET_TAILSCALE="${SET_TAILSCALE:-}"
+SET_SSH_KEYS="${SET_SSH_KEYS:-}"
 
 TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-10G}"
-
-if [ ! -f "$ISO" ]; then
-    echo "ERROR: ISO not found: $ISO"
-    exit 1
-fi
 
 case "$VARIANT" in
     metal|cloud) ;;
@@ -50,12 +65,13 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-MISSING=()
-for cmd in systemd-nspawn xorriso unsquashfs losetup lsblk partprobe; do
-    command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
-done
-if [ "${#MISSING[@]}" -gt 0 ]; then
-    echo "ERROR: missing required commands: ${MISSING[*]}"
+if [ ! -d "$ROOTFS_DIR" ]; then
+    echo "ERROR: ROOTFS_DIR does not exist: $ROOTFS_DIR"
+    exit 1
+fi
+
+if [ ! -d "$IMAGES_DIR" ]; then
+    echo "ERROR: IMAGES_DIR does not exist: $IMAGES_DIR"
     exit 1
 fi
 
@@ -90,7 +106,7 @@ cleanup() {
 
     if [ "$exit_code" -ne 0 ]; then
         echo ""
-        echo "!!! Container install test FAILED (exit code $exit_code)"
+        echo "!!! Scenario '$SCENARIO_NAME' FAILED (exit code $exit_code)"
     fi
 
     exit "$exit_code"
@@ -99,60 +115,24 @@ trap cleanup EXIT
 
 WORK_DIR="$(mktemp -d -t bes-container-test-XXXXXX)"
 
-echo "=============================="
-echo "BES Container Install Test"
-echo "=============================="
-echo "ISO:         $ISO"
-echo "Variant:     $VARIANT"
-echo "Arch:        $ARCH"
-echo "Disk size:   $TARGET_DISK_SIZE"
-echo "Work dir:    $WORK_DIR"
-echo "=============================="
+echo "----------------------------------------------------------------------"
+echo "Scenario: $SCENARIO_NAME"
+echo "----------------------------------------------------------------------"
+echo "  variant:       $VARIANT"
+echo "  arch:          $ARCH"
+echo "  disable-tpm:   $DISABLE_TPM"
+echo "  hostname:      ${SET_HOSTNAME:-(not set)}"
+echo "  tailscale:     ${SET_TAILSCALE:+(key provided)}${SET_TAILSCALE:-(not set)}"
+echo "  ssh-keys:      ${SET_SSH_KEYS:+(key provided)}${SET_SSH_KEYS:-(not set)}"
+echo "  disk size:     $TARGET_DISK_SIZE"
 echo ""
 
 # ============================================================
-# Phase 1: Extract rootfs and images from ISO
-# ============================================================
-
-echo "==> Phase 1: Extracting squashfs and images from ISO..."
-
-SQUASHFS="$WORK_DIR/filesystem.squashfs"
-ROOTFS="$WORK_DIR/rootfs"
-IMAGES_STAGING="$WORK_DIR/images"
-
-xorriso -osirrox on -indev "$ISO" \
-    -extract /live/filesystem.squashfs "$SQUASHFS" \
-    2>/dev/null
-
-if [ ! -f "$SQUASHFS" ]; then
-    echo "ERROR: failed to extract /live/filesystem.squashfs from ISO"
-    exit 1
-fi
-
-echo "    Extracted squashfs: $(du -h "$SQUASHFS" | cut -f1)"
-
-unsquashfs -d "$ROOTFS" -f "$SQUASHFS" >/dev/null 2>&1
-rm -f "$SQUASHFS"
-echo "    Unpacked rootfs to $ROOTFS"
-
-mkdir -p "$IMAGES_STAGING"
-xorriso -osirrox on -indev "$ISO" \
-    -extract /images "$IMAGES_STAGING" \
-    2>/dev/null
-
-IMAGE_COUNT=$(find "$IMAGES_STAGING" -name '*.raw.zst' | wc -l)
-if [ "$IMAGE_COUNT" -eq 0 ]; then
-    echo "ERROR: no .raw.zst images found in ISO /images/"
-    exit 1
-fi
-echo "    Extracted $IMAGE_COUNT disk image(s)"
-
-# ============================================================
-# Phase 2: Create loopback target disk
+# Phase 1: Create loopback target disk
 # ============================================================
 # r[impl installer.tui.loop-device]: it's hard to implement a negative
 # r[verify installer.tui.loop-device]
-echo "==> Phase 2: Creating loopback target disk ($TARGET_DISK_SIZE)..."
+echo "==> Creating loopback target disk ($TARGET_DISK_SIZE)..."
 
 TARGET_IMG="$WORK_DIR/target.img"
 truncate -s "$TARGET_DISK_SIZE" "$TARGET_IMG"
@@ -160,14 +140,12 @@ truncate -s "$TARGET_DISK_SIZE" "$TARGET_IMG"
 LOOP_DEV="$(losetup --show --find --partscan "$TARGET_IMG")"
 echo "    Loop device: $LOOP_DEV"
 
-# Get the size in bytes for the fake-devices JSON
 LOOP_SIZE_BYTES=$(blockdev --getsize64 "$LOOP_DEV")
-echo "    Size: $LOOP_SIZE_BYTES bytes"
 
 # ============================================================
-# Phase 3: Prepare installer inputs
+# Phase 2: Generate installer configuration
 # ============================================================
-echo "==> Phase 3: Preparing installer configuration..."
+echo "==> Generating installer configuration..."
 
 DEVICES_JSON="$WORK_DIR/devices.json"
 cat > "$DEVICES_JSON" << EOF
@@ -180,98 +158,72 @@ cat > "$DEVICES_JSON" << EOF
   }
 ]
 EOF
-echo "    devices.json: $DEVICES_JSON"
-
-TAILSCALE_TEST_KEY="tskey-auth-container-test-key-1234567890"
 
 CONFIG_TOML="$WORK_DIR/bes-install.toml"
-cat > "$CONFIG_TOML" << EOF
-auto = true
-variant = "$VARIANT"
-disk = "$LOOP_DEV"
-disable-tpm = true
+{
+    echo 'auto = true'
+    echo "variant = \"$VARIANT\""
+    echo "disk = \"$LOOP_DEV\""
+    echo "disable-tpm = $DISABLE_TPM"
 
-[firstboot]
-hostname = "container-test-$VARIANT"
-tailscale-authkey = "$TAILSCALE_TEST_KEY"
-ssh-authorized-keys = [
-  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
-]
-EOF
+    if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ]; then
+        echo ""
+        echo "[firstboot]"
+        if [ -n "$SET_HOSTNAME" ]; then
+            echo "hostname = \"$SET_HOSTNAME\""
+        fi
+        if [ -n "$SET_TAILSCALE" ]; then
+            echo "tailscale-authkey = \"$SET_TAILSCALE\""
+        fi
+        if [ -n "$SET_SSH_KEYS" ]; then
+            echo "ssh-authorized-keys = ["
+            echo "  \"$SET_SSH_KEYS\","
+            echo "]"
+        fi
+    fi
+} > "$CONFIG_TOML"
+
 echo "    Config:"
 sed 's/^/      /' "$CONFIG_TOML"
 
-# Ensure the rootfs has os-release (systemd-nspawn requires it)
-if [ ! -f "$ROOTFS/etc/os-release" ] && [ ! -f "$ROOTFS/usr/lib/os-release" ]; then
-    echo "BES Installer Live" > "$ROOTFS/etc/os-release"
+# ============================================================
+# Phase 3: Prepare rootfs overlay
+# ============================================================
+# We work on a copy of the rootfs so multiple scenarios don't interfere.
+echo "==> Preparing rootfs overlay..."
+
+SCENARIO_ROOTFS="$WORK_DIR/rootfs"
+cp -a "$ROOTFS_DIR" "$SCENARIO_ROOTFS"
+
+if [ ! -f "$SCENARIO_ROOTFS/etc/os-release" ] && [ ! -f "$SCENARIO_ROOTFS/usr/lib/os-release" ]; then
+    echo "BES Installer Live" > "$SCENARIO_ROOTFS/etc/os-release"
 fi
 
 # r[impl installer.no-reboot]: install a trap script that records if anything
-# calls reboot inside the container. The installer is invoked with --no-reboot,
-# so this sentinel file should never be created.
+# calls reboot inside the container.
 REBOOT_SENTINEL="/tmp/bes-reboot-called"
 for reboot_path in /usr/local/sbin/reboot /usr/sbin/reboot /sbin/reboot; do
-    mkdir -p "$ROOTFS/$(dirname "$reboot_path")"
-    cat > "$ROOTFS/$reboot_path" << 'TRAP'
+    mkdir -p "$SCENARIO_ROOTFS/$(dirname "$reboot_path")"
+    cat > "$SCENARIO_ROOTFS/$reboot_path" << 'TRAP'
 #!/bin/sh
 touch /tmp/bes-reboot-called
 TRAP
-    chmod +x "$ROOTFS/$reboot_path"
+    chmod +x "$SCENARIO_ROOTFS/$reboot_path"
 done
 
 # ============================================================
 # Phase 4: Run installer inside systemd-nspawn
 # ============================================================
-echo "==> Phase 4: Running installer in systemd-nspawn container..."
+echo "==> Running installer in systemd-nspawn container..."
 
-# Build the list of bind mounts for loop device + partition nodes.
-# Pre-create partition device nodes: after the installer writes the image
-# and calls partprobe, the kernel creates /dev/loopNpM on the host.
-# But inside nspawn /dev is private, so we must bind them in.
-# Since partitions don't exist yet, we bind the loop device now and also
-# set up the partition nodes to be bound once they appear.
-#
-# Strategy: we bind the whole loop device in. For partition devices that
-# appear after writing, we pre-create them outside and bind them in.
-# The installer calls partprobe which updates the host kernel's view,
-# and the bind-mounted nodes will then work.
-
-# We expect 3 partitions (EFI, xboot, root) after writing the image.
-# Pre-create placeholder files so the kernel has somewhere to put the
-# partition devices once partprobe runs.
-for i in 1 2 3; do
-    PART_DEV="${LOOP_DEV}p${i}"
-    if [ ! -e "$PART_DEV" ]; then
-        # Touch a placeholder file so --bind has something to mount on.
-        # It will become functional once partprobe creates the real device.
-        touch "$PART_DEV.placeholder"
-    fi
-done
-
-# We need the partition nodes to be visible inside the container after
-# partprobe runs. The simplest reliable approach: bind-mount the host's
-# /dev/loopN* into the container's /dev/ by overlaying specific paths.
-#
 # r[impl installer.container.isolation] (layer 1): only the loop device is
-# bound into the container. systemd-nspawn provides its own /dev, so no host
-# block devices are visible unless explicitly listed here.
+# bound into the container.
 NSPAWN_BINDS=(
     "--bind=$LOOP_DEV"
 )
-
-# Bind-mount images into the path the installer searches
-NSPAWN_BINDS+=("--bind-ro=$IMAGES_STAGING:/run/live/medium/images")
-
-# Bind-mount the config where the installer expects it
+NSPAWN_BINDS+=("--bind-ro=$IMAGES_DIR:/run/live/medium/images")
 NSPAWN_BINDS+=("--bind-ro=$CONFIG_TOML:/run/besconf/bes-install.toml")
-
-# Bind-mount the devices JSON
 NSPAWN_BINDS+=("--bind-ro=$DEVICES_JSON:/tmp/devices.json")
-
-# Bind /dev so that partition device nodes appear after partprobe. This is
-# necessary because nspawn's private /dev won't see new nodes created by the
-# host kernel. --fake-devices (layer 2) ensures the installer cannot discover
-# any extra devices exposed by this bind.
 NSPAWN_BINDS+=("--bind=/dev")
 
 INSTALLER_LOG="$WORK_DIR/installer.log"
@@ -279,9 +231,6 @@ INSTALLER_LOG="$WORK_DIR/installer.log"
 echo "    Running installer (variant=$VARIANT, target=$LOOP_DEV)..."
 echo ""
 
-# Run the installer. Use --pipe for non-interactive output.
-# --register=no avoids needing systemd-machined.
-# --quiet suppresses nspawn's own status messages.
 # r[impl installer.container.isolation] (layer 2): --fake-devices bypasses
 # lsblk discovery so the installer sees only the loop device.
 # r[impl installer.container.isolation] (layer 3): --private-network prevents
@@ -291,7 +240,7 @@ echo ""
 set +e
 systemd-nspawn \
     "${NSPAWN_COMMON_OPTS[@]}" \
-    --directory="$ROOTFS" \
+    --directory="$SCENARIO_ROOTFS" \
     "${NSPAWN_BINDS[@]}" \
     /usr/local/bin/bes-installer \
         --fake-devices /tmp/devices.json \
@@ -302,9 +251,8 @@ systemd-nspawn \
 INSTALLER_RC=$?
 set -e
 
-# Copy out the log if it exists
-if [ -f "$ROOTFS/tmp/installer.log" ]; then
-    cp "$ROOTFS/tmp/installer.log" "$INSTALLER_LOG"
+if [ -f "$SCENARIO_ROOTFS/tmp/installer.log" ]; then
+    cp "$SCENARIO_ROOTFS/tmp/installer.log" "$INSTALLER_LOG"
 fi
 
 echo ""
@@ -322,8 +270,8 @@ fi
 # container with --private-network, proving no network access was needed.
 echo "    Installer exited successfully."
 
-# r[verify installer.no-reboot]: the trap script should not have been triggered.
-if [ -f "$ROOTFS/$REBOOT_SENTINEL" ]; then
+# r[verify installer.no-reboot]
+if [ -f "$SCENARIO_ROOTFS/$REBOOT_SENTINEL" ]; then
     echo "    FAIL: reboot was called despite --no-reboot"
     exit 1
 else
@@ -331,52 +279,32 @@ else
 fi
 
 # ============================================================
-# Phase 4b: Verify the installer cleaned up after itself
+# Phase 5: Verify cleanup
 # ============================================================
 # r[verify installer.firstboot.unmount]
-echo "==> Phase 4b: Verifying installer unmounted all filesystems..."
+echo "==> Verifying installer unmounted all filesystems..."
 
-UNMOUNT_PASS=0
-UNMOUNT_FAIL=0
-UNMOUNT_ERRORS=()
-
-unmount_check() {
-    local desc="$1"; shift
-    if "$@" >/dev/null 2>&1; then
-        echo "    PASS: $desc"
-        UNMOUNT_PASS=$((UNMOUNT_PASS + 1))
-    else
-        echo "    FAIL: $desc"
-        UNMOUNT_ERRORS+=("$desc")
-        UNMOUNT_FAIL=$((UNMOUNT_FAIL + 1))
-    fi
-}
-
-# No partition of the loop device should be mounted after the installer exits.
 STALE_MOUNTS=$(grep "${LOOP_DEV}" /proc/mounts 2>/dev/null || true)
 if [ -n "$STALE_MOUNTS" ]; then
     echo "    Stale mounts found:"
     printf '      %s\n' "$STALE_MOUNTS"
-fi
-unmount_check "no filesystems from ${LOOP_DEV} still mounted" test -z "$STALE_MOUNTS"
-
-# For metal variant: the installer's LUKS volume must not be active.
-if [ "$VARIANT" = "metal" ]; then
-    unmount_check "LUKS volume bes-target-root is closed" test ! -e /dev/mapper/bes-target-root
-fi
-
-if [ "$UNMOUNT_FAIL" -gt 0 ]; then
-    echo ""
-    echo "!!! Installer did not clean up mounts/LUKS before exiting."
-    echo "    Failures: ${UNMOUNT_ERRORS[*]}"
+    echo "    FAIL: installer did not clean up mounts"
     exit 1
 fi
+echo "    PASS: no stale mounts from ${LOOP_DEV}"
+
+if [ "$VARIANT" = "metal" ]; then
+    if [ -e /dev/mapper/bes-target-root ]; then
+        echo "    FAIL: LUKS volume bes-target-root still open"
+        exit 1
+    fi
+    echo "    PASS: LUKS volume bes-target-root is closed"
+fi
 
 # ============================================================
-# Phase 5: Verify the written disk
+# Phase 6: Verify the written disk
 # ============================================================
-
-echo "==> Phase 5: Verifying written disk..."
+echo "==> Verifying written disk..."
 
 PASS=0
 FAIL=0
@@ -394,33 +322,28 @@ check() {
     fi
 }
 
-# Re-read partition table on the host
 partprobe "$LOOP_DEV"
 sleep 1
 
-# Verify partitions exist
+# --- Partition structure ---
 check "partition 1 (EFI) exists" test -b "${LOOP_DEV}p1"
 check "partition 2 (xboot) exists" test -b "${LOOP_DEV}p2"
 check "partition 3 (root) exists" test -b "${LOOP_DEV}p3"
 
-# Verify partition labels via lsblk
-LSBLK_JSON=$(lsblk --json --output NAME,PARTLABEL "$LOOP_DEV" 2>/dev/null || echo '{}')
-check "EFI partition label present" test -n "$(echo "$LSBLK_JSON" | grep "efi")"
-check "xboot partition label present" test -n "$(echo "$LSBLK_JSON" | grep "xboot")"
-check "root partition label present" test -n "$(echo "$LSBLK_JSON" | grep "root")"
+SFDISK_LABELS="$WORK_DIR/sfdisk-labels.txt"
+sfdisk --json "$LOOP_DEV" 2>/dev/null > "$SFDISK_LABELS" || echo '{}' > "$SFDISK_LABELS"
+check "EFI partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"efi"' "$SFDISK_LABELS"
+check "xboot partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"xboot"' "$SFDISK_LABELS"
+check "root partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"root"' "$SFDISK_LABELS"
 
 # r[verify installer.write.partitions]
-# Verify that partition 3 (root) was expanded beyond the original image size.
-# The raw image is 5 GiB and the target disk is 10 GiB, so the root partition
-# must be larger than the original (~3.5 GiB after EFI + xboot partitions).
 ROOT_PART_SIZE=$(lsblk --bytes --noheadings --output SIZE "${LOOP_DEV}p3" 2>/dev/null | tr -d '[:space:]')
 ROOT_PART_SIZE="${ROOT_PART_SIZE:-0}"
-# 5 GiB in bytes = 5368709120; root partition should be well above this after expansion
 IMAGE_RAW_SIZE=5368709120
 echo "    Root partition size: $ROOT_PART_SIZE bytes (image was $IMAGE_RAW_SIZE bytes)"
 check "root partition expanded beyond image size" test "$ROOT_PART_SIZE" -gt "$IMAGE_RAW_SIZE"
 
-# Mount and verify first-boot configuration
+# --- Mount and verify first-boot configuration ---
 VERIFY_MOUNT="$WORK_DIR/verify-mount"
 mkdir -p "$VERIFY_MOUNT"
 
@@ -458,57 +381,78 @@ if [ -n "$BTRFS_DEV" ]; then
     if [ $MOUNT_RC -eq 0 ]; then
         check "btrfs root mounted successfully" true
 
+        # --- Hostname ---
         # r[verify installer.firstboot.hostname]
-        # Hostname: /etc/hostname content and /etc/hosts entry
-        if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then
-            ACTUAL_HOSTNAME="$(tr -d '[:space:]' < "$VERIFY_MOUNT/etc/hostname")"
-            check "hostname is container-test-$VARIANT" \
-                test "$ACTUAL_HOSTNAME" = "container-test-$VARIANT"
+        if [ -n "$SET_HOSTNAME" ]; then
+            if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then
+                ACTUAL_HOSTNAME="$(tr -d '[:space:]' < "$VERIFY_MOUNT/etc/hostname")"
+                check "hostname is '$SET_HOSTNAME'" \
+                    test "$ACTUAL_HOSTNAME" = "$SET_HOSTNAME"
+            else
+                check "hostname file exists" false
+            fi
+
+            if [ -f "$VERIFY_MOUNT/etc/hosts" ]; then
+                check "/etc/hosts contains 127.0.1.1 entry for hostname" \
+                    grep -q "127.0.1.1.*$SET_HOSTNAME" "$VERIFY_MOUNT/etc/hosts"
+            else
+                check "/etc/hosts file exists" false
+            fi
         else
-            check "hostname file exists" false
+            echo "    (hostname not configured — skipping hostname checks)"
         fi
 
-        if [ -f "$VERIFY_MOUNT/etc/hosts" ]; then
-            check "/etc/hosts contains 127.0.1.1 entry for hostname" \
-                grep -q "127.0.1.1.*container-test-$VARIANT" "$VERIFY_MOUNT/etc/hosts"
-        else
-            check "/etc/hosts file exists" false
-        fi
-
+        # --- Tailscale authkey ---
         # r[verify installer.firstboot.tailscale-authkey]
-        # Tailscale authkey: file exists, contains key, has 600 perms
-        TS_KEY_FILE="$VERIFY_MOUNT/etc/bes/tailscale-authkey"
-        if [ -f "$TS_KEY_FILE" ]; then
-            check "tailscale-authkey contains configured key" \
-                grep -q "$TAILSCALE_TEST_KEY" "$TS_KEY_FILE"
+        if [ -n "$SET_TAILSCALE" ]; then
+            TS_KEY_FILE="$VERIFY_MOUNT/etc/bes/tailscale-authkey"
+            if [ -f "$TS_KEY_FILE" ]; then
+                check "tailscale-authkey contains configured key" \
+                    grep -q "$SET_TAILSCALE" "$TS_KEY_FILE"
 
-            TS_PERMS=$(stat -c '%a' "$TS_KEY_FILE")
-            check "tailscale-authkey permissions are 600" test "$TS_PERMS" = "600"
+                TS_PERMS=$(stat -c '%a' "$TS_KEY_FILE")
+                check "tailscale-authkey permissions are 600" test "$TS_PERMS" = "600"
+            else
+                check "tailscale-authkey file exists" false
+            fi
         else
-            check "tailscale-authkey file exists" false
+            TS_KEY_FILE="$VERIFY_MOUNT/etc/bes/tailscale-authkey"
+            check "tailscale-authkey file absent when not configured" test ! -f "$TS_KEY_FILE"
         fi
 
+        # --- SSH authorized keys ---
         # r[verify installer.firstboot.ssh-keys]
-        # SSH authorized keys: file exists, contains key, correct perms
-        AK_FILE="$VERIFY_MOUNT/home/ubuntu/.ssh/authorized_keys"
-        if [ -f "$AK_FILE" ]; then
-            check "authorized_keys contains test key" \
-                grep -q "TestKeyForContainerInstallTest" "$AK_FILE"
+        if [ -n "$SET_SSH_KEYS" ]; then
+            AK_FILE="$VERIFY_MOUNT/home/ubuntu/.ssh/authorized_keys"
+            if [ -f "$AK_FILE" ]; then
+                # Extract a unique substring from the key for matching
+                KEY_FRAGMENT="$(echo "$SET_SSH_KEYS" | awk '{print $2}' | head -c 20)"
+                check "authorized_keys contains test key" \
+                    grep -q "$KEY_FRAGMENT" "$AK_FILE"
 
-            AK_PERMS=$(stat -c '%a' "$AK_FILE")
-            check "authorized_keys permissions are 600" test "$AK_PERMS" = "600"
+                AK_PERMS=$(stat -c '%a' "$AK_FILE")
+                check "authorized_keys permissions are 600" test "$AK_PERMS" = "600"
 
-            SSH_DIR_PERMS=$(stat -c '%a' "$VERIFY_MOUNT/home/ubuntu/.ssh")
-            check ".ssh directory permissions are 700" test "$SSH_DIR_PERMS" = "700"
+                SSH_DIR_PERMS=$(stat -c '%a' "$VERIFY_MOUNT/home/ubuntu/.ssh")
+                check ".ssh directory permissions are 700" test "$SSH_DIR_PERMS" = "700"
+            else
+                check "authorized_keys file exists" false
+            fi
         else
-            check "authorized_keys file exists" false
+            echo "    (ssh-keys not configured — skipping SSH checks)"
         fi
 
+        # --- TPM disable ---
         # r[verify installer.firstboot.tpm-disable]
-        # TPM disable check (metal only)
         if [ "$VARIANT" = "metal" ]; then
             TPM_SYMLINK="$VERIFY_MOUNT/etc/systemd/system/multi-user.target.wants/setup-tpm-unlock.service"
-            check "setup-tpm-unlock.service symlink removed" test ! -e "$TPM_SYMLINK"
+            if [ "$DISABLE_TPM" = "true" ]; then
+                check "setup-tpm-unlock.service symlink removed (disable-tpm=true)" \
+                    test ! -e "$TPM_SYMLINK"
+            else
+                check "setup-tpm-unlock.service symlink present (disable-tpm=false)" \
+                    test -L "$TPM_SYMLINK"
+            fi
         fi
 
         umount "$VERIFY_MOUNT"
@@ -524,13 +468,10 @@ if [ -n "$BTRFS_DEV" ]; then
 fi
 
 # ============================================================
-# Phase 6: Results
+# Results
 # ============================================================
 echo ""
-echo "=============================="
-echo "Container Install Test Results ($VARIANT / $ARCH)"
-echo "=============================="
-echo "  $PASS passed, $FAIL failed"
+echo "--- Scenario '$SCENARIO_NAME': $PASS passed, $FAIL failed ---"
 
 if [ ${#ERRORS[@]} -gt 0 ]; then
     echo ""
@@ -541,16 +482,13 @@ if [ ${#ERRORS[@]} -gt 0 ]; then
 fi
 
 if [ -f "$INSTALLER_LOG" ]; then
-    echo ""
     echo "  Installer log: $INSTALLER_LOG"
 fi
 
 echo ""
 
 if [ "$FAIL" -eq 0 ]; then
-    echo "Container install test PASSED"
     exit 0
 else
-    echo "Container install test FAILED"
     exit 1
 fi
