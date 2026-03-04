@@ -75,13 +75,6 @@ ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
 echo "Etc/UTC" > /etc/timezone
 
 # ============================================================
-# Third-party APT repositories
-# ============================================================
-# r[image.packages.bes-tools] r[image.packages.tailscale] r[image.packages.kopia]
-bash /tmp/scripts/setup-bes-tools.sh
-bash /tmp/scripts/setup-kopia.sh
-
-# ============================================================
 # Install packages from list
 # ============================================================
 # r[image.packages.install]: Install all via apt inside the chroot.
@@ -90,6 +83,12 @@ if [ "${#PACKAGES[@]}" -gt 0 ]; then
     echo "Installing ${#PACKAGES[@]} packages..."
     apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"
 fi
+
+# ============================================================
+# Third-party APT repositories
+# ============================================================
+bash /tmp/scripts/setup-bes-tools.sh
+bash /tmp/scripts/setup-kopia.sh
 
 # ============================================================
 # Dracut (replaces initramfs-tools)

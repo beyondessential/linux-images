@@ -23,3 +23,6 @@ Pin-Priority: 900
 EOF
 
 apt-get update -q
+apt-get install -y \
+    # r[image.packages.kopia]
+    kopia
