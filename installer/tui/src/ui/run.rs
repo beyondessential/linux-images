@@ -800,6 +800,118 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn scripted_metal_dhcp_toggle_allows_advance_with_empty_hostname() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: toggle DHCP on via Tab, then advance with empty input
+            press(KeyCode::Tab),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert!(final_state.hostname_from_dhcp);
+        assert!(final_state.hostname_input.is_empty());
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn scripted_metal_dhcp_toggle_via_space() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: toggle DHCP on via Space, then advance
+            press(KeyCode::Char(' ')),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert!(final_state.hostname_from_dhcp);
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn scripted_metal_dhcp_toggle_on_off_requires_hostname() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: toggle DHCP on, then off again
+            press(KeyCode::Tab),
+            press(KeyCode::Tab),
+            // Now DHCP is off and hostname is empty — Enter should NOT advance
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Hostname);
+        assert!(!final_state.hostname_from_dhcp);
+        assert!(final_state.hostname_input.is_empty());
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn scripted_metal_dhcp_on_ignores_typing() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: toggle DHCP on, then try to type
+            press(KeyCode::Tab),
+            press(KeyCode::Char('a')),
+            press(KeyCode::Char('b')),
+            press(KeyCode::Char('c')),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert!(final_state.hostname_from_dhcp);
+        // Typing should have been ignored while DHCP toggle is on
+        assert!(final_state.hostname_input.is_empty());
+    }
+
+    // r[verify installer.tui.hostname+2]
+    #[test]
+    fn scripted_cloud_tab_does_not_toggle_dhcp() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection
+            press(KeyCode::Enter),
+            // DiskSelection -> VariantSelection
+            press(KeyCode::Enter),
+            // Toggle to Cloud
+            press(KeyCode::Down),
+            // VariantSelection -> Hostname (skips TpmToggle)
+            press(KeyCode::Enter),
+            // Hostname: Tab should NOT toggle DHCP for cloud (it's not metal)
+            press(KeyCode::Tab),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert!(!final_state.hostname_from_dhcp);
+    }
+
     // r[verify installer.dryrun.script.headless]
     #[test]
     fn handle_key_ignores_release_events() {
