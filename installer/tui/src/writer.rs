@@ -354,13 +354,19 @@ pub fn verify_partition_table(target: &Path) -> Result<()> {
 
 /// Re-read the partition table on the target device so the kernel picks up changes.
 pub fn reread_partition_table(target: &Path) -> Result<()> {
-    let status = Command::new("partprobe")
+    let output = Command::new("partprobe")
         .arg(target)
-        .status()
+        .output()
         .context("running partprobe")?;
 
-    if !status.success() {
-        bail!("partprobe failed on {}", target.display());
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("partprobe failed on {}: {stderr}", target.display());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        tracing::debug!("partprobe: {stderr}");
     }
 
     let _ = Command::new("udevadm")
