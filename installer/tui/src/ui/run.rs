@@ -299,6 +299,7 @@ pub fn run_tui(mut state: AppState, image_path: &Path, no_reboot: bool) -> Resul
     execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    terminal.clear()?;
 
     let result = event_loop(&mut terminal, &mut state, image_path, no_reboot);
 
