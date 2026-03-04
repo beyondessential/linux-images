@@ -305,6 +305,16 @@ check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing")"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
 
+# r[verify image.hostname.metal-dhcp] r[verify image.hostname.cloud-default]
+if [ "$VARIANT" = "metal" ]; then
+    HOSTNAME_SIZE="$(stat -c%s "$MNT/etc/hostname" 2>/dev/null || echo "missing")"
+    check "/etc/hostname is empty for metal (size=0)" [ "$HOSTNAME_SIZE" = "0" ]
+    check_not "/etc/hosts has no 127.0.1.1 line for metal" grep -q '127\.0\.1\.1' "$MNT/etc/hosts"
+else
+    HOSTNAME_CONTENT="$(tr -d '[:space:]' < "$MNT/etc/hostname" 2>/dev/null || echo "")"
+    check "/etc/hostname contains 'ubuntu' for cloud" [ "$HOSTNAME_CONTENT" = "ubuntu" ]
+fi
+
 # r[verify image.base.resolver]
 check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
