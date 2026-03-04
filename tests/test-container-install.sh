@@ -463,7 +463,7 @@ if [ -n "$BTRFS_DEV" ]; then
                 if [ -n "$UBUNTU_SHADOW" ]; then
                     SHADOW_HASH="$(echo "$UBUNTU_SHADOW" | cut -d: -f2)"
                     check "ubuntu shadow entry has SHA-512 hash" \
-                        echo "$SHADOW_HASH" | grep -q '^\$6\$'
+                        test "${SHADOW_HASH#\$6\$}" != "$SHADOW_HASH"
 
                     SHADOW_LASTCHANGED="$(echo "$UBUNTU_SHADOW" | cut -d: -f3)"
                     check "ubuntu password expiry cleared (lastchanged > 0)" \
