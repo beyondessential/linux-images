@@ -283,11 +283,16 @@ clean:
 
 # Build a raw disk image via debootstrap + chroot
 # r[image.output.raw]
-raw: _ensure-raw
+raw: _validate-variant _validate-arch _ensure-dirs
   #!/usr/bin/env bash
   set -euo pipefail
   if [ -f "{{output_raw}}" ]; then
     echo "Raw image already exists: {{output_raw}} (skipping build)"
+    exit 0
+  fi
+  if [ -f "{{output_raw}}.zst" ]; then
+    echo "Decompressing {{output_raw}}.zst -> {{output_raw}}"
+    zstd -d --keep "{{output_raw}}.zst" -o "{{output_raw}}"
     exit 0
   fi
   echo "Building raw image: {{output_raw}}"
