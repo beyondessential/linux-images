@@ -64,6 +64,7 @@ LOOP_DEV=""
 LUKS_NAME="bes-container-test-root"
 VERIFY_MOUNT=""
 
+# shellcheck disable=SC2329
 cleanup() {
     local exit_code=$?
     set +e
