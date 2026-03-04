@@ -331,6 +331,13 @@ When `auto = true` but required fields (`variant` or `disk`) are missing, the
 installer must print an error describing the missing fields and fall back to
 interactive mode.
 
+## Testing Flags
+
+r[installer.no-reboot]
+When the `--no-reboot` flag is passed, the installer must not call `reboot`
+after a successful installation. Instead it must exit cleanly with status 0.
+This is required for container-based testing where reboot is not meaningful.
+
 ## Dry-Run / Testing Mode
 
 r[installer.dryrun]
@@ -493,6 +500,53 @@ If `disable-tpm` is true, the installer must remove the
 r[installer.firstboot.unmount]
 After applying configuration, the installer must cleanly unmount all
 filesystems and close any LUKS volumes before prompting for reboot.
+
+## Container Testing
+
+r[installer.container]
+It must be possible to run the installer's full write and first-boot
+pipeline inside a `systemd-nspawn` container, targeting a loopback block
+device, without booting a VM. This enables fast integration testing of
+the real code paths (image writing, partition expansion, LUKS, btrfs
+mount, first-boot file placement) using the same rootfs that ships in
+the live ISO.
+
+r[installer.container.rootfs]
+The test harness must extract the live rootfs directly from a built ISO
+(the squashfs at `/live/filesystem.squashfs`) and the embedded disk
+images (from `/images/`). The container runs against the exact rootfs
+that would boot in production — no separate Dockerfile or package list.
+
+r[installer.container.loop-device]
+The test harness must create a sparse file on the host, attach it as a
+loop device with `losetup --partscan`, and bind-mount the loop device
+and its partition nodes into the container. The installer targets this
+loop device as if it were a real disk.
+
+r[installer.container.isolation]
+The container must never have access to the host's real block devices.
+Safety is enforced by three layers:
+
+1. `systemd-nspawn` provides its own `/dev`; host block devices are not
+   present unless explicitly bound in. Only the loop device and its
+   partitions are bound.
+2. The installer is invoked with `--fake-devices`, which bypasses `lsblk`
+   discovery entirely and presents only the loop device.
+3. The container runs with `--private-network` to prevent any network
+   side-effects.
+
+r[installer.container.verification]
+After the installer exits, the test harness must verify the results from
+the host side:
+
+1. Run `partprobe` on the loop device and confirm three partitions exist
+   (EFI, xboot, root) via `lsblk --json`.
+2. For the cloud variant: mount the root btrfs partition (subvol `@`) and
+   verify first-boot artefacts (hostname file, SSH keys, etc.).
+3. For the metal variant: open the LUKS volume with the empty keyfile,
+   then mount and verify as above.
+4. Clean up: unmount, close LUKS if applicable, detach loop device,
+   remove sparse file.
 
 # Live ISO
 
