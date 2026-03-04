@@ -411,8 +411,8 @@ for terminal events.
 ## TUI
 
 r[installer.tui.welcome]
-The TUI must open with a welcome screen that displays a large branded "BES"
-heading, a brief description of what the image is for, and contact information.
+The TUI must open with a welcome screen that displays a description of what
+the image is for, contact information, and instructions on how to proceed.
 The user presses Enter to proceed to disk selection.
 
 r[installer.tui.disk-detection]

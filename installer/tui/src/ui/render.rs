@@ -1,9 +1,8 @@
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap};
-use tui_big_text::{BigText, PixelSize};
 
 use crate::disk::BlockDevice;
 use crate::writer::format_eta;
@@ -88,25 +87,6 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
 
 // r[impl installer.tui.welcome]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
-    let chunks = Layout::vertical([
-        Constraint::Length(4),
-        Constraint::Length(1),
-        Constraint::Min(0),
-    ])
-    .split(area);
-
-    let big_text = BigText::builder()
-        .pixel_size(PixelSize::Quadrant)
-        .style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .lines(vec!["BES".into()])
-        .alignment(Alignment::Center)
-        .build();
-    frame.render_widget(big_text, chunks[0]);
-
     let mut description = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -149,7 +129,7 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     description.push(Line::from("  Press Enter to begin."));
 
     let paragraph = Paragraph::new(description).wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, chunks[2]);
+    frame.render_widget(paragraph, area);
 }
 
 // r[impl installer.tui.disk-detection]

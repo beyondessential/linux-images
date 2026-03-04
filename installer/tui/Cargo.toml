@@ -20,7 +20,6 @@ thiserror = "2.0.18"
 toml = "1.0.3"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["fmt"] }
-tui-big-text = "0.8.2"
 zstd = "0.13.3"
 
 [dev-dependencies]
