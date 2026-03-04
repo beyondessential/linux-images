@@ -1,8 +1,10 @@
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::config::{FirstbootConfig, Variant};
 use crate::disk::BlockDevice;
+use crate::net::{self, CheckPhase, CheckResult, GithubKeysResult, NetcheckResult};
 use crate::writer::WriteProgress;
 
 mod render;
@@ -13,6 +15,8 @@ pub use run::{run_tui, run_tui_scripted};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
     Welcome,
+    NetworkCheck,
+    TailscaleNetcheck,
     DiskSelection,
     VariantSelection,
     TpmToggle,
@@ -57,6 +61,24 @@ pub struct AppState {
     pub timezone_selected: String,
     pub timezone_filtered: Vec<usize>,
     pub timezone_cursor: usize,
+
+    // r[impl installer.tui.network-check]
+    pub net_check_phase: CheckPhase,
+    pub net_check_results: Vec<Option<CheckResult>>,
+    pub net_check_rx: Option<mpsc::Receiver<CheckResult>>,
+    pub net_check_total: usize,
+
+    // r[impl installer.tui.tailscale-netcheck]
+    pub netcheck_phase: CheckPhase,
+    pub netcheck_result: Option<NetcheckResult>,
+    pub netcheck_rx: Option<mpsc::Receiver<NetcheckResult>>,
+
+    // r[impl installer.tui.ssh-keys.github]
+    pub ssh_github_input: String,
+    pub ssh_github_focus: bool,
+    pub ssh_github_fetching: bool,
+    pub ssh_github_error: Option<String>,
+    pub ssh_github_rx: Option<mpsc::Receiver<GithubKeysResult>>,
 }
 
 // r[impl installer.tui.progress]
@@ -94,6 +116,8 @@ impl AppState {
         build_info: String,
         available_timezones: Vec<String>,
     ) -> Self {
+        let endpoints = net::default_endpoints();
+        let net_check_total = net::total_check_count(&endpoints);
         let (
             hostname_input,
             hostname_from_dhcp,
@@ -155,6 +179,18 @@ impl AppState {
             timezone_selected,
             timezone_filtered,
             timezone_cursor,
+            net_check_phase: CheckPhase::NotStarted,
+            net_check_results: vec![None; net_check_total],
+            net_check_rx: None,
+            net_check_total,
+            netcheck_phase: CheckPhase::NotStarted,
+            netcheck_result: None,
+            netcheck_rx: None,
+            ssh_github_input: String::new(),
+            ssh_github_focus: false,
+            ssh_github_fetching: false,
+            ssh_github_error: None,
+            ssh_github_rx: None,
         }
     }
 
@@ -226,7 +262,7 @@ impl AppState {
         self.devices.get(self.selected_disk_index)
     }
 
-    // r[impl installer.tui.disk-detection]
+    // r[impl installer.tui.disk-detection+2]
     pub fn select_next_disk(&mut self) {
         if !self.devices.is_empty() {
             self.selected_disk_index = (self.selected_disk_index + 1) % self.devices.len();
@@ -250,12 +286,124 @@ impl AppState {
         };
     }
 
+    // r[impl installer.tui.network-check]
+    /// Start (or restart) all network connectivity checks.
+    pub fn start_net_checks(&mut self) {
+        let endpoints = net::default_endpoints();
+        self.net_check_total = net::total_check_count(&endpoints);
+        self.net_check_results = vec![None; self.net_check_total];
+        self.net_check_phase = CheckPhase::Running;
+        self.net_check_rx = Some(net::spawn_checks(&endpoints));
+    }
+
+    /// Poll for completed network check results. Returns true if any new
+    /// results were received.
+    pub fn poll_net_checks(&mut self) -> bool {
+        let rx = match self.net_check_rx.as_ref() {
+            Some(rx) => rx,
+            None => return false,
+        };
+        let mut received = false;
+        while let Ok(result) = rx.try_recv() {
+            let idx = result.index;
+            if idx < self.net_check_results.len() {
+                self.net_check_results[idx] = Some(result);
+            }
+            received = true;
+        }
+        if self.net_check_results.iter().all(|r| r.is_some()) {
+            self.net_check_phase = CheckPhase::Done;
+        }
+        received
+    }
+
+    /// Number of checks completed so far.
+    pub fn net_checks_done(&self) -> usize {
+        self.net_check_results
+            .iter()
+            .filter(|r| r.is_some())
+            .count()
+    }
+
+    // r[impl installer.tui.tailscale-netcheck]
+    /// Start (or restart) the tailscale netcheck.
+    pub fn start_tailscale_netcheck(&mut self) {
+        self.netcheck_phase = CheckPhase::Running;
+        self.netcheck_result = None;
+        self.netcheck_rx = Some(net::spawn_tailscale_netcheck());
+    }
+
+    /// Poll for tailscale netcheck result. Returns true if the result arrived.
+    pub fn poll_tailscale_netcheck(&mut self) -> bool {
+        let rx = match self.netcheck_rx.as_ref() {
+            Some(rx) => rx,
+            None => return false,
+        };
+        match rx.try_recv() {
+            Ok(result) => {
+                self.netcheck_result = Some(result);
+                self.netcheck_phase = CheckPhase::Done;
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    // r[impl installer.tui.ssh-keys.github]
+    /// Start fetching SSH keys for the current GitHub username.
+    pub fn start_github_key_fetch(&mut self) {
+        if self.ssh_github_input.trim().is_empty() {
+            self.ssh_github_error = Some("username is empty".into());
+            return;
+        }
+        self.ssh_github_fetching = true;
+        self.ssh_github_error = None;
+        self.ssh_github_rx = Some(net::spawn_github_key_fetch(&self.ssh_github_input));
+    }
+
+    /// Poll for GitHub key fetch result. Returns true if the result arrived.
+    pub fn poll_github_keys(&mut self) -> bool {
+        let rx = match self.ssh_github_rx.as_ref() {
+            Some(rx) => rx,
+            None => return false,
+        };
+        match rx.try_recv() {
+            Ok(result) => {
+                self.ssh_github_fetching = false;
+                if result.success {
+                    for key in &result.keys {
+                        if !self.ssh_keys_input.is_empty() && !self.ssh_keys_input.ends_with('\n') {
+                            self.ssh_keys_input.push('\n');
+                        }
+                        self.ssh_keys_input.push_str(key);
+                        self.ssh_keys_input.push('\n');
+                    }
+                    self.ssh_github_error = None;
+                } else {
+                    self.ssh_github_error = result.error;
+                }
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
     // r[impl installer.tui.tpm-toggle]
     // r[impl installer.tui.password]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
-            Screen::Welcome => Screen::DiskSelection,
+            Screen::Welcome => {
+                // r[impl installer.tui.network-check]
+                self.start_net_checks();
+                Screen::NetworkCheck
+            }
+            Screen::NetworkCheck => {
+                // r[impl installer.tui.tailscale-netcheck]
+                self.start_tailscale_netcheck();
+                Screen::TailscaleNetcheck
+            }
+            Screen::TailscaleNetcheck => Screen::DiskSelection,
             Screen::DiskSelection => Screen::VariantSelection,
             Screen::VariantSelection if self.variant == Variant::Metal => Screen::TpmToggle,
             Screen::VariantSelection => Screen::Hostname,
@@ -274,7 +422,9 @@ impl AppState {
 
     pub fn go_back(&mut self) {
         self.screen = match &self.screen {
-            Screen::DiskSelection => Screen::Welcome,
+            Screen::NetworkCheck => Screen::Welcome,
+            Screen::TailscaleNetcheck => Screen::NetworkCheck,
+            Screen::DiskSelection => Screen::TailscaleNetcheck,
             Screen::VariantSelection => Screen::DiskSelection,
             Screen::TpmToggle => Screen::VariantSelection,
             Screen::Hostname => {
@@ -361,6 +511,8 @@ impl AppState {
 mod tests {
     use super::*;
 
+    use crate::net::CheckPhase;
+
     fn test_timezones() -> Vec<String> {
         vec![
             "America/New_York".into(),
@@ -400,7 +552,7 @@ mod tests {
         )
     }
 
-    // r[verify installer.tui.welcome]
+    // r[verify installer.tui.welcome+2]
     #[test]
     fn initial_state() {
         let state = make_state();
@@ -408,27 +560,65 @@ mod tests {
         assert_eq!(state.selected_disk_index, 0);
         assert_eq!(state.variant, Variant::Metal);
         assert!(!state.disable_tpm);
+        assert_eq!(state.net_check_phase, CheckPhase::NotStarted);
+        assert_eq!(state.netcheck_phase, CheckPhase::NotStarted);
+        assert!(!state.ssh_github_focus);
     }
 
-    // r[verify installer.tui.welcome]
+    // r[verify installer.tui.network-check]
     #[test]
-    fn welcome_advances_to_disk_selection() {
+    fn welcome_advances_to_network_check() {
         let mut state = make_state();
-        assert_eq!(state.screen, Screen::Welcome);
+        state.advance();
+        assert_eq!(state.screen, Screen::NetworkCheck);
+    }
+
+    // r[verify installer.tui.network-check]
+    #[test]
+    fn network_check_advances_to_tailscale_netcheck() {
+        let mut state = make_state();
+        state.screen = Screen::NetworkCheck;
+        state.advance();
+        assert_eq!(state.screen, Screen::TailscaleNetcheck);
+    }
+
+    // r[verify installer.tui.tailscale-netcheck]
+    #[test]
+    fn tailscale_netcheck_advances_to_disk_selection() {
+        let mut state = make_state();
+        state.screen = Screen::TailscaleNetcheck;
         state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
     }
 
-    // r[verify installer.tui.welcome]
+    // r[verify installer.tui.tailscale-netcheck]
     #[test]
-    fn disk_selection_goes_back_to_welcome() {
+    fn disk_selection_goes_back_to_tailscale_netcheck() {
         let mut state = make_state();
         state.screen = Screen::DiskSelection;
+        state.go_back();
+        assert_eq!(state.screen, Screen::TailscaleNetcheck);
+    }
+
+    // r[verify installer.tui.network-check]
+    #[test]
+    fn network_check_goes_back_to_welcome() {
+        let mut state = make_state();
+        state.screen = Screen::NetworkCheck;
         state.go_back();
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.disk-detection]
+    // r[verify installer.tui.tailscale-netcheck]
+    #[test]
+    fn tailscale_netcheck_goes_back_to_network_check() {
+        let mut state = make_state();
+        state.screen = Screen::TailscaleNetcheck;
+        state.go_back();
+        assert_eq!(state.screen, Screen::NetworkCheck);
+    }
+
+    // r[verify installer.tui.disk-detection+2]
     #[test]
     fn disk_navigation_wraps() {
         let mut state = make_state();
@@ -459,6 +649,10 @@ mod tests {
 
         assert_eq!(state.screen, Screen::Welcome);
         state.advance();
+        assert_eq!(state.screen, Screen::NetworkCheck);
+        state.advance();
+        assert_eq!(state.screen, Screen::TailscaleNetcheck);
+        state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
         assert_eq!(state.screen, Screen::VariantSelection);
@@ -487,6 +681,10 @@ mod tests {
         state.variant = Variant::Cloud;
 
         assert_eq!(state.screen, Screen::Welcome);
+        state.advance();
+        assert_eq!(state.screen, Screen::NetworkCheck);
+        state.advance();
+        assert_eq!(state.screen, Screen::TailscaleNetcheck);
         state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
@@ -530,6 +728,10 @@ mod tests {
         assert_eq!(state.screen, Screen::VariantSelection);
         state.go_back();
         assert_eq!(state.screen, Screen::DiskSelection);
+        state.go_back();
+        assert_eq!(state.screen, Screen::TailscaleNetcheck);
+        state.go_back();
+        assert_eq!(state.screen, Screen::NetworkCheck);
         state.go_back();
         assert_eq!(state.screen, Screen::Welcome);
     }
@@ -912,7 +1114,59 @@ mod tests {
         assert_eq!(state.timezone_filtered.len(), 0);
     }
 
-    // r[verify installer.tui.timezone]
+    // r[verify installer.tui.ssh-keys.github]
+    #[test]
+    fn github_key_fetch_appends_to_ssh_keys() {
+        let mut state = make_state();
+        state.ssh_keys_input = "ssh-ed25519 existing-key\n".into();
+        state.ssh_github_focus = true;
+
+        // Simulate receiving keys
+        let (tx, rx) = std::sync::mpsc::channel();
+        state.ssh_github_fetching = true;
+        state.ssh_github_rx = Some(rx);
+        tx.send(crate::net::GithubKeysResult {
+            success: true,
+            keys: vec!["ssh-rsa fetched-key".into()],
+            error: None,
+        })
+        .unwrap();
+
+        assert!(state.poll_github_keys());
+        assert!(!state.ssh_github_fetching);
+        assert!(state.ssh_keys_input.contains("ssh-rsa fetched-key"));
+        assert!(state.ssh_keys_input.contains("ssh-ed25519 existing-key"));
+    }
+
+    #[test]
+    fn github_key_fetch_error_sets_message() {
+        let mut state = make_state();
+        state.ssh_github_focus = true;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        state.ssh_github_fetching = true;
+        state.ssh_github_rx = Some(rx);
+        tx.send(crate::net::GithubKeysResult {
+            success: false,
+            keys: vec![],
+            error: Some("user not found".into()),
+        })
+        .unwrap();
+
+        assert!(state.poll_github_keys());
+        assert!(!state.ssh_github_fetching);
+        assert_eq!(state.ssh_github_error.as_deref(), Some("user not found"));
+    }
+
+    #[test]
+    fn github_key_fetch_empty_username_sets_error() {
+        let mut state = make_state();
+        state.ssh_github_input = "  ".into();
+        state.start_github_key_fetch();
+        assert!(!state.ssh_github_fetching);
+        assert!(state.ssh_github_error.is_some());
+    }
+
     #[test]
     fn firstboot_config_includes_non_utc_timezone() {
         let mut state = make_state();

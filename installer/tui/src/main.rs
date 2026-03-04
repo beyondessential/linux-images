@@ -11,6 +11,7 @@ mod config;
 mod disk;
 mod firstboot;
 mod hostname_template;
+mod net;
 mod plan;
 mod script;
 mod timezone;

@@ -121,6 +121,10 @@ fn scripted_timezone_search_and_select() {
         "\
 # Welcome
 enter
+# NetworkCheck
+enter
+# TailscaleNetcheck
+enter
 # Disk
 enter
 # Variant: toggle to cloud (no hostname required)
@@ -130,7 +134,8 @@ enter
 enter
 # Tailscale: skip
 enter
-# SSH keys: skip
+# SSH keys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip
 enter
@@ -175,13 +180,25 @@ fn scripted_timezone_navigate_and_select() {
     // Pacific/Auckland(2), UTC(3). Default cursor at UTC (index 3).
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
+enter
+# Disk
+enter
+# Variant: toggle to cloud
 down
 enter
+# Hostname: skip
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
 tab
+tab
+# Password: skip
 enter
 enter
 # Timezone: up twice from UTC(3) -> Europe/London(1), then select

@@ -10,6 +10,10 @@ fn interactive_metal_full_flow() {
         "\
 # Welcome
 enter
+# NetworkCheck
+enter
+# TailscaleNetcheck
+enter
 # Disk: accept first
 enter
 # Variant: accept metal default
@@ -25,6 +29,8 @@ type:tskey-auth-test
 enter
 # SSH keys
 type:ssh-ed25519 AAAA testkey
+# Tab -> GitHub focus, Tab -> advance to Password
+tab
 tab
 # Password: skip (empty)
 enter
@@ -77,12 +83,23 @@ fn interactive_cloud_skips_tpm_screen() {
     // ssh, confirm. No TpmToggle screen.
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
+enter
+# Disk
+enter
+# Variant: toggle to cloud
 down
 enter
+# Hostname: skip
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -126,8 +143,15 @@ fn interactive_firstboot_fields_captured() {
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
+enter
+# Disk
+enter
+# Variant: toggle to cloud
 down
 enter
 type:my-host
@@ -137,6 +161,8 @@ enter
 type:ssh-ed25519 AAAA key1
 enter
 type:ssh-rsa BBBB key2
+# Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -183,14 +209,25 @@ fn interactive_empty_firstboot_is_null() {
     // Use cloud variant so hostname is optional — all empty firstboot fields yield null
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
+enter
+# TailscaleNetcheck
+enter
+# Disk
 enter
 # Toggle to cloud (hostname optional)
 down
 enter
+# Hostname: skip
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
 tab
+tab
+# Password: skip
 enter
 enter
 # Timezone: accept default (UTC)
@@ -222,23 +259,33 @@ enter
     assert!(plan["firstboot"].is_null());
 }
 
-// r[verify installer.tui.disk-detection]
+// r[verify installer.tui.disk-detection+2]
 #[test]
 fn interactive_selects_second_disk() {
     let f = Fixture::new();
     let devices = f.write_devices(TWO_DISK_DEVICES);
     let script = f.write_script(
         "\
+# Welcome
+enter
+# NetworkCheck
+enter
+# TailscaleNetcheck
 enter
 # Navigate to second disk
 down
 enter
+# Variant
 enter
+# TpmToggle
 enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -338,12 +385,23 @@ fn interactive_go_back_from_confirmation_and_change() {
     // type a key, then walk forward again and confirm.
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
+enter
+# Disk
+enter
+# Variant: toggle to cloud
 down
 enter
+# Hostname: skip
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -361,7 +419,8 @@ esc
 # Back on Tailscale, enter an authkey
 type:tskey-auth-late
 enter
-# SshKeys, skip
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter

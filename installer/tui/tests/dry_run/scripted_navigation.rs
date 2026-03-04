@@ -8,8 +8,15 @@ fn scripted_tpm_toggle_twice_leaves_enabled() {
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
+enter
+# Disk
+enter
+# Variant
 enter
 # Toggle TPM disable on, then off again
 space
@@ -18,7 +25,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -55,7 +65,13 @@ fn scripted_variant_toggle_back_to_metal() {
     // Toggle variant twice (metal -> cloud -> metal), which means we get TpmToggle
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
+enter
+# TailscaleNetcheck
+enter
+# Disk
 enter
 # Toggle variant: metal->cloud
 down
@@ -67,7 +83,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -96,7 +115,7 @@ enter
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.disk-detection]
+// r[verify installer.tui.disk-detection+2]
 #[test]
 fn scripted_disk_wrap_around() {
     let f = Fixture::new();
@@ -105,16 +124,27 @@ fn scripted_disk_wrap_around() {
     // Navigate down twice to wrap around back to index 0.
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
+enter
+# TailscaleNetcheck
+enter
+# Disk: down twice wraps back to index 0
 down
 down
 enter
+# Variant
 enter
+# TpmToggle
 enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -143,7 +173,7 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
-// r[verify installer.tui.disk-detection]
+// r[verify installer.tui.disk-detection+2]
 #[test]
 fn scripted_disk_up_wraps_to_last() {
     let f = Fixture::new();
@@ -151,15 +181,26 @@ fn scripted_disk_up_wraps_to_last() {
     // Starting at index 0, up wraps to index 1 (last device)
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
+enter
+# TailscaleNetcheck
+enter
+# Disk: up wraps to last
 up
 enter
+# Variant
 enter
+# TpmToggle
 enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -195,8 +236,15 @@ fn scripted_hostname_with_backspace_correction() {
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
+enter
+# Disk
+enter
+# Variant: toggle to cloud
 down
 enter
 # Hostname: type 'baaad', backspace 3 times, type 'd'
@@ -206,7 +254,10 @@ backspace
 backspace
 type:d
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -242,8 +293,15 @@ fn scripted_multiline_ssh_keys() {
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
+enter
+# Disk
+enter
+# Variant: toggle to cloud
 down
 enter
 # Hostname: skip
@@ -254,6 +312,8 @@ enter
 type:ssh-ed25519 AAAA key1
 enter
 type:ssh-rsa BBBB key2
+# Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -292,14 +352,25 @@ fn scripted_wrong_confirmation_does_not_advance() {
     // the plan should still be emitted from whatever state we have.
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
 enter
+# Disk
+enter
+# Variant
+enter
+# TpmToggle
 enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
+# Tailscale: skip
 enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter

@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap};
 
 use crate::disk::BlockDevice;
+use crate::net::CheckPhase;
 use crate::writer::format_eta;
 
 use super::{AppState, Screen};
@@ -23,6 +24,8 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 
     match &state.screen {
         Screen::Welcome => render_welcome(frame, chunks[1], state),
+        Screen::NetworkCheck => render_network_check(frame, chunks[1], state),
+        Screen::TailscaleNetcheck => render_tailscale_netcheck(frame, chunks[1], state),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
         Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
         Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
@@ -44,6 +47,8 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
         Screen::Welcome => "Welcome",
+        Screen::NetworkCheck => "Network Check",
+        Screen::TailscaleNetcheck => "Tailscale Netcheck",
         Screen::DiskSelection => "1/9 Select Target Disk",
         Screen::VariantSelection => "2/9 Select Variant",
         Screen::TpmToggle => "2/9 TPM Configuration",
@@ -70,15 +75,165 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(block, area);
 }
 
+// r[impl installer.tui.network-check]
+fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
+    let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
+
+    let status_text = match state.net_check_phase {
+        CheckPhase::NotStarted => "Checks have not started yet.",
+        CheckPhase::Running => "Running connectivity checks...",
+        CheckPhase::Done => "All checks complete.",
+    };
+
+    let intro = vec![
+        Line::from(""),
+        Line::from("  Checking network connectivity to endpoints needed for deployment."),
+        Line::from(Span::styled(
+            format!(
+                "  {} ({}/{})",
+                status_text,
+                state.net_checks_done(),
+                state.net_check_total
+            ),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+    ];
+    let intro_paragraph = Paragraph::new(intro);
+    frame.render_widget(intro_paragraph, chunks[0]);
+
+    let items: Vec<ListItem> = state
+        .net_check_results
+        .iter()
+        .enumerate()
+        .map(|(i, result)| match result {
+            Some(r) => {
+                let (icon, color) = if r.passed {
+                    ("PASS", Color::Green)
+                } else {
+                    ("FAIL", Color::Red)
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("  [{icon}] "), Style::default().fg(color)),
+                    Span::raw(&r.label),
+                    Span::styled(
+                        format!("  ({})", r.detail),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]))
+            }
+            None => {
+                let label = if i < state.net_check_total - 1 {
+                    crate::net::default_endpoints()
+                        .get(i)
+                        .map(|e| e.label.as_str())
+                        .unwrap_or("?")
+                        .to_string()
+                } else {
+                    "pool.ntp.org:123 (NTP/UDP)".to_string()
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled("  [ .. ] ", Style::default().fg(Color::DarkGray)),
+                    Span::raw(label),
+                ]))
+            }
+        })
+        .collect();
+
+    let note = ListItem::new(Line::from(""));
+    let note2 = ListItem::new(Line::from(Span::styled(
+        "  These endpoints are needed for application deployment. Failures are not blocking.",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let mut all_items = items;
+    all_items.push(note);
+    all_items.push(note2);
+
+    let block = Block::default()
+        .title(" Network Connectivity ")
+        .borders(Borders::ALL);
+
+    let list = List::new(all_items).block(block);
+    frame.render_widget(list, chunks[1]);
+}
+
+// r[impl installer.tui.tailscale-netcheck]
+fn render_tailscale_netcheck(frame: &mut Frame, area: Rect, state: &AppState) {
+    let chunks = Layout::vertical([Constraint::Length(4), Constraint::Min(0)]).split(area);
+
+    let status_text = match state.netcheck_phase {
+        CheckPhase::NotStarted => "Not started.",
+        CheckPhase::Running => "Running tailscale netcheck...",
+        CheckPhase::Done => "Complete.",
+    };
+
+    let intro = vec![
+        Line::from(""),
+        Line::from("  Tailscale network diagnostics."),
+        Line::from(Span::styled(
+            format!("  {status_text}"),
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    let intro_paragraph = Paragraph::new(intro);
+    frame.render_widget(intro_paragraph, chunks[0]);
+
+    let output_lines: Vec<Line> = match &state.netcheck_result {
+        Some(result) => {
+            let color = if result.success {
+                Color::White
+            } else {
+                Color::Red
+            };
+            result
+                .output
+                .lines()
+                .map(|l| Line::from(Span::styled(format!("  {l}"), Style::default().fg(color))))
+                .collect()
+        }
+        None => {
+            if state.netcheck_phase == CheckPhase::Running {
+                vec![Line::from(Span::styled(
+                    "  Waiting for results...",
+                    Style::default().fg(Color::DarkGray),
+                ))]
+            } else {
+                vec![Line::from(Span::styled(
+                    "  Press 'r' to run, or Enter to skip.",
+                    Style::default().fg(Color::DarkGray),
+                ))]
+            }
+        }
+    };
+
+    let block = Block::default()
+        .title(" Tailscale Netcheck ")
+        .borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(output_lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, chunks[1]);
+}
+
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     let hints = match &state.screen {
         Screen::Welcome => "Enter: start | q: quit",
+        Screen::NetworkCheck => "Enter: next | r: re-run | Esc: back | q: quit",
+        Screen::TailscaleNetcheck => "Enter: next | r: re-run | Esc: back | q: quit",
         Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
         Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit",
         Screen::Hostname => "Enter: next | Esc: back",
         Screen::Tailscale => "Enter: next | Esc: back",
-        Screen::SshKeys => "Tab: next | Enter: new line | Esc: back",
+        Screen::SshKeys => {
+            if state.ssh_github_focus {
+                "Enter: fetch keys | Tab: next screen | Esc: back to keys"
+            } else {
+                "Tab: GitHub lookup | Enter: new line | Esc: back"
+            }
+        }
         Screen::Password => {
             if state.password_confirming {
                 "Enter: confirm | Esc: back to password"
@@ -97,7 +252,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.welcome]
+// r[impl installer.tui.welcome+2]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut description = vec![
         Line::from(""),
@@ -144,7 +299,7 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.disk-detection]
+// r[impl installer.tui.disk-detection+2]
 fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     let items: Vec<ListItem> = state
         .devices
@@ -362,20 +517,37 @@ fn mask(input: &str) -> String {
 
 // r[impl installer.tui.ssh-keys]
 fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
-    let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
+    let github_height: u16 = if state.ssh_github_focus { 5 } else { 2 };
+    let chunks = Layout::vertical([
+        Constraint::Length(5),
+        Constraint::Min(0),
+        Constraint::Length(github_height),
+    ])
+    .split(area);
 
+    let focus_hint = if state.ssh_github_focus {
+        "GitHub username input active. Tab to switch back to keys."
+    } else {
+        "Paste SSH public keys (one per line). Tab to switch to GitHub lookup."
+    };
     let intro = vec![
         Line::from(""),
-        Line::from("  Paste SSH public keys for the 'ubuntu' user (one per line)."),
-        Line::from("  Leave empty to skip. Press Tab when done."),
+        Line::from(format!("  {focus_hint}")),
+        Line::from("  Leave empty to skip."),
         Line::from(""),
     ];
     let intro_paragraph = Paragraph::new(intro);
     frame.render_widget(intro_paragraph, chunks[0]);
 
+    let keys_border_style = if state.ssh_github_focus {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
     let key_lines: Vec<Line> = if state.ssh_keys_input.is_empty() {
         vec![Line::from(Span::styled(
-            "_",
+            if state.ssh_github_focus { " " } else { "_" },
             Style::default().fg(Color::DarkGray),
         ))]
     } else {
@@ -389,27 +561,75 @@ fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
                 ))
             })
             .collect();
-        // Show cursor on the last line
-        if state.ssh_keys_input.ends_with('\n') {
-            lines.push(Line::from(Span::styled(
-                "_",
-                Style::default().fg(Color::DarkGray),
-            )));
-        } else if let Some(last) = lines.last_mut() {
-            last.spans
-                .push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+        if !state.ssh_github_focus {
+            if state.ssh_keys_input.ends_with('\n') {
+                lines.push(Line::from(Span::styled(
+                    "_",
+                    Style::default().fg(Color::DarkGray),
+                )));
+            } else if let Some(last) = lines.last_mut() {
+                last.spans
+                    .push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+            }
         }
         lines
     };
 
     let block = Block::default()
         .title(" SSH Authorized Keys ")
-        .borders(Borders::ALL);
+        .borders(Borders::ALL)
+        .border_style(keys_border_style);
 
     let paragraph = Paragraph::new(key_lines)
         .block(block)
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, chunks[1]);
+
+    // r[impl installer.tui.ssh-keys.github]
+    let github_border_style = if state.ssh_github_focus {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let mut github_lines: Vec<Line> = vec![Line::from(vec![
+        Span::raw("  GitHub user: "),
+        Span::styled(
+            &state.ssh_github_input,
+            if state.ssh_github_focus {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            },
+        ),
+        if state.ssh_github_focus {
+            Span::styled("_", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::raw("")
+        },
+    ])];
+
+    if state.ssh_github_fetching {
+        github_lines.push(Line::from(Span::styled(
+            "  Fetching keys...",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else if let Some(ref err) = state.ssh_github_error {
+        github_lines.push(Line::from(Span::styled(
+            format!("  Error: {err}"),
+            Style::default().fg(Color::Red),
+        )));
+    }
+
+    let github_block = Block::default()
+        .title(" Import from GitHub ")
+        .borders(Borders::ALL)
+        .border_style(github_border_style);
+
+    let github_paragraph = Paragraph::new(github_lines).block(github_block);
+    frame.render_widget(github_paragraph, chunks[2]);
 }
 
 // r[impl installer.tui.confirmation]

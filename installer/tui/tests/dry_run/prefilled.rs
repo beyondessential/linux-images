@@ -21,12 +21,24 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
     // tailscale, ssh, confirm
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
 enter
+# Disk
 enter
+# Variant
 enter
+# TpmToggle
 enter
+# Hostname
+enter
+# Tailscale
+enter
+# SshKeys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -90,6 +102,10 @@ fn prefilled_overriding_values_via_tui() {
         "\
 # Welcome
 enter
+# NetworkCheck
+enter
+# TailscaleNetcheck
+enter
 # Disk: move down to second, accept
 down
 enter
@@ -109,7 +125,8 @@ type:new-host
 enter
 # Tailscale
 enter
-# SSH keys
+# SSH keys: Tab -> GitHub, Tab -> advance
+tab
 tab
 # Password: skip (empty)
 enter
@@ -162,12 +179,24 @@ fn prefilled_timezone_from_config() {
     // Accept all defaults including the prefilled timezone
     let script = f.write_script(
         "\
+# Welcome
 enter
+# NetworkCheck
 enter
+# TailscaleNetcheck
 enter
+# Disk
 enter
+# Variant
 enter
+# Hostname
+enter
+# Tailscale
+enter
+# SshKeys: Tab -> GitHub, Tab -> advance
 tab
+tab
+# Password: skip
 enter
 enter
 # Timezone: accept prefilled Europe/London

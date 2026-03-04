@@ -184,6 +184,7 @@ fi
 # r[impl iso.minimal]
 # r[impl iso.live-boot]
 # r[impl iso.offline]
+# r[impl iso.network-tools]
 # Enable the universe repository (live-boot is not in main)
 cat > "$MNT_ROOTFS/etc/apt/sources.list.d/universe.list" << SOURCES
 deb $UBUNTU_MIRROR $UBUNTU_SUITE main universe
@@ -218,7 +219,18 @@ chroot "$MNT_ROOTFS" bash -c "
         e2fsprogs \
         pciutils \
         usbutils \
-        less
+        less \
+        curl \
+        ca-certificates
+
+    # Install tailscale for 'tailscale netcheck' diagnostics during installation.
+    # curl is installed above; tailscale needs its own apt repo.
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/${UBUNTU_SUITE}.noarmor.gpg \
+        -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/${UBUNTU_SUITE}.tailscale-keyring.list \
+        -o /etc/apt/sources.list.d/tailscale.list
+    apt-get update -q
+    apt-get install -y -q --no-install-recommends tailscale
 
     apt-get clean
     rm -rf /var/lib/apt/lists/*

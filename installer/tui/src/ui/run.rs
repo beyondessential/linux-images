@@ -48,6 +48,24 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
+        // r[impl installer.tui.network-check]
+        Screen::NetworkCheck => match key.code {
+            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Esc => state.go_back(),
+            KeyCode::Char('r') => state.start_net_checks(),
+            KeyCode::Enter => state.advance(),
+            _ => {}
+        },
+
+        // r[impl installer.tui.tailscale-netcheck]
+        Screen::TailscaleNetcheck => match key.code {
+            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Esc => state.go_back(),
+            KeyCode::Char('r') => state.start_tailscale_netcheck(),
+            KeyCode::Enter => state.advance(),
+            _ => {}
+        },
+
         Screen::DiskSelection => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
@@ -118,17 +136,47 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         },
 
         // r[impl installer.tui.ssh-keys]
+        // r[impl installer.tui.ssh-keys.github]
         Screen::SshKeys => match key.code {
-            KeyCode::Esc => state.go_back(),
-            KeyCode::Tab => state.advance(),
+            KeyCode::Esc => {
+                if state.ssh_github_focus {
+                    state.ssh_github_focus = false;
+                } else {
+                    state.go_back();
+                }
+            }
+            KeyCode::Tab => {
+                if state.ssh_github_focus {
+                    state.ssh_github_focus = false;
+                    state.advance();
+                } else {
+                    state.ssh_github_focus = true;
+                }
+            }
             KeyCode::Enter => {
-                state.ssh_keys_input.push('\n');
+                if state.ssh_github_focus {
+                    if !state.ssh_github_fetching {
+                        state.start_github_key_fetch();
+                    }
+                } else {
+                    state.ssh_keys_input.push('\n');
+                }
             }
             KeyCode::Backspace => {
-                state.ssh_keys_input.pop();
+                if state.ssh_github_focus {
+                    state.ssh_github_input.pop();
+                    state.ssh_github_error = None;
+                } else {
+                    state.ssh_keys_input.pop();
+                }
             }
             KeyCode::Char(c) => {
-                state.ssh_keys_input.push(c);
+                if state.ssh_github_focus {
+                    state.ssh_github_input.push(c);
+                    state.ssh_github_error = None;
+                } else {
+                    state.ssh_keys_input.push(c);
+                }
             }
             _ => {}
         },
@@ -263,6 +311,11 @@ fn event_loop(
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
 
     loop {
+        // Poll async results for network screens and GitHub key fetch
+        state.poll_net_checks();
+        state.poll_tailscale_netcheck();
+        state.poll_github_keys();
+
         terminal.draw(|f| render(f, state))?;
 
         while let Ok(msg) = worker_rx.try_recv() {
@@ -321,6 +374,11 @@ fn event_loop(
 /// caller can inspect decisions or produce an install plan.
 pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState {
     for key in events {
+        // Poll async results between key events
+        state.poll_net_checks();
+        state.poll_tailscale_netcheck();
+        state.poll_github_keys();
+
         match handle_key(key, &mut state) {
             KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot => break,
             KeyAction::Continue => {}
@@ -492,7 +550,11 @@ mod tests {
     fn scripted_walk_through_metal_flow() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkCheck
+            press(KeyCode::Enter),
+            // NetworkCheck -> TailscaleNetcheck
+            press(KeyCode::Enter),
+            // TailscaleNetcheck -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
@@ -511,7 +573,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip -> SshKeys
             press(KeyCode::Enter),
-            // SshKeys: skip -> Password
+            // SshKeys: Tab -> GitHub focus, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip (empty) — Enter moves to confirm field, Enter again advances
             press(KeyCode::Enter),
@@ -540,7 +603,9 @@ mod tests {
     fn scripted_cloud_skips_tpm() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
@@ -551,7 +616,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip -> SshKeys
             press(KeyCode::Enter),
-            // SshKeys: skip -> Password
+            // SshKeys: Tab -> GitHub focus, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
@@ -592,7 +658,9 @@ mod tests {
     fn scripted_disk_navigation() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Navigate down to second disk
             press(KeyCode::Down),
@@ -636,7 +704,9 @@ mod tests {
         );
 
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -664,15 +734,23 @@ mod tests {
     fn scripted_go_back_from_confirmation() {
         let state = make_state();
         let events = vec![
-            // Walk to Confirmation screen
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
+            // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
+            // Tailscale: skip
             press(KeyCode::Enter),
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
             press(KeyCode::Tab),
+            press(KeyCode::Tab),
+            // Password: skip
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: accept default
@@ -690,14 +768,21 @@ mod tests {
     fn scripted_password_entry_matching() {
         let state = make_state();
         let events = vec![
-            // Walk to Password screen
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
+            // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
+            // Tailscale: skip
             press(KeyCode::Enter),
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: type "abc", tab/enter to confirm field, type "abc", enter
             press(KeyCode::Char('a')),
@@ -722,15 +807,21 @@ mod tests {
     fn scripted_password_mismatch_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Walk to Password screen
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
             press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Hostname: type "h" (required for metal) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
+            // Tailscale: skip
             press(KeyCode::Enter),
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Type password
             press(KeyCode::Char('a')),
@@ -754,15 +845,21 @@ mod tests {
     fn scripted_password_esc_from_confirm_returns_to_first_field() {
         let state = make_state();
         let events = vec![
-            // Walk to Password screen
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
             press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Hostname: type "h" (required for metal) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
+            // Tailscale: skip
             press(KeyCode::Enter),
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Type password
             press(KeyCode::Char('a')),
@@ -782,7 +879,9 @@ mod tests {
     fn scripted_metal_empty_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -802,7 +901,9 @@ mod tests {
     fn scripted_metal_hostname_typed_allows_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -824,7 +925,9 @@ mod tests {
     fn scripted_cloud_empty_hostname_allows_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
@@ -847,7 +950,9 @@ mod tests {
     fn scripted_metal_dhcp_toggle_allows_advance_with_empty_hostname() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -868,7 +973,9 @@ mod tests {
     fn scripted_metal_dhcp_toggle_via_space() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -888,7 +995,9 @@ mod tests {
     fn scripted_metal_dhcp_toggle_on_off_requires_hostname() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -911,7 +1020,9 @@ mod tests {
     fn scripted_metal_dhcp_on_ignores_typing() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -936,7 +1047,9 @@ mod tests {
     fn scripted_cloud_tab_does_not_toggle_dhcp() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
             press(KeyCode::Enter),
@@ -974,7 +1087,9 @@ mod tests {
     fn scripted_timezone_accept_default_utc() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -984,7 +1099,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip
             press(KeyCode::Enter),
-            // SshKeys: skip
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
@@ -1003,7 +1119,9 @@ mod tests {
     fn scripted_timezone_navigate_down_and_select() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1013,7 +1131,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip
             press(KeyCode::Enter),
-            // SshKeys: skip
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
@@ -1035,7 +1154,9 @@ mod tests {
     fn scripted_timezone_search_filters_list() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1045,7 +1166,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip
             press(KeyCode::Enter),
-            // SshKeys: skip
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
@@ -1068,7 +1190,9 @@ mod tests {
     fn scripted_timezone_search_backspace_widens_filter() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1078,7 +1202,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip
             press(KeyCode::Enter),
-            // SshKeys: skip
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
@@ -1105,7 +1230,9 @@ mod tests {
     fn scripted_timezone_esc_goes_back_to_password() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1115,7 +1242,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip
             press(KeyCode::Enter),
-            // SshKeys: skip
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
@@ -1133,7 +1261,9 @@ mod tests {
     fn scripted_timezone_down_does_not_go_past_end() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1143,7 +1273,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip
             press(KeyCode::Enter),
-            // SshKeys: skip
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
@@ -1170,7 +1301,9 @@ mod tests {
     fn scripted_timezone_up_does_not_go_before_start() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1180,7 +1313,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip
             press(KeyCode::Enter),
-            // SshKeys: skip
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
@@ -1206,7 +1340,9 @@ mod tests {
     fn scripted_timezone_search_then_navigate() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> NetworkCheck -> TailscaleNetcheck -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1216,7 +1352,8 @@ mod tests {
             press(KeyCode::Enter),
             // Tailscale: skip
             press(KeyCode::Enter),
-            // SshKeys: skip
+            // SshKeys: Tab -> GitHub, Tab -> advance to Password
+            press(KeyCode::Tab),
             press(KeyCode::Tab),
             // Password: skip
             press(KeyCode::Enter),
