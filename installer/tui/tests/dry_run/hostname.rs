@@ -328,12 +328,7 @@ enter
 tab
 # Hostname -> Tailscale
 enter
-# Tailscale: skip
-enter
-# SshKeys: Tab -> GitHub, Tab -> advance to Password
-tab
-tab
-# Password: skip (empty)
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept default

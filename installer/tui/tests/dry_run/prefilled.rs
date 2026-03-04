@@ -31,12 +31,7 @@ enter
 enter
 # Hostname
 enter
-# Tailscale
-enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept default (UTC)
@@ -117,12 +112,7 @@ backspace
 backspace
 type:new-host
 enter
-# Tailscale
-enter
-# SSH keys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
+# Login: skip password (empty)
 enter
 enter
 # NetworkResults
@@ -183,12 +173,7 @@ enter
 enter
 # Hostname
 enter
-# Tailscale
-enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept prefilled Europe/London

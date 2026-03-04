@@ -30,9 +30,10 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
         Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
         Screen::Hostname => render_hostname(frame, chunks[1], state),
-        Screen::Tailscale => render_tailscale(frame, chunks[1], state),
-        Screen::SshKeys => render_ssh_keys(frame, chunks[1], state),
-        Screen::Password => render_password(frame, chunks[1], state),
+        Screen::Login => render_login(frame, chunks[1], state),
+        Screen::LoginTailscale => render_login_tailscale(frame, chunks[1], state),
+        Screen::LoginSshKeys => render_login_ssh_keys(frame, chunks[1], state),
+        Screen::LoginGithub => render_login_github(frame, chunks[1], state),
         Screen::Timezone => render_timezone(frame, chunks[1], state),
         Screen::Confirmation => render_confirmation(frame, chunks[1], state),
         Screen::Writing => render_writing(frame, chunks[1], state),
@@ -48,16 +49,17 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
         Screen::Welcome => "Welcome",
         Screen::NetworkCheck => "Network Check",
-        Screen::DiskSelection => "1/8 Select Target Disk",
-        Screen::VariantSelection => "2/8 Select Variant",
-        Screen::TpmToggle => "2/8 TPM Configuration",
-        Screen::Hostname => "3/8 Hostname",
-        Screen::Tailscale => "4/8 Tailscale",
-        Screen::SshKeys => "5/8 SSH Keys",
-        Screen::Password => "6/8 Password",
-        Screen::Timezone => "7/8 Timezone",
+        Screen::DiskSelection => "1/6 Select Target Disk",
+        Screen::VariantSelection => "2/6 Select Variant",
+        Screen::TpmToggle => "2/6 TPM Configuration",
+        Screen::Hostname => "3/6 Hostname",
+        Screen::Login => "4/6 Login",
+        Screen::LoginTailscale => "4/6 Login > Tailscale",
+        Screen::LoginSshKeys => "4/6 Login > SSH Keys",
+        Screen::LoginGithub => "4/6 Login > GitHub",
+        Screen::Timezone => "5/6 Timezone",
         Screen::NetworkResults => "Network Results",
-        Screen::Confirmation => "8/8 Confirm",
+        Screen::Confirmation => "6/6 Confirm",
         Screen::Writing => "Writing Image",
         Screen::FirstbootApply => "Applying Configuration",
         Screen::Done => "Complete",
@@ -186,7 +188,7 @@ fn tailscale_status(state: &AppState) -> &'static str {
     }
 }
 
-// r[impl installer.tui.network-check+3]
+// r[impl installer.tui.network-check+4]
 fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_text: &str) {
     let intro = vec![
         Line::from(""),
@@ -271,7 +273,7 @@ fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_t
     }
 }
 
-// r[impl installer.tui.network-check+3]
+// r[impl installer.tui.network-check+4]
 fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
     render_net_accordion(
         frame,
@@ -281,45 +283,48 @@ fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
     );
 }
 
-// r[impl installer.tui.network-check+3]
+// r[impl installer.tui.network-check+4]
 fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
     render_net_accordion(frame, area, state, "Network check results");
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
-    let hints = match &state.screen {
-        Screen::Welcome => "Enter: start | n: network check | q: quit",
+    let hints: String = match &state.screen {
+        Screen::Welcome => "Enter: start | n: network check | q: quit".into(),
         Screen::NetworkCheck => {
-            "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: quit"
+            "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: quit".into()
         }
-        Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
-        Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit",
-        Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit",
-        Screen::Hostname => "Enter: next | Esc: back",
-        Screen::Tailscale => "Enter: next | Esc: back",
-        Screen::SshKeys => {
-            if state.ssh_github_focus {
-                "Enter: fetch keys | Tab: next screen | Esc: back to keys"
-            } else {
-                "Tab: GitHub lookup | Enter: new line | Esc: back"
+        Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
+        Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
+        Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit".into(),
+        Screen::Hostname => "Enter: next | Esc: back".into(),
+        Screen::Login => {
+            let mut h = String::from("t: tailscale | s: ssh keys");
+            if state.github_reachable() {
+                h.push_str(" | g: github");
             }
-        }
-        Screen::Password => {
             if state.password_confirming {
-                "Enter: confirm | Esc: back to password"
+                h.push_str(" | Enter: confirm | Esc: back to password");
             } else {
-                "Enter/Tab: next | Esc: back"
+                h.push_str(" | Enter: next | Esc: back");
             }
+            h
         }
-        Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back",
+        Screen::LoginTailscale => "Enter: done | Esc: back".into(),
+        Screen::LoginSshKeys => {
+            "Tab: new key / next | Shift+Tab: prev | Enter: done | Esc: back".into()
+        }
+        Screen::LoginGithub => "Enter: fetch keys | Esc: back".into(),
+        Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back".into(),
         Screen::NetworkResults => {
             "Tab: switch pane | Up/Down: scroll | Enter: next | r: re-run | Esc: back | q: quit"
+                .into()
         }
-        Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit",
-        Screen::Writing => "Please wait...",
-        Screen::FirstbootApply => "Please wait...",
-        Screen::Done => "Press any key to reboot",
-        Screen::Error(_) => "Press any key to exit",
+        Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit".into(),
+        Screen::Writing => "Please wait...".into(),
+        Screen::FirstbootApply => "Please wait...".into(),
+        Screen::Done => "Press any key to reboot".into(),
+        Screen::Error(_) => "Press any key to exit".into(),
     };
     let paragraph = Paragraph::new(hints);
     frame.render_widget(paragraph, area);
@@ -552,8 +557,112 @@ fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.tailscale]
-fn render_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
+fn mask(input: &str) -> String {
+    "*".repeat(input.len())
+}
+
+// r[impl installer.tui.password+2]
+// r[impl installer.tui.tailscale+2]
+// r[impl installer.tui.ssh-keys+2]
+fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from("  Set a password for the 'ubuntu' user."),
+        Line::from("  Leave both fields empty to keep the default password (expired)."),
+        Line::from(""),
+    ];
+
+    let password_label = if state.password_confirming {
+        Span::raw("  Password: ")
+    } else {
+        Span::styled(
+            "  Password: ",
+            Style::default().add_modifier(Modifier::BOLD),
+        )
+    };
+
+    let masked = mask(&state.password_input);
+    let mut password_line = vec![
+        password_label,
+        Span::styled(
+            masked,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if !state.password_confirming {
+        password_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+    }
+    lines.push(Line::from(password_line));
+
+    let confirm_label = if state.password_confirming {
+        Span::styled(
+            "  Confirm:  ",
+            Style::default().add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::raw("  Confirm:  ")
+    };
+
+    let confirm_masked = mask(&state.password_confirm_input);
+    let mut confirm_line = vec![
+        confirm_label,
+        Span::styled(
+            confirm_masked,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if state.password_confirming {
+        confirm_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+    }
+    lines.push(Line::from(confirm_line));
+
+    if state.password_mismatch {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Passwords do not match.",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from("  Actions:"));
+
+    let ts_indicator = if !state.tailscale_input.trim().is_empty() {
+        Span::styled(" *", Style::default().fg(Color::Yellow))
+    } else {
+        Span::raw("")
+    };
+    lines.push(Line::from(vec![
+        Span::raw("    t  Tailscale auth key"),
+        ts_indicator,
+    ]));
+
+    let ssh_indicator = if state.ssh_keys.iter().any(|k| !k.trim().is_empty()) {
+        Span::styled(" *", Style::default().fg(Color::Yellow))
+    } else {
+        Span::raw("")
+    };
+    lines.push(Line::from(vec![
+        Span::raw("    s  SSH authorized keys"),
+        ssh_indicator,
+    ]));
+
+    if state.github_reachable() {
+        lines.push(Line::from("    g  Import SSH keys from GitHub"));
+    }
+
+    let block = Block::default().title(" Login ").borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
+}
+
+// r[impl installer.tui.tailscale+2]
+fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
     let lines = vec![
         Line::from(""),
         Line::from("  Enter a Tailscale auth key for automatic enrollment."),
@@ -580,135 +689,114 @@ fn render_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
         ]),
     ];
 
-    let block = Block::default().title(" Tailscale ").borders(Borders::ALL);
+    let block = Block::default()
+        .title(" Login > Tailscale ")
+        .borders(Borders::ALL);
 
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
 }
 
-fn mask(input: &str) -> String {
-    "*".repeat(input.len())
-}
-
-// r[impl installer.tui.ssh-keys]
-fn render_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
-    let github_height: u16 = if state.ssh_github_focus { 5 } else { 2 };
-    let chunks = Layout::vertical([
-        Constraint::Length(5),
-        Constraint::Min(0),
-        Constraint::Length(github_height),
-    ])
-    .split(area);
-
-    let focus_hint = if state.ssh_github_focus {
-        "GitHub username input active. Tab to switch back to keys."
-    } else {
-        "Paste SSH public keys (one per line). Tab to switch to GitHub lookup."
-    };
-    let intro = vec![
+// r[impl installer.tui.ssh-keys+2]
+fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
+    let intro_lines = vec![
         Line::from(""),
-        Line::from(format!("  {focus_hint}")),
+        Line::from("  SSH authorized keys. Tab to add a new key, Shift+Tab to go back."),
         Line::from("  Leave empty to skip."),
         Line::from(""),
     ];
-    let intro_paragraph = Paragraph::new(intro);
+
+    let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
+
+    let intro_paragraph = Paragraph::new(intro_lines);
     frame.render_widget(intro_paragraph, chunks[0]);
 
-    let keys_border_style = if state.ssh_github_focus {
-        Style::default().fg(Color::DarkGray)
-    } else {
-        Style::default().fg(Color::White)
-    };
-
-    let key_lines: Vec<Line> = if state.ssh_keys_input.is_empty() {
-        vec![Line::from(Span::styled(
-            if state.ssh_github_focus { " " } else { "_" },
-            Style::default().fg(Color::DarkGray),
-        ))]
-    } else {
-        let mut lines: Vec<Line> = state
-            .ssh_keys_input
-            .lines()
-            .map(|l| {
-                Line::from(Span::styled(
-                    l.to_string(),
-                    Style::default().fg(Color::Yellow),
-                ))
-            })
-            .collect();
-        if !state.ssh_github_focus {
-            if state.ssh_keys_input.ends_with('\n') {
-                lines.push(Line::from(Span::styled(
-                    "_",
-                    Style::default().fg(Color::DarkGray),
-                )));
-            } else if let Some(last) = lines.last_mut() {
-                last.spans
-                    .push(Span::styled("_", Style::default().fg(Color::DarkGray)));
-            }
+    let mut key_lines: Vec<Line> = Vec::new();
+    for (i, key) in state.ssh_keys.iter().enumerate() {
+        let is_selected = i == state.ssh_key_cursor;
+        if is_selected {
+            key_lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  > {}: ", i + 1),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    key.as_str(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("_", Style::default().fg(Color::DarkGray)),
+            ]));
+        } else {
+            let summary = AppState::ssh_key_summary(key);
+            let style = if key.trim().is_empty() {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            key_lines.push(Line::from(vec![
+                Span::raw(format!("    {}: ", i + 1)),
+                Span::styled(summary, style),
+            ]));
         }
-        lines
-    };
+    }
 
     let block = Block::default()
         .title(" SSH Authorized Keys ")
-        .borders(Borders::ALL)
-        .border_style(keys_border_style);
+        .borders(Borders::ALL);
 
     let paragraph = Paragraph::new(key_lines)
         .block(block)
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, chunks[1]);
+}
 
-    // r[impl installer.tui.ssh-keys.github]
-    let github_border_style = if state.ssh_github_focus {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-
-    let mut github_lines: Vec<Line> = vec![Line::from(vec![
-        Span::raw("  GitHub user: "),
-        Span::styled(
-            &state.ssh_github_input,
-            if state.ssh_github_focus {
+// r[impl installer.tui.ssh-keys.github+2]
+fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from("  Import SSH keys from a GitHub account."),
+        Line::from("  Enter a GitHub username and press Enter to fetch their public keys."),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  GitHub user: "),
+            Span::styled(
+                &state.ssh_github_input,
                 Style::default()
                     .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            },
-        ),
-        if state.ssh_github_focus {
-            Span::styled("_", Style::default().fg(Color::DarkGray))
-        } else {
-            Span::raw("")
-        },
-    ])];
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("_", Style::default().fg(Color::DarkGray)),
+        ]),
+    ];
 
     if state.ssh_github_fetching {
-        github_lines.push(Line::from(Span::styled(
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
             "  Fetching keys...",
             Style::default().fg(Color::DarkGray),
         )));
     } else if let Some(ref err) = state.ssh_github_error {
-        github_lines.push(Line::from(Span::styled(
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
             format!("  Error: {err}"),
             Style::default().fg(Color::Red),
         )));
     }
 
-    let github_block = Block::default()
-        .title(" Import from GitHub ")
-        .borders(Borders::ALL)
-        .border_style(github_border_style);
+    let block = Block::default()
+        .title(" Login > GitHub ")
+        .borders(Borders::ALL);
 
-    let github_paragraph = Paragraph::new(github_lines).block(github_block);
-    frame.render_widget(github_paragraph, chunks[2]);
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.confirmation+2]
-// r[impl installer.tui.password]
+// r[impl installer.tui.confirmation+3]
+// r[impl installer.tui.password+2]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
@@ -776,76 +864,6 @@ fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let list = List::new(items).block(block);
     frame.render_widget(list, chunks[1]);
-}
-
-fn render_password(frame: &mut Frame, area: Rect, state: &AppState) {
-    let mut lines = vec![
-        Line::from(""),
-        Line::from("  Set a password for the 'ubuntu' user."),
-        Line::from("  Leave both fields empty to keep the default password (expired)."),
-        Line::from(""),
-    ];
-
-    let password_label = if state.password_confirming {
-        Span::raw("  Password: ")
-    } else {
-        Span::styled(
-            "  Password: ",
-            Style::default().add_modifier(Modifier::BOLD),
-        )
-    };
-
-    let masked = mask(&state.password_input);
-    let mut password_line = vec![
-        password_label,
-        Span::styled(
-            masked,
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    if !state.password_confirming {
-        password_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
-    }
-    lines.push(Line::from(password_line));
-
-    let confirm_label = if state.password_confirming {
-        Span::styled(
-            "  Confirm:  ",
-            Style::default().add_modifier(Modifier::BOLD),
-        )
-    } else {
-        Span::raw("  Confirm:  ")
-    };
-
-    let confirm_masked = mask(&state.password_confirm_input);
-    let mut confirm_line = vec![
-        confirm_label,
-        Span::styled(
-            confirm_masked,
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    if state.password_confirming {
-        confirm_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
-    }
-    lines.push(Line::from(confirm_line));
-
-    if state.password_mismatch {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "  Passwords do not match.",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        )));
-    }
-
-    let block = Block::default().title(" Password ").borders(Borders::ALL);
-
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, area);
 }
 
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {

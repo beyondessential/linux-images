@@ -20,15 +20,15 @@ enter
 # Hostname
 type:my-server
 enter
-# Tailscale
+# Login: enter tailscale sub-screen
+type:t
 type:tskey-auth-test
 enter
-# SSH keys
+# Login: enter ssh keys sub-screen
+type:s
 type:ssh-ed25519 AAAA testkey
-# Tab -> GitHub focus, Tab -> advance to Password
-tab
-tab
-# Password: skip (empty)
+enter
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept default (UTC)
@@ -90,12 +90,7 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
-enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept default (UTC)
@@ -131,8 +126,8 @@ enter
 }
 
 // r[verify installer.tui.hostname+2]
-// r[verify installer.tui.tailscale]
-// r[verify installer.tui.ssh-keys]
+// r[verify installer.tui.tailscale+2]
+// r[verify installer.tui.ssh-keys+2]
 #[test]
 fn interactive_firstboot_fields_captured() {
     let f = Fixture::new();
@@ -148,15 +143,17 @@ down
 enter
 type:my-host
 enter
+# Login: enter tailscale sub-screen
+type:t
 type:tskey-auth-mykey
 enter
+# Login: enter ssh keys sub-screen
+type:s
 type:ssh-ed25519 AAAA key1
-enter
+tab
 type:ssh-rsa BBBB key2
-# Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
+enter
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept default (UTC)
@@ -194,8 +191,8 @@ enter
 }
 
 // r[verify installer.tui.hostname+2]
-// r[verify installer.tui.tailscale]
-// r[verify installer.tui.ssh-keys]
+// r[verify installer.tui.tailscale+2]
+// r[verify installer.tui.ssh-keys+2]
 #[test]
 fn interactive_empty_firstboot_is_null() {
     let f = Fixture::new();
@@ -212,12 +209,7 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
-enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept default (UTC)
@@ -270,12 +262,7 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Tailscale: skip
-enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept default (UTC)
@@ -366,7 +353,7 @@ fn interactive_empty_script_uses_initial_state() {
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.confirmation+2]
+// r[verify installer.tui.confirmation+3]
 #[test]
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();
@@ -384,12 +371,7 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
-enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
+# Login: skip password (empty)
 enter
 enter
 # Timezone: accept default (UTC)
@@ -402,17 +384,11 @@ esc
 esc
 # Back on Timezone, go back
 esc
-# Back on Password, go back
-esc
-# Back on SshKeys, go back again
-esc
-# Back on Tailscale, enter an authkey
+# Back on Login, enter tailscale sub-screen
+type:t
 type:tskey-auth-late
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
+# Login: skip password (still empty)
 enter
 enter
 # Timezone: accept default (UTC)

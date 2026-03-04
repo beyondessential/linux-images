@@ -49,7 +49,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.network-check+3]
+        // r[impl installer.tui.network-check+4]
         Screen::NetworkCheck => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
@@ -60,7 +60,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.network-check+3]
+        // r[impl installer.tui.network-check+4]
         Screen::NetworkResults => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
@@ -128,67 +128,11 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.tailscale]
-        Screen::Tailscale => match key.code {
-            KeyCode::Esc => state.go_back(),
-            KeyCode::Enter => state.advance(),
-            KeyCode::Backspace => {
-                state.tailscale_input.pop();
-            }
-            KeyCode::Char(c) => {
-                state.tailscale_input.push(c);
-            }
-            _ => {}
-        },
-
-        // r[impl installer.tui.ssh-keys]
-        // r[impl installer.tui.ssh-keys.github]
-        Screen::SshKeys => match key.code {
-            KeyCode::Esc => {
-                if state.ssh_github_focus {
-                    state.ssh_github_focus = false;
-                } else {
-                    state.go_back();
-                }
-            }
-            KeyCode::Tab => {
-                if state.ssh_github_focus {
-                    state.ssh_github_focus = false;
-                    state.advance();
-                } else {
-                    state.ssh_github_focus = true;
-                }
-            }
-            KeyCode::Enter => {
-                if state.ssh_github_focus {
-                    if !state.ssh_github_fetching {
-                        state.start_github_key_fetch();
-                    }
-                } else {
-                    state.ssh_keys_input.push('\n');
-                }
-            }
-            KeyCode::Backspace => {
-                if state.ssh_github_focus {
-                    state.ssh_github_input.pop();
-                    state.ssh_github_error = None;
-                } else {
-                    state.ssh_keys_input.pop();
-                }
-            }
-            KeyCode::Char(c) => {
-                if state.ssh_github_focus {
-                    state.ssh_github_input.push(c);
-                    state.ssh_github_error = None;
-                } else {
-                    state.ssh_keys_input.push(c);
-                }
-            }
-            _ => {}
-        },
-
-        // r[impl installer.tui.password]
-        Screen::Password => match key.code {
+        // r[impl installer.tui.password+2]
+        // r[impl installer.tui.tailscale+2]
+        // r[impl installer.tui.ssh-keys+2]
+        // r[impl installer.tui.ssh-keys.github+2]
+        Screen::Login => match key.code {
             KeyCode::Esc => {
                 if state.password_confirming {
                     state.password_confirming = false;
@@ -196,6 +140,15 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 } else {
                     state.go_back();
                 }
+            }
+            KeyCode::Char('t') if !state.password_confirming => {
+                state.screen = Screen::LoginTailscale;
+            }
+            KeyCode::Char('s') if !state.password_confirming => {
+                state.screen = Screen::LoginSshKeys;
+            }
+            KeyCode::Char('g') if !state.password_confirming && state.github_reachable() => {
+                state.screen = Screen::LoginGithub;
             }
             KeyCode::Enter | KeyCode::Tab => {
                 if !state.password_confirming {
@@ -226,6 +179,75 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 } else {
                     state.password_input.push(c);
                 }
+            }
+            _ => {}
+        },
+
+        // r[impl installer.tui.tailscale+2]
+        Screen::LoginTailscale => match key.code {
+            KeyCode::Esc | KeyCode::Enter => {
+                state.screen = Screen::Login;
+            }
+            KeyCode::Backspace => {
+                state.tailscale_input.pop();
+            }
+            KeyCode::Char(c) => {
+                state.tailscale_input.push(c);
+            }
+            _ => {}
+        },
+
+        // r[impl installer.tui.ssh-keys+2]
+        Screen::LoginSshKeys => match key.code {
+            KeyCode::Esc | KeyCode::Enter => {
+                state.filter_ssh_keys();
+                state.screen = Screen::Login;
+            }
+            KeyCode::Tab => {
+                let current = &state.ssh_keys[state.ssh_key_cursor];
+                if !current.trim().is_empty() {
+                    state
+                        .ssh_keys
+                        .insert(state.ssh_key_cursor + 1, String::new());
+                    state.ssh_key_cursor += 1;
+                } else {
+                    let len = state.ssh_keys.len();
+                    state.ssh_key_cursor = (state.ssh_key_cursor + 1) % len;
+                }
+            }
+            KeyCode::BackTab => {
+                if state.ssh_key_cursor == 0 {
+                    state.ssh_key_cursor = state.ssh_keys.len() - 1;
+                } else {
+                    state.ssh_key_cursor -= 1;
+                }
+            }
+            KeyCode::Backspace => {
+                state.ssh_keys[state.ssh_key_cursor].pop();
+            }
+            KeyCode::Char(c) => {
+                state.ssh_keys[state.ssh_key_cursor].push(c);
+            }
+            _ => {}
+        },
+
+        // r[impl installer.tui.ssh-keys.github+2]
+        Screen::LoginGithub => match key.code {
+            KeyCode::Esc => {
+                state.screen = Screen::Login;
+            }
+            KeyCode::Enter => {
+                if !state.ssh_github_fetching {
+                    state.start_github_key_fetch();
+                }
+            }
+            KeyCode::Backspace => {
+                state.ssh_github_input.pop();
+                state.ssh_github_error = None;
+            }
+            KeyCode::Char(c) => {
+                state.ssh_github_input.push(c);
+                state.ssh_github_error = None;
             }
             _ => {}
         },
@@ -566,7 +588,7 @@ mod tests {
             // TpmToggle: toggle disable, then advance -> Hostname
             press(KeyCode::Char(' ')),
             press(KeyCode::Enter),
-            // Hostname: type "myhost" then advance -> Tailscale
+            // Hostname: type "myhost" then advance -> Login
             press(KeyCode::Char('m')),
             press(KeyCode::Char('y')),
             press(KeyCode::Char('h')),
@@ -574,12 +596,7 @@ mod tests {
             press(KeyCode::Char('s')),
             press(KeyCode::Char('t')),
             press(KeyCode::Enter),
-            // Tailscale: skip -> SshKeys
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub focus, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip (empty) — Enter moves to confirm field, Enter again advances
+            // Login: skip password (empty) — Enter moves to confirm, Enter advances
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: accept default (UTC) -> NetworkResults
@@ -615,14 +632,9 @@ mod tests {
             // VariantSelection: toggle to Cloud, then advance (skip TpmToggle)
             press(KeyCode::Down),
             press(KeyCode::Enter),
-            // Hostname: skip (cloud) -> Tailscale
+            // Hostname: skip (cloud) -> Login
             press(KeyCode::Enter),
-            // Tailscale: skip -> SshKeys
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub focus, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password (empty)
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: accept default -> NetworkResults
@@ -744,12 +756,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: accept default -> NetworkResults
@@ -764,7 +771,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::NetworkResults);
     }
 
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+2]
     #[test]
     fn scripted_password_entry_matching() {
         let state = make_state();
@@ -778,12 +785,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: type "abc", tab/enter to confirm field, type "abc", enter
+            // Login: type "abc", tab/enter to confirm field, type "abc", enter
             press(KeyCode::Char('a')),
             press(KeyCode::Char('b')),
             press(KeyCode::Char('c')),
@@ -801,7 +803,7 @@ mod tests {
         assert!(!final_state.password_mismatch);
     }
 
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+2]
     #[test]
     fn scripted_password_mismatch_blocks_advance() {
         let state = make_state();
@@ -815,12 +817,7 @@ mod tests {
             // Hostname: type "h" (required for metal) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Type password
+            // Login: type password
             press(KeyCode::Char('a')),
             press(KeyCode::Char('b')),
             // Tab to confirm field
@@ -833,11 +830,11 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Password);
+        assert_eq!(final_state.screen, Screen::Login);
         assert!(final_state.password_mismatch);
     }
 
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+2]
     #[test]
     fn scripted_password_esc_from_confirm_returns_to_first_field() {
         let state = make_state();
@@ -851,12 +848,7 @@ mod tests {
             // Hostname: type "h" (required for metal) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Type password
+            // Login: type password
             press(KeyCode::Char('a')),
             // Tab to confirm
             press(KeyCode::Tab),
@@ -865,7 +857,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Password);
+        assert_eq!(final_state.screen, Screen::Login);
         assert!(!final_state.password_confirming);
     }
 
@@ -907,7 +899,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert_eq!(final_state.screen, Screen::Login);
         assert_eq!(final_state.hostname_input, "srv");
     }
 
@@ -929,7 +921,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert_eq!(final_state.screen, Screen::Login);
         assert_eq!(final_state.variant, Variant::Cloud);
         assert!(final_state.hostname_input.is_empty());
     }
@@ -950,7 +942,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert_eq!(final_state.screen, Screen::Login);
         assert!(final_state.hostname_from_dhcp);
         assert!(final_state.hostname_input.is_empty());
     }
@@ -971,7 +963,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert_eq!(final_state.screen, Screen::Login);
         assert!(final_state.hostname_from_dhcp);
     }
 
@@ -1017,7 +1009,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert_eq!(final_state.screen, Screen::Login);
         assert!(final_state.hostname_from_dhcp);
         // Typing should have been ignored while DHCP toggle is on
         assert!(final_state.hostname_input.is_empty());
@@ -1042,7 +1034,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Tailscale);
+        assert_eq!(final_state.screen, Screen::Login);
         assert!(!final_state.hostname_from_dhcp);
     }
 
@@ -1074,12 +1066,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: accept default (UTC) -> NetworkResults
@@ -1104,12 +1091,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone list (sorted): America/New_York=0, Europe/London=1,
@@ -1137,12 +1119,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: type "auckland" to filter, then select first match
@@ -1171,12 +1148,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: type "zzz" (matches nothing), then backspace all, then select
@@ -1198,7 +1170,7 @@ mod tests {
 
     // r[verify installer.tui.timezone]
     #[test]
-    fn scripted_timezone_esc_goes_back_to_password() {
+    fn scripted_timezone_esc_goes_back_to_login() {
         let state = make_state();
         let events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
@@ -1209,12 +1181,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: press Esc to go back
@@ -1222,7 +1189,7 @@ mod tests {
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Password);
+        assert_eq!(final_state.screen, Screen::Login);
     }
 
     // r[verify installer.tui.timezone]
@@ -1238,12 +1205,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: press Down many times (more than list length), then select
@@ -1276,12 +1238,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: press Up many times (more than cursor position), then select
@@ -1313,12 +1270,7 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Tailscale: skip
-            press(KeyCode::Enter),
-            // SshKeys: Tab -> GitHub, Tab -> advance to Password
-            press(KeyCode::Tab),
-            press(KeyCode::Tab),
-            // Password: skip
+            // Login: skip password
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Timezone: type "o" — matches America/New_York and Europe/London
@@ -1333,5 +1285,124 @@ mod tests {
         // "o" matches: America/New_York (index 0 in filtered), Europe/London (index 1)
         // Down moves cursor to 1 -> Europe/London
         assert_eq!(final_state.timezone_selected, "Europe/London");
+    }
+
+    // r[verify installer.tui.tailscale+2]
+    #[test]
+    fn scripted_login_tailscale_sub_screen() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Login: press 't' to enter tailscale sub-screen
+            press(KeyCode::Char('t')),
+            // Type auth key
+            press(KeyCode::Char('t')),
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('k')),
+            // Return to Login via Enter
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Login);
+        assert_eq!(final_state.tailscale_input, "tsk");
+    }
+
+    // r[verify installer.tui.ssh-keys+2]
+    #[test]
+    fn scripted_login_ssh_keys_sub_screen() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Login: press 's' to enter ssh keys sub-screen
+            press(KeyCode::Char('s')),
+            // Type a key
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('h')),
+            press(KeyCode::Char('-')),
+            press(KeyCode::Char('e')),
+            press(KeyCode::Char('d')),
+            press(KeyCode::Char('2')),
+            press(KeyCode::Char('5')),
+            press(KeyCode::Char('5')),
+            press(KeyCode::Char('1')),
+            press(KeyCode::Char('9')),
+            press(KeyCode::Char(' ')),
+            press(KeyCode::Char('A')),
+            press(KeyCode::Char('A')),
+            press(KeyCode::Char('A')),
+            press(KeyCode::Char('A')),
+            // Return to Login via Esc (filters keys)
+            press(KeyCode::Esc),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Login);
+        assert_eq!(final_state.ssh_keys, vec!["ssh-ed25519 AAAA"]);
+    }
+
+    // r[verify installer.tui.ssh-keys+2]
+    #[test]
+    fn scripted_login_ssh_keys_tab_adds_new_field() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Login: press 's' to enter ssh keys sub-screen
+            press(KeyCode::Char('s')),
+            // Type first key
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('h')),
+            press(KeyCode::Char('-')),
+            press(KeyCode::Char('r')),
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('a')),
+            press(KeyCode::Char(' ')),
+            press(KeyCode::Char('B')),
+            press(KeyCode::Char('B')),
+            press(KeyCode::Char('B')),
+            press(KeyCode::Char('B')),
+            // Tab adds a new field (current is non-empty)
+            press(KeyCode::Tab),
+            // Type second key
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('h')),
+            press(KeyCode::Char('-')),
+            press(KeyCode::Char('d')),
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char(' ')),
+            press(KeyCode::Char('C')),
+            press(KeyCode::Char('C')),
+            // Return to Login
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Login);
+        assert_eq!(final_state.ssh_keys, vec!["ssh-rsa BBBB", "ssh-dss CC"]);
     }
 }
