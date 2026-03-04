@@ -22,6 +22,7 @@ specs (
                     // so those don't do anything, but let's still include them
                     justfile
                     .github/workflows/*.yml
+                    .github/*.yml
                 )
             }
         )
