@@ -221,8 +221,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
-        variant: [metal, cloud]
         include:
           - arch: amd64
             runner: ubuntu-24.04
@@ -260,7 +258,7 @@ jobs:
         timeout-minutes: 5
 
       - name: Run container install test
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-container-install
+        run: just arch=${{ matrix.arch }} test-container-install
         timeout-minutes: 30
 
   release:
