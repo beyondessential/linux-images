@@ -82,56 +82,27 @@ pub fn find_image_path(variant: &str, arch: &str) -> Result<std::path::PathBuf> 
 }
 
 // r[impl installer.write.disk-size-check]
-/// Read the total uncompressed content size from a `.raw.zst` file by summing
-/// the content sizes of all zstd frames. A zstd file can contain multiple
-/// frames (e.g. when compressed with `--threads`), so we iterate through each
-/// one using `get_frame_content_size` to read the header and
-/// `find_frame_compressed_size` to skip to the next frame.
+/// Read the uncompressed image size from the `.size` sidecar file that the
+/// build pipeline writes alongside the `.raw.zst`. The sidecar contains the
+/// byte count as a decimal ASCII string (output of `stat --format='%s'`).
 pub fn image_uncompressed_size(source: &Path) -> Result<u64> {
-    let data = std::fs::read(source)
-        .with_context(|| format!("reading compressed image {}", source.display()))?;
-
-    let mut total: u64 = 0;
-    let mut offset: usize = 0;
-
-    while offset < data.len() {
-        let remaining = &data[offset..];
-
-        let content_size = zstd::zstd_safe::get_frame_content_size(remaining)
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "error reading zstd frame content size at offset {offset} in {}: {e}",
-                    source.display()
-                )
-            })?
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "zstd frame at offset {offset} in {} has no content size",
-                    source.display()
-                )
-            })?;
-        total = total.checked_add(content_size).ok_or_else(|| {
-            anyhow::anyhow!(
-                "total uncompressed size overflows u64 for {}",
-                source.display()
-            )
-        })?;
-
-        let frame_compressed_size = zstd::zstd_safe::find_frame_compressed_size(remaining)
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "error finding compressed frame size at offset {offset} in {}: {e}",
-                    source.display()
-                )
-            })?;
-        offset += frame_compressed_size;
-    }
-
-    if total == 0 {
-        bail!("no zstd frames found in {}", source.display());
-    }
-
-    Ok(total)
+    let name = source
+        .to_str()
+        .with_context(|| format!("non-UTF-8 path: {}", source.display()))?;
+    let base = name
+        .strip_suffix(".zst")
+        .with_context(|| format!("{} does not end in .zst", source.display()))?;
+    let size_path_str = format!("{base}.size");
+    let size_path = Path::new(&size_path_str);
+    let contents = std::fs::read_to_string(size_path)
+        .with_context(|| format!("reading size file {}", size_path.display()))?;
+    contents.trim().parse::<u64>().with_context(|| {
+        format!(
+            "parsing size from {}: {:?}",
+            size_path.display(),
+            contents.trim()
+        )
+    })
 }
 
 // r[impl installer.write.disk-size-check]
@@ -496,53 +467,59 @@ mod tests {
 
     // r[verify installer.write.disk-size-check]
     #[test]
-    fn image_uncompressed_size_single_frame() {
+    fn image_uncompressed_size_reads_sidecar() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.raw.zst");
+        let zst_path = dir.path().join("test.raw.zst");
+        let size_path = dir.path().join("test.raw.size");
 
-        let original = vec![0xABu8; 4096];
-        let compressed = zstd::bulk::compress(&original, 3).unwrap();
-        std::fs::write(&path, &compressed).unwrap();
+        std::fs::write(&zst_path, b"irrelevant").unwrap();
+        std::fs::write(&size_path, "5368709120\n").unwrap();
 
-        let size = image_uncompressed_size(&path).unwrap();
-        assert_eq!(size, 4096);
+        let size = image_uncompressed_size(&zst_path).unwrap();
+        assert_eq!(size, 5_368_709_120);
     }
 
     // r[verify installer.write.disk-size-check]
     #[test]
-    fn image_uncompressed_size_multiple_frames() {
+    fn image_uncompressed_size_trims_whitespace() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("multi.raw.zst");
+        let zst_path = dir.path().join("img.raw.zst");
+        let size_path = dir.path().join("img.raw.size");
 
-        let frame1_data = vec![0xAAu8; 3000];
-        let frame2_data = vec![0xBBu8; 5000];
-        let frame3_data = vec![0xCCu8; 2000];
+        std::fs::write(&zst_path, b"irrelevant").unwrap();
+        std::fs::write(&size_path, "  1024  \n").unwrap();
 
-        let mut combined = zstd::bulk::compress(&frame1_data, 3).unwrap();
-        combined.extend_from_slice(&zstd::bulk::compress(&frame2_data, 3).unwrap());
-        combined.extend_from_slice(&zstd::bulk::compress(&frame3_data, 3).unwrap());
-        std::fs::write(&path, &combined).unwrap();
-
-        let size = image_uncompressed_size(&path).unwrap();
-        assert_eq!(size, 10000);
+        assert_eq!(image_uncompressed_size(&zst_path).unwrap(), 1024);
     }
 
     // r[verify installer.write.disk-size-check]
     #[test]
-    fn image_uncompressed_size_fails_on_non_zstd() {
+    fn image_uncompressed_size_fails_without_sidecar() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("garbage.zst");
-        std::fs::write(&path, b"this is not zstd data").unwrap();
+        let zst_path = dir.path().join("no-sidecar.raw.zst");
+        std::fs::write(&zst_path, b"data").unwrap();
 
-        assert!(image_uncompressed_size(&path).is_err());
+        assert!(image_uncompressed_size(&zst_path).is_err());
     }
 
     // r[verify installer.write.disk-size-check]
     #[test]
-    fn image_uncompressed_size_fails_on_empty_file() {
+    fn image_uncompressed_size_fails_on_non_numeric() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("empty.zst");
-        std::fs::write(&path, b"").unwrap();
+        let zst_path = dir.path().join("bad.raw.zst");
+        let size_path = dir.path().join("bad.raw.size");
+
+        std::fs::write(&zst_path, b"data").unwrap();
+        std::fs::write(&size_path, "not-a-number\n").unwrap();
+
+        assert!(image_uncompressed_size(&zst_path).is_err());
+    }
+
+    // r[verify installer.write.disk-size-check]
+    #[test]
+    fn image_uncompressed_size_fails_without_zst_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("image.raw");
 
         assert!(image_uncompressed_size(&path).is_err());
     }

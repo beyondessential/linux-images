@@ -429,6 +429,14 @@ mkdir -p "$STAGING/images"
 for img in "${IMAGE_FILES[@]}"; do
     echo "    $(basename "$img")"
     cp "$img" "$STAGING/images/"
+    # Copy the .size sidecar (used by the installer for disk size checks)
+    SIZE_FILE="${img%.zst}.size"
+    if [ -f "$SIZE_FILE" ]; then
+        echo "    $(basename "$SIZE_FILE")"
+        cp "$SIZE_FILE" "$STAGING/images/"
+    else
+        echo "WARNING: no .size sidecar for $(basename "$img")"
+    fi
 done
 
 # ============================================================

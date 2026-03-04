@@ -228,6 +228,18 @@ else
     fail "cloud .raw.zst image for $ARCH exists on ISO"
 fi
 
+# r[verify installer.write.disk-size-check]
+for img in "$ISO_MNT"/images/*.raw.zst; do
+    [ -f "$img" ] || continue
+    SIZE_FILE="${img%.zst}.size"
+    BASENAME="$(basename "$SIZE_FILE")"
+    if [ -f "$SIZE_FILE" ]; then
+        pass ".size sidecar exists for $(basename "$img")"
+    else
+        fail ".size sidecar exists for $(basename "$img")"
+    fi
+done
+
 # r[verify iso.boot.uefi]
 check "/boot/efi.img exists" test -f "$ISO_MNT/boot/efi.img"
 

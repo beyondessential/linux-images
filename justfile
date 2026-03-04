@@ -311,6 +311,7 @@ qcow: raw
 
 # Compress raw image with zstd
 compress:
+  stat --format='%s' '{{output_raw}}' > '{{output_raw + ".size"}}'
   zstd -6 --rm -o '{{output_raw + ".zst"}}' '{{output_raw}}'
 
 # Generate SHA256 checksums for all outputs
