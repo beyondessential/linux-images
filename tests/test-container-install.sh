@@ -310,6 +310,48 @@ fi
 echo "    Installer exited successfully."
 
 # ============================================================
+# Phase 4b: Verify the installer cleaned up after itself
+# ============================================================
+# r[verify installer.firstboot.unmount]
+echo "==> Phase 4b: Verifying installer unmounted all filesystems..."
+
+UNMOUNT_PASS=0
+UNMOUNT_FAIL=0
+UNMOUNT_ERRORS=()
+
+unmount_check() {
+    local desc="$1"; shift
+    if "$@" >/dev/null 2>&1; then
+        echo "    PASS: $desc"
+        ((UNMOUNT_PASS++))
+    else
+        echo "    FAIL: $desc"
+        UNMOUNT_ERRORS+=("$desc")
+        ((UNMOUNT_FAIL++))
+    fi
+}
+
+# No partition of the loop device should be mounted after the installer exits.
+STALE_MOUNTS=$(grep "${LOOP_DEV}" /proc/mounts 2>/dev/null || true)
+if [ -n "$STALE_MOUNTS" ]; then
+    echo "    Stale mounts found:"
+    printf '      %s\n' "$STALE_MOUNTS"
+fi
+unmount_check "no filesystems from ${LOOP_DEV} still mounted" test -z "$STALE_MOUNTS"
+
+# For metal variant: the installer's LUKS volume must not be active.
+if [ "$VARIANT" = "metal" ]; then
+    unmount_check "LUKS volume bes-target-root is closed" test ! -e /dev/mapper/bes-target-root
+fi
+
+if [ "$UNMOUNT_FAIL" -gt 0 ]; then
+    echo ""
+    echo "!!! Installer did not clean up mounts/LUKS before exiting."
+    echo "    Failures: ${UNMOUNT_ERRORS[*]}"
+    exit 1
+fi
+
+# ============================================================
 # Phase 5: Verify the written disk
 # ============================================================
 
