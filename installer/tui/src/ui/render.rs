@@ -27,7 +27,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::NetworkCheck => render_network_check(frame, chunks[1], state),
         Screen::NetworkResults => render_network_results(frame, chunks[1], state),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
-        Screen::DiskEncryptionScreen => render_disk_encryption(frame, chunks[1], state),
+        Screen::DiskEncryption => render_disk_encryption(frame, chunks[1], state),
         Screen::Hostname => render_hostname(frame, chunks[1], state),
         Screen::HostnameInput => render_hostname_input(frame, chunks[1], state),
         Screen::Login => render_login(frame, chunks[1], state),
@@ -50,7 +50,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Welcome => "Welcome",
         Screen::NetworkCheck => "Network Check",
         Screen::DiskSelection => "1/6 Select Target Disk",
-        Screen::DiskEncryptionScreen => "2/6 Disk Encryption",
+        Screen::DiskEncryption => "2/6 Disk Encryption",
         Screen::Hostname => "3/6 Hostname",
         Screen::HostnameInput => "3/6 Hostname",
         Screen::Login => "4/6 Login",
@@ -295,9 +295,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
             "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: quit".into()
         }
         Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
-        Screen::DiskEncryptionScreen => {
-            "Up/Down: select | Enter: next | Esc: back | q: quit".into()
-        }
+        Screen::DiskEncryption => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
         Screen::Hostname => "Up/Down: select | Enter: next | Esc: back".into(),
         Screen::HostnameInput => "Enter: next | Esc: back".into(),
         Screen::Login => {
@@ -824,7 +822,7 @@ fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.confirmation+3]
+// r[impl installer.tui.confirmation+4]
 // r[impl installer.tui.password+4]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {

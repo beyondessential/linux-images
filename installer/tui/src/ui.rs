@@ -24,7 +24,7 @@ pub enum Screen {
     Welcome,
     NetworkCheck,
     DiskSelection,
-    DiskEncryptionScreen,
+    DiskEncryption,
     Hostname,
     HostnameInput,
     Login,
@@ -529,8 +529,8 @@ impl AppState {
                 Screen::DiskSelection
             }
             Screen::NetworkCheck => return,
-            Screen::DiskSelection => Screen::DiskEncryptionScreen,
-            Screen::DiskEncryptionScreen => Screen::Hostname,
+            Screen::DiskSelection => Screen::DiskEncryption,
+            Screen::DiskEncryption => Screen::Hostname,
             Screen::Hostname => {
                 if self.hostname_from_dhcp {
                     Screen::Login
@@ -554,8 +554,8 @@ impl AppState {
         self.screen = match &self.screen {
             Screen::NetworkCheck => Screen::Welcome,
             Screen::DiskSelection => Screen::Welcome,
-            Screen::DiskEncryptionScreen => Screen::DiskSelection,
-            Screen::Hostname => Screen::DiskEncryptionScreen,
+            Screen::DiskEncryption => Screen::DiskSelection,
+            Screen::Hostname => Screen::DiskEncryption,
             Screen::HostnameInput => Screen::Hostname,
             Screen::Login => {
                 if self.hostname_from_dhcp {
@@ -934,7 +934,7 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
-        assert_eq!(state.screen, Screen::DiskEncryptionScreen);
+        assert_eq!(state.screen, Screen::DiskEncryption);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
         // Static is default for encrypted (hostname_from_dhcp = false), advance to HostnameInput
@@ -963,7 +963,7 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
-        assert_eq!(state.screen, Screen::DiskEncryptionScreen);
+        assert_eq!(state.screen, Screen::DiskEncryption);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
         // None encryption defaults to hostname_from_dhcp = true (network-assigned),
@@ -1021,7 +1021,7 @@ mod tests {
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
-        assert_eq!(state.screen, Screen::DiskEncryptionScreen);
+        assert_eq!(state.screen, Screen::DiskEncryption);
         state.go_back();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.go_back();
@@ -1048,7 +1048,7 @@ mod tests {
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
-        assert_eq!(state.screen, Screen::DiskEncryptionScreen);
+        assert_eq!(state.screen, Screen::DiskEncryption);
     }
 
     #[test]

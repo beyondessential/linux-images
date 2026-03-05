@@ -86,7 +86,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         },
 
         // r[impl installer.tui.disk-encryption+2]
-        Screen::DiskEncryptionScreen => match key.code {
+        Screen::DiskEncryption => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
             KeyCode::Down | KeyCode::Char('j') => {
@@ -720,7 +720,7 @@ mod tests {
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.selected_disk_index, 1);
-        assert_eq!(final_state.screen, Screen::DiskEncryptionScreen);
+        assert_eq!(final_state.screen, Screen::DiskEncryption);
     }
 
     // r[verify installer.dryrun.script.headless]
