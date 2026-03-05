@@ -494,23 +494,6 @@ check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is e
 check_service_enabled "cloud-init.service"            "cloud-init is enabled"
 
 if [ "$VARIANT" = "metal" ]; then
-    # r[verify image.luks.reencrypt]
-    check_service_enabled "luks-reencrypt.service"    "luks-reencrypt is enabled (metal)"
-
-    # r[verify image.tpm.service]
-    check_service_enabled "setup-tpm-unlock.service"  "setup-tpm-unlock is enabled (metal)"
-
-    # r[verify image.tpm.enrollment]
-    TPM_SCRIPT="$MNT/usr/local/bin/setup-tpm-unlock"
-    check "setup-tpm-unlock script exists" test -x "$TPM_SCRIPT"
-    if [ -f "$TPM_SCRIPT" ]; then
-        check "tpm script uses systemd-cryptenroll" grep -q 'systemd-cryptenroll' "$TPM_SCRIPT"
-        check "tpm script binds to PCR 7" grep -q 'tpm2-pcrs=7' "$TPM_SCRIPT"
-        check "tpm script wipes password slot" grep -q 'wipe-slot' "$TPM_SCRIPT"
-        check "tpm script updates crypttab for tpm2" grep -q 'tpm2-device=auto' "$TPM_SCRIPT"
-        check "tpm script regenerates initramfs" grep -q 'dracut -f' "$TPM_SCRIPT"
-    fi
-
     # r[verify image.luks.keyfile]
     check "LUKS empty keyfile exists" test -f "$MNT/etc/luks/empty-keyfile"
     KEYFILE_MODE="$(stat -c%a "$MNT/etc/luks/empty-keyfile" 2>/dev/null || true)"
@@ -525,16 +508,6 @@ if [ "$VARIANT" = "metal" ]; then
     check "dracut LUKS keyfile config exists" test -f "$MNT/etc/dracut.conf.d/02-luks-keyfile.conf"
 else
     check_not "no crypttab for cloud variant" test -f "$MNT/etc/crypttab"
-    if find "$MNT/etc/systemd/system" -name "luks-reencrypt.service" -type l 2>/dev/null | grep -q .; then
-        fail "no luks-reencrypt for cloud"
-    else
-        pass "no luks-reencrypt for cloud"
-    fi
-    if find "$MNT/etc/systemd/system" -name "setup-tpm-unlock.service" -type l 2>/dev/null | grep -q .; then
-        fail "no setup-tpm-unlock for cloud"
-    else
-        pass "no setup-tpm-unlock for cloud"
-    fi
 fi
 
 # ============================================================

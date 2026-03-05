@@ -215,20 +215,6 @@ install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/syst
 systemctl enable grow-root-filesystem.service
 
 # ============================================================
-# Metal-variant encryption services
-# ============================================================
-if [ "$VARIANT" = "metal" ]; then
-    # r[image.luks.reencrypt]
-    install -m 644 /tmp/files/systemd/luks-reencrypt.service /etc/systemd/system/luks-reencrypt.service
-    systemctl enable luks-reencrypt.service
-
-    # r[image.tpm.service] r[image.tpm.enrollment]
-    install -m 755 /tmp/files/setup-tpm-unlock /usr/local/bin/setup-tpm-unlock
-    install -m 644 /tmp/files/systemd/setup-tpm-unlock.service /etc/systemd/system/setup-tpm-unlock.service
-    systemctl enable setup-tpm-unlock.service
-fi
-
-# ============================================================
 # Credentials
 # ============================================================
 # r[image.credentials.ubuntu-user]
