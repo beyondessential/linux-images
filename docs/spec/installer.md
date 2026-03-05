@@ -307,9 +307,7 @@ name, and transport type (SSD, HDD, NVMe, USB, etc.).
 >   partition is lost, you will need the recovery passphrase."
 > - **No encryption**: "The root partition will not be encrypted."
 
-r[installer.tui.tpm-toggle]
-When the `metal` variant is selected, the TUI must offer a toggle to disable
-TPM auto-enrollment.
+
 
 > r[installer.tui.hostname+5]
 > After disk encryption selection, the TUI presents a hostname selection
