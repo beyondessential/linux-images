@@ -20,7 +20,7 @@ fi
 echo "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu noble main" \
     | tee /etc/apt/sources.list.d/tailscale.list
 
-# r[image.tailscale.pinned]: Pin the Tailscale repo at priority 900
+# r[image.packages.tailscale]: Pin the Tailscale repo at priority 900
 cat > /etc/apt/preferences.d/99-tailscale << 'EOF'
 Package: *
 Pin: release o=pkgs.tailscale.com
