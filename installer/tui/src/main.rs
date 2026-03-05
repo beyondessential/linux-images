@@ -79,7 +79,14 @@ struct Cli {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    init_logging(&cli.log);
+
+    if let Err(e) = init_logging(&cli.log) {
+        eprintln!(
+            "error: failed to initialize logging to {}: {e}",
+            cli.log.display()
+        );
+        return ExitCode::FAILURE;
+    }
 
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
@@ -90,15 +97,15 @@ fn main() -> ExitCode {
     }
 }
 
-fn init_logging(log_path: &PathBuf) {
-    let file = File::create(log_path).ok();
-    if let Some(file) = file {
-        let file_layer = fmt::layer()
-            .with_writer(file)
-            .with_ansi(false)
-            .with_target(false);
-        tracing_subscriber::registry().with(file_layer).init();
-    }
+fn init_logging(log_path: &PathBuf) -> Result<()> {
+    let file = File::create(log_path)
+        .with_context(|| format!("creating log file {}", log_path.display()))?;
+    let file_layer = fmt::layer()
+        .with_writer(file)
+        .with_ansi(false)
+        .with_target(false);
+    tracing_subscriber::registry().with(file_layer).init();
+    Ok(())
 }
 
 fn run(cli: Cli) -> Result<()> {
