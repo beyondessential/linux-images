@@ -139,7 +139,11 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     // r[impl installer.dryrun.fake-tpm]
-    let tpm_present = cli.fake_tpm || std::path::Path::new("/dev/tpm0").exists();
+    let tpm_present = if cli.fake_devices.is_some() {
+        cli.fake_tpm
+    } else {
+        cli.fake_tpm || std::path::Path::new("/dev/tpm0").exists()
+    };
     tracing::info!("TPM present: {tpm_present}");
 
     let config_warnings = install_config.validate();
@@ -406,12 +410,10 @@ fn run_interactive(
     config_warnings: Vec<String>,
     cli: &Cli,
 ) -> Result<()> {
-    let disk_encryption = cfg.disk_encryption.unwrap_or_else(|| {
-        if tpm_present {
-            config::DiskEncryption::Tpm
-        } else {
-            config::DiskEncryption::Keyfile
-        }
+    let disk_encryption = cfg.disk_encryption.unwrap_or(if tpm_present {
+        config::DiskEncryption::Tpm
+    } else {
+        config::DiskEncryption::Keyfile
     });
     let variant = disk_encryption.variant();
 
