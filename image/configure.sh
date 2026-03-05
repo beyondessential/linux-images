@@ -102,7 +102,7 @@ install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
 # ============================================================
 # Variant identification
 # ============================================================
-# r[image.variant.types]
+# r[image.variant.types+2]
 mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 
