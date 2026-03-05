@@ -271,34 +271,34 @@ r[installer.tui.tpm-toggle]
 When the `metal` variant is selected, the TUI must offer a toggle to disable
 TPM auto-enrollment.
 
-r[installer.tui.hostname+3]
-After variant/TPM configuration, the TUI presents a hostname selection
-screen. The screen offers two options via an Up/Down selector:
-
-- **Static hostname**
-- **Network-assigned (DHCP)** (metal variant) or **Network-assigned
-  (DHCP / cloud-init)** (cloud variant)
-
-For the metal variant, "Static hostname" is selected by default. For the
-cloud variant, the network-assigned option is selected by default.
-
-Enter confirms the selection. If "Static hostname" is chosen, a second
-sub-screen (`HostnameInput`) presents a text input for the hostname. The
-field may be pre-filled from the configuration file or a resolved hostname
-template. For the metal variant, the hostname is required: the user must
-enter a non-empty value to advance, and an inline error is shown if the
-field is empty on Enter. For the cloud variant, the hostname is optional:
-if left empty, the image's built-in default hostname (`ubuntu`) is kept.
-Esc from the text input returns to the selection screen.
-
-If the network-assigned option is chosen, the TUI advances directly to
-the Login screen with `hostname_from_dhcp` set to true and no text input
-step. Esc from the selection screen returns to the previous screen
-(TpmToggle for metal, VariantSelection for cloud).
-
-When a `hostname-template` is present in the configuration, the template
-is resolved to a concrete hostname at startup, pre-fills the text input,
-and the selector defaults to "Static hostname" regardless of variant.
+> r[installer.tui.hostname+4]
+> After variant/TPM configuration, the TUI presents a hostname selection
+> screen. The screen offers two options via an Up/Down selector:
+>
+> - **Static hostname**
+> - **Network-assigned (DHCP)** (metal variant) or **Network-assigned
+>   (DHCP / cloud-init)** (cloud variant)
+>
+> For the metal variant, "Static hostname" is selected by default. For the
+> cloud variant, the network-assigned option is selected by default.
+>
+> Enter confirms the selection. If "Static hostname" is chosen, a second
+> sub-screen (`HostnameInput`) presents a text input for the hostname. The
+> field may be pre-filled from the configuration file or a resolved hostname
+> template. The hostname is required: the user must enter a non-empty value
+> to advance, and an inline error is shown if the field is empty on Enter.
+> This applies to both variants — choosing "Static hostname" is an explicit
+> decision to set a hostname, so an empty value is never accepted.
+> Esc from the text input returns to the selection screen.
+>
+> If the network-assigned option is chosen, the TUI advances directly to
+> the Login screen with `hostname_from_dhcp` set to true and no text input
+> step. Esc from the selection screen returns to the previous screen
+> (TpmToggle for metal, VariantSelection for cloud).
+>
+> When a `hostname-template` is present in the configuration, the template
+> is resolved to a concrete hostname at startup, pre-fills the text input,
+> and the selector defaults to "Static hostname" regardless of variant.
 
 r[installer.tui.tailscale+3]
 After the hostname screen, the TUI presents a Login screen. The Login screen

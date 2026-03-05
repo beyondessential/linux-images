@@ -488,7 +488,7 @@ fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.hostname+3]
+// r[impl installer.tui.hostname+4]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
     let is_metal = state.variant == crate::config::Variant::Metal;
 
@@ -529,18 +529,12 @@ fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.hostname+3]
+// r[impl installer.tui.hostname+4]
 fn render_hostname_input(frame: &mut Frame, area: Rect, state: &AppState) {
-    let is_metal = state.variant == crate::config::Variant::Metal;
-
     let mut lines = vec![
         Line::from(""),
         Line::from("  Enter the hostname for this system."),
     ];
-
-    if !is_metal {
-        lines.push(Line::from("  Leave empty to keep the default (ubuntu)."));
-    }
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
@@ -554,7 +548,7 @@ fn render_hostname_input(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::styled("_", Style::default().fg(Color::DarkGray)),
     ]));
 
-    if is_metal && state.hostname_input.trim().is_empty() {
+    if state.hostname_input.trim().is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "  Hostname cannot be empty.",

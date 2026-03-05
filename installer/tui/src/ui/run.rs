@@ -103,7 +103,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+3]
+        // r[impl installer.tui.hostname+4]
         Screen::Hostname => match key.code {
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Down => {
@@ -113,7 +113,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+3]
+        // r[impl installer.tui.hostname+4]
         Screen::HostnameInput => match key.code {
             KeyCode::Esc => state.go_back(),
             KeyCode::Enter => {
@@ -928,7 +928,7 @@ mod tests {
         assert!(!final_state.password_confirming);
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
     fn scripted_metal_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -950,7 +950,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
     fn scripted_metal_hostname_typed_allows_advance() {
         let state = make_state();
@@ -974,7 +974,7 @@ mod tests {
         assert_eq!(final_state.hostname_input, "srv");
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
     fn scripted_cloud_network_assigned_default_advances_to_login() {
         let state = make_state();
@@ -998,9 +998,9 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
-    fn scripted_cloud_static_empty_hostname_allows_advance() {
+    fn scripted_cloud_static_empty_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
             // Welcome -> DiskSelection
@@ -1015,17 +1015,17 @@ mod tests {
             // Up to select Static -> Enter -> HostnameInput
             press(KeyCode::Up),
             press(KeyCode::Enter),
-            // HostnameInput: press Enter with empty input — should advance for cloud
+            // HostnameInput: press Enter with empty input — should NOT advance
             press(KeyCode::Enter),
         ];
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Login);
+        assert_eq!(final_state.screen, Screen::HostnameInput);
         assert_eq!(final_state.variant, Variant::Cloud);
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
     fn scripted_metal_dhcp_selected_advances_to_login() {
         let state = make_state();
@@ -1046,7 +1046,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
     fn scripted_metal_dhcp_then_static_requires_hostname() {
         let state = make_state();
@@ -1070,7 +1070,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
     fn scripted_metal_dhcp_skips_text_input() {
         let state = make_state();
@@ -1090,7 +1090,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
     fn scripted_hostname_input_esc_returns_to_selector() {
         let state = make_state();
@@ -1110,7 +1110,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Hostname);
     }
 
-    // r[verify installer.tui.hostname+3]
+    // r[verify installer.tui.hostname+4]
     #[test]
     fn scripted_cloud_selector_navigation() {
         let state = make_state();
