@@ -91,6 +91,8 @@ fn main() -> ExitCode {
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
+            // r[impl installer.container.error-logging]
+            tracing::error!("{e:#}");
             eprintln!("error: {e:#}");
             ExitCode::FAILURE
         }

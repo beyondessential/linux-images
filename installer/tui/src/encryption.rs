@@ -480,6 +480,7 @@ fn run_command(program: &str, args: &[&str]) -> Result<()> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::error!("{program} failed (exit {}): {stderr}", output.status);
         bail!("{program} failed (exit {}): {stderr}", output.status);
     }
 

@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use sha_crypt::{Sha512Params, sha512_simple};
 
 use crate::config::{DiskEncryption, FirstbootConfig};
+use crate::writer;
 
 const MOUNT_BASE: &str = "/mnt/target";
 const LUKS_NAME: &str = "bes-target-root";
@@ -27,6 +28,10 @@ pub fn mount_target(
     target_device: &Path,
     disk_encryption: DiskEncryption,
 ) -> Result<MountedTarget> {
+    // r[impl installer.container.partition-devices]
+    writer::ensure_partition_devices(target_device)
+        .context("ensuring partition device nodes exist")?;
+
     let root_part = partition_path(target_device, 3)?;
 
     let luks_active = disk_encryption.is_encrypted();
@@ -373,6 +378,7 @@ fn run_command(program: &str, args: &[&str]) -> Result<()> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::error!("{program} failed (exit {}): {stderr}", output.status);
         bail!("{program} failed (exit {}): {stderr}", output.status);
     }
 
