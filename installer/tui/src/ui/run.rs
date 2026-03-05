@@ -11,7 +11,7 @@ use crossterm::{cursor, execute};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
-use crate::config::Variant;
+use crate::config::{Variant, validate_hostname};
 use crate::firstboot;
 use crate::writer;
 
@@ -103,7 +103,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+4]
+        // r[impl installer.tui.hostname+5]
         Screen::Hostname => match key.code {
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Down => {
@@ -113,20 +113,34 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+4]
+        // r[impl installer.tui.hostname+5]
         Screen::HostnameInput => match key.code {
-            KeyCode::Esc => state.go_back(),
+            KeyCode::Esc => {
+                state.hostname_error = None;
+                state.go_back();
+            }
             KeyCode::Enter => {
-                if state.hostname_required() && state.hostname_input.trim().is_empty() {
-                    // Block advance — render will show the error
+                let trimmed = state.hostname_input.trim();
+                if trimmed.is_empty() {
+                    state.hostname_error = Some("Hostname cannot be empty.".into());
                 } else {
-                    state.advance();
+                    match validate_hostname(trimmed) {
+                        Ok(()) => {
+                            state.hostname_error = None;
+                            state.advance();
+                        }
+                        Err(e) => {
+                            state.hostname_error = Some(e);
+                        }
+                    }
                 }
             }
             KeyCode::Backspace => {
+                state.hostname_error = None;
                 state.hostname_input.pop();
             }
             KeyCode::Char(c) => {
+                state.hostname_error = None;
                 state.hostname_input.push(c);
             }
             _ => {}
@@ -928,7 +942,7 @@ mod tests {
         assert!(!final_state.password_confirming);
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_metal_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -950,7 +964,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_metal_hostname_typed_allows_advance() {
         let state = make_state();
@@ -974,7 +988,7 @@ mod tests {
         assert_eq!(final_state.hostname_input, "srv");
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_cloud_network_assigned_default_advances_to_login() {
         let state = make_state();
@@ -998,7 +1012,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_cloud_static_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -1025,7 +1039,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_metal_dhcp_selected_advances_to_login() {
         let state = make_state();
@@ -1046,7 +1060,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_metal_dhcp_then_static_requires_hostname() {
         let state = make_state();
@@ -1070,7 +1084,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_metal_dhcp_skips_text_input() {
         let state = make_state();
@@ -1090,7 +1104,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_hostname_input_esc_returns_to_selector() {
         let state = make_state();
@@ -1110,7 +1124,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Hostname);
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn scripted_cloud_selector_navigation() {
         let state = make_state();
@@ -1134,6 +1148,124 @@ mod tests {
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Login);
         assert!(final_state.hostname_from_dhcp);
+    }
+
+    // r[verify installer.tui.hostname+5]
+    #[test]
+    fn scripted_invalid_hostname_chars_blocks_advance() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname selector: Static default -> Enter -> HostnameInput
+            press(KeyCode::Enter),
+            // HostnameInput: type invalid hostname then try to advance
+            press(KeyCode::Char('!')),
+            press(KeyCode::Char('?')),
+            press(KeyCode::Char('$')),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::HostnameInput);
+        assert!(final_state.hostname_error.is_some());
+        assert!(
+            final_state
+                .hostname_error
+                .as_ref()
+                .unwrap()
+                .contains("letters, digits, and hyphens")
+        );
+    }
+
+    // r[verify installer.tui.hostname+5]
+    #[test]
+    fn scripted_leading_hyphen_hostname_blocks_advance() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname selector: Static default -> Enter -> HostnameInput
+            press(KeyCode::Enter),
+            // HostnameInput: type hostname starting with hyphen
+            press(KeyCode::Char('-')),
+            press(KeyCode::Char('b')),
+            press(KeyCode::Char('a')),
+            press(KeyCode::Char('d')),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::HostnameInput);
+        assert!(final_state.hostname_error.is_some());
+        assert!(
+            final_state
+                .hostname_error
+                .as_ref()
+                .unwrap()
+                .contains("hyphen")
+        );
+    }
+
+    // r[verify installer.tui.hostname+5]
+    #[test]
+    fn scripted_valid_hostname_advances() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname selector: Static default -> Enter -> HostnameInput
+            press(KeyCode::Enter),
+            // HostnameInput: type valid hostname
+            press(KeyCode::Char('m')),
+            press(KeyCode::Char('y')),
+            press(KeyCode::Char('-')),
+            press(KeyCode::Char('h')),
+            press(KeyCode::Char('o')),
+            press(KeyCode::Char('s')),
+            press(KeyCode::Char('t')),
+            press(KeyCode::Char('0')),
+            press(KeyCode::Char('1')),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Login);
+        assert_eq!(final_state.hostname_input, "my-host01");
+        assert!(final_state.hostname_error.is_none());
+    }
+
+    // r[verify installer.tui.hostname+5]
+    #[test]
+    fn scripted_hostname_error_cleared_on_typing() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname selector: Static default -> Enter -> HostnameInput
+            press(KeyCode::Enter),
+            // HostnameInput: type invalid hostname, try to advance (error set)
+            press(KeyCode::Char('!')),
+            press(KeyCode::Enter),
+            // Now type a character — error should be cleared
+            press(KeyCode::Char('a')),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::HostnameInput);
+        assert!(final_state.hostname_error.is_none());
     }
 
     // r[verify installer.dryrun.script.headless]

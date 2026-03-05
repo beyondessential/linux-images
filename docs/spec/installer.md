@@ -271,7 +271,7 @@ r[installer.tui.tpm-toggle]
 When the `metal` variant is selected, the TUI must offer a toggle to disable
 TPM auto-enrollment.
 
-> r[installer.tui.hostname+4]
+> r[installer.tui.hostname+5]
 > After variant/TPM configuration, the TUI presents a hostname selection
 > screen. The screen offers two options via an Up/Down selector:
 >
@@ -289,6 +289,11 @@ TPM auto-enrollment.
 > to advance, and an inline error is shown if the field is empty on Enter.
 > This applies to both variants — choosing "Static hostname" is an explicit
 > decision to set a hostname, so an empty value is never accepted.
+>
+> The hostname is also validated: it must contain only ASCII
+> letters, digits, and hyphens (`a-z`, `0-9`, `-`), must not start or end
+> with a hyphen, and must not exceed 63 characters. If validation fails, an
+> inline error describing the problem is shown and advance is blocked.
 > Esc from the text input returns to the selection screen.
 >
 > If the network-assigned option is chosen, the TUI advances directly to

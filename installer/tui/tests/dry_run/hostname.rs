@@ -310,7 +310,7 @@ fn auto_invalid_hostname_template_emits_warning() {
         .failure();
 }
 
-// r[verify installer.tui.hostname+4]
+// r[verify installer.tui.hostname+5]
 #[test]
 fn scripted_metal_dhcp_toggle_produces_dhcp_sentinel() {
     let f = Fixture::new();

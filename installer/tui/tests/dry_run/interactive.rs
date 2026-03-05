@@ -131,7 +131,7 @@ enter
     assert!(!plan["disable_tpm"].as_bool().unwrap());
 }
 
-// r[verify installer.tui.hostname+4]
+// r[verify installer.tui.hostname+5]
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 #[test]
@@ -202,7 +202,7 @@ enter
     assert_eq!(plan["firstboot"]["timezone"], "UTC");
 }
 
-// r[verify installer.tui.hostname+4]
+// r[verify installer.tui.hostname+5]
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 // r[verify installer.tui.password+4]

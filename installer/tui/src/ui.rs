@@ -54,6 +54,7 @@ pub struct AppState {
     pub hostname_input: String,
     pub hostname_from_dhcp: bool,
     pub hostname_from_template: bool,
+    pub hostname_error: Option<String>,
     pub tailscale_input: String,
     pub ssh_keys: Vec<String>,
     pub ssh_key_cursor: usize,
@@ -203,6 +204,7 @@ impl AppState {
             hostname_input,
             hostname_from_dhcp,
             hostname_from_template,
+            hostname_error: None,
             tailscale_input,
             ssh_keys,
             ssh_key_cursor: 0,
@@ -236,7 +238,7 @@ impl AppState {
         state
     }
 
-    // r[impl installer.tui.hostname+4]
+    // r[impl installer.tui.hostname+5]
     // r[impl installer.tui.tailscale+3]
     // r[impl installer.tui.ssh-keys+5]
     // r[impl installer.tui.password+4]
@@ -244,7 +246,7 @@ impl AppState {
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
     pub fn firstboot_config(&self) -> Option<FirstbootConfig> {
-        let hostname = if !self.hostname_from_dhcp && !self.hostname_input.trim().is_empty() {
+        let hostname = if self.hostname_required() && !self.hostname_input.trim().is_empty() {
             Some(self.hostname_input.trim().to_string())
         } else {
             None
@@ -488,7 +490,7 @@ impl AppState {
     }
 
     // r[impl installer.tui.tpm-toggle]
-    // r[impl installer.tui.hostname+4]
+    // r[impl installer.tui.hostname+5]
     // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
@@ -568,7 +570,7 @@ impl AppState {
             .eq_ignore_ascii_case(self.confirmation_text())
     }
 
-    // r[impl installer.tui.hostname+4]
+    // r[impl installer.tui.hostname+5]
     pub fn hostname_required(&self) -> bool {
         !self.hostname_from_dhcp
     }
@@ -1083,7 +1085,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Error("test".into()));
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_prefilled_defaults_to_static() {
         use crate::disk::TransportType;
@@ -1111,7 +1113,7 @@ mod tests {
         assert!(!state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn cloud_defaults_to_dhcp() {
         let state = make_state();
@@ -1142,7 +1144,7 @@ mod tests {
         assert!(cloud.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1231,7 +1233,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn firstboot_config_from_inputs() {
         let mut state = make_state();
@@ -1264,7 +1266,7 @@ mod tests {
         assert!(fb.password_hash.is_none());
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn firstboot_config_empty_strings_are_none() {
         let mut state = make_state();
@@ -1332,7 +1334,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_required_for_metal() {
         let mut state = make_state();
@@ -1340,7 +1342,7 @@ mod tests {
         assert!(state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_required_for_cloud_static() {
         let mut state = make_state();
@@ -1349,7 +1351,7 @@ mod tests {
         assert!(state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_not_required_for_cloud_dhcp() {
         let mut state = make_state();
@@ -1358,7 +1360,7 @@ mod tests {
         assert!(!state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+4]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_not_required_for_metal_with_dhcp() {
         let mut state = make_state();
