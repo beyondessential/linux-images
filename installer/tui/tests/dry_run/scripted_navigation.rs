@@ -1,32 +1,33 @@
 use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 
-// r[verify installer.tui.tpm-toggle]
 // r[verify installer.tui.disk-encryption+2]
 #[test]
-fn scripted_tpm_toggle_twice_leaves_enabled() {
+fn scripted_encryption_cycle_twice_returns_to_default() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    // No TPM present (no --fake-tpm), default is Keyfile.
+    // Cycle twice: Keyfile -> None -> Keyfile (back to default).
     let script = f.write_script(
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Variant
+# DiskEncryptionScreen: default Keyfile, cycle down twice (Keyfile->None->Keyfile)
+down
+down
 enter
-# Toggle TPM disable on, then off again
-space
-space
+# Hostname selector: Static is default for metal (Keyfile), Enter -> HostnameInput
 enter
-# Hostname selector: Static is default for metal, Enter -> HostnameInput
-enter
-# HostnameInput: type 'h' (required for metal)
+# HostnameInput: type 'h' (required for encrypted)
 type:h
 enter
 # Login: type password
 type:pw
 enter
 type:pw
+enter
+# Timezone: accept default
 enter
 # NetworkResults
 enter
@@ -52,36 +53,37 @@ enter
 
     let plan = f.read_plan();
     assert!(!plan["tpm_present"].as_bool().unwrap());
+    assert_eq!(plan["disk_encryption"], "keyfile");
 }
 
-// r[verify installer.tui.variant-selection]
+// r[verify installer.tui.disk-encryption+2]
 #[test]
-fn scripted_variant_toggle_back_to_metal() {
+fn scripted_encryption_cycle_back_to_keyfile() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Toggle variant twice (metal -> cloud -> metal), which means we get TpmToggle
+    // No TPM present, default is Keyfile (metal).
+    // Cycle once to None (cloud), then cycle again back to Keyfile (metal).
     let script = f.write_script(
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Toggle variant: metal->cloud
+# DiskEncryptionScreen: default Keyfile, cycle: Keyfile->None->Keyfile
 down
-# Toggle variant: cloud->metal
 down
 enter
-# Now we should be on TpmToggle (metal flow)
+# Hostname selector: Static is default for metal (Keyfile), Enter -> HostnameInput
 enter
-# Hostname selector: Static is default for metal, Enter -> HostnameInput
-enter
-# HostnameInput: type 'h' (required for metal)
+# HostnameInput: type 'h' (required for encrypted)
 type:h
 enter
 # Login: type password
 type:pw
 enter
 type:pw
+enter
+# Timezone: accept default
 enter
 # NetworkResults
 enter
@@ -106,7 +108,8 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["disk_encryption"], "tpm");
+    assert_eq!(plan["disk_encryption"], "keyfile");
+    assert_eq!(plan["variant"], "metal");
 }
 
 // r[verify installer.tui.disk-detection+3]
@@ -124,19 +127,19 @@ enter
 down
 down
 enter
-# Variant
-enter
-# TpmToggle
+# DiskEncryptionScreen: accept default (Keyfile)
 enter
 # Hostname selector: Static is default for metal, Enter -> HostnameInput
 enter
-# HostnameInput: type 'h' (required for metal)
+# HostnameInput: type 'h' (required for encrypted)
 type:h
 enter
 # Login: type password
 type:pw
 enter
 type:pw
+enter
+# Timezone: accept default
 enter
 # NetworkResults
 enter
@@ -177,19 +180,19 @@ enter
 # Disk: up wraps to last
 up
 enter
-# Variant
-enter
-# TpmToggle
+# DiskEncryptionScreen: accept default (Keyfile)
 enter
 # Hostname selector: Static is default for metal, Enter -> HostnameInput
 enter
-# HostnameInput: type 'h' (required for metal)
+# HostnameInput: type 'h' (required for encrypted)
 type:h
 enter
 # Login: type password
 type:pw
 enter
 type:pw
+enter
+# Timezone: accept default
 enter
 # NetworkResults
 enter
@@ -222,13 +225,14 @@ enter
 fn scripted_hostname_with_backspace_correction() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    // No TPM, default Keyfile. Cycle to None (cloud) for network-assigned default.
     let script = f.write_script(
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Variant: toggle to cloud
+# DiskEncryptionScreen: cycle to None (cloud)
 down
 enter
 # Hostname selector: network-assigned is default for cloud, Up to select Static
@@ -245,6 +249,8 @@ enter
 type:pw
 enter
 type:pw
+enter
+# Timezone: accept default
 enter
 # NetworkResults
 enter
@@ -277,13 +283,14 @@ enter
 fn scripted_multiline_ssh_keys() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    // No TPM, default Keyfile. Cycle to None (cloud) for network-assigned default.
     let script = f.write_script(
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Variant: toggle to cloud
+# DiskEncryptionScreen: cycle to None (cloud)
 down
 enter
 # Hostname selector: network-assigned is default for cloud, Enter -> Login
@@ -299,6 +306,8 @@ enter
 type:pw
 enter
 type:pw
+enter
+# Timezone: accept default
 enter
 # NetworkResults
 enter
@@ -338,21 +347,21 @@ fn scripted_wrong_confirmation_does_not_advance() {
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Variant
+# DiskEncryptionScreen: accept default (Keyfile)
 enter
-# TpmToggle
+# Hostname selector: Static is default for metal (Keyfile), Enter -> HostnameInput
 enter
-# Hostname selector: Static is default for metal, Enter -> HostnameInput
-enter
-# HostnameInput: type 'h' (required for metal)
+# HostnameInput: type 'h' (required for encrypted)
 type:h
 enter
 # Login: type password
 type:pw
 enter
 type:pw
+enter
+# Timezone: accept default
 enter
 # NetworkResults
 enter

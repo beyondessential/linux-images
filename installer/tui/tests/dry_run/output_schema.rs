@@ -237,7 +237,7 @@ fn dry_run_no_config_is_interactive() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
-    assert_eq!(plan["disk_encryption"], "tpm");
+    assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 

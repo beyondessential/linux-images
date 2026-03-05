@@ -318,13 +318,11 @@ fn scripted_metal_dhcp_toggle_produces_dhcp_sentinel() {
     let script = f.write_script(
         "# Welcome -> DiskSelection
 enter
-# DiskSelection -> VariantSelection (Metal default)
+# DiskSelection -> DiskEncryptionScreen (default Keyfile / metal)
 enter
-# VariantSelection -> TpmToggle
+# DiskEncryptionScreen -> Hostname selector
 enter
-# TpmToggle -> Hostname selector
-enter
-# Hostname selector: Down to select DHCP, Enter -> Login (skip HostnameInput)
+# Hostname selector: Static is default for metal, Down to select DHCP, Enter -> Login
 down
 enter
 # Login: type password

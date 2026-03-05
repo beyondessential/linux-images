@@ -121,9 +121,9 @@ fn scripted_timezone_search_and_select() {
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Variant: toggle to cloud (no hostname required)
+# DiskEncryptionScreen: cycle to None (cloud)
 down
 enter
 # Hostname selector: network-assigned is default for cloud, Enter -> Login
@@ -177,9 +177,9 @@ fn scripted_timezone_navigate_and_select() {
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Variant: toggle to cloud
+# DiskEncryptionScreen: cycle to None (cloud)
 down
 enter
 # Hostname selector: network-assigned is default for cloud, Enter -> Login

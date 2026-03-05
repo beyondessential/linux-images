@@ -12,7 +12,7 @@ fn interactive_metal_full_flow() {
 enter
 # Disk: accept first
 enter
-# DiskEncryption: accept default (tpm)
+# DiskEncryption: accept default (keyfile)
 enter
 # Hostname selector: Static is default for encrypted, Enter -> HostnameInput
 enter
@@ -62,7 +62,7 @@ enter
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
-    assert_eq!(plan["disk_encryption"], "tpm");
+    assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
     assert_eq!(plan["firstboot"]["hostname"], "my-server");
@@ -77,7 +77,7 @@ enter
 fn interactive_none_encryption_flow() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // None encryption flow: welcome, disk, cycle encryption Tpm->Keyfile->None,
+    // None encryption flow: welcome, disk, cycle encryption Keyfile->None,
     // hostname, login, confirm. Single DiskEncryption screen.
     let script = f.write_script(
         "\
@@ -85,8 +85,7 @@ fn interactive_none_encryption_flow() {
 enter
 # Disk
 enter
-# DiskEncryption: cycle Tpm -> Keyfile -> None
-down
+# DiskEncryption: cycle Keyfile -> None
 down
 enter
 # Hostname selector: network-assigned is default for none, Enter -> Login
@@ -141,8 +140,7 @@ fn interactive_firstboot_fields_captured() {
 enter
 # Disk
 enter
-# DiskEncryption: cycle to None
-down
+# DiskEncryption: cycle Keyfile -> None
 down
 enter
 # Hostname selector: network-assigned is default for none, Up to select Static
@@ -217,8 +215,7 @@ fn interactive_empty_firstboot_is_null() {
 enter
 # Disk
 enter
-# DiskEncryption: cycle to None
-down
+# DiskEncryption: cycle Keyfile -> None
 down
 enter
 # Hostname selector: network-assigned is default for none, Enter -> Login
@@ -286,7 +283,7 @@ enter
 # Navigate to second disk
 down
 enter
-# DiskEncryption: accept default (tpm)
+# DiskEncryption: accept default (keyfile)
 enter
 # Hostname selector: Static is default for encrypted, Enter -> HostnameInput
 enter
@@ -355,7 +352,7 @@ fn interactive_quit_early_still_produces_plan() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
-    assert_eq!(plan["disk_encryption"], "tpm");
+    assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
@@ -384,7 +381,7 @@ fn interactive_empty_script_uses_initial_state() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
-    assert_eq!(plan["disk_encryption"], "tpm");
+    assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["variant"], "metal");
 }
 
@@ -401,8 +398,7 @@ fn interactive_go_back_from_confirmation_and_change() {
 enter
 # Disk
 enter
-# DiskEncryption: cycle to None
-down
+# DiskEncryption: cycle Keyfile -> None
 down
 enter
 # Hostname selector: network-assigned is default for none, Enter -> Login
@@ -426,8 +422,10 @@ esc
 alt:t
 type:tskey-auth-late
 enter
-# Login: password already set from first pass, Enter to confirm + Enter to advance
+# Login: advance (password already set, confirming=false so just advance)
+type:pw
 enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter
