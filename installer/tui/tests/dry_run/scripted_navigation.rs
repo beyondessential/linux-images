@@ -1,7 +1,7 @@
 use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 
 // r[verify installer.tui.tpm-toggle]
-// r[verify image.tpm.disableable]
+// r[verify installer.tui.disk-encryption+2]
 #[test]
 fn scripted_tpm_toggle_twice_leaves_enabled() {
     let f = Fixture::new();
@@ -51,7 +51,7 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert!(!plan["disable_tpm"].as_bool().unwrap());
+    assert!(!plan["tpm_present"].as_bool().unwrap());
 }
 
 // r[verify installer.tui.variant-selection]
@@ -106,7 +106,7 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["variant"], "metal");
+    assert_eq!(plan["disk_encryption"], "tpm");
 }
 
 // r[verify installer.tui.disk-detection+3]
@@ -326,7 +326,7 @@ enter
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.confirmation+3]
+// r[verify installer.tui.confirmation+4]
 #[test]
 fn scripted_wrong_confirmation_does_not_advance() {
     let f = Fixture::new();

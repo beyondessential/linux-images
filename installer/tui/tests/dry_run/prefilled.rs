@@ -8,7 +8,7 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
         r#"
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "/dev/nvme0n1"
 
         [firstboot]
@@ -17,7 +17,7 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
         ssh-authorized-keys = ["ssh-ed25519 AAAA key1"]
     "#,
     );
-    // Walk through accepting all defaults: welcome, disk, variant, tpm, hostname,
+    // Walk through accepting all defaults: welcome, disk, disk-encryption, hostname,
     // tailscale, ssh, confirm
     let script = f.write_script(
         "\
@@ -25,9 +25,7 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
 enter
 # Disk
 enter
-# Variant
-enter
-# TpmToggle
+# DiskEncryption: accept default (tpm)
 enter
 # Hostname selector: Static is default (hostname prefilled), Enter -> HostnameInput
 enter
@@ -69,6 +67,7 @@ enter
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "prefilled");
+    assert_eq!(plan["disk_encryption"], "tpm");
     assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
     assert_eq!(plan["firstboot"]["hostname"], "prefilled-host");
@@ -86,14 +85,14 @@ fn prefilled_overriding_values_via_tui() {
     let devices = f.write_devices(TWO_DISK_DEVICES);
     let config = f.write_config(
         r#"
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "/dev/nvme0n1"
 
         [firstboot]
         hostname = "old-host"
     "#,
     );
-    // Walk through: welcome, select second disk, switch to cloud, set new
+    // Walk through: welcome, select second disk, cycle encryption to none, set new
     // hostname (clear old, type new), skip tailscale, skip ssh, confirm
     let script = f.write_script(
         "\
@@ -102,7 +101,8 @@ enter
 # Disk: move down to second, accept
 down
 enter
-# Variant: toggle to cloud
+# DiskEncryption: cycle Tpm -> Keyfile -> None
+down
 down
 enter
 # Hostname selector: Static is default (hostname prefilled), Enter -> HostnameInput
@@ -150,6 +150,7 @@ enter
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "prefilled");
+    assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["variant"], "cloud");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
     assert_eq!(plan["firstboot"]["hostname"], "new-host");
@@ -163,7 +164,7 @@ fn prefilled_timezone_from_config() {
     let timezones = f.write_timezones();
     let config = f.write_config(
         r#"
-        variant = "cloud"
+        disk-encryption = "none"
         disk = "/dev/nvme0n1"
 
         [firstboot]
@@ -177,9 +178,9 @@ fn prefilled_timezone_from_config() {
 enter
 # Disk
 enter
-# Variant
+# DiskEncryption: accept default (none, from config)
 enter
-# Hostname selector: network-assigned is default for cloud, Enter -> Login
+# Hostname selector: network-assigned is default for none, Enter -> Login
 enter
 # Login: type password
 type:pw

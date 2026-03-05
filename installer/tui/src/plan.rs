@@ -2,16 +2,17 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::config::{FirstbootConfig, OperatingMode, Variant};
+use crate::config::{DiskEncryption, FirstbootConfig, OperatingMode};
 use crate::disk::BlockDevice;
 
-// r[impl installer.dryrun.schema+2]
+// r[impl installer.dryrun.schema+3]
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallPlan {
     pub mode: String,
+    pub disk_encryption: String,
     pub variant: String,
     pub disk: Option<DiskInfo>,
-    pub disable_tpm: bool,
+    pub tpm_present: bool,
     pub firstboot: Option<FirstbootInfo>,
     pub image_path: Option<PathBuf>,
     pub config_warnings: Vec<String>,
@@ -25,7 +26,7 @@ pub struct DiskInfo {
     pub transport: String,
 }
 
-// r[impl installer.dryrun.schema+2]
+// r[impl installer.dryrun.schema+3]
 #[derive(Debug, Clone, Serialize)]
 pub struct FirstbootInfo {
     pub hostname: Option<String>,
@@ -72,9 +73,9 @@ impl InstallPlan {
     )]
     pub fn new(
         mode: &OperatingMode,
-        variant: Variant,
+        disk_encryption: DiskEncryption,
         disk: Option<&BlockDevice>,
-        disable_tpm: bool,
+        tpm_present: bool,
         firstboot: Option<&FirstbootConfig>,
         hostname_from_template: bool,
         timezone: &str,
@@ -90,9 +91,10 @@ impl InstallPlan {
 
         InstallPlan {
             mode: mode_str.to_string(),
-            variant: variant.to_string(),
+            disk_encryption: disk_encryption.to_string(),
+            variant: disk_encryption.variant().to_string(),
             disk: disk.map(DiskInfo::from),
-            disable_tpm,
+            tpm_present,
             firstboot: firstboot
                 .map(|fb| FirstbootInfo::from_config(fb, hostname_from_template, timezone)),
             image_path,
@@ -118,7 +120,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::config::{FirstbootConfig, OperatingMode, Variant};
+    use crate::config::{DiskEncryption, FirstbootConfig, OperatingMode};
     use crate::disk::{BlockDevice, TransportType};
 
     fn sample_device() -> BlockDevice {
@@ -141,16 +143,16 @@ mod tests {
         }
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn plan_serializes_full() {
         let dev = sample_device();
         let fb = sample_firstboot();
         let plan = InstallPlan::new(
             &OperatingMode::Auto,
-            Variant::Metal,
+            DiskEncryption::Tpm,
             Some(&dev),
-            false,
+            true,
             Some(&fb),
             false,
             "America/New_York",
@@ -160,12 +162,13 @@ mod tests {
 
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["mode"], "auto");
+        assert_eq!(json["disk_encryption"], "tpm");
         assert_eq!(json["variant"], "metal");
         assert_eq!(json["disk"]["path"], "/dev/nvme0n1");
         assert_eq!(json["disk"]["model"], "Samsung 980 PRO");
         assert_eq!(json["disk"]["size_bytes"], 1_000_204_886_016u64);
         assert_eq!(json["disk"]["transport"], "NVMe");
-        assert!(!json["disable_tpm"].as_bool().unwrap());
+        assert!(json["tpm_present"].as_bool().unwrap());
         assert_eq!(json["firstboot"]["hostname"], "server-01");
         assert!(
             !json["firstboot"]["hostname_from_template"]
@@ -183,12 +186,12 @@ mod tests {
         assert!(json["config_warnings"].as_array().unwrap().is_empty());
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn plan_serializes_minimal() {
         let plan = InstallPlan::new(
             &OperatingMode::Interactive,
-            Variant::Cloud,
+            DiskEncryption::None,
             None,
             false,
             None,
@@ -200,14 +203,37 @@ mod tests {
 
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["mode"], "interactive");
+        assert_eq!(json["disk_encryption"], "none");
         assert_eq!(json["variant"], "cloud");
         assert!(json["disk"].is_null());
+        assert!(!json["tpm_present"].as_bool().unwrap());
         assert!(json["firstboot"].is_null());
         assert!(json["image_path"].is_null());
         assert_eq!(json["config_warnings"][0], "some warning");
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
+    #[test]
+    fn plan_keyfile_derives_metal_variant() {
+        let plan = InstallPlan::new(
+            &OperatingMode::Auto,
+            DiskEncryption::Keyfile,
+            None,
+            false,
+            None,
+            false,
+            "UTC",
+            None,
+            vec![],
+        );
+
+        let json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(json["disk_encryption"], "keyfile");
+        assert_eq!(json["variant"], "metal");
+        assert!(!json["tpm_present"].as_bool().unwrap());
+    }
+
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn firstboot_info_hides_authkey_value() {
         let fb = FirstbootConfig {
@@ -222,7 +248,7 @@ mod tests {
         assert!(json["tailscale_authkey"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn firstboot_info_no_authkey() {
         let fb = FirstbootConfig {
@@ -234,7 +260,7 @@ mod tests {
         assert!(!info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn firstboot_info_password_set_from_plaintext() {
         let fb = FirstbootConfig {
@@ -245,7 +271,7 @@ mod tests {
         assert!(info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn firstboot_info_password_set_from_hash() {
         let fb = FirstbootConfig {
@@ -256,7 +282,7 @@ mod tests {
         assert!(info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn disk_info_from_block_device() {
         let dev = sample_device();
@@ -267,7 +293,7 @@ mod tests {
         assert_eq!(info.transport, "NVMe");
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn all_operating_modes_map_correctly() {
         let dev = sample_device();
@@ -278,7 +304,7 @@ mod tests {
             (OperatingMode::Auto, "auto"),
             (
                 OperatingMode::AutoIncomplete {
-                    missing_variant: true,
+                    missing_disk_encryption: true,
                     missing_disk: true,
                     missing_hostname: false,
                 },
@@ -289,9 +315,9 @@ mod tests {
         for (mode, expected_str) in cases {
             let plan = InstallPlan::new(
                 &mode,
-                Variant::Metal,
+                DiskEncryption::Tpm,
                 Some(&dev),
-                false,
+                true,
                 None,
                 false,
                 "UTC",
@@ -310,7 +336,7 @@ mod tests {
 
         let plan = InstallPlan::new(
             &OperatingMode::Auto,
-            Variant::Metal,
+            DiskEncryption::Tpm,
             None,
             true,
             None,
@@ -325,10 +351,11 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
         assert_eq!(parsed["mode"], "auto");
         assert_eq!(parsed["variant"], "metal");
-        assert!(parsed["disable_tpm"].as_bool().unwrap());
+        assert_eq!(parsed["disk_encryption"], "tpm");
+        assert!(parsed["tpm_present"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn firstboot_info_dhcp_hostname_sentinel() {
         let fb = FirstbootConfig {
@@ -340,7 +367,7 @@ mod tests {
         assert!(!info.hostname_from_template);
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn firstboot_info_template_flag() {
         let fb = FirstbootConfig {
@@ -353,7 +380,7 @@ mod tests {
         assert_eq!(info.timezone, "Pacific/Auckland");
     }
 
-    // r[verify installer.dryrun.schema+2]
+    // r[verify installer.dryrun.schema+3]
     #[test]
     fn firstboot_info_timezone_default() {
         let fb = FirstbootConfig::default();

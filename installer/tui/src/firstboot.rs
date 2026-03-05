@@ -6,7 +6,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use sha_crypt::{Sha512Params, sha512_simple};
 
-use crate::config::{FirstbootConfig, Variant};
+use crate::config::{DiskEncryption, FirstbootConfig};
 
 const MOUNT_BASE: &str = "/mnt/target";
 const LUKS_NAME: &str = "bes-target-root";
@@ -22,11 +22,15 @@ impl MountedTarget {
     }
 }
 
-// r[impl installer.firstboot.mount]
-pub fn mount_target(target_device: &Path, variant: Variant) -> Result<MountedTarget> {
+// r[impl installer.firstboot.mount+2]
+pub fn mount_target(
+    target_device: &Path,
+    disk_encryption: DiskEncryption,
+) -> Result<MountedTarget> {
     let root_part = partition_path(target_device, 3)?;
 
-    let btrfs_dev = if variant == Variant::Metal {
+    let luks_active = disk_encryption.is_encrypted();
+    let btrfs_dev = if luks_active {
         open_luks(&root_part)?
     } else {
         root_part
@@ -50,7 +54,7 @@ pub fn mount_target(target_device: &Path, variant: Variant) -> Result<MountedTar
 
     Ok(MountedTarget {
         mount_path,
-        luks_active: variant == Variant::Metal,
+        luks_active,
     })
 }
 
@@ -122,28 +126,6 @@ fn apply_timezone(root: &Path, timezone: &str) -> Result<()> {
         .with_context(|| format!("writing timezone to {}", timezone_path.display()))?;
 
     tracing::info!("set timezone to {timezone}");
-    Ok(())
-}
-
-// r[impl installer.firstboot.tpm-disable]
-// r[impl image.tpm.disableable]
-pub fn apply_tpm_disable(target: &MountedTarget) -> Result<()> {
-    let symlink = target
-        .path()
-        .join("etc/systemd/system/multi-user.target.wants/setup-tpm-unlock.service");
-
-    if symlink.exists() || symlink.is_symlink() {
-        fs::remove_file(&symlink).with_context(|| {
-            format!(
-                "removing setup-tpm-unlock.service symlink at {}",
-                symlink.display()
-            )
-        })?;
-        tracing::info!("removed setup-tpm-unlock.service enable symlink");
-    } else {
-        tracing::info!("setup-tpm-unlock.service symlink not present, nothing to remove");
-    }
-
     Ok(())
 }
 
@@ -399,21 +381,21 @@ fn run_command(program: &str, args: &[&str]) -> Result<()> {
 mod tests {
     use super::*;
 
-    // r[verify installer.firstboot.mount]
+    // r[verify installer.firstboot.mount+2]
     #[test]
     fn partition_path_scsi_disk() {
         let p = partition_path(Path::new("/dev/sda"), 3).unwrap();
         assert_eq!(p, PathBuf::from("/dev/sda3"));
     }
 
-    // r[verify installer.firstboot.mount]
+    // r[verify installer.firstboot.mount+2]
     #[test]
     fn partition_path_nvme() {
         let p = partition_path(Path::new("/dev/nvme0n1"), 1).unwrap();
         assert_eq!(p, PathBuf::from("/dev/nvme0n1p1"));
     }
 
-    // r[verify installer.firstboot.mount]
+    // r[verify installer.firstboot.mount+2]
     #[test]
     fn partition_path_loop() {
         let p = partition_path(Path::new("/dev/loop0"), 2).unwrap();

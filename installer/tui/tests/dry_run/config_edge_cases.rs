@@ -10,7 +10,7 @@ fn fake_devices_removable_field_optional() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -51,7 +51,7 @@ fn fake_devices_transport_aliases_accepted() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest"
 
         [firstboot]
@@ -78,7 +78,7 @@ fn fake_devices_transport_aliases_accepted() {
     assert_eq!(plan["disk"]["path"], "/dev/sda");
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn empty_config_file_treated_as_prefilled() {
     let f = Fixture::new();

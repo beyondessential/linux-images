@@ -6,25 +6,70 @@ use serde::Deserialize;
 
 use crate::hostname_template;
 
-// r[impl installer.config.schema+2]
+// r[impl installer.config.schema+3]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
     #[serde(default)]
     pub auto: bool,
 
-    pub variant: Option<Variant>,
+    #[serde(default, rename = "disk-encryption")]
+    pub disk_encryption: Option<DiskEncryption>,
 
     pub disk: Option<DiskSelector>,
-
-    #[serde(default, rename = "disable-tpm")]
-    pub disable_tpm: bool,
 
     pub firstboot: Option<FirstbootConfig>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiskEncryption {
+    Tpm,
+    Keyfile,
+    None,
+}
+
+impl DiskEncryption {
+    pub fn variant(self) -> Variant {
+        match self {
+            DiskEncryption::Tpm | DiskEncryption::Keyfile => Variant::Metal,
+            DiskEncryption::None => Variant::Cloud,
+        }
+    }
+
+    pub fn is_encrypted(self) -> bool {
+        matches!(self, DiskEncryption::Tpm | DiskEncryption::Keyfile)
+    }
+}
+
+impl fmt::Display for DiskEncryption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DiskEncryption::Tpm => write!(f, "tpm"),
+            DiskEncryption::Keyfile => write!(f, "keyfile"),
+            DiskEncryption::None => write!(f, "none"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DiskEncryption {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "tpm" => Ok(DiskEncryption::Tpm),
+            "keyfile" => Ok(DiskEncryption::Keyfile),
+            "none" => Ok(DiskEncryption::None),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["tpm", "keyfile", "none"],
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {
     Metal,
     Cloud,
@@ -153,19 +198,19 @@ pub fn validate_hostname(hostname: &str) -> Result<(), String> {
     Ok(())
 }
 
-// r[impl installer.mode.interactive]
+// r[impl installer.mode.interactive+2]
 // r[impl installer.mode.prefilled]
-// r[impl installer.mode.auto+2]
-// r[impl installer.mode.auto-incomplete+2]
+// r[impl installer.mode.auto+3]
+// r[impl installer.mode.auto-incomplete+3]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperatingMode {
     Interactive,
     Prefilled,
     Auto,
     AutoIncomplete {
-        missing_variant: bool,
+        missing_disk_encryption: bool,
         missing_disk: bool,
-        missing_hostname: bool, // missing any hostname strategy (hostname, dhcp, or template)
+        missing_hostname: bool,
     },
 }
 
@@ -201,26 +246,26 @@ impl InstallConfig {
         toml::from_str(s).context("parsing TOML config")
     }
 
-    // r[impl installer.mode.auto+2]
-    // r[impl installer.mode.auto-incomplete+2]
+    // r[impl installer.mode.auto+3]
+    // r[impl installer.mode.auto-incomplete+3]
     pub fn mode(&self) -> OperatingMode {
         if !self.auto {
             return OperatingMode::Prefilled;
         }
 
-        let missing_variant = self.variant.is_none();
+        let missing_disk_encryption = self.disk_encryption.is_none();
         let missing_disk = self.disk.is_none();
-        let missing_hostname = self.variant == Some(Variant::Metal)
+        let missing_hostname = self.disk_encryption.is_some_and(|de| de.is_encrypted())
             && !self
                 .firstboot
                 .as_ref()
                 .is_some_and(|fb| fb.has_hostname_config());
 
-        if !missing_variant && !missing_disk && !missing_hostname {
+        if !missing_disk_encryption && !missing_disk && !missing_hostname {
             OperatingMode::Auto
         } else {
             OperatingMode::AutoIncomplete {
-                missing_variant,
+                missing_disk_encryption,
                 missing_disk,
                 missing_hostname,
             }
@@ -229,10 +274,6 @@ impl InstallConfig {
 
     pub fn validate(&self) -> Vec<String> {
         let mut issues = Vec::new();
-
-        if self.disable_tpm && self.variant == Some(Variant::Cloud) {
-            issues.push("disable-tpm has no effect with the cloud variant".into());
-        }
 
         if let Some(ref fb) = self.firstboot {
             // Three-way mutual exclusivity for hostname fields
@@ -269,9 +310,13 @@ impl InstallConfig {
                 issues.push(format!("firstboot.hostname-template: {e}"));
             }
 
-            if fb.hostname_from_dhcp && self.variant == Some(Variant::Cloud) {
+            if fb.hostname_from_dhcp
+                && self
+                    .disk_encryption
+                    .is_some_and(|de| de == DiskEncryption::None)
+            {
                 issues.push(
-                    "hostname-from-dhcp has no special effect with the cloud variant (DHCP hostname is already the default)".into(),
+                    "hostname-from-dhcp has no special effect with disk-encryption = \"none\" (DHCP hostname is already the default)".into(),
                 );
             }
 
@@ -318,21 +363,20 @@ pub fn find_config_file() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn parse_empty_config() {
         let config = InstallConfig::from_toml("").unwrap();
         assert_eq!(config, InstallConfig::default());
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn parse_full_config() {
         let toml = r#"
             auto = true
-            variant = "metal"
+            disk-encryption = "tpm"
             disk = "largest-ssd"
-            disable-tpm = false
 
             [firstboot]
             hostname = "server-01"
@@ -342,12 +386,11 @@ mod tests {
         "#;
         let config = InstallConfig::from_toml(toml).unwrap();
         assert!(config.auto);
-        assert_eq!(config.variant, Some(Variant::Metal));
+        assert_eq!(config.disk_encryption, Some(DiskEncryption::Tpm));
         assert_eq!(
             config.disk,
             Some(DiskSelector::Strategy(DiskStrategy::LargestSsd))
         );
-        assert!(!config.disable_tpm);
 
         let fb = config.firstboot.as_ref().unwrap();
         assert_eq!(fb.hostname.as_deref(), Some("server-01"));
@@ -360,14 +403,27 @@ mod tests {
         assert_eq!(fb.password_hash, None);
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
-    fn parse_cloud_variant() {
-        let config = InstallConfig::from_toml(r#"variant = "cloud""#).unwrap();
-        assert_eq!(config.variant, Some(Variant::Cloud));
+    fn parse_disk_encryption_variants() {
+        let tpm = InstallConfig::from_toml(r#"disk-encryption = "tpm""#).unwrap();
+        assert_eq!(tpm.disk_encryption, Some(DiskEncryption::Tpm));
+
+        let keyfile = InstallConfig::from_toml(r#"disk-encryption = "keyfile""#).unwrap();
+        assert_eq!(keyfile.disk_encryption, Some(DiskEncryption::Keyfile));
+
+        let none = InstallConfig::from_toml(r#"disk-encryption = "none""#).unwrap();
+        assert_eq!(none.disk_encryption, Some(DiskEncryption::None));
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
+    #[test]
+    fn parse_invalid_disk_encryption_rejected() {
+        let result = InstallConfig::from_toml(r#"disk-encryption = "bad""#);
+        assert!(result.is_err());
+    }
+
+    // r[verify installer.config.schema+3]
     #[test]
     fn parse_disk_path() {
         let config = InstallConfig::from_toml(r#"disk = "/dev/nvme0n1""#).unwrap();
@@ -377,7 +433,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn parse_disk_strategies() {
         for (input, expected) in [
@@ -390,14 +446,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.config.schema+2]
-    #[test]
-    fn parse_invalid_variant_rejected() {
-        let result = InstallConfig::from_toml(r#"variant = "bad""#);
-        assert!(result.is_err());
-    }
-
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn parse_unknown_field_rejected() {
         let result = InstallConfig::from_toml(r#"bogus = true"#);
@@ -411,84 +460,104 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Prefilled);
     }
 
-    // r[verify installer.mode.auto+2]
+    // r[verify installer.mode.auto+3]
     #[test]
-    fn mode_auto_when_complete_cloud() {
+    fn mode_auto_when_complete_none() {
         let config = InstallConfig {
             auto: true,
-            variant: Some(Variant::Cloud),
+            disk_encryption: Some(DiskEncryption::None),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
+    // r[verify installer.mode.auto+3]
     #[test]
-    fn mode_auto_when_complete_metal_with_hostname() {
+    fn mode_auto_when_complete_tpm_with_hostname() {
         let config = InstallConfig {
             auto: true,
-            variant: Some(Variant::Metal),
+            disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             firstboot: Some(FirstbootConfig {
                 hostname: Some("my-server".into()),
                 ..Default::default()
             }),
-            ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
+    // r[verify installer.mode.auto+3]
     #[test]
-    fn mode_auto_when_complete_metal_with_dhcp() {
+    fn mode_auto_when_complete_keyfile_with_dhcp() {
         let config = InstallConfig {
             auto: true,
-            variant: Some(Variant::Metal),
+            disk_encryption: Some(DiskEncryption::Keyfile),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             firstboot: Some(FirstbootConfig {
                 hostname_from_dhcp: true,
                 ..Default::default()
             }),
-            ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
+    // r[verify installer.mode.auto+3]
     #[test]
-    fn mode_auto_when_complete_metal_with_template() {
+    fn mode_auto_when_complete_tpm_with_template() {
         let config = InstallConfig {
             auto: true,
-            variant: Some(Variant::Metal),
+            disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             firstboot: Some(FirstbootConfig {
                 hostname_template: Some("srv-{hex:6}".into()),
                 ..Default::default()
             }),
-            ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
+    // r[verify installer.mode.auto-incomplete+3]
     #[test]
-    fn mode_auto_incomplete_metal_missing_hostname() {
+    fn mode_auto_incomplete_tpm_missing_hostname() {
         let config = InstallConfig {
             auto: true,
-            variant: Some(Variant::Metal),
+            disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             ..Default::default()
         };
         assert_eq!(
             config.mode(),
             OperatingMode::AutoIncomplete {
-                missing_variant: false,
+                missing_disk_encryption: false,
                 missing_disk: false,
                 missing_hostname: true,
             }
         );
     }
 
-    // r[verify installer.mode.auto-incomplete+2]
+    // r[verify installer.mode.auto-incomplete+3]
     #[test]
-    fn mode_auto_incomplete_missing_variant() {
+    fn mode_auto_incomplete_keyfile_missing_hostname() {
+        let config = InstallConfig {
+            auto: true,
+            disk_encryption: Some(DiskEncryption::Keyfile),
+            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.mode(),
+            OperatingMode::AutoIncomplete {
+                missing_disk_encryption: false,
+                missing_disk: false,
+                missing_hostname: true,
+            }
+        );
+    }
+
+    // r[verify installer.mode.auto-incomplete+3]
+    #[test]
+    fn mode_auto_incomplete_missing_disk_encryption() {
         let config = InstallConfig {
             auto: true,
             disk: Some(DiskSelector::Strategy(DiskStrategy::Largest)),
@@ -497,32 +566,32 @@ mod tests {
         assert_eq!(
             config.mode(),
             OperatingMode::AutoIncomplete {
-                missing_variant: true,
+                missing_disk_encryption: true,
                 missing_disk: false,
                 missing_hostname: false,
             }
         );
     }
 
-    // r[verify installer.mode.auto-incomplete+2]
+    // r[verify installer.mode.auto-incomplete+3]
     #[test]
     fn mode_auto_incomplete_missing_disk() {
         let config = InstallConfig {
             auto: true,
-            variant: Some(Variant::Cloud),
+            disk_encryption: Some(DiskEncryption::None),
             ..Default::default()
         };
         assert_eq!(
             config.mode(),
             OperatingMode::AutoIncomplete {
-                missing_variant: false,
+                missing_disk_encryption: false,
                 missing_disk: true,
                 missing_hostname: false,
             }
         );
     }
 
-    // r[verify installer.mode.auto-incomplete+2]
+    // r[verify installer.mode.auto-incomplete+3]
     #[test]
     fn mode_auto_incomplete_missing_both() {
         let config = InstallConfig {
@@ -532,30 +601,26 @@ mod tests {
         assert_eq!(
             config.mode(),
             OperatingMode::AutoIncomplete {
-                missing_variant: true,
+                missing_disk_encryption: true,
                 missing_disk: true,
                 missing_hostname: false,
             }
         );
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.mode.auto+3]
     #[test]
-    fn validate_disable_tpm_cloud_warns() {
+    fn mode_auto_none_does_not_require_hostname() {
         let config = InstallConfig {
-            variant: Some(Variant::Cloud),
-            disable_tpm: true,
+            auto: true,
+            disk_encryption: Some(DiskEncryption::None),
+            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             ..Default::default()
         };
-        let issues = config.validate();
-        assert!(
-            issues
-                .iter()
-                .any(|i| i.contains("disable-tpm has no effect"))
-        );
+        assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn validate_bad_hostname() {
         let config = InstallConfig {
@@ -573,7 +638,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn validate_long_hostname() {
         let config = InstallConfig {
@@ -587,7 +652,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("too long")));
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn validate_empty_ssh_key() {
         let config = InstallConfig {
@@ -601,14 +666,13 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("empty")));
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn validate_good_config_has_no_issues() {
         let config = InstallConfig {
             auto: true,
-            variant: Some(Variant::Metal),
+            disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            disable_tpm: false,
             firstboot: Some(FirstbootConfig {
                 hostname: Some("server-01".into()),
                 hostname_from_dhcp: false,
@@ -624,14 +688,30 @@ mod tests {
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
+    #[test]
+    fn disk_encryption_display() {
+        assert_eq!(DiskEncryption::Tpm.to_string(), "tpm");
+        assert_eq!(DiskEncryption::Keyfile.to_string(), "keyfile");
+        assert_eq!(DiskEncryption::None.to_string(), "none");
+    }
+
+    // r[verify installer.config.schema+3]
+    #[test]
+    fn disk_encryption_variant_derivation() {
+        assert_eq!(DiskEncryption::Tpm.variant(), Variant::Metal);
+        assert_eq!(DiskEncryption::Keyfile.variant(), Variant::Metal);
+        assert_eq!(DiskEncryption::None.variant(), Variant::Cloud);
+    }
+
+    // r[verify installer.config.schema+3]
     #[test]
     fn variant_display() {
         assert_eq!(Variant::Metal.to_string(), "metal");
         assert_eq!(Variant::Cloud.to_string(), "cloud");
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn disk_selector_display() {
         assert_eq!(
@@ -644,7 +724,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn parse_minimal_firstboot() {
         let config = InstallConfig::from_toml(
@@ -675,13 +755,13 @@ mod tests {
         std::fs::write(
             &path,
             r#"
-            variant = "cloud"
+            disk-encryption = "none"
             disk = "smallest"
         "#,
         )
         .unwrap();
         let config = InstallConfig::load_from_file(&path).unwrap().unwrap();
-        assert_eq!(config.variant, Some(Variant::Cloud));
+        assert_eq!(config.disk_encryption, Some(DiskEncryption::None));
         assert_eq!(
             config.disk,
             Some(DiskSelector::Strategy(DiskStrategy::Smallest))
@@ -697,7 +777,7 @@ mod tests {
         assert!(InstallConfig::load_from_file(&path).is_err());
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn parse_password_hash() {
         let config = InstallConfig::from_toml(
@@ -715,7 +795,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+2]
+    // r[verify installer.config.schema+3]
     #[test]
     fn validate_password_and_hash_mutually_exclusive() {
         let config = InstallConfig {
@@ -794,9 +874,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_dhcp_on_cloud_warns() {
+    fn validate_dhcp_on_none_encryption_warns() {
         let config = InstallConfig {
-            variant: Some(Variant::Cloud),
+            disk_encryption: Some(DiskEncryption::None),
             firstboot: Some(FirstbootConfig {
                 hostname_from_dhcp: true,
                 ..Default::default()
@@ -874,10 +954,10 @@ mod tests {
         assert!(fb.has_hostname_config());
     }
 
-    // r[verify installer.mode.interactive]
+    // r[verify installer.mode.interactive+2]
     // r[verify installer.mode.prefilled]
-    // r[verify installer.mode.auto+2]
-    // r[verify installer.mode.auto-incomplete+2]
+    // r[verify installer.mode.auto+3]
+    // r[verify installer.mode.auto-incomplete+3]
     #[test]
     fn operating_mode_display() {
         assert_eq!(OperatingMode::Interactive.to_string(), "interactive");
@@ -885,12 +965,20 @@ mod tests {
         assert_eq!(OperatingMode::Auto.to_string(), "automatic");
         assert_eq!(
             OperatingMode::AutoIncomplete {
-                missing_variant: true,
+                missing_disk_encryption: true,
                 missing_disk: true,
                 missing_hostname: false,
             }
             .to_string(),
             "automatic (incomplete config)"
         );
+    }
+
+    // r[verify installer.config.schema+3]
+    #[test]
+    fn disk_encryption_is_encrypted() {
+        assert!(DiskEncryption::Tpm.is_encrypted());
+        assert!(DiskEncryption::Keyfile.is_encrypted());
+        assert!(!DiskEncryption::None.is_encrypted());
     }
 }

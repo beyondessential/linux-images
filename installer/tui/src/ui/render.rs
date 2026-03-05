@@ -27,8 +27,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::NetworkCheck => render_network_check(frame, chunks[1], state),
         Screen::NetworkResults => render_network_results(frame, chunks[1], state),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
-        Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
-        Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
+        Screen::DiskEncryptionScreen => render_disk_encryption(frame, chunks[1], state),
         Screen::Hostname => render_hostname(frame, chunks[1], state),
         Screen::HostnameInput => render_hostname_input(frame, chunks[1], state),
         Screen::Login => render_login(frame, chunks[1], state),
@@ -51,8 +50,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Welcome => "Welcome",
         Screen::NetworkCheck => "Network Check",
         Screen::DiskSelection => "1/6 Select Target Disk",
-        Screen::VariantSelection => "2/6 Select Variant",
-        Screen::TpmToggle => "2/6 TPM Configuration",
+        Screen::DiskEncryptionScreen => "2/6 Disk Encryption",
         Screen::Hostname => "3/6 Hostname",
         Screen::HostnameInput => "3/6 Hostname",
         Screen::Login => "4/6 Login",
@@ -297,8 +295,9 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
             "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: quit".into()
         }
         Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
-        Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
-        Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit".into(),
+        Screen::DiskEncryptionScreen => {
+            "Up/Down: select | Enter: next | Esc: back | q: quit".into()
+        }
         Screen::Hostname => "Up/Down: select | Enter: next | Esc: back".into(),
         Screen::HostnameInput => "Enter: next | Esc: back".into(),
         Screen::Login => {
@@ -418,19 +417,37 @@ fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, area);
 }
 
-// r[impl installer.tui.variant-selection]
-fn render_variant_selection(frame: &mut Frame, area: Rect, state: &AppState) {
-    let variants = [
-        ("metal", "Full-disk encryption (LUKS2) with TPM auto-unlock"),
-        ("cloud", "No encryption, for cloud/VM deployments"),
-    ];
+// r[impl installer.tui.disk-encryption+2]
+fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
+    use crate::config::DiskEncryption;
 
-    let items: Vec<ListItem> = variants
+    let options: Vec<(DiskEncryption, &str)> = if state.tpm_present {
+        vec![
+            (
+                DiskEncryption::Tpm,
+                "Full-disk encryption, bound to hardware",
+            ),
+            (
+                DiskEncryption::Keyfile,
+                "Full-disk encryption, not bound to hardware",
+            ),
+            (DiskEncryption::None, "No encryption"),
+        ]
+    } else {
+        vec![
+            (
+                DiskEncryption::Keyfile,
+                "Full-disk encryption, not bound to hardware",
+            ),
+            (DiskEncryption::None, "No encryption"),
+        ]
+    };
+
+    let items: Vec<ListItem> = options
         .iter()
-        .map(|(name, desc)| {
-            let is_selected = (*name == "metal" && state.variant == crate::config::Variant::Metal)
-                || (*name == "cloud" && state.variant == crate::config::Variant::Cloud);
-            let marker = if is_selected { "[x]" } else { "[ ]" };
+        .map(|(enc, label)| {
+            let is_selected = *enc == state.disk_encryption;
+            let marker = if is_selected { ">" } else { " " };
             let style = if is_selected {
                 Style::default()
                     .fg(Color::Yellow)
@@ -438,61 +455,54 @@ fn render_variant_selection(frame: &mut Frame, area: Rect, state: &AppState) {
             } else {
                 Style::default()
             };
-            ListItem::new(format!("{marker} {name}: {desc}")).style(style)
+            ListItem::new(format!("  {marker} {label}")).style(style)
         })
         .collect();
 
-    let block = Block::default()
-        .title(" Image Variant ")
-        .borders(Borders::ALL);
-
-    let list = List::new(items).block(block);
-    frame.render_widget(list, area);
-}
-
-// r[impl installer.tui.tpm-toggle]
-// r[impl image.tpm.disableable]
-fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
-    let status = if state.disable_tpm {
-        "DISABLED"
-    } else {
-        "ENABLED"
+    let explanation = match state.disk_encryption {
+        DiskEncryption::Tpm => vec![
+            Line::from(""),
+            Line::from("  The disk's encryption key will be sealed to this machine's TPM"),
+            Line::from("  using PCR 1 (hardware identity: motherboard, CPU, and RAM"),
+            Line::from("  model/serials). The system will boot unattended as long as the"),
+            Line::from("  hardware stays the same. If you move the disk to different"),
+            Line::from("  hardware, you will need the recovery passphrase. Changing the"),
+            Line::from("  CPU or RAM may also require the recovery passphrase."),
+        ],
+        DiskEncryption::Keyfile => vec![
+            Line::from(""),
+            Line::from("  A keyfile will be stored on the boot partition. The system will"),
+            Line::from("  boot unattended on any hardware. If the boot partition is lost,"),
+            Line::from("  you will need the recovery passphrase."),
+        ],
+        DiskEncryption::None => vec![
+            Line::from(""),
+            Line::from("  The root partition will not be encrypted."),
+        ],
     };
-    let lines = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::raw("  TPM auto-enrollment: "),
-            Span::styled(
-                status,
-                if state.disable_tpm {
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD)
-                },
-            ),
-        ]),
-        Line::from(""),
-        Line::from("  When enabled, the system will automatically enroll the LUKS key"),
-        Line::from("  in the TPM2 on first boot, allowing unattended disk unlock."),
-        Line::from(""),
-        Line::from("  Press Space to toggle, Enter to continue."),
-    ];
 
     let block = Block::default()
-        .title(" TPM Configuration ")
+        .title(" Disk Encryption ")
         .borders(Borders::ALL);
 
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, area);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let chunks = Layout::vertical([Constraint::Length(options.len() as u16), Constraint::Min(0)])
+        .split(inner);
+
+    let list = List::new(items);
+    frame.render_widget(list, chunks[0]);
+
+    let paragraph = Paragraph::new(explanation);
+    frame.render_widget(paragraph, chunks[1]);
 }
 
 // r[impl installer.tui.hostname+5]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
-    let is_metal = state.variant == crate::config::Variant::Metal;
+    let is_encrypted = state.disk_encryption.is_encrypted();
 
-    let network_label = if is_metal {
+    let network_label = if is_encrypted {
         "Network-assigned (DHCP)"
     } else {
         "Network-assigned (DHCP / cloud-init)"
@@ -885,6 +895,7 @@ fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, chunks[1]);
 }
 
+// r[impl installer.tui.confirmation+4]
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -898,32 +909,18 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .unwrap_or_else(|| "(none)".into());
 
-    let tpm_status = if state.variant == crate::config::Variant::Metal {
-        if state.disable_tpm {
-            "disabled"
-        } else {
-            "enabled"
-        }
-    } else {
-        "n/a"
-    };
-
     let mut lines = vec![
         Line::from(""),
         Line::from(vec![
-            Span::raw("  Target disk:  "),
+            Span::raw("  Target disk:      "),
             Span::styled(&disk_desc, Style::default().add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
-            Span::raw("  Variant:      "),
+            Span::raw("  Disk encryption:  "),
             Span::styled(
-                state.variant.to_string(),
+                state.disk_encryption.to_string(),
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-        ]),
-        Line::from(vec![
-            Span::raw("  TPM enroll:   "),
-            Span::styled(tpm_status, Style::default().add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
             Span::raw("  Timezone:     "),

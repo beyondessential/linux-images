@@ -1,6 +1,6 @@
 use super::common::{Fixture, THREE_MIXED_DEVICES, installer};
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn strategy_largest_ssd_picks_biggest_nvme() {
     let f = Fixture::new();
@@ -8,7 +8,7 @@ fn strategy_largest_ssd_picks_biggest_nvme() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -36,7 +36,7 @@ fn strategy_largest_ssd_picks_biggest_nvme() {
     assert_eq!(plan["disk"]["model"], "Big NVMe");
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn strategy_largest_picks_biggest_overall() {
     let f = Fixture::new();
@@ -44,7 +44,7 @@ fn strategy_largest_picks_biggest_overall() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest"
 
         [firstboot]
@@ -72,7 +72,7 @@ fn strategy_largest_picks_biggest_overall() {
     assert_eq!(plan["disk"]["size_bytes"], 2000000000000u64);
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn strategy_smallest_picks_smallest_overall() {
     let f = Fixture::new();
@@ -80,7 +80,7 @@ fn strategy_smallest_picks_smallest_overall() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "smallest"
 
         [firstboot]
@@ -108,7 +108,7 @@ fn strategy_smallest_picks_smallest_overall() {
     assert_eq!(plan["disk"]["size_bytes"], 500000000000u64);
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn strategy_disk_path_selects_exact_device() {
     let f = Fixture::new();
@@ -116,7 +116,7 @@ fn strategy_disk_path_selects_exact_device() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "cloud"
+        disk-encryption = "none"
         disk = "/dev/nvme1n1"
     "#,
     );

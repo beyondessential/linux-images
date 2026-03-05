@@ -56,7 +56,7 @@ fn error_invalid_devices_json() {
         .stderr(predicates::str::contains("fake devices"));
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn error_invalid_config_toml() {
     let f = Fixture::new();
@@ -78,7 +78,7 @@ fn error_invalid_config_toml() {
         .stderr(predicates::str::contains("parsing config"));
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn error_unknown_config_field() {
     let f = Fixture::new();
@@ -100,7 +100,7 @@ fn error_unknown_config_field() {
         .stderr(predicates::str::contains("parsing config"));
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn error_invalid_variant_in_config() {
     let f = Fixture::new();
@@ -172,7 +172,7 @@ fn error_disk_path_not_found() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "/dev/nonexistent"
 
         [firstboot]
@@ -205,7 +205,7 @@ fn error_no_ssds_for_largest_ssd_strategy() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
