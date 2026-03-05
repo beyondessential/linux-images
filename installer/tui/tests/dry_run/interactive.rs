@@ -17,7 +17,9 @@ enter
 # TpmToggle: disable, advance
 space
 enter
-# Hostname
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type hostname then advance
 type:my-server
 enter
 # Login: enter tailscale sub-screen
@@ -90,7 +92,7 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname: skip
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -129,7 +131,7 @@ enter
     assert!(!plan["disable_tpm"].as_bool().unwrap());
 }
 
-// r[verify installer.tui.hostname+2]
+// r[verify installer.tui.hostname+5]
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 #[test]
@@ -145,6 +147,10 @@ enter
 # Variant: toggle to cloud
 down
 enter
+# Hostname selector: network-assigned is default for cloud, Up to select Static
+up
+enter
+# HostnameInput: type hostname then advance
 type:my-host
 enter
 # Login: enter tailscale sub-screen
@@ -196,7 +202,7 @@ enter
     assert_eq!(plan["firstboot"]["timezone"], "UTC");
 }
 
-// r[verify installer.tui.hostname+2]
+// r[verify installer.tui.hostname+5]
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 // r[verify installer.tui.password+4]
@@ -204,19 +210,19 @@ enter
 fn interactive_empty_firstboot_is_null() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Use cloud variant so hostname is optional — password is the only required
-    // firstboot field in interactive mode. With only a password set, firstboot
-    // is still present but all other fields are empty/null.
+    // Use cloud variant — select network-assigned (the default for cloud) to
+    // skip hostname entirely. Password is the only required firstboot field
+    // in interactive mode.
     let script = f.write_script(
         "\
 # Welcome
 enter
 # Disk
 enter
-# Toggle to cloud (hostname optional)
+# Toggle to cloud
 down
 enter
-# Hostname: skip
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 # Login: type password (required)
 type:pw
@@ -254,10 +260,10 @@ enter
     // Password is always set in interactive mode, so firstboot is not null
     assert!(!plan["firstboot"].is_null());
     assert!(plan["firstboot"]["password_set"].as_bool().unwrap());
-    // But all other optional fields should be empty/default
-    assert!(
-        plan["firstboot"]["hostname"].is_null(),
-        "hostname should be null when skipped"
+    // Hostname is "dhcp" sentinel when network-assigned is selected
+    assert_eq!(
+        plan["firstboot"]["hostname"], "dhcp",
+        "hostname should be dhcp sentinel when network-assigned is selected"
     );
     assert!(
         !plan["firstboot"]["tailscale_authkey"].as_bool().unwrap(),
@@ -285,7 +291,9 @@ enter
 enter
 # TpmToggle
 enter
-# Hostname: type 'h' (required for metal)
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type 'h' (required for metal)
 type:h
 enter
 # Login: type password
@@ -397,7 +405,7 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname: skip
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 # Login: type password
 type:pw

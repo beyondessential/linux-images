@@ -26,6 +26,7 @@ pub enum Screen {
     VariantSelection,
     TpmToggle,
     Hostname,
+    HostnameInput,
     Login,
     LoginTailscale,
     LoginSshKeys,
@@ -53,6 +54,7 @@ pub struct AppState {
     pub hostname_input: String,
     pub hostname_from_dhcp: bool,
     pub hostname_from_template: bool,
+    pub hostname_error: Option<String>,
     pub tailscale_input: String,
     pub ssh_keys: Vec<String>,
     pub ssh_key_cursor: usize,
@@ -151,9 +153,19 @@ impl AppState {
                 } else {
                     keys
                 };
+                let has_static_hostname =
+                    fb.hostname.as_ref().is_some_and(|h| !h.trim().is_empty())
+                        || fb.hostname_template.is_some();
+                let dhcp = if has_static_hostname {
+                    false
+                } else if fb.hostname_from_dhcp {
+                    true
+                } else {
+                    variant == Variant::Cloud
+                };
                 (
                     fb.hostname.clone().unwrap_or_default(),
-                    fb.hostname_from_dhcp,
+                    dhcp,
                     fb.hostname_template.is_some(),
                     fb.tailscale_authkey.clone().unwrap_or_default(),
                     keys,
@@ -163,7 +175,7 @@ impl AppState {
             }
             None => (
                 String::new(),
-                false,
+                variant == Variant::Cloud,
                 false,
                 String::new(),
                 vec![String::new()],
@@ -192,6 +204,7 @@ impl AppState {
             hostname_input,
             hostname_from_dhcp,
             hostname_from_template,
+            hostname_error: None,
             tailscale_input,
             ssh_keys,
             ssh_key_cursor: 0,
@@ -225,7 +238,7 @@ impl AppState {
         state
     }
 
-    // r[impl installer.tui.hostname+2]
+    // r[impl installer.tui.hostname+5]
     // r[impl installer.tui.tailscale+3]
     // r[impl installer.tui.ssh-keys+5]
     // r[impl installer.tui.password+4]
@@ -233,7 +246,7 @@ impl AppState {
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
     pub fn firstboot_config(&self) -> Option<FirstbootConfig> {
-        let hostname = if !self.hostname_from_dhcp && !self.hostname_input.trim().is_empty() {
+        let hostname = if self.hostname_required() && !self.hostname_input.trim().is_empty() {
             Some(self.hostname_input.trim().to_string())
         } else {
             None
@@ -315,6 +328,9 @@ impl AppState {
             Variant::Metal => Variant::Cloud,
             Variant::Cloud => Variant::Metal,
         };
+        if self.hostname_input.trim().is_empty() && !self.hostname_from_template {
+            self.hostname_from_dhcp = self.variant == Variant::Cloud;
+        }
     }
 
     // r[impl installer.tui.network-check+4]
@@ -474,6 +490,7 @@ impl AppState {
     }
 
     // r[impl installer.tui.tpm-toggle]
+    // r[impl installer.tui.hostname+5]
     // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
@@ -488,7 +505,14 @@ impl AppState {
             Screen::VariantSelection if self.variant == Variant::Metal => Screen::TpmToggle,
             Screen::VariantSelection => Screen::Hostname,
             Screen::TpmToggle => Screen::Hostname,
-            Screen::Hostname => Screen::Login,
+            Screen::Hostname => {
+                if self.hostname_from_dhcp {
+                    Screen::Login
+                } else {
+                    Screen::HostnameInput
+                }
+            }
+            Screen::HostnameInput => Screen::Login,
             Screen::Login => Screen::Timezone,
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
@@ -513,7 +537,14 @@ impl AppState {
                     Screen::VariantSelection
                 }
             }
-            Screen::Login => Screen::Hostname,
+            Screen::HostnameInput => Screen::Hostname,
+            Screen::Login => {
+                if self.hostname_from_dhcp {
+                    Screen::Hostname
+                } else {
+                    Screen::HostnameInput
+                }
+            }
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => Screen::Login,
             Screen::Timezone => Screen::Login,
             Screen::NetworkResults => Screen::Timezone,
@@ -539,9 +570,9 @@ impl AppState {
             .eq_ignore_ascii_case(self.confirmation_text())
     }
 
-    // r[impl installer.tui.hostname+2]
+    // r[impl installer.tui.hostname+5]
     pub fn hostname_required(&self) -> bool {
-        self.variant == Variant::Metal && !self.hostname_from_dhcp
+        !self.hostname_from_dhcp
     }
 
     // r[impl installer.tui.network-check+4]
@@ -867,6 +898,9 @@ mod tests {
         assert_eq!(state.screen, Screen::TpmToggle);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
+        // Static is default for metal (hostname_from_dhcp = false), advance to HostnameInput
+        state.advance();
+        assert_eq!(state.screen, Screen::HostnameInput);
         state.advance();
         assert_eq!(state.screen, Screen::Login);
         state.advance();
@@ -884,6 +918,7 @@ mod tests {
     fn advance_cloud_skips_tpm() {
         let mut state = make_state();
         state.variant = Variant::Cloud;
+        state.hostname_from_dhcp = true;
 
         assert_eq!(state.screen, Screen::Welcome);
         state.advance();
@@ -892,6 +927,8 @@ mod tests {
         assert_eq!(state.screen, Screen::VariantSelection);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
+        // Cloud defaults to hostname_from_dhcp = true (network-assigned),
+        // so advance skips HostnameInput and goes to Login directly.
         state.advance();
         assert_eq!(state.screen, Screen::Login);
         state.advance();
@@ -900,6 +937,28 @@ mod tests {
         assert_eq!(state.screen, Screen::NetworkResults);
         state.advance();
         assert_eq!(state.screen, Screen::Confirmation);
+    }
+
+    #[test]
+    fn advance_cloud_static_goes_to_hostname_input() {
+        let mut state = make_state();
+        state.variant = Variant::Cloud;
+        state.hostname_from_dhcp = false;
+
+        state.screen = Screen::Hostname;
+        state.advance();
+        assert_eq!(state.screen, Screen::HostnameInput);
+    }
+
+    #[test]
+    fn advance_metal_dhcp_skips_hostname_input() {
+        let mut state = make_state();
+        state.variant = Variant::Metal;
+        state.hostname_from_dhcp = true;
+
+        state.screen = Screen::Hostname;
+        state.advance();
+        assert_eq!(state.screen, Screen::Login);
     }
 
     // r[verify installer.tui.tpm-toggle]
@@ -917,6 +976,9 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
+        // Metal: hostname_from_dhcp is false, so Login goes back to HostnameInput
+        state.go_back();
+        assert_eq!(state.screen, Screen::HostnameInput);
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
@@ -936,6 +998,7 @@ mod tests {
     fn go_back_cloud_skips_tpm() {
         let mut state = make_state();
         state.variant = Variant::Cloud;
+        state.hostname_from_dhcp = true;
         state.screen = Screen::Confirmation;
 
         state.go_back();
@@ -944,10 +1007,22 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
+        // Cloud: hostname_from_dhcp is true by default, so Login goes back to Hostname selector
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
         assert_eq!(state.screen, Screen::VariantSelection);
+    }
+
+    #[test]
+    fn go_back_from_login_with_dhcp_goes_to_hostname_selector() {
+        let mut state = make_state();
+        state.variant = Variant::Metal;
+        state.hostname_from_dhcp = true;
+        state.screen = Screen::Login;
+
+        state.go_back();
+        assert_eq!(state.screen, Screen::Hostname);
     }
 
     // r[verify installer.tui.ssh-keys+5]
@@ -1010,7 +1085,66 @@ mod tests {
         assert_eq!(state.screen, Screen::Error("test".into()));
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+5]
+    #[test]
+    fn hostname_prefilled_defaults_to_static() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            hostname: Some("myhost".into()),
+            ..Default::default()
+        };
+        let state = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+        );
+        assert!(!state.hostname_from_dhcp);
+    }
+
+    // r[verify installer.tui.hostname+5]
+    #[test]
+    fn cloud_defaults_to_dhcp() {
+        let state = make_state();
+        let mut cloud_state = make_state();
+        cloud_state.variant = Variant::Cloud;
+        // make_state creates Metal which defaults to false
+        assert!(!state.hostname_from_dhcp);
+        // But cloud defaults need to be set at construction time. make_state
+        // constructs as Metal. Let's construct a cloud state properly.
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let cloud = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            None,
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+        );
+        assert!(cloud.hostname_from_dhcp);
+    }
+
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1099,7 +1233,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn firstboot_config_from_inputs() {
         let mut state = make_state();
@@ -1132,7 +1266,7 @@ mod tests {
         assert!(fb.password_hash.is_none());
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn firstboot_config_empty_strings_are_none() {
         let mut state = make_state();
@@ -1200,7 +1334,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_required_for_metal() {
         let mut state = make_state();
@@ -1208,15 +1342,25 @@ mod tests {
         assert!(state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+5]
     #[test]
-    fn hostname_not_required_for_cloud() {
+    fn hostname_required_for_cloud_static() {
         let mut state = make_state();
         state.variant = Variant::Cloud;
+        state.hostname_from_dhcp = false;
+        assert!(state.hostname_required());
+    }
+
+    // r[verify installer.tui.hostname+5]
+    #[test]
+    fn hostname_not_required_for_cloud_dhcp() {
+        let mut state = make_state();
+        state.variant = Variant::Cloud;
+        state.hostname_from_dhcp = true;
         assert!(!state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+5]
     #[test]
     fn hostname_not_required_for_metal_with_dhcp() {
         let mut state = make_state();

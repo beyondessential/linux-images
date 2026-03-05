@@ -126,7 +126,7 @@ enter
 # Variant: toggle to cloud (no hostname required)
 down
 enter
-# Hostname: skip
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -182,7 +182,7 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname: skip
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 # Login: type password
 type:pw

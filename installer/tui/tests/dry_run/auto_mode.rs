@@ -237,9 +237,10 @@ fn auto_bad_hostname_emits_warning() {
     let plan = f.read_plan();
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
-        warnings
-            .iter()
-            .any(|w| w.as_str().unwrap().contains("not a valid hostname")),
+        warnings.iter().any(|w| w
+            .as_str()
+            .unwrap()
+            .contains("must not start or end with a hyphen")),
         "expected a hostname validation warning, got: {warnings:?}"
     );
 }

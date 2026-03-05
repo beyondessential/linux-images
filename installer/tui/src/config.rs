@@ -128,6 +128,31 @@ impl FirstbootConfig {
     }
 }
 
+/// Validate a hostname per RFC 1123: ASCII alphanumeric and hyphens only,
+/// must not start or end with a hyphen, max 63 characters.
+/// Returns `Ok(())` if valid, or `Err` with a human-readable description.
+pub fn validate_hostname(hostname: &str) -> Result<(), String> {
+    if hostname.is_empty() {
+        return Err("Hostname cannot be empty.".into());
+    }
+    if hostname.len() > 63 {
+        return Err(format!(
+            "Hostname is too long ({} chars, max 63).",
+            hostname.len()
+        ));
+    }
+    if hostname.starts_with('-') || hostname.ends_with('-') {
+        return Err("Hostname must not start or end with a hyphen.".into());
+    }
+    if !hostname
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Err("Hostname must contain only letters, digits, and hyphens.".into());
+    }
+    Ok(())
+}
+
 // r[impl installer.mode.interactive]
 // r[impl installer.mode.prefilled]
 // r[impl installer.mode.auto+2]
@@ -232,27 +257,10 @@ impl InstallConfig {
                 ));
             }
 
-            if let Some(ref hostname) = fb.hostname {
-                if hostname.is_empty() {
-                    issues.push("firstboot.hostname is empty".into());
-                }
-                if hostname.len() > 63 {
-                    issues.push(format!(
-                        "firstboot.hostname is too long ({} chars, max 63)",
-                        hostname.len()
-                    ));
-                }
-                let valid = !hostname.starts_with('-')
-                    && !hostname.ends_with('-')
-                    && hostname
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '-');
-                if !valid {
-                    issues.push(format!(
-                        "firstboot.hostname '{}' is not a valid hostname",
-                        hostname
-                    ));
-                }
+            if let Some(ref hostname) = fb.hostname
+                && let Err(e) = validate_hostname(hostname)
+            {
+                issues.push(format!("firstboot.hostname '{}': {}", hostname, e));
             }
 
             if let Some(ref tmpl) = fb.hostname_template
@@ -558,7 +566,11 @@ mod tests {
             ..Default::default()
         };
         let issues = config.validate();
-        assert!(issues.iter().any(|i| i.contains("not a valid hostname")));
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("must not start or end with a hyphen"))
+        );
     }
 
     // r[verify installer.config.schema+2]

@@ -30,6 +30,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
         Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
         Screen::Hostname => render_hostname(frame, chunks[1], state),
+        Screen::HostnameInput => render_hostname_input(frame, chunks[1], state),
         Screen::Login => render_login(frame, chunks[1], state),
         Screen::LoginTailscale => render_login_tailscale(frame, chunks[1], state),
         Screen::LoginSshKeys => render_login_ssh_keys(frame, chunks[1], state),
@@ -53,6 +54,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::VariantSelection => "2/6 Select Variant",
         Screen::TpmToggle => "2/6 TPM Configuration",
         Screen::Hostname => "3/6 Hostname",
+        Screen::HostnameInput => "3/6 Hostname",
         Screen::Login => "4/6 Login",
         Screen::LoginTailscale => "4/6 Login > Tailscale",
         Screen::LoginSshKeys => "4/6 Login > SSH Keys",
@@ -297,7 +299,8 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
         Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
         Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit".into(),
-        Screen::Hostname => "Enter: next | Esc: back".into(),
+        Screen::Hostname => "Up/Down: select | Enter: next | Esc: back".into(),
+        Screen::HostnameInput => "Enter: next | Esc: back".into(),
         Screen::Login => {
             let mut h = String::from("Alt+t: tailscale | Alt+s: ssh keys");
             if state.github_reachable() {
@@ -485,66 +488,70 @@ fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.hostname+2]
+// r[impl installer.tui.hostname+5]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
     let is_metal = state.variant == crate::config::Variant::Metal;
-    let dhcp_active = state.hostname_from_dhcp;
 
-    let hint = if dhcp_active {
-        "  The system will get its hostname from DHCP."
-    } else if is_metal {
-        "  A hostname is required for the metal variant."
+    let network_label = if is_metal {
+        "Network-assigned (DHCP)"
     } else {
-        "  Leave empty to skip (default: ubuntu, overridden by DHCP/cloud-init)."
+        "Network-assigned (DHCP / cloud-init)"
     };
 
-    let hostname_style = if dhcp_active {
-        Style::default().fg(Color::DarkGray)
-    } else {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    };
+    let options = ["Static hostname", network_label];
+    let selected_index = if state.hostname_from_dhcp { 1 } else { 0 };
 
     let mut lines = vec![
         Line::from(""),
-        Line::from("  Enter the hostname for this system."),
-        Line::from(hint),
+        Line::from("  How should this system get its hostname?"),
         Line::from(""),
-        Line::from(vec![
-            Span::raw("  Hostname: "),
-            Span::styled(&state.hostname_input, hostname_style),
-            Span::styled("_", Style::default().fg(Color::DarkGray)),
-        ]),
     ];
 
-    if is_metal {
-        lines.push(Line::from(""));
-        let toggle_marker = if dhcp_active { "x" } else { " " };
-        lines.push(Line::from(vec![
-            Span::raw(format!("  [{toggle_marker}] ")),
-            Span::styled(
-                "Use DHCP hostname (no static hostname)",
-                Style::default().add_modifier(Modifier::BOLD),
-            ),
-        ]));
+    for (i, label) in options.iter().enumerate() {
+        let is_sel = i == selected_index;
+        let marker = if is_sel { ">" } else { " " };
+        let style = if is_sel {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
         lines.push(Line::from(Span::styled(
-            "      Tab to switch focus, Space to toggle",
-            Style::default().fg(Color::DarkGray),
+            format!("  {marker} {label}"),
+            style,
         )));
-        if dhcp_active {
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                "  The static hostname will be empty (shown as n/a by hostnamectl).",
-                Style::default().fg(Color::Cyan),
-            )));
-        }
     }
 
-    if state.hostname_required() && state.hostname_input.trim().is_empty() {
+    let block = Block::default().title(" Hostname ").borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
+}
+
+// r[impl installer.tui.hostname+5]
+fn render_hostname_input(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from("  Enter the hostname for this system."),
+    ];
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::raw("  Hostname: "),
+        Span::styled(
+            &state.hostname_input,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("_", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    if let Some(ref err) = state.hostname_error {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  Hostname cannot be empty for the metal variant.",
+            format!("  {err}"),
             Style::default().fg(Color::Red),
         )));
     }
