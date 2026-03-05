@@ -11,6 +11,7 @@ use tracing_subscriber::prelude::*;
 
 mod config;
 mod disk;
+mod encryption;
 mod firstboot;
 mod hostname_template;
 mod net;
@@ -381,6 +382,27 @@ fn run_auto(
         }
 
         firstboot::unmount_target(mounted)?;
+    }
+
+    // r[impl installer.encryption.overview]
+    if disk_encryption.is_encrypted() {
+        eprintln!("setting up disk encryption...");
+        let mounted = firstboot::mount_target(&target.path, disk_encryption)?;
+        let enc_result =
+            encryption::run_encryption_setup(&target.path, disk_encryption, mounted.path())
+                .context("encryption setup")?;
+        firstboot::unmount_target(mounted)?;
+
+        // r[impl installer.encryption.recovery-passphrase]
+        eprintln!();
+        eprintln!("=== RECOVERY PASSPHRASE ===");
+        eprintln!();
+        eprintln!("  {}", enc_result.recovery_passphrase);
+        eprintln!();
+        eprintln!("Write down this passphrase and store it in a safe place.");
+        eprintln!("You will need it if the primary unlock mechanism fails.");
+        eprintln!("===========================");
+        eprintln!();
     }
 
     // r[impl installer.no-reboot]
