@@ -225,6 +225,7 @@ systemd-nspawn \
     "${NSPAWN_BINDS[@]}" \
     /usr/local/bin/bes-installer \
         --fake-devices /tmp/devices.json \
+        --fake-tpm \
         --no-reboot
 RC=$?
 set -e
