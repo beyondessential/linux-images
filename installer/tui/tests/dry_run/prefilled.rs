@@ -179,8 +179,7 @@ enter
 enter
 # Variant
 enter
-# Hostname selector: network-assigned via Down, Enter -> Login (skip HostnameInput)
-down
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 # Login: type password
 type:pw

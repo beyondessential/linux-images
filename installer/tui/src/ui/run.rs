@@ -659,9 +659,8 @@ mod tests {
             // VariantSelection: toggle to Cloud, then advance (skip TpmToggle)
             press(KeyCode::Down),
             press(KeyCode::Enter),
-            // Hostname selector: Static is default (make_state has no config),
-            // select network-assigned then advance -> Login (skip HostnameInput)
-            press(KeyCode::Down),
+            // Hostname selector: network-assigned is default for cloud,
+            // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
             // Login: type password + confirm + advance
         ];
@@ -988,9 +987,8 @@ mod tests {
             press(KeyCode::Down),
             // VariantSelection -> Hostname selector (skips TpmToggle)
             press(KeyCode::Enter),
-            // Hostname selector: Static is default for make_state (no config),
-            // select network-assigned with Down, then Enter -> Login
-            press(KeyCode::Down),
+            // Hostname selector: network-assigned is default for cloud,
+            // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
         ];
 
@@ -1013,7 +1011,9 @@ mod tests {
             press(KeyCode::Down),
             // VariantSelection -> Hostname selector (skips TpmToggle)
             press(KeyCode::Enter),
-            // Hostname selector: Static is default -> Enter -> HostnameInput
+            // Hostname selector: network-assigned is default for cloud,
+            // Up to select Static -> Enter -> HostnameInput
+            press(KeyCode::Up),
             press(KeyCode::Enter),
             // HostnameInput: press Enter with empty input — should advance for cloud
             press(KeyCode::Enter),
@@ -1123,8 +1123,10 @@ mod tests {
             press(KeyCode::Down),
             // VariantSelection -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: Static is default (make_state has no config),
-            // Down toggles to network-assigned, Enter -> Login (skip HostnameInput)
+            // Hostname selector: network-assigned is default for cloud,
+            // Up toggles to Static, Down toggles back to network-assigned,
+            // Enter -> Login (skip HostnameInput)
+            press(KeyCode::Up),
             press(KeyCode::Down),
             press(KeyCode::Enter),
         ];

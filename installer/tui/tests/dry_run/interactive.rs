@@ -92,8 +92,7 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname selector: network-assigned via Down, Enter -> Login (skip HostnameInput)
-down
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -148,7 +147,8 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname selector: Static is default, Enter -> HostnameInput
+# Hostname selector: network-assigned is default for cloud, Up to select Static
+up
 enter
 # HostnameInput: type hostname then advance
 type:my-host
@@ -222,7 +222,8 @@ enter
 # Toggle to cloud (hostname optional)
 down
 enter
-# Hostname selector: Static is default, Enter -> HostnameInput
+# Hostname selector: network-assigned is default for cloud, Up to select Static
+up
 enter
 # HostnameInput: leave empty (allowed for cloud), Enter -> Login
 enter
@@ -407,8 +408,7 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname selector: network-assigned via Down, Enter -> Login (skip HostnameInput)
-down
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 # Login: type password
 type:pw

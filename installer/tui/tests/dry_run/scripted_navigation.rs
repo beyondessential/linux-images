@@ -231,7 +231,8 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname selector: Static is default, Enter -> HostnameInput
+# Hostname selector: network-assigned is default for cloud, Up to select Static
+up
 enter
 # HostnameInput: type 'baaad', backspace 3 times, type 'd'
 type:baaad
@@ -285,8 +286,7 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname selector: network-assigned via Down, Enter -> Login (skip HostnameInput)
-down
+# Hostname selector: network-assigned is default for cloud, Enter -> Login
 enter
 
 # Login: enter ssh keys sub-screen

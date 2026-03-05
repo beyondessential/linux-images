@@ -152,9 +152,19 @@ impl AppState {
                 } else {
                     keys
                 };
+                let has_static_hostname =
+                    fb.hostname.as_ref().is_some_and(|h| !h.trim().is_empty())
+                        || fb.hostname_template.is_some();
+                let dhcp = if has_static_hostname {
+                    false
+                } else if fb.hostname_from_dhcp {
+                    true
+                } else {
+                    variant == Variant::Cloud
+                };
                 (
                     fb.hostname.clone().unwrap_or_default(),
-                    fb.hostname_from_dhcp,
+                    dhcp,
                     fb.hostname_template.is_some(),
                     fb.tailscale_authkey.clone().unwrap_or_default(),
                     keys,
@@ -164,7 +174,7 @@ impl AppState {
             }
             None => (
                 String::new(),
-                false,
+                variant == Variant::Cloud,
                 false,
                 String::new(),
                 vec![String::new()],
@@ -316,6 +326,9 @@ impl AppState {
             Variant::Metal => Variant::Cloud,
             Variant::Cloud => Variant::Metal,
         };
+        if self.hostname_input.trim().is_empty() && !self.hostname_from_template {
+            self.hostname_from_dhcp = self.variant == Variant::Cloud;
+        }
     }
 
     // r[impl installer.tui.network-check+4]
@@ -883,7 +896,7 @@ mod tests {
         assert_eq!(state.screen, Screen::TpmToggle);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
-        // Static is default for metal (hostname_from_dhcp = false)
+        // Static is default for metal (hostname_from_dhcp = false), advance to HostnameInput
         state.advance();
         assert_eq!(state.screen, Screen::HostnameInput);
         state.advance();
@@ -903,6 +916,7 @@ mod tests {
     fn advance_cloud_skips_tpm() {
         let mut state = make_state();
         state.variant = Variant::Cloud;
+        state.hostname_from_dhcp = true;
 
         assert_eq!(state.screen, Screen::Welcome);
         state.advance();
@@ -911,11 +925,8 @@ mod tests {
         assert_eq!(state.screen, Screen::VariantSelection);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
-        // Cloud defaults to hostname_from_dhcp = false in make_state, so
-        // advance goes to HostnameInput. But with DHCP selected it would
-        // skip to Login. Test the static path here.
-        state.advance();
-        assert_eq!(state.screen, Screen::HostnameInput);
+        // Cloud defaults to hostname_from_dhcp = true (network-assigned),
+        // so advance skips HostnameInput and goes to Login directly.
         state.advance();
         assert_eq!(state.screen, Screen::Login);
         state.advance();
@@ -927,14 +938,14 @@ mod tests {
     }
 
     #[test]
-    fn advance_cloud_dhcp_skips_hostname_input() {
+    fn advance_cloud_static_goes_to_hostname_input() {
         let mut state = make_state();
         state.variant = Variant::Cloud;
-        state.hostname_from_dhcp = true;
+        state.hostname_from_dhcp = false;
 
         state.screen = Screen::Hostname;
         state.advance();
-        assert_eq!(state.screen, Screen::Login);
+        assert_eq!(state.screen, Screen::HostnameInput);
     }
 
     #[test]
@@ -963,7 +974,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
-        // hostname_from_dhcp is false, so Login goes back to HostnameInput
+        // Metal: hostname_from_dhcp is false, so Login goes back to HostnameInput
         state.go_back();
         assert_eq!(state.screen, Screen::HostnameInput);
         state.go_back();
@@ -985,6 +996,7 @@ mod tests {
     fn go_back_cloud_skips_tpm() {
         let mut state = make_state();
         state.variant = Variant::Cloud;
+        state.hostname_from_dhcp = true;
         state.screen = Screen::Confirmation;
 
         state.go_back();
@@ -993,9 +1005,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
-        // hostname_from_dhcp is false, so Login goes back to HostnameInput
-        state.go_back();
-        assert_eq!(state.screen, Screen::HostnameInput);
+        // Cloud: hostname_from_dhcp is true by default, so Login goes back to Hostname selector
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
@@ -1071,6 +1081,65 @@ mod tests {
         state.screen = Screen::Error("test".into());
         state.advance();
         assert_eq!(state.screen, Screen::Error("test".into()));
+    }
+
+    // r[verify installer.tui.hostname+3]
+    #[test]
+    fn hostname_prefilled_defaults_to_static() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            hostname: Some("myhost".into()),
+            ..Default::default()
+        };
+        let state = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+        );
+        assert!(!state.hostname_from_dhcp);
+    }
+
+    // r[verify installer.tui.hostname+3]
+    #[test]
+    fn cloud_defaults_to_dhcp() {
+        let state = make_state();
+        let mut cloud_state = make_state();
+        cloud_state.variant = Variant::Cloud;
+        // make_state creates Metal which defaults to false
+        assert!(!state.hostname_from_dhcp);
+        // But cloud defaults need to be set at construction time. make_state
+        // constructs as Metal. Let's construct a cloud state properly.
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let cloud = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            None,
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+        );
+        assert!(cloud.hostname_from_dhcp);
     }
 
     // r[verify installer.tui.hostname+3]
