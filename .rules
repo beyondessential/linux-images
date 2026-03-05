@@ -1,8 +1,9 @@
 ## LLM Rules to follow
 - When adding or changing features, or when fixing bugs, first change the tracey spec in docs/spec, then implement, then add tests whenever possible.
 - Remember to annotate implementations and tests with tracey references: https://tracey.bearcove.eu/guide/annotating-code/
-- After changing the content of a tracey spec item, `git add` the spec file (stage it), then run `tracey bump` to mark the changed requirements as stale, and then update the implementation and test to match.
+- After changing the content of a tracey spec item, `git add` the spec file (stage it), then run `tracey bump` to mark the changed requirements as stale, and then update the implementation and test to match. Do not mass-update the rule IDs, go through every affected site to verify it complies with the updated requirement.
 - Commit granularly. That helps if you need to revert files, instead of throwing away hours of work.
+- If you find changes that you did not make, DO NOT THROW THEM AWAY. Leave them out of commits if necessary, or ask.
 - Run `cargo clippy`, `cargo fmt`, and `tracey query status` before finishing an edit round.
 - Never write useless comments that only repeat the code.
 - Ask the user instead of making an assumption if there's a major detail missing from instructions that could affect code quality or implementation design.
