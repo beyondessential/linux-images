@@ -1,5 +1,6 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
@@ -437,16 +438,16 @@ fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<usize> {
             continue;
         }
 
-        let dev_path = Path::new("/dev").join(&*name);
-        if dev_path.exists() {
-            continue;
-        }
-
         let majmin = fs::read_to_string(&dev_file)
             .with_context(|| format!("reading {}", dev_file.display()))?;
         let majmin = majmin.trim();
-
         let (major, minor) = parse_major_minor(majmin)?;
+
+        let dev_path = Path::new("/dev").join(&*name);
+        if is_valid_block_device(&dev_path, major, minor) {
+            tracing::debug!("/dev/{name} already exists with correct major:minor {major}:{minor}");
+            continue;
+        }
 
         created += mknod_block_device(&dev_path, &name, major, minor)?;
     }
@@ -496,12 +497,15 @@ fn ensure_partition_devices_via_sfdisk(target: &Path, dev_name: &str) -> Result<
             })
             .unwrap_or_else(|| partition_node_name(dev_name, part_num));
 
+        let minor = parent_minor + part_num;
         let dev_path = PathBuf::from(format!("/dev/{node_name}"));
-        if dev_path.exists() {
+        if is_valid_block_device(&dev_path, parent_major, minor) {
+            tracing::debug!(
+                "/dev/{node_name} already exists with correct major:minor {parent_major}:{minor}"
+            );
             continue;
         }
 
-        let minor = parent_minor + part_num;
         created += mknod_block_device(&dev_path, &node_name, parent_major, minor)?;
     }
 
@@ -509,7 +513,7 @@ fn ensure_partition_devices_via_sfdisk(target: &Path, dev_name: &str) -> Result<
 }
 
 /// Read major:minor from a block device, trying `/sys/class/block/<name>/dev`
-/// first (plain text "MAJ:MIN"), then falling back to `stat` on the device node.
+/// first (plain text "MAJ:MIN"), then falling back to `MetadataExt::rdev()`.
 fn read_dev_major_minor(device: &Path) -> Result<(u32, u32)> {
     let dev_name = device
         .file_name()
@@ -521,29 +525,11 @@ fn read_dev_major_minor(device: &Path) -> Result<(u32, u32)> {
         return parse_major_minor(contents.trim());
     }
 
-    // Fallback: use stat on the device node itself
-    let output = Command::new("stat")
-        .args(["--format=%t:%T", device.to_str().unwrap_or_default()])
-        .output()
-        .with_context(|| format!("stat on {}", device.display()))?;
-
-    if !output.status.success() {
-        bail!(
-            "cannot determine major:minor for {}: stat failed",
-            device.display()
-        );
-    }
-
-    // stat --format=%t:%T gives hex major:hex minor
-    let out = String::from_utf8_lossy(&output.stdout);
-    let out = out.trim();
-    let (maj_hex, min_hex) = out
-        .split_once(':')
-        .with_context(|| format!("parsing stat output {out:?}"))?;
-    let major = u32::from_str_radix(maj_hex, 16)
-        .with_context(|| format!("parsing hex major from {maj_hex:?}"))?;
-    let minor = u32::from_str_radix(min_hex, 16)
-        .with_context(|| format!("parsing hex minor from {min_hex:?}"))?;
+    // Fallback: read rdev from the device node metadata directly
+    let meta = fs::metadata(device).with_context(|| format!("stat on {}", device.display()))?;
+    let rdev = meta.rdev();
+    let major = libc::major(rdev) as u32;
+    let minor = libc::minor(rdev) as u32;
 
     Ok((major, minor))
 }
@@ -571,9 +557,47 @@ fn partition_node_name(dev_name: &str, part_num: u32) -> String {
     }
 }
 
+/// Check whether `path` exists, is a block device, and has the expected major:minor.
+///
+/// Uses `MetadataExt::rdev()` to extract the device number and the libc
+/// `major`/`minor` macros to split it, avoiding a subprocess.
+fn is_valid_block_device(path: &Path, expected_major: u32, expected_minor: u32) -> bool {
+    let meta = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+
+    if !meta.file_type().is_block_device() {
+        tracing::debug!("{} exists but is not a block device", path.display());
+        return false;
+    }
+
+    let rdev = meta.rdev();
+    let actual_major = libc::major(rdev) as u32;
+    let actual_minor = libc::minor(rdev) as u32;
+
+    if actual_major == expected_major && actual_minor == expected_minor {
+        return true;
+    }
+
+    tracing::debug!(
+        "{} has major:minor {actual_major}:{actual_minor}, expected {expected_major}:{expected_minor}",
+        path.display()
+    );
+    false
+}
+
 /// Create a block device node. Returns 1 on success, 0 on failure (logged as warning).
+///
+/// If `dev_path` already exists but is not a valid block device with the right
+/// major:minor, it is removed first so mknod can recreate it.
 fn mknod_block_device(dev_path: &Path, name: &str, major: u32, minor: u32) -> Result<usize> {
-    tracing::info!("creating missing device node /dev/{name} (block {major}:{minor})");
+    if dev_path.exists() {
+        tracing::info!("removing stale /dev/{name} before recreating");
+        let _ = fs::remove_file(dev_path);
+    }
+
+    tracing::info!("creating device node /dev/{name} (block {major}:{minor})");
 
     let status = Command::new("mknod")
         .args([
