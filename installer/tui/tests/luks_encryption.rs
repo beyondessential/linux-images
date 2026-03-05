@@ -1,55 +1,20 @@
 //! Integration tests for the installer's encryption setup against real LUKS volumes.
 //!
 //! These tests require:
+//! - The `luks-tests` cargo feature enabled
 //! - Running as root (UID 0)
-//! - `cryptsetup` and `systemd-cryptenroll` binaries available
+//! - `cryptsetup`, `losetup`, `sgdisk`, `mkfs.btrfs`, and `partprobe` binaries available
 //! - Access to `/dev/loop-control` for loop device creation
 //! - Access to `/dev/urandom`
 //!
-//! Tests are skipped (not failed) when these prerequisites are not met.
+//! Run with:
+//!   sudo cargo test --test luks_encryption --features luks-tests -- --test-threads=1
+#![cfg(feature = "luks-tests")]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
-
-// ---------------------------------------------------------------------------
-// Helpers: prerequisite checks
-// ---------------------------------------------------------------------------
-
-fn is_root() -> bool {
-    unsafe { libc::geteuid() == 0 }
-}
-
-fn has_command(name: &str) -> bool {
-    Command::new("which")
-        .arg(name)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-fn prerequisites_met() -> bool {
-    if !is_root() {
-        eprintln!("SKIP: not running as root");
-        return false;
-    }
-    for cmd in &["cryptsetup", "mkfs.btrfs", "losetup"] {
-        if !has_command(cmd) {
-            eprintln!("SKIP: {cmd} not found");
-            return false;
-        }
-    }
-    true
-}
-
-macro_rules! skip_unless_root {
-    () => {
-        if !prerequisites_met() {
-            return;
-        }
-    };
-}
 
 // ---------------------------------------------------------------------------
 // Test fixture: a loop-backed LUKS2 volume mimicking the metal image layout
@@ -332,12 +297,14 @@ impl LuksFixture {
             //   "  0: luks2"
             // Detail lines start with a tab: "\tKey:  512 bits"
             let trimmed = line.trim();
-            if line.starts_with("  ") && !line.starts_with("   ") && !line.starts_with('\t') {
-                if let Some(colon_pos) = trimmed.find(':') {
-                    let num_part = &trimmed[..colon_pos];
-                    if let Ok(slot) = num_part.trim().parse::<u32>() {
-                        slots.push(slot);
-                    }
+            if line.starts_with("  ")
+                && !line.starts_with("   ")
+                && !line.starts_with('\t')
+                && let Some(colon_pos) = trimmed.find(':')
+            {
+                let num_part = &trimmed[..colon_pos];
+                if let Ok(slot) = num_part.trim().parse::<u32>() {
+                    slots.push(slot);
                 }
             }
         }
@@ -460,8 +427,6 @@ fn partition_path(loop_dev: &str, part_num: u32) -> PathBuf {
 // r[verify installer.encryption.key-rotation]
 #[test]
 fn key_rotation_changes_master_key() {
-    skip_unless_root!();
-
     let mut fix = LuksFixture::setup();
 
     // Record the header before rotation
@@ -519,8 +484,6 @@ fn key_rotation_changes_master_key() {
 // r[verify installer.encryption.keyfile-enroll]
 #[test]
 fn keyfile_enrollment_adds_working_slot() {
-    skip_unless_root!();
-
     let mut fix = LuksFixture::setup();
 
     assert!(
@@ -594,8 +557,6 @@ fn keyfile_enrollment_adds_working_slot() {
 // r[verify installer.encryption.tpm-enroll]
 #[test]
 fn tpm_enrollment_updates_crypttab() {
-    skip_unless_root!();
-
     // We can't actually enroll a TPM without hardware, but we can verify
     // the crypttab configuration that the installer writes.
     let fix = LuksFixture::setup();
@@ -627,8 +588,6 @@ fn tpm_enrollment_updates_crypttab() {
 // r[verify installer.encryption.recovery-passphrase]
 #[test]
 fn recovery_passphrase_enrollment_creates_working_slot() {
-    skip_unless_root!();
-
     let fix = LuksFixture::setup();
 
     let passphrase = "alpha-bravo-charlie-delta-echo-foxtrot";
@@ -668,8 +627,6 @@ fn recovery_passphrase_enrollment_creates_working_slot() {
 // r[verify installer.encryption.wipe-empty-slot]
 #[test]
 fn wipe_empty_slot_removes_slot_zero() {
-    skip_unless_root!();
-
     let fix = LuksFixture::setup();
 
     // First, add an alternative key so we don't lock ourselves out
@@ -719,8 +676,6 @@ fn wipe_empty_slot_removes_slot_zero() {
 // r[verify installer.encryption.configure-system]
 #[test]
 fn configure_system_writes_expected_files() {
-    skip_unless_root!();
-
     // This test verifies the file-writing portion of configure_installed_system.
     // We skip the actual chroot + dracut rebuild (it would need a full rootfs
     // with a kernel), but verify that crypttab and dracut config are in place
@@ -778,8 +733,6 @@ fn configure_system_writes_expected_files() {
 // r[verify installer.encryption.wipe-empty-slot]
 #[test]
 fn full_keyfile_encryption_flow() {
-    skip_unless_root!();
-
     let mut fix = LuksFixture::setup();
 
     // Verify initial state: slot 0 active, empty keyfile works
