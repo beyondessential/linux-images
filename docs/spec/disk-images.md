@@ -46,18 +46,20 @@ BTRFS simple quotas must be enabled on the filesystem.
 
 ## Variants
 
-> r[image.variant.types]
+> r[image.variant.types+2]
 > Two image variants must be supported: `metal` and `cloud`.
 >
-> The `metal` variant encrypts the root partition with LUKS2 and includes
-> TPM auto-enrollment support. It is intended for bare-metal and on-premise
-> virtualisation.
+> The `metal` variant encrypts the root partition with LUKS2. It is intended
+> for bare-metal and on-premise virtualisation. The image ships with a
+> placeholder empty passphrase; the installer is responsible for rotating the
+> master key and enrolling the real unlock mechanism (TPM, keyfile, or
+> recovery passphrase) at install time.
 >
 > The `cloud` variant does not encrypt the root partition. It is intended for
 > cloud environments where encryption at rest is provided by the infrastructure.
 >
 > The active variant name must be written to `/etc/bes/image-variant` in the
-installed system so that runtime scripts can branch on it.
+> installed system so that runtime scripts can branch on it.
 
 ## Base System
 
@@ -230,23 +232,9 @@ Dracut must be configured to include this keyfile in the initramfs.
 r[image.luks.crypttab]
 `/etc/crypttab` must be configured to automatically decrypt the root on boot.
 
-r[image.luks.reencrypt]
-The system must rotate the master key of the LUKS volume on first boot,
-so that each installation has unique key material.
-
-### TPM Auto-Enrollment
-
-r[image.tpm.service]
-A service must run when a TPM device is present and has not yet been
-enrolled into the system, which calls the `image.tpm.enrollment` script.
-
-r[image.tpm.enrollment]
-A TPM enrollment script must use be configured which binds the LUKS
-volume to TPM2 PCR 7, then removes the empty password key slot.
-The crypttab must be updated to use the TPM device from then on.
-
-r[image.tpm.disableable]
-TPM auto-enrollment must be disableable.
+The image does not include any first-boot services for master key rotation or
+TPM enrollment. The installer handles all encryption setup at install time
+(see `installer.encryption.*`).
 
 ## Output
 
