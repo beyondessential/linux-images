@@ -1,7 +1,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::Instant;
 
@@ -387,11 +387,10 @@ pub fn reread_partition_table(target: &Path) -> Result<()> {
 /// those nodes never appear. The container's `/sys` may also not expose
 /// partition sub-entries.
 ///
-/// This function first tries sysfs (`/sys/class/block/<disk>/<partition>/dev`)
-/// and, when no partition entries are found there, falls back to reading the
-/// partition table with `sfdisk --json` and deriving major:minor from the
-/// parent device.
-// r[impl installer.container.partition-devices]
+/// This function reads sysfs (`/sys/class/block/<disk>/<partition>/dev`)
+/// to discover partition sub-devices and their major:minor numbers, then
+/// creates or recreates any `/dev` nodes that are missing or stale.
+// r[impl installer.container.partition-devices+2]
 pub fn ensure_partition_devices(target: &Path) -> Result<()> {
     let dev_name = target
         .file_name()
@@ -401,12 +400,6 @@ pub fn ensure_partition_devices(target: &Path) -> Result<()> {
     let created = ensure_partition_devices_via_sysfs(dev_name)?;
     if created > 0 {
         tracing::info!("created {created} partition device node(s) via sysfs");
-        return Ok(());
-    }
-
-    let created = ensure_partition_devices_via_sfdisk(target, dev_name)?;
-    if created > 0 {
-        tracing::info!("created {created} partition device node(s) via sfdisk fallback");
     } else {
         tracing::debug!("all partition device nodes already present for {dev_name}");
     }
@@ -455,85 +448,6 @@ fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<usize> {
     Ok(created)
 }
 
-/// Fallback: read the partition table with `sfdisk --json` and create missing
-/// device nodes by deriving major:minor from the parent device.
-///
-/// For block devices the kernel assigns partition minors as
-/// `parent_minor + partition_number` (1-based), which holds for loop, NVMe,
-/// SCSI/SATA, and virtio devices.
-fn ensure_partition_devices_via_sfdisk(target: &Path, dev_name: &str) -> Result<usize> {
-    let (parent_major, parent_minor) = read_dev_major_minor(target)?;
-
-    let output = Command::new("sfdisk")
-        .args(["--json", target.to_str().unwrap_or_default()])
-        .output()
-        .context("running sfdisk --json for partition device creation")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("sfdisk --json failed on {}: {stderr}", target.display());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).context("parsing sfdisk JSON output")?;
-
-    let partitions = parsed
-        .get("partitiontable")
-        .and_then(|pt| pt.get("partitions"))
-        .and_then(|p| p.as_array())
-        .map(|a| a.as_slice())
-        .unwrap_or_default();
-
-    let mut created = 0usize;
-    for (i, part) in partitions.iter().enumerate() {
-        let part_num = (i + 1) as u32;
-        let node_name = part
-            .get("node")
-            .and_then(|n| n.as_str())
-            .map(|n| {
-                // sfdisk gives full paths like "/dev/loop0p1"; extract the basename
-                n.rsplit('/').next().unwrap_or(n).to_string()
-            })
-            .unwrap_or_else(|| partition_node_name(dev_name, part_num));
-
-        let minor = parent_minor + part_num;
-        let dev_path = PathBuf::from(format!("/dev/{node_name}"));
-        if is_valid_block_device(&dev_path, parent_major, minor) {
-            tracing::debug!(
-                "/dev/{node_name} already exists with correct major:minor {parent_major}:{minor}"
-            );
-            continue;
-        }
-
-        created += mknod_block_device(&dev_path, &node_name, parent_major, minor)?;
-    }
-
-    Ok(created)
-}
-
-/// Read major:minor from a block device, trying `/sys/class/block/<name>/dev`
-/// first (plain text "MAJ:MIN"), then falling back to `MetadataExt::rdev()`.
-fn read_dev_major_minor(device: &Path) -> Result<(u32, u32)> {
-    let dev_name = device
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or_default();
-
-    let sysfs_dev = format!("/sys/class/block/{dev_name}/dev");
-    if let Ok(contents) = fs::read_to_string(&sysfs_dev) {
-        return parse_major_minor(contents.trim());
-    }
-
-    // Fallback: read rdev from the device node metadata directly
-    let meta = fs::metadata(device).with_context(|| format!("stat on {}", device.display()))?;
-    let rdev = meta.rdev();
-    let major = libc::major(rdev) as u32;
-    let minor = libc::minor(rdev) as u32;
-
-    Ok((major, minor))
-}
-
 fn parse_major_minor(majmin: &str) -> Result<(u32, u32)> {
     let (major_str, minor_str) = majmin
         .split_once(':')
@@ -545,16 +459,6 @@ fn parse_major_minor(majmin: &str) -> Result<(u32, u32)> {
         .parse()
         .with_context(|| format!("parsing minor number from {minor_str:?}"))?;
     Ok((major, minor))
-}
-
-/// Derive the expected partition node name for a device and partition number.
-/// Loop and NVMe devices use a "p" separator; SCSI/SATA do not.
-fn partition_node_name(dev_name: &str, part_num: u32) -> String {
-    if dev_name.ends_with(|c: char| c.is_ascii_digit()) {
-        format!("{dev_name}p{part_num}")
-    } else {
-        format!("{dev_name}{part_num}")
-    }
 }
 
 /// Check whether `path` exists, is a block device, and has the expected major:minor.

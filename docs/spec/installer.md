@@ -608,19 +608,18 @@ filesystems and close any LUKS volumes before prompting for reboot.
 > the installer and confirming that no host block devices (e.g. `/dev/sda`,
 > `/dev/nvme*`) are visible inside.
 
-r[installer.container.partition-devices]
+r[installer.container.partition-devices+2]
 Inside a container with a private `/dev`, running `partprobe` tells the
 kernel to re-read the partition table but the resulting device nodes are
-created on the **host's** devtmpfs, not inside the container. The container's
-`/sys` may also not expose partition sub-entries under
-`/sys/class/block/<disk>/`. The installer must therefore ensure that
-partition device nodes exist before any operation that accesses them (e.g.
-`cryptsetup open`, `mount`). When sysfs entries for partition sub-devices
-are available, their `dev` file (major:minor) is used to `mknod` missing
-nodes. When sysfs entries are absent, the installer must fall back to
-reading the partition table with `sfdisk --json`, deriving each partition's
-major:minor from the parent device's major number and computing
-`parent_minor + partition_index`, and then creating the nodes with `mknod`.
+created on the **host's** devtmpfs, not inside the container. The installer
+must therefore ensure that partition device nodes exist before any operation
+that accesses them (e.g. `cryptsetup open`, `mount`). It does so by reading
+`/sys/class/block/<disk>/<partition>/dev` to obtain each partition's
+major:minor and then creating or recreating any `/dev` nodes that are
+missing or have a stale major:minor (verified via `MetadataExt::rdev()`).
+The installer must not attempt to derive partition major:minor numbers from
+the parent device — the kernel assigns them dynamically (e.g. loop device
+partitions use major 259 with unrelated minors, not `parent_minor + N`).
 
 r[installer.container.error-logging]
 Fatal errors that propagate to the installer's top-level must be logged via
