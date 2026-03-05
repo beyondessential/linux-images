@@ -413,13 +413,35 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+4]
+r[installer.tui.confirmation+5]
 After the timezone screen, and after the pre-summary network results screen,
 the TUI must show a summary screen listing: target disk (path, model, size),
 chosen disk encryption mode, and any first-boot configuration. The summary
 must clearly state that all data on the target disk will be destroyed. The
 user must type an explicit confirmation (not just press Enter). The
 confirmation screen is step 6/6.
+
+When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
+screen must also generate and display the recovery passphrase. This gives
+the user an opportunity to write it down **before** the destructive write
+begins. The same passphrase is later enrolled into the LUKS volume during
+encryption setup. The post-write "Recovery Passphrase" screen remains as a
+final reminder.
+
+r[installer.tui.ascii-rendering]
+All text rendered by the TUI must use only printable ASCII characters. In
+particular, em dashes, curly quotes, ellipsis characters, and other
+non-ASCII punctuation must be replaced with their ASCII equivalents (e.g.
+`--` instead of U+2014). The Linux console (the default terminal on bare
+metal) does not have Unicode fonts; non-ASCII characters render as
+replacement blocks.
+
+r[installer.tui.error-reboot]
+When the installer encounters a fatal error during the write or post-write
+phases, the TUI must display the error message and wait for a keypress.
+Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
+set), not simply quit the process. On bare-metal hardware, quitting without
+rebooting leaves the machine in an unusable state.
 
 r[installer.tui.progress]
 During image writing, the TUI must display a progress bar showing bytes
@@ -492,13 +514,16 @@ on a temporary filesystem.
 > reference the keyfile with a passphrase timeout fallback, and update the
 > dracut configuration to include the new keyfile in the initramfs.
 
-> r[installer.encryption.recovery-passphrase]
-> The installer must generate a human-readable recovery passphrase, enroll it
-> as a LUKS password slot via `systemd-cryptenroll`, and display it to the
-> user. In interactive mode, a "Recovery Passphrase" screen must be shown
-> after the write/firstboot phase and before the "Done" screen. The user
-> must press Enter to acknowledge. In automatic mode, the passphrase must be
-> printed to stderr.
+> r[installer.encryption.recovery-passphrase+2]
+> The installer must generate a human-readable recovery passphrase and enroll
+> it as a LUKS password slot via `cryptsetup luksAddKey`. In interactive
+> mode, the passphrase must be generated at confirmation time (before the
+> destructive write) and displayed on the confirmation screen so the user can
+> record it. A post-write "Recovery Passphrase" screen is shown as a
+> reminder before the "Done" screen; the user must press Enter to
+> acknowledge. The encryption setup phase receives the pre-generated
+> passphrase and enrolls it. In automatic mode, the passphrase is generated
+> during encryption setup and printed to stderr.
 
 > r[installer.encryption.wipe-empty-slot]
 > After enrolling the real unlock mechanism(s) and the recovery passphrase,
