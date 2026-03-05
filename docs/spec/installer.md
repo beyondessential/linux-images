@@ -519,6 +519,23 @@ the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is
 needed. This ensures the installed system has a fully expanded filesystem
 without depending on a boot-time growth service.
 
+r[installer.write.randomize-uuids]
+After expanding the root filesystem, the installer must randomize the
+filesystem UUID of each partition to ensure every installation has unique
+identifiers. For the ext4 extended boot partition, it must run
+`tune2fs -U random`. For the BTRFS root partition (or the LUKS volume on
+top of it), it must run `btrfstune -u` while the filesystem is unmounted.
+For the FAT32 EFI partition, it must randomize the volume serial number
+with `mlabel -n`. All filesystems must be unmounted during UUID changes.
+
+r[installer.write.rebuild-boot-config]
+After randomizing filesystem UUIDs, the installer must unconditionally
+rebuild the initramfs and GRUB configuration in a chroot of the installed
+system, regardless of encryption mode. This is required because the GRUB
+config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
+have been rotated. The installer must run `dracut --force` and `update-grub`
+with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
+
 ## Encryption Setup
 
 > r[installer.encryption.overview]

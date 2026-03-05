@@ -167,11 +167,17 @@ New flow:
     This requires a temporary mount of the BTRFS (subvol `@`), resize,
     then unmount. This ensures the installed system has a fully expanded
     filesystem and does not depend on `grow-root-filesystem.service`.
-11. `verify_partition_table`.
-12. Firstboot (mount, apply config, unmount). When encryption is not
+11. Randomize filesystem UUIDs (see below).
+12. Rebuild initramfs and GRUB config (unconditionally, see below).
+13. `verify_partition_table`.
+14. Firstboot (mount, apply config, unmount). When encryption is not
     `None`, also fix up fstab and write variant marker.
-13. Encryption setup (if encrypted) -- same as today: `run_encryption_setup`
+15. Encryption setup (if encrypted) -- same as today: `run_encryption_setup`
     handles key rotation, enrollment, recovery passphrase, initramfs.
+    Note: `configure_installed_system` in `encryption.rs` already rebuilds
+    the initramfs; since step 12 now does this unconditionally, the
+    encryption path will rebuild it a second time (picking up crypttab and
+    keyfile changes). This is intentional and harmless.
 
 Since the installer creates the GPT with partition 3 spanning all remaining
 space, neither `growpart` nor `--move-second-header` is needed. The BTRFS
@@ -235,6 +241,61 @@ cryptsetup close bes-target-root
 The empty keyfile (`/tmp/bes-empty-keyfile`) is already created by
 `encryption.rs::create_empty_keyfile`. We can reuse that or create a
 parallel helper in `writer.rs`.
+
+### Filesystem UUID rotation
+
+All partition images extracted from the cloud image have the same filesystem
+UUIDs on every install. Since the installer now writes partition images
+rather than whole-disk images, every installation from the same ISO would
+share identical UUIDs. This causes problems when two disks installed from
+the same ISO are mounted on the same system (UUID collisions), and is
+generally poor hygiene.
+
+After writing and expanding partitions, the installer must randomize the
+filesystem UUID of each partition:
+
+- **xboot (ext4)**: `tune2fs -U random /dev/sdX2`. Safe on an unmounted
+  filesystem, rewrites the superblock only.
+- **root (BTRFS)**: `btrfstune -u /dev/sdX3` (or `/dev/mapper/root` if
+  encrypted). Requires the filesystem to be unmounted. The `-u` flag
+  changes the fsid (the `-m` flag changes the metadata UUID, but `-u` is
+  the standard approach for an offline filesystem).
+- **EFI (FAT32)**: FAT32 has a 32-bit volume serial number, not a UUID.
+  `mlabel -n -i /dev/sdX1 ::` randomizes it. Optional but included for
+  completeness.
+
+After changing UUIDs, the GRUB config (`grub.cfg`) and the initramfs both
+contain stale references to the old UUIDs. GRUB uses
+`search --fs-uuid <uuid>` and the kernel command line contains
+`root=UUID=<uuid>`. Dracut with `hostonly="yes"` bakes the root UUID into
+the initramfs. Both must be regenerated.
+
+### Initramfs and GRUB rebuild
+
+The installer must unconditionally rebuild the initramfs and GRUB config
+after writing partition images, regardless of encryption mode. This is
+needed because:
+
+1. Filesystem UUIDs have been rotated (see above).
+2. For encrypted installs, the crypttab and keyfile changes also require
+   an initramfs rebuild (previously the only reason for rebuilding).
+
+The rebuild runs in a chroot with bind-mounted `/proc`, `/sys`, `/dev`:
+
+```
+chroot /mnt/target dracut --force --kver <kver>
+chroot /mnt/target update-grub
+```
+
+Today `encryption.rs::configure_installed_system` already does the dracut
+rebuild for encrypted installs. With this change, the rebuild happens
+unconditionally in a new `rebuild_boot_config` function. For encrypted
+installs, the encryption setup phase will rebuild dracut a second time
+(after writing crypttab and keyfile changes). This double-rebuild is
+intentional: the first rebuild picks up the new UUIDs, and the second
+picks up the encryption config. Combining them would require reordering
+the encryption setup to happen before firstboot, which would complicate
+the flow for marginal benefit.
 
 ### Progress reporting
 
@@ -313,6 +374,14 @@ device).
   root, runs `btrfs filesystem resize max /mnt/target`, then unmounts and
   closes LUKS. If encrypted, also runs `cryptsetup resize root` before the
   BTRFS resize.
+- **`randomize_filesystem_uuids`** (new): Runs `tune2fs -U random` on
+  xboot, `btrfstune -u` on root (or `/dev/mapper/root` if encrypted),
+  and `mlabel -n` on EFI. Must be called after `expand_root_filesystem`
+  and before `rebuild_boot_config`, with all filesystems unmounted.
+- **`rebuild_boot_config`** (new): Mounts the target (root, xboot, EFI),
+  bind-mounts `/proc`, `/sys`, `/dev`, runs `dracut --force --kver <kver>`
+  and `update-grub` in a chroot, then cleans up. Called unconditionally
+  after UUID rotation.
 - **`expand_partitions`**: Delete. The GPT is created with correct geometry
   so `growpart` and `--move-second-header` are unnecessary, and the BTRFS
   resize is now handled by `expand_root_filesystem`.
@@ -350,7 +419,8 @@ device).
 - **`run_auto`**: Replace `find_image_path` + `write_image` sequence with
   `find_partition_manifest` + `write_partitions`. Pass `disk_encryption` to
   `write_partitions` so it knows whether to set up LUKS. After write, call
-  `expand_root_filesystem`, then `verify_partition_table`, then
+  `expand_root_filesystem`, `randomize_filesystem_uuids`,
+  `rebuild_boot_config`, then `verify_partition_table`, then
   `firstboot::fixup_for_metal_variant` before `apply_firstboot` when
   encryption is enabled. Remove `expand_partitions` call.
 - **`run_interactive`**: Replace `find_image_path` call with
@@ -360,7 +430,8 @@ device).
 
 - **`start_write_worker`**: Replace `write_image` with `write_partitions`.
   Pass `disk_encryption` from `AppState`. After write, call
-  `expand_root_filesystem`, then `verify_partition_table` (remove
+  `expand_root_filesystem`, `randomize_filesystem_uuids`,
+  `rebuild_boot_config`, then `verify_partition_table` (remove
   `expand_partitions`).
 - **`start_firstboot_worker`**: Add call to `fixup_for_metal_variant` when
   encryption is enabled, before `apply_firstboot`.
@@ -396,6 +467,8 @@ device).
   arguments (capture `Command` or verify via mock).
 - Test `fixup_for_metal_variant` correctly rewrites fstab entries (create
   temp file with cloud-style fstab, run fixup, verify output).
+- Test `randomize_filesystem_uuids` changes UUIDs (would require real
+  filesystems; may be integration-test-only).
 - Test `partition_images_total_size` sums correctly.
 - Test disk size check with summed partition sizes.
 - Update existing `find_image_path` tests to test `find_partition_manifest`.
@@ -414,6 +487,9 @@ device).
   `/dev/mapper/root` when encryption is enabled.
 - Add verification that `/etc/bes/image-variant` is `metal` or `cloud`
   as appropriate.
+- Add verification that filesystem UUIDs on the installed disk differ from
+  a known set (or at minimum that `grub.cfg` references the actual
+  filesystem UUID of the root partition).
 
 ### Manual verification
 
@@ -422,6 +498,8 @@ device).
   none). Verify the installed system boots correctly.
 - Verify the installed system's fstab, crypttab, and variant marker are
   correct for each mode.
+- Install two disks from the same ISO and verify they have different
+  filesystem UUIDs.
 
 ## Implementation order
 
@@ -456,6 +534,16 @@ device).
   nearly nothing. A `btrfs send` stream would save marginal space while
   requiring `mkfs.btrfs` + `btrfs receive` on the target (different write
   path, subvolume snapshot semantics to manage). Not worth the complexity.
+- **Filesystem UUIDs are rotated unconditionally.** Even though cloud
+  installs (encryption `None`) don't strictly need it today, UUID
+  uniqueness is basic hygiene and avoids problems if two disks from the
+  same ISO are ever mounted together. The cost is an unconditional
+  initramfs + GRUB rebuild (~10-15 seconds).
+- **Initramfs is rebuilt twice for encrypted installs.** Once after UUID
+  rotation (unconditional), and once after encryption setup (to pick up
+  crypttab/keyfile). Merging them would require reordering the phases,
+  which is not worth the complexity. The second rebuild is fast since
+  dracut caches module resolution.
 - **LUKS mapper name is `bes-target-root`** (matching the existing constant
   `LUKS_NAME` in `firstboot.rs`). Both the new `format_luks_for_root` in
   `writer.rs` and the existing `mount_target` in `firstboot.rs` use this
