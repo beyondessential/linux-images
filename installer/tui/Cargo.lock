@@ -123,6 +123,8 @@ dependencies = [
  "assert_cmd",
  "clap",
  "crossterm",
+ "diceware_wordlists",
+ "libc",
  "predicates",
  "rand 0.9.2",
  "ratatui",
@@ -424,6 +426,12 @@ dependencies = [
  "rustc_version",
  "syn 2.0.117",
 ]
+
+[[package]]
+name = "diceware_wordlists"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f9b52b69d268c7a2bc582e3aec5cdfa43ac91cef4fe6b6751b02da2b43d6166"
 
 [[package]]
 name = "difflib"

@@ -56,7 +56,7 @@ fn error_invalid_devices_json() {
         .stderr(predicates::str::contains("fake devices"));
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn error_invalid_config_toml() {
     let f = Fixture::new();
@@ -78,7 +78,7 @@ fn error_invalid_config_toml() {
         .stderr(predicates::str::contains("parsing config"));
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn error_unknown_config_field() {
     let f = Fixture::new();
@@ -100,7 +100,7 @@ fn error_unknown_config_field() {
         .stderr(predicates::str::contains("parsing config"));
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn error_invalid_variant_in_config() {
     let f = Fixture::new();
@@ -172,7 +172,7 @@ fn error_disk_path_not_found() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "/dev/nonexistent"
 
         [firstboot]
@@ -195,6 +195,33 @@ fn error_disk_path_not_found() {
         .stderr(predicates::str::contains("not found"));
 }
 
+// r[verify installer.container.error-logging]
+#[test]
+fn error_logged_to_file() {
+    let f = Fixture::new();
+    // Trigger a guaranteed error: no devices file at this path
+    let bad_path = f.path("nonexistent.json");
+
+    installer()
+        .args([
+            "--fake-devices",
+            bad_path.to_str().unwrap(),
+            "--dry-run",
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("fake devices"));
+
+    // The same error must also appear in the log file
+    let log_contents = std::fs::read_to_string(f.log_path()).unwrap();
+    assert!(
+        log_contents.contains("fake devices"),
+        "expected log file to contain the error, got: {log_contents}"
+    );
+}
+
 #[test]
 fn error_no_ssds_for_largest_ssd_strategy() {
     let f = Fixture::new();
@@ -205,7 +232,7 @@ fn error_no_ssds_for_largest_ssd_strategy() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]

@@ -10,7 +10,7 @@ fn dry_run_output_to_file() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -46,7 +46,7 @@ fn dry_run_output_to_stdout() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -72,10 +72,10 @@ fn dry_run_output_to_stdout() {
 
     let plan: Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(plan["mode"], "auto");
-    assert_eq!(plan["variant"], "metal");
+    assert_eq!(plan["disk_encryption"], "tpm");
 }
 
-// r[verify installer.dryrun.schema+2]
+// r[verify installer.dryrun.schema+3]
 #[test]
 fn plan_contains_all_required_fields() {
     let f = Fixture::new();
@@ -83,9 +83,8 @@ fn plan_contains_all_required_fields() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
-        disable-tpm = true
 
         [firstboot]
         hostname = "test-box"
@@ -114,9 +113,10 @@ fn plan_contains_all_required_fields() {
 
     let required_top = [
         "mode",
+        "disk_encryption",
         "variant",
         "disk",
-        "disable_tpm",
+        "tpm_present",
         "firstboot",
         "image_path",
         "config_warnings",
@@ -136,7 +136,7 @@ fn plan_contains_all_required_fields() {
     }
 }
 
-// r[verify installer.dryrun.schema+2]
+// r[verify installer.dryrun.schema+3]
 #[test]
 fn plan_tailscale_authkey_is_bool_not_string() {
     let f = Fixture::new();
@@ -144,7 +144,7 @@ fn plan_tailscale_authkey_is_bool_not_string() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -186,7 +186,7 @@ fn dry_run_without_script_emits_initial_state() {
     let devices = f.write_devices(TWO_DISK_DEVICES);
     let config = f.write_config(
         r#"
-        variant = "cloud"
+        disk-encryption = "none"
         disk = "/dev/sda"
 
         [firstboot]
@@ -211,12 +211,12 @@ fn dry_run_without_script_emits_initial_state() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "prefilled");
-    assert_eq!(plan["variant"], "cloud");
+    assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
     assert_eq!(plan["firstboot"]["hostname"], "pre-host");
 }
 
-// r[verify installer.mode.interactive]
+// r[verify installer.mode.interactive+2]
 #[test]
 fn dry_run_no_config_is_interactive() {
     let f = Fixture::new();
@@ -237,7 +237,7 @@ fn dry_run_no_config_is_interactive() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
-    assert_eq!(plan["variant"], "metal");
+    assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
@@ -249,7 +249,7 @@ fn dry_run_image_path_is_null_when_no_images() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -279,7 +279,7 @@ fn dry_run_image_path_is_null_when_no_images() {
     );
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn multiple_validation_warnings_collected() {
     let f = Fixture::new();
@@ -287,9 +287,8 @@ fn multiple_validation_warnings_collected() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "cloud"
+        disk-encryption = "none"
         disk = "largest-ssd"
-        disable-tpm = true
 
         [firstboot]
         hostname = "-bad-"
@@ -315,7 +314,7 @@ fn multiple_validation_warnings_collected() {
     let plan = f.read_plan();
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
-        warnings.len() >= 3,
-        "expected at least 3 warnings (disable-tpm, bad hostname, empty ssh key), got: {warnings:?}"
+        warnings.len() >= 2,
+        "expected at least 2 warnings (bad hostname, empty ssh key), got: {warnings:?}"
     );
 }

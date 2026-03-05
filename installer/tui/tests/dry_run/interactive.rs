@@ -1,6 +1,6 @@
 use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 
-// r[verify installer.mode.interactive]
+// r[verify installer.mode.interactive+2]
 // r[verify installer.dryrun.script.headless]
 #[test]
 fn interactive_metal_full_flow() {
@@ -12,12 +12,9 @@ fn interactive_metal_full_flow() {
 enter
 # Disk: accept first
 enter
-# Variant: accept metal default
+# DiskEncryption: accept default (keyfile)
 enter
-# TpmToggle: disable, advance
-space
-enter
-# Hostname selector: Static is default for metal, Enter -> HostnameInput
+# Hostname selector: Static is default for encrypted, Enter -> HostnameInput
 enter
 # HostnameInput: type hostname then advance
 type:my-server
@@ -65,34 +62,33 @@ enter
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
+    assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
-    assert!(plan["disable_tpm"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["hostname"], "my-server");
     assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 1);
     assert_eq!(plan["firstboot"]["timezone"], "UTC");
 }
 
-// r[verify installer.mode.interactive]
-// r[verify installer.tui.variant-selection]
-// r[verify image.tpm.disableable]
+// r[verify installer.mode.interactive+2]
+// r[verify installer.tui.disk-encryption+2]
 #[test]
-fn interactive_cloud_skips_tpm_screen() {
+fn interactive_none_encryption_flow() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Cloud flow: welcome, disk, toggle variant to cloud, hostname, tailscale,
-    // ssh, confirm. No TpmToggle screen.
+    // None encryption flow: welcome, disk, cycle encryption Keyfile->None,
+    // hostname, login, confirm. Single DiskEncryption screen.
     let script = f.write_script(
         "\
 # Welcome
 enter
 # Disk
 enter
-# Variant: toggle to cloud
+# DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: network-assigned is default for cloud, Enter -> Login
+# Hostname selector: network-assigned is default for none, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -127,8 +123,8 @@ enter
         .success();
 
     let plan = f.read_plan();
+    assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["variant"], "cloud");
-    assert!(!plan["disable_tpm"].as_bool().unwrap());
 }
 
 // r[verify installer.tui.hostname+5]
@@ -144,10 +140,10 @@ fn interactive_firstboot_fields_captured() {
 enter
 # Disk
 enter
-# Variant: toggle to cloud
+# DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: network-assigned is default for cloud, Up to select Static
+# Hostname selector: network-assigned is default for none, Up to select Static
 up
 enter
 # HostnameInput: type hostname then advance
@@ -210,7 +206,7 @@ enter
 fn interactive_empty_firstboot_is_null() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Use cloud variant — select network-assigned (the default for cloud) to
+    // Use none encryption — select network-assigned (the default for none) to
     // skip hostname entirely. Password is the only required firstboot field
     // in interactive mode.
     let script = f.write_script(
@@ -219,10 +215,10 @@ fn interactive_empty_firstboot_is_null() {
 enter
 # Disk
 enter
-# Toggle to cloud
+# DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: network-assigned is default for cloud, Enter -> Login
+# Hostname selector: network-assigned is default for none, Enter -> Login
 enter
 # Login: type password (required)
 type:pw
@@ -287,13 +283,11 @@ enter
 # Navigate to second disk
 down
 enter
-# Variant
+# DiskEncryption: accept default (keyfile)
 enter
-# TpmToggle
+# Hostname selector: Static is default for encrypted, Enter -> HostnameInput
 enter
-# Hostname selector: Static is default for metal, Enter -> HostnameInput
-enter
-# HostnameInput: type 'h' (required for metal)
+# HostnameInput: type 'h' (required for encrypted)
 type:h
 enter
 # Login: type password
@@ -358,6 +352,7 @@ fn interactive_quit_early_still_produces_plan() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
+    assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
@@ -386,10 +381,11 @@ fn interactive_empty_script_uses_initial_state() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
+    assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.confirmation+3]
+// r[verify installer.tui.confirmation+5]
 #[test]
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();
@@ -402,10 +398,10 @@ fn interactive_go_back_from_confirmation_and_change() {
 enter
 # Disk
 enter
-# Variant: toggle to cloud
+# DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: network-assigned is default for cloud, Enter -> Login
+# Hostname selector: network-assigned is default for none, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -426,8 +422,10 @@ esc
 alt:t
 type:tskey-auth-late
 enter
-# Login: password already set from first pass, Enter to confirm + Enter to advance
+# Login: advance (password already set, confirming=false so just advance)
+type:pw
 enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter

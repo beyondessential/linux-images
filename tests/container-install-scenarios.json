@@ -1,8 +1,7 @@
 [
   {
-    "name": "metal-full-disable-tpm",
-    "variant": "metal",
-    "disable-tpm": true,
+    "name": "metal-full-tpm",
+    "disk-encryption": "tpm",
     "hostname": "test-metal-full",
     "tailscale": "tskey-auth-container-test-key-1234567890",
     "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
@@ -10,21 +9,18 @@
     "timezone": "America/New_York"
   },
   {
-    "name": "metal-minimal-tpm-on",
-    "variant": "metal",
-    "disable-tpm": false,
+    "name": "metal-minimal-keyfile",
+    "disk-encryption": "keyfile",
     "hostname": "test-metal-minimal"
   },
   {
     "name": "metal-hostname-only",
-    "variant": "metal",
-    "disable-tpm": true,
+    "disk-encryption": "keyfile",
     "hostname": "test-metal-hostname"
   },
   {
     "name": "cloud-full",
-    "variant": "cloud",
-    "disable-tpm": true,
+    "disk-encryption": "none",
     "hostname": "test-cloud-full",
     "tailscale": "tskey-auth-container-test-key-1234567890",
     "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
@@ -33,51 +29,43 @@
   },
   {
     "name": "cloud-minimal",
-    "variant": "cloud",
-    "disable-tpm": true
+    "disk-encryption": "none"
   },
   {
     "name": "cloud-tailscale-only",
-    "variant": "cloud",
-    "disable-tpm": true,
+    "disk-encryption": "none",
     "tailscale": "tskey-auth-container-test-key-1234567890"
   },
   {
     "name": "cloud-password-hash",
-    "variant": "cloud",
-    "disable-tpm": true,
+    "disk-encryption": "none",
     "password-hash": "$6$testrounds$testhashvalue"
   },
   {
     "name": "metal-password-only",
-    "variant": "metal",
-    "disable-tpm": true,
+    "disk-encryption": "keyfile",
     "hostname": "test-metal-pw",
     "password": "pwonly"
   },
   {
     "name": "metal-dhcp-hostname",
-    "variant": "metal",
-    "disable-tpm": true,
+    "disk-encryption": "keyfile",
     "hostname-from-dhcp": true
   },
   {
     "name": "metal-hostname-template",
-    "variant": "metal",
-    "disable-tpm": true,
+    "disk-encryption": "keyfile",
     "hostname-template": "test-{hex:6}",
     "hostname-template-regex": "^test-[0-9a-f]{6}$"
   },
   {
     "name": "metal-timezone-custom",
-    "variant": "metal",
-    "disable-tpm": true,
+    "disk-encryption": "tpm",
     "hostname": "test-metal-tz",
     "timezone": "Europe/London"
   },
   {
     "name": "cloud-timezone-default",
-    "variant": "cloud",
-    "disable-tpm": true
+    "disk-encryption": "none"
   }
 ]

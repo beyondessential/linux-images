@@ -70,6 +70,7 @@ cleanup() {
 trap cleanup EXIT
 
 WORK_DIR="$(mktemp -d -t bes-try-installer-XXXXXX)"
+mkdir -p "$WORK_DIR/log"
 
 echo "=============================="
 echo "BES Interactive Installer Trial"
@@ -197,13 +198,18 @@ echo "==> Launching interactive installer in container..."
 echo "    (The installer TUI will take over the terminal.)"
 echo ""
 
-# Similar nspawn options to the automated tests, but with --console=interactive
-# instead of --pipe (so the TUI can drive the terminal) and without
-# --private-network (so network checks and tailscale netcheck work).
+# nspawn uses --pipe so that the TUI's crossterm can drive the inherited
+# terminal fd directly. --private-network is omitted so tailscale netcheck
+# works.
+#
+# The container gets nspawn's own private /dev (no host devices exposed).
+# After partprobe, partition device nodes only appear on the host's devtmpfs,
+# not inside the container. The installer handles this by reading
+# /sys/class/block/ and creating missing device nodes via mknod.
 NSPAWN_OPTS=(
     --register=no
     --quiet
-    --console=interactive
+    --pipe
     --capability=CAP_SYS_ADMIN
     --system-call-filter=mount
     --property=DeviceAllow='block-loop rwm'
@@ -214,6 +220,7 @@ NSPAWN_OPTS=(
 
 NSPAWN_BINDS=(
     "--bind=$LOOP_DEV"
+    "--bind=$WORK_DIR/log:/log"
     "--bind-ro=$IMAGES_DIR:/run/live/medium/images"
     "--bind-ro=$DEVICES_JSON:/tmp/devices.json"
 )
@@ -225,11 +232,23 @@ systemd-nspawn \
     "${NSPAWN_BINDS[@]}" \
     /usr/local/bin/bes-installer \
         --fake-devices /tmp/devices.json \
-        --no-reboot
+        --fake-tpm \
+        --no-reboot \
+        --log /log/installer.log
 RC=$?
 set -e
 
 echo ""
+if [ -f "$WORK_DIR/log/installer.log" ]; then
+    INSTALLER_LOG="$WORK_DIR/log/installer.log"
+    echo "Installer log saved to: $INSTALLER_LOG"
+    echo ""
+    echo "=== Installer log (last 40 lines) ==="
+    tail -40 "$INSTALLER_LOG"
+    echo "=== End installer log ==="
+    echo ""
+fi
+
 if [ $RC -eq 0 ]; then
     echo "Installer exited successfully."
 else

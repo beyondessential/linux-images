@@ -9,7 +9,7 @@
 # multiple scenarios against it.
 #
 # Required arguments:
-#   $1 — variant (metal | cloud)
+#   $1 — disk-encryption (tpm | keyfile | none)
 #   $2 — arch (amd64 | arm64)
 #
 # Required environment:
@@ -18,7 +18,6 @@
 #
 # Scenario environment (all optional):
 #   SCENARIO_NAME  — human-readable name (default: "unnamed")
-#   DISABLE_TPM    — "true" or "false" (default: "true")
 #   SET_HOSTNAME   — hostname to set, or "" to skip (default: "")
 #   SET_TAILSCALE  — tailscale authkey to set, or "" to skip (default: "")
 #   SET_SSH_KEYS   — SSH public key to set, or "" to skip (default: "")
@@ -32,14 +31,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/nspawn-opts.sh"
 
-VARIANT="${1:?Usage: $0 <variant> <arch>}"
-ARCH="${2:?Usage: $0 <variant> <arch>}"
+DISK_ENCRYPTION="${1:?Usage: $0 <disk-encryption> <arch>}"
+ARCH="${2:?Usage: $0 <disk-encryption> <arch>}"
+
+# Derive variant from disk-encryption mode
+case "$DISK_ENCRYPTION" in
+    tpm|keyfile) VARIANT="metal" ;;
+    none)        VARIANT="cloud" ;;
+    *)
+        echo "ERROR: disk-encryption must be tpm, keyfile, or none (got: $DISK_ENCRYPTION)"
+        exit 1
+        ;;
+esac
 
 ROOTFS_DIR="${ROOTFS_DIR:?ROOTFS_DIR must be set}"
 IMAGES_DIR="${IMAGES_DIR:?IMAGES_DIR must be set}"
 
 SCENARIO_NAME="${SCENARIO_NAME:-unnamed}"
-DISABLE_TPM="${DISABLE_TPM:-true}"
 SET_HOSTNAME="${SET_HOSTNAME:-}"
 SET_HOSTNAME_FROM_DHCP="${SET_HOSTNAME_FROM_DHCP:-}"
 SET_HOSTNAME_TEMPLATE="${SET_HOSTNAME_TEMPLATE:-}"
@@ -50,14 +58,6 @@ SET_PASSWORD_HASH="${SET_PASSWORD_HASH:-}"
 SET_TIMEZONE="${SET_TIMEZONE:-}"
 
 TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-10G}"
-
-case "$VARIANT" in
-    metal|cloud) ;;
-    *)
-        echo "ERROR: variant must be metal or cloud (got: $VARIANT)"
-        exit 1
-        ;;
-esac
 
 case "$ARCH" in
     amd64|arm64) ;;
@@ -125,9 +125,8 @@ WORK_DIR="$(mktemp -d -t bes-container-test-XXXXXX)"
 echo "----------------------------------------------------------------------"
 echo "Scenario: $SCENARIO_NAME"
 echo "----------------------------------------------------------------------"
-echo "  variant:       $VARIANT"
+echo "  disk-encrypt:  $DISK_ENCRYPTION (variant: $VARIANT)"
 echo "  arch:          $ARCH"
-echo "  disable-tpm:   $DISABLE_TPM"
 echo "  hostname:      ${SET_HOSTNAME:-(not set)}"
 echo "  hostname-dhcp: ${SET_HOSTNAME_FROM_DHCP:-(not set)}"
 echo "  hostname-tmpl: ${SET_HOSTNAME_TEMPLATE:-(not set)}"
@@ -174,9 +173,8 @@ EOF
 CONFIG_TOML="$WORK_DIR/bes-install.toml"
 {
     echo 'auto = true'
-    echo "variant = \"$VARIANT\""
+    echo "disk-encryption = \"$DISK_ENCRYPTION\""
     echo "disk = \"$LOOP_DEV\""
-    echo "disable-tpm = $DISABLE_TPM"
 
     if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_HOSTNAME_FROM_DHCP" ] || [ -n "$SET_HOSTNAME_TEMPLATE" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ] || [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ] || [ -n "$SET_TIMEZONE" ]; then
         echo ""
@@ -243,7 +241,7 @@ done
 # ============================================================
 echo "==> Running installer in systemd-nspawn container..."
 
-# r[impl installer.container.isolation] (layer 1): only the loop device is
+# r[impl installer.container.isolation+2] (layer 1): only the loop device is
 # bound into the container.
 NSPAWN_BINDS=(
     "--bind=$LOOP_DEV"
@@ -256,12 +254,12 @@ NSPAWN_BINDS+=("--bind=/dev")
 INSTALLER_LOG="$WORK_DIR/installer.log"
 INSTALLER_OUTPUT="$WORK_DIR/installer-output.txt"
 
-echo "    Running installer (variant=$VARIANT, target=$LOOP_DEV)..."
+echo "    Running installer (disk-encryption=$DISK_ENCRYPTION, target=$LOOP_DEV)..."
 echo ""
 
-# r[impl installer.container.isolation] (layer 2): --fake-devices bypasses
+# r[impl installer.container.isolation+2] (layer 2): --fake-devices bypasses
 # lsblk discovery so the installer sees only the loop device.
-# r[impl installer.container.isolation] (layer 3): --private-network prevents
+# r[impl installer.container.isolation+2] (layer 3): --private-network prevents
 # any network side-effects from the container. This also serves as the
 # enforcement mechanism for r[verify iso.offline]: a successful install with
 # no network proves the ISO is fully self-contained.
@@ -572,19 +570,6 @@ if [ -n "$BTRFS_DEV" ]; then
                 ACTUAL_TZ="$(tr -d '[:space:]' < "$TIMEZONE_FILE")"
                 check "timezone file contains 'UTC' (default)" \
                     test "$ACTUAL_TZ" = "UTC"
-            fi
-        fi
-
-        # --- TPM disable ---
-        # r[verify installer.firstboot.tpm-disable]
-        if [ "$VARIANT" = "metal" ]; then
-            TPM_SYMLINK="$VERIFY_MOUNT/etc/systemd/system/multi-user.target.wants/setup-tpm-unlock.service"
-            if [ "$DISABLE_TPM" = "true" ]; then
-                check "setup-tpm-unlock.service symlink removed (disable-tpm=true)" \
-                    test ! -e "$TPM_SYMLINK"
-            else
-                check "setup-tpm-unlock.service symlink present (disable-tpm=false)" \
-                    test -L "$TPM_SYMLINK"
             fi
         fi
 

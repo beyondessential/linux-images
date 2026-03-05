@@ -13,23 +13,23 @@
 >    mounted by `live-boot`).
 > 3. `/boot/efi/bes-install.toml` (fallback for manual placement).
 
-> r[installer.config.schema+2]
+> r[installer.config.schema+3]
 > The configuration file has the following schema:
 >
 > ```toml
 > # Run fully automatically without prompts.
-> # Requires at minimum: variant and disk.
+> # Requires at minimum: disk-encryption and disk.
 > auto = true
 >
-> # Image variant: "metal" or "cloud"
-> variant = "metal"
+> # Disk encryption mode: "tpm", "keyfile", or "none".
+> # "tpm" — LUKS + TPM PCR 1 (requires a TPM; default when TPM present)
+> # "keyfile" — LUKS + keyfile on boot partition (default when no TPM)
+> # "none" — no encryption (cloud image)
+> disk-encryption = "tpm"
 >
 > # Target disk: a device path or a strategy.
 > # Strategies: "largest-ssd", "largest", "smallest"
 > disk = "largest-ssd"
->
-> # Disable TPM auto-enrollment (metal variant only).
-> disable-tpm = false
 >
 > [firstboot]
 > hostname = "server-01"
@@ -71,30 +71,32 @@ from a cryptographically secure random source.
 
 ## Operating Modes
 
-r[installer.mode.interactive]
+r[installer.mode.interactive+2]
 When no configuration file is found, the installer must launch a fully
-interactive TUI with sensible defaults (variant `metal`, disk strategy
-`largest-ssd`).
+interactive TUI with sensible defaults (disk encryption auto-detected based
+on TPM presence, disk strategy `largest-ssd`).
 
 r[installer.mode.prefilled]
 When a configuration file is present but `auto` is false or absent, the
 installer must launch the TUI with values from the file pre-filled as
 defaults. The user can override any value.
 
-> r[installer.mode.auto+2]
+> r[installer.mode.auto+3]
 > When `auto = true` and all required fields are present, the installer must
 > proceed without any interactive prompts. It must:
 >
 > 1. Log its configuration to the console.
 > 2. Display progress during image writing.
 > 3. Apply first-boot configuration.
-> 4. Reboot automatically on success.
-> 5. Print an error and exit with a non-zero status on failure.
+> 4. Apply encryption setup (key rotation, TPM/keyfile enrollment, recovery
+>    passphrase) when disk encryption is not `"none"`.
+> 5. Reboot automatically on success.
+> 6. Print an error and exit with a non-zero status on failure.
 >
-> Required fields: `variant`, `disk`. Additionally, when `variant` is
-> `"metal"`, at least one hostname strategy must be specified:
-> `firstboot.hostname`, `firstboot.hostname-from-dhcp = true`, or
-> `firstboot.hostname-template`.
+> Required fields: `disk-encryption`, `disk`. Additionally, when
+> `disk-encryption` is `"tpm"` or `"keyfile"`, at least one hostname
+> strategy must be specified: `firstboot.hostname`,
+> `firstboot.hostname-from-dhcp = true`, or `firstboot.hostname-template`.
 
 r[installer.mode.auto.progress]
 In automatic mode, the installer must detect whether standard error is
@@ -106,10 +108,11 @@ single summary line after the write completes (total bytes written,
 throughput, and elapsed time). This avoids flooding non-interactive
 logs with thousands of nearly-identical progress lines.
 
-r[installer.mode.auto-incomplete+2]
-When `auto = true` but required fields are missing (`variant`, `disk`, or
-a hostname strategy for the metal variant), the installer must print an error
-describing the missing fields and fall back to interactive mode.
+r[installer.mode.auto-incomplete+3]
+When `auto = true` but required fields are missing (`disk-encryption`,
+`disk`, or a hostname strategy for encrypted variants), the installer must
+print an error describing the missing fields and fall back to interactive
+mode.
 
 ## Testing Flags
 
@@ -132,12 +135,13 @@ r[installer.dryrun.output]
 The `--dry-run-output <path>` flag specifies the path for the JSON install
 plan. If omitted, the plan is written to stdout.
 
-> r[installer.dryrun.schema+2]
+> r[installer.dryrun.schema+3]
 > The install plan JSON has the following structure:
 >
 > ```json
 > {
 >   "mode": "auto | prefilled | interactive | auto-incomplete",
+>   "disk_encryption": "tpm | keyfile | none",
 >   "variant": "metal | cloud",
 >   "disk": {
 >     "path": "/dev/nvme0n1",
@@ -145,7 +149,7 @@ plan. If omitted, the plan is written to stdout.
 >     "size_bytes": 1000204886016,
 >     "transport": "NVMe"
 >   },
->   "disable_tpm": false,
+>   "tpm_present": true,
 >   "firstboot": {
 >     "hostname": "server-01",
 >     "hostname_from_template": false,
@@ -158,6 +162,11 @@ plan. If omitted, the plan is written to stdout.
 >   "config_warnings": []
 > }
 > ```
+>
+> `disk_encryption` is the user's chosen encryption mode. `variant` is a
+> derived field: `"metal"` when `disk_encryption` is `"tpm"` or `"keyfile"`,
+> `"cloud"` when `"none"`. `tpm_present` indicates whether a TPM was
+> detected (or faked via `--fake-tpm`).
 >
 > The `firstboot` field is `null` when no first-boot configuration is set.
 > `tailscale_authkey` is a boolean (true when a key is provided) to avoid
@@ -175,6 +184,11 @@ it reads device definitions from a JSON file instead. The JSON file must
 be an array of objects with the same fields as the `disk` object in the
 install plan (`path`, `model`, `size_bytes`, `transport`), plus an
 optional `removable` boolean (default false).
+
+r[installer.dryrun.fake-tpm]
+The `--fake-tpm` flag forces the installer to behave as if a TPM device is
+present, regardless of whether `/dev/tpm0` exists. This is used for testing
+the TPM-bound encryption path in environments without a real TPM.
 
 ### Scripted TUI Input
 
@@ -263,24 +277,48 @@ After the welcome screen (or automatically in automatic mode), the TUI must
 detect available block devices and display their device path, size, model
 name, and transport type (SSD, HDD, NVMe, USB, etc.).
 
-r[installer.tui.variant-selection]
-The TUI must present a choice between the `metal` and `cloud` variants with
-a brief description of each.
+> r[installer.tui.disk-encryption+2]
+> After the disk selection screen, the TUI must present a "Disk Encryption"
+> screen. The installer detects whether a TPM is present by checking for
+> `/dev/tpm0` (or via the `--fake-tpm` flag). The screen displays a radio
+> selection with contextual explanation text below it.
+>
+> If a TPM is present, three options are shown:
+>
+> - **Full-disk encryption, bound to hardware** (default)
+> - **Full-disk encryption, not bound to hardware**
+> - **No encryption**
+>
+> If no TPM is present, two options are shown:
+>
+> - **Full-disk encryption, not bound to hardware** (default)
+> - **No encryption**
+>
+> Explanation text changes based on the current selection:
+>
+> - **Bound to hardware**: "The disk's encryption key will be sealed to this
+>   machine's TPM using PCR 1 (hardware identity: motherboard, CPU, and RAM
+>   model/serials). The system will boot unattended as long as the hardware
+>   stays the same. If you move the disk to different hardware, you will need
+>   the recovery passphrase. Changing the CPU or RAM may also require the
+>   recovery passphrase."
+> - **Not bound to hardware**: "A keyfile will be stored on the boot
+>   partition. The system will boot unattended on any hardware. If the boot
+>   partition is lost, you will need the recovery passphrase."
+> - **No encryption**: "The root partition will not be encrypted."
 
-r[installer.tui.tpm-toggle]
-When the `metal` variant is selected, the TUI must offer a toggle to disable
-TPM auto-enrollment.
+
 
 > r[installer.tui.hostname+5]
-> After variant/TPM configuration, the TUI presents a hostname selection
+> After disk encryption selection, the TUI presents a hostname selection
 > screen. The screen offers two options via an Up/Down selector:
 >
 > - **Static hostname**
 > - **Network-assigned (DHCP)** (metal variant) or **Network-assigned
 >   (DHCP / cloud-init)** (cloud variant)
 >
-> For the metal variant, "Static hostname" is selected by default. For the
-> cloud variant, the network-assigned option is selected by default.
+> When encryption is selected, "Static hostname" is selected by default.
+> Otherwise, the network-assigned option is selected by default.
 >
 > Enter confirms the selection. If "Static hostname" is chosen, a second
 > sub-screen (`HostnameInput`) presents a text input for the hostname. The
@@ -375,17 +413,48 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+3]
+r[installer.tui.confirmation+5]
 After the timezone screen, and after the pre-summary network results screen,
 the TUI must show a summary screen listing: target disk (path, model, size),
-chosen variant, TPM enrollment status, and any first-boot configuration. The
-summary must clearly state that all data on the target disk will be
-destroyed. The user must type an explicit confirmation
-(not just press Enter). The confirmation screen is step 6/6.
+chosen disk encryption mode, and any first-boot configuration. The summary
+must clearly state that all data on the target disk will be destroyed. The
+user must type an explicit confirmation (not just press Enter). The
+confirmation screen is step 6/6.
+
+When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
+screen must also generate and display the recovery passphrase. This gives
+the user an opportunity to write it down **before** the destructive write
+begins. The same passphrase is later enrolled into the LUKS volume during
+encryption setup. The post-write "Recovery Passphrase" screen remains as a
+final reminder.
+
+r[installer.tui.ascii-rendering]
+All text rendered by the TUI must use only printable ASCII characters. In
+particular, em dashes, curly quotes, ellipsis characters, and other
+non-ASCII punctuation must be replaced with their ASCII equivalents (e.g.
+`--` instead of U+2014). The Linux console (the default terminal on bare
+metal) does not have Unicode fonts; non-ASCII characters render as
+replacement blocks.
+
+r[installer.tui.error-reboot]
+When the installer encounters a fatal error during the write or post-write
+phases, the TUI must display the error message and wait for a keypress.
+Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
+set), not simply quit the process. On bare-metal hardware, quitting without
+rebooting leaves the machine in an unusable state.
 
 r[installer.tui.progress]
 During image writing, the TUI must display a progress bar showing bytes
 written and estimated time remaining.
+
+r[installer.tui.debug-shell]
+Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
+interactive shell (`/bin/sh`). The TUI must leave the alternate screen,
+disable raw mode, and spawn the shell as a child process, waiting for it to
+exit. When the shell exits, the TUI must re-enter the alternate screen,
+re-enable raw mode, and redraw. This keybind is intentionally undocumented
+in the on-screen help; it is a debugging aid for diagnosing failures in
+container and bare-metal environments.
 
 r[installer.tui.loop-device]
 The installer's TUI and write pipeline must not assume the target device is
@@ -418,12 +487,70 @@ The installer must stream-decompress the zstd image directly to the target
 block device, avoiding the need to hold the uncompressed image in memory or
 on a temporary filesystem.
 
+## Encryption Setup
+
+> r[installer.encryption.overview]
+> After writing the image and expanding partitions, and when disk encryption
+> is `"tpm"` or `"keyfile"`, the installer must perform all encryption setup
+> on the target disk. This replaces the first-boot services that were
+> previously included in the metal image. The installer must:
+>
+> 1. Rotate the LUKS master key.
+> 2. Enroll the chosen unlock mechanism (TPM or keyfile).
+> 3. Generate and enroll a recovery passphrase.
+> 4. Remove the original empty-passphrase key slot.
+> 5. Configure the installed system (crypttab, initramfs).
+
+> r[installer.encryption.key-rotation]
+> The installer must rotate the master key of the LUKS volume using
+> `cryptsetup reencrypt`, unlocking with the image's empty keyfile. This
+> ensures each installation has unique key material. A marker file
+> (`/etc/luks/rotated`) must be written to the installed system to prevent
+> any legacy re-encryption attempt.
+
+> r[installer.encryption.tpm-enroll]
+> When disk encryption is `"tpm"`, the installer must enroll the TPM using
+> `systemd-cryptenroll` with `--tpm2-pcrs=1`. PCR 1 covers hardware identity
+> (motherboard model, CPU, RAM model and serials). The installer must update
+> `/etc/crypttab` to use `tpm2-device=auto` with a passphrase timeout
+> fallback.
+
+> r[installer.encryption.keyfile-enroll]
+> When disk encryption is `"keyfile"`, the installer must generate a random
+> keyfile (4096 bytes from `/dev/urandom`), enroll it via
+> `systemd-cryptenroll`, and install it at `/etc/luks/keyfile` (mode 000) on
+> the installed system. The installer must update `/etc/crypttab` to
+> reference the keyfile with a passphrase timeout fallback, and update the
+> dracut configuration to include the new keyfile in the initramfs.
+
+> r[installer.encryption.recovery-passphrase+2]
+> The installer must generate a human-readable recovery passphrase and enroll
+> it as a LUKS password slot via `cryptsetup luksAddKey`. In interactive
+> mode, the passphrase must be generated at confirmation time (before the
+> destructive write) and displayed on the confirmation screen so the user can
+> record it. A post-write "Recovery Passphrase" screen is shown as a
+> reminder before the "Done" screen; the user must press Enter to
+> acknowledge. The encryption setup phase receives the pre-generated
+> passphrase and enrolls it. In automatic mode, the passphrase is generated
+> during encryption setup and printed to stderr.
+
+> r[installer.encryption.wipe-empty-slot]
+> After enrolling the real unlock mechanism(s) and the recovery passphrase,
+> the installer must wipe the original empty-passphrase key slot so the
+> volume cannot be unlocked without the enrolled credentials.
+
+> r[installer.encryption.configure-system]
+> The installer must chroot into the installed system and rebuild the
+> initramfs with dracut so it picks up the updated crypttab and (if keyfile
+> mode) the new keyfile.
+
 ## First-Boot Configuration
 
-r[installer.firstboot.mount]
+r[installer.firstboot.mount+2]
 After writing the image, the installer must mount the target disk's root
-BTRFS partition (subvol `@`) to apply first-boot configuration. For the metal
-variant, it must unlock the LUKS volume using the empty keyfile first.
+BTRFS partition (subvol `@`) to apply first-boot configuration. For the
+metal variant (disk encryption `"tpm"` or `"keyfile"`), it must unlock the
+LUKS volume using the empty keyfile first.
 
 r[installer.firstboot.hostname]
 If `hostname` is set (including hostnames generated from a template), the
@@ -458,24 +585,20 @@ creating a symlink at `/etc/localtime` pointing to the corresponding
 file under `/usr/share/zoneinfo/` and writing the timezone name to
 `/etc/timezone`. The default timezone is `UTC`.
 
-r[installer.firstboot.tpm-disable]
-If `disable-tpm` is true, the installer must remove the
-`setup-tpm-unlock.service` enable symlink from the installed system.
-
 r[installer.firstboot.unmount]
 After applying configuration, the installer must cleanly unmount all
 filesystems and close any LUKS volumes before prompting for reboot.
 
 ## Container Isolation
 
-> r[installer.container.isolation]
+> r[installer.container.isolation+2]
 > When the installer is run inside a container (e.g. `systemd-nspawn`) for
 > integration testing, it must never have access to the host's real block
 > devices. Safety is enforced by three layers:
 >
 > 1. `systemd-nspawn` provides its own `/dev`; host block devices are not
->    present unless explicitly bound in. Only the loop device and its
->    partitions are bound.
+>    present unless explicitly bound in. Only the loop device itself is
+>    bound — partition device nodes are **not** bound from the host.
 > 2. The installer is invoked with `--fake-devices`, which bypasses `lsblk`
 >    discovery entirely and presents only the loop device.
 > 3. The container runs with `--private-network` to prevent any network
@@ -484,3 +607,22 @@ filesystems and close any LUKS volumes before prompting for reboot.
 > A test must verify this property by launching a container without running
 > the installer and confirming that no host block devices (e.g. `/dev/sda`,
 > `/dev/nvme*`) are visible inside.
+
+r[installer.container.partition-devices+2]
+Inside a container with a private `/dev`, running `partprobe` tells the
+kernel to re-read the partition table but the resulting device nodes are
+created on the **host's** devtmpfs, not inside the container. The installer
+must therefore ensure that partition device nodes exist before any operation
+that accesses them (e.g. `cryptsetup open`, `mount`). It does so by reading
+`/sys/class/block/<disk>/<partition>/dev` to obtain each partition's
+major:minor and then creating or recreating any `/dev` nodes that are
+missing or have a stale major:minor (verified via `MetadataExt::rdev()`).
+The installer must not attempt to derive partition major:minor numbers from
+the parent device — the kernel assigns them dynamically (e.g. loop device
+partitions use major 259 with unrelated minors, not `parent_minor + N`).
+
+r[installer.container.error-logging]
+Fatal errors that propagate to the installer's top-level must be logged via
+the tracing/log file **in addition to** being printed to stderr, so that
+container-based test harnesses that only capture the log file can see the
+failure reason.

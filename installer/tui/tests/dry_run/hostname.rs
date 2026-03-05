@@ -2,8 +2,8 @@ use serde_json::Value;
 
 use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
-// r[verify installer.config.schema+2]
-// r[verify installer.dryrun.schema+2]
+// r[verify installer.config.schema+3]
+// r[verify installer.dryrun.schema+3]
 #[test]
 fn auto_metal_hostname_from_dhcp() {
     let f = Fixture::new();
@@ -11,7 +11,7 @@ fn auto_metal_hostname_from_dhcp() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -36,7 +36,7 @@ fn auto_metal_hostname_from_dhcp() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
-    assert_eq!(plan["variant"], "metal");
+    assert_eq!(plan["disk_encryption"], "tpm");
     assert_eq!(
         plan["firstboot"]["hostname"], "dhcp",
         "hostname should be the sentinel string 'dhcp'"
@@ -49,7 +49,7 @@ fn auto_metal_hostname_from_dhcp() {
 }
 
 // r[verify installer.config.hostname-template]
-// r[verify installer.dryrun.schema+2]
+// r[verify installer.dryrun.schema+3]
 #[test]
 fn auto_metal_hostname_template() {
     let f = Fixture::new();
@@ -57,7 +57,7 @@ fn auto_metal_hostname_template() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -82,7 +82,7 @@ fn auto_metal_hostname_template() {
 
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
-    assert_eq!(plan["variant"], "metal");
+    assert_eq!(plan["disk_encryption"], "tpm");
 
     let hostname = plan["firstboot"]["hostname"].as_str().unwrap();
     assert!(
@@ -115,7 +115,7 @@ fn auto_metal_hostname_template_num() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -152,7 +152,7 @@ fn auto_metal_hostname_template_num() {
     );
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn auto_hostname_and_dhcp_mutually_exclusive() {
     let f = Fixture::new();
@@ -160,7 +160,7 @@ fn auto_hostname_and_dhcp_mutually_exclusive() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -194,7 +194,7 @@ fn auto_hostname_and_dhcp_mutually_exclusive() {
     );
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn auto_hostname_and_template_mutually_exclusive() {
     let f = Fixture::new();
@@ -202,7 +202,7 @@ fn auto_hostname_and_template_mutually_exclusive() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -236,7 +236,7 @@ fn auto_hostname_and_template_mutually_exclusive() {
     );
 }
 
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn auto_dhcp_on_cloud_emits_warning() {
     let f = Fixture::new();
@@ -244,7 +244,7 @@ fn auto_dhcp_on_cloud_emits_warning() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "cloud"
+        disk-encryption = "none"
         disk = "largest-ssd"
 
         [firstboot]
@@ -286,7 +286,7 @@ fn auto_invalid_hostname_template_emits_warning() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -318,13 +318,11 @@ fn scripted_metal_dhcp_toggle_produces_dhcp_sentinel() {
     let script = f.write_script(
         "# Welcome -> DiskSelection
 enter
-# DiskSelection -> VariantSelection (Metal default)
+# DiskSelection -> DiskEncryptionScreen (default Keyfile / metal)
 enter
-# VariantSelection -> TpmToggle
+# DiskEncryptionScreen -> Hostname selector
 enter
-# TpmToggle -> Hostname selector
-enter
-# Hostname selector: Down to select DHCP, Enter -> Login (skip HostnameInput)
+# Hostname selector: Static is default for metal, Down to select DHCP, Enter -> Login
 down
 enter
 # Login: type password
@@ -371,7 +369,7 @@ fn auto_metal_hostname_template_two_runs_differ() {
     let config_path = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]

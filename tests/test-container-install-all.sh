@@ -6,9 +6,10 @@
 # Usage: test-container-install-all.sh <iso> <arch> [variant-filter]
 #   arch: amd64 | arm64
 #   variant-filter: "metal", "cloud", or omit to run all
+#     (filters by derived variant: tpm/keyfile -> metal, none -> cloud)
 #
 # Each scenario runs test-container-install.sh with different environment
-# variables controlling variant, TPM, hostname, tailscale, and SSH keys.
+# variables controlling disk-encryption, hostname, tailscale, and SSH keys.
 #
 # Requires: systemd-nspawn, xorriso, unsquashfs, losetup, lsblk, partprobe,
 #           cryptsetup, btrfs-progs, util-linux. Must run as root.
@@ -123,8 +124,20 @@ fi
 jq_str() { echo "$1" | jq -r "$2 // empty"; }
 
 # Apply variant filter if specified.
+# Variant is derived from disk-encryption: tpm/keyfile -> metal, none -> cloud.
 if [ -n "$VARIANT_FILTER" ]; then
-    SCENARIOS_FILTERED=$(jq -c "[.[] | select(.variant == \"$VARIANT_FILTER\")]" "$SCENARIOS_JSON")
+    case "$VARIANT_FILTER" in
+        metal)
+            SCENARIOS_FILTERED=$(jq -c '[.[] | select(."disk-encryption" == "tpm" or ."disk-encryption" == "keyfile")]' "$SCENARIOS_JSON")
+            ;;
+        cloud)
+            SCENARIOS_FILTERED=$(jq -c '[.[] | select(."disk-encryption" == "none")]' "$SCENARIOS_JSON")
+            ;;
+        *)
+            echo "ERROR: variant-filter must be 'metal' or 'cloud' (got: $VARIANT_FILTER)"
+            exit 1
+            ;;
+    esac
 else
     SCENARIOS_FILTERED=$(jq -c '.' "$SCENARIOS_JSON")
 fi
@@ -146,8 +159,7 @@ for i in $(seq 0 $((TOTAL - 1))); do
     SCENARIO=$(echo "$SCENARIOS_FILTERED" | jq -c ".[$i]")
 
     name=$(jq_str "$SCENARIO" '.name')
-    variant=$(jq_str "$SCENARIO" '.variant')
-    disable_tpm=$(echo "$SCENARIO" | jq -r '."disable-tpm" // true')
+    disk_encryption=$(jq_str "$SCENARIO" '."disk-encryption"')
 
     SCENARIO_NUM=$((i + 1))
     echo "[$SCENARIO_NUM/$TOTAL] $name"
@@ -156,7 +168,6 @@ for i in $(seq 0 $((TOTAL - 1))); do
     SCENARIO_NAME="$name" \
     ROOTFS_DIR="$ROOTFS_DIR" \
     IMAGES_DIR="$IMAGES_DIR" \
-    DISABLE_TPM="$disable_tpm" \
     SET_HOSTNAME="$(jq_str "$SCENARIO" '.hostname')" \
     SET_HOSTNAME_FROM_DHCP="$(jq_str "$SCENARIO" '."hostname-from-dhcp"')" \
     SET_HOSTNAME_TEMPLATE="$(jq_str "$SCENARIO" '."hostname-template"')" \
@@ -166,7 +177,7 @@ for i in $(seq 0 $((TOTAL - 1))); do
     SET_PASSWORD="$(jq_str "$SCENARIO" '.password')" \
     SET_PASSWORD_HASH="$(jq_str "$SCENARIO" '."password-hash"')" \
     SET_TIMEZONE="$(jq_str "$SCENARIO" '.timezone')" \
-        "$SCRIPT_DIR/test-container-install.sh" "$variant" "$ARCH"
+        "$SCRIPT_DIR/test-container-install.sh" "$disk_encryption" "$ARCH"
     RC=$?
     set -e
 

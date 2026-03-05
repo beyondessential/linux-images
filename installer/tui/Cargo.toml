@@ -13,6 +13,8 @@ path = "src/main.rs"
 anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 crossterm = "0.29.0"
+diceware_wordlists = "1.2.3"
+libc = "0.2.182"
 rand = "0.9.1"
 ratatui = "0.30.0"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -28,6 +30,9 @@ zstd = "0.13.3"
 assert_cmd = "2.1.2"
 predicates = "3.1.4"
 tempfile = "3.26.0"
+
+[features]
+luks-tests = []
 
 [profile.release]
 opt-level = "s"

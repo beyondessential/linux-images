@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Padding, Paragraph, Wrap};
 
 use crate::disk::BlockDevice;
 use crate::net::CheckPhase;
@@ -27,8 +27,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::NetworkCheck => render_network_check(frame, chunks[1], state),
         Screen::NetworkResults => render_network_results(frame, chunks[1], state),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
-        Screen::VariantSelection => render_variant_selection(frame, chunks[1], state),
-        Screen::TpmToggle => render_tpm_toggle(frame, chunks[1], state),
+        Screen::DiskEncryption => render_disk_encryption(frame, chunks[1], state),
         Screen::Hostname => render_hostname(frame, chunks[1], state),
         Screen::HostnameInput => render_hostname_input(frame, chunks[1], state),
         Screen::Login => render_login(frame, chunks[1], state),
@@ -39,6 +38,8 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::Confirmation => render_confirmation(frame, chunks[1], state),
         Screen::Writing => render_writing(frame, chunks[1], state),
         Screen::FirstbootApply => render_firstboot(frame, chunks[1]),
+        Screen::EncryptionSetup => render_encryption_setup(frame, chunks[1]),
+        Screen::RecoveryPassphrase => render_recovery_passphrase(frame, chunks[1], state),
         Screen::Done => render_done(frame, chunks[1]),
         Screen::Error(msg) => render_error(frame, chunks[1], msg),
     }
@@ -51,8 +52,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Welcome => "Welcome",
         Screen::NetworkCheck => "Network Check",
         Screen::DiskSelection => "1/6 Select Target Disk",
-        Screen::VariantSelection => "2/6 Select Variant",
-        Screen::TpmToggle => "2/6 TPM Configuration",
+        Screen::DiskEncryption => "2/6 Disk Encryption",
         Screen::Hostname => "3/6 Hostname",
         Screen::HostnameInput => "3/6 Hostname",
         Screen::Login => "4/6 Login",
@@ -64,6 +64,8 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Confirmation => "6/6 Confirm",
         Screen::Writing => "Writing Image",
         Screen::FirstbootApply => "Applying Configuration",
+        Screen::EncryptionSetup => "Encryption Setup",
+        Screen::RecoveryPassphrase => "Recovery Passphrase",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
     };
@@ -297,8 +299,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
             "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: quit".into()
         }
         Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
-        Screen::VariantSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
-        Screen::TpmToggle => "Space: toggle | Enter: next | Esc: back | q: quit".into(),
+        Screen::DiskEncryption => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
         Screen::Hostname => "Up/Down: select | Enter: next | Esc: back".into(),
         Screen::HostnameInput => "Enter: next | Esc: back".into(),
         Screen::Login => {
@@ -324,39 +325,52 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit".into(),
         Screen::Writing => "Please wait...".into(),
         Screen::FirstbootApply => "Please wait...".into(),
+        Screen::EncryptionSetup => "Please wait...".into(),
+        Screen::RecoveryPassphrase => "Press Enter to acknowledge".into(),
         Screen::Done => "Press any key to reboot".into(),
-        Screen::Error(_) => "Press any key to exit".into(),
+        Screen::Error(_) => "Press any key to reboot".into(),
     };
     let paragraph = Paragraph::new(hints);
     frame.render_widget(paragraph, area);
 }
 
 // r[impl installer.tui.welcome+3]
+// r[impl installer.tui.ascii-rendering]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut description = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "  Tamanu Linux",
-            Style::default().add_modifier(Modifier::BOLD),
+            "Tamanu Linux",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  Tamanu Linux is BES's preferred system layout for Linux deployments."),
-        Line::from("  It is based on Ubuntu Server. If you're not installing a Tamanu or"),
-        Line::from("  other BES system, you may want to use the normal Ubuntu Server ISO."),
+        Line::from(
+            String::from("Tamanu Linux is BES's preferred system layout for Linux deployments.")
+                + " It is based on Ubuntu Server. If you're not installing a Tamanu or"
+                + " other BES system, you may want to use the normal Ubuntu Server ISO.",
+        ),
         Line::from(""),
-        Line::from("  Available variants:"),
-        Line::from(Span::styled(
-            "    metal  — Full-disk encryption, hardware-locked when a TPM is available",
-            Style::default().fg(Color::Yellow),
-        )),
-        Line::from(Span::styled(
-            "    cloud  — For cloud or on-prem VMs where disk encryption is not needed",
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(
+            String::from("If you want to automate installs, and this is booting from a USB,")
+                + " plug the USB drive into a computer and open the BESCONF volume."
+                + " Within, you will find a bes-install.toml text file that you can use"
+                + " to configure an automated install. You can also image disks directly"
+                + " using our disk images, which may be more suitable for bulk installs.",
+        ),
         Line::from(""),
-        Line::from("  For support, contact BES at:"),
+        Span::styled("For support, contact BES at: ", Style::default())
+            + Span::styled(
+                "https://bes.au",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED),
+            ),
+        Line::from(""),
+        Line::from("Sources for this installer, and other images, are available at:"),
         Line::from(Span::styled(
-            "    https://bes.au",
+            "https://github.com/beyondessential/linux-images",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::UNDERLINED),
@@ -366,18 +380,27 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     if !state.build_info.is_empty() {
         description.push(Line::from(""));
         description.push(Line::from(Span::styled(
-            format!("  {}", state.build_info),
+            state.build_info.to_string(),
             Style::default().fg(Color::DarkGray),
         )));
     }
 
     description.push(Line::from(""));
     description.push(Line::from(
-        "  Press Enter to begin, or 'n' for a network check.",
+        "Press Enter to begin, or 'n' for a network check.",
     ));
 
-    let paragraph = Paragraph::new(description).wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
+    frame.render_widget(
+        Paragraph::new(description)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::uniform(1))
+                    .border_style(Style::default().fg(Color::White)),
+            )
+            .wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
 // r[impl installer.tui.disk-detection+3]
@@ -418,19 +441,37 @@ fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, area);
 }
 
-// r[impl installer.tui.variant-selection]
-fn render_variant_selection(frame: &mut Frame, area: Rect, state: &AppState) {
-    let variants = [
-        ("metal", "Full-disk encryption (LUKS2) with TPM auto-unlock"),
-        ("cloud", "No encryption, for cloud/VM deployments"),
-    ];
+// r[impl installer.tui.disk-encryption+2]
+fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
+    use crate::config::DiskEncryption;
 
-    let items: Vec<ListItem> = variants
+    let options: Vec<(DiskEncryption, &str)> = if state.tpm_present {
+        vec![
+            (
+                DiskEncryption::Tpm,
+                "Full-disk encryption, bound to hardware",
+            ),
+            (
+                DiskEncryption::Keyfile,
+                "Full-disk encryption, not bound to hardware",
+            ),
+            (DiskEncryption::None, "No encryption"),
+        ]
+    } else {
+        vec![
+            (
+                DiskEncryption::Keyfile,
+                "Full-disk encryption, not bound to hardware",
+            ),
+            (DiskEncryption::None, "No encryption"),
+        ]
+    };
+
+    let items: Vec<ListItem> = options
         .iter()
-        .map(|(name, desc)| {
-            let is_selected = (*name == "metal" && state.variant == crate::config::Variant::Metal)
-                || (*name == "cloud" && state.variant == crate::config::Variant::Cloud);
-            let marker = if is_selected { "[x]" } else { "[ ]" };
+        .map(|(enc, label)| {
+            let is_selected = *enc == state.disk_encryption;
+            let marker = if is_selected { ">" } else { " " };
             let style = if is_selected {
                 Style::default()
                     .fg(Color::Yellow)
@@ -438,61 +479,54 @@ fn render_variant_selection(frame: &mut Frame, area: Rect, state: &AppState) {
             } else {
                 Style::default()
             };
-            ListItem::new(format!("{marker} {name}: {desc}")).style(style)
+            ListItem::new(format!("  {marker} {label}")).style(style)
         })
         .collect();
 
-    let block = Block::default()
-        .title(" Image Variant ")
-        .borders(Borders::ALL);
-
-    let list = List::new(items).block(block);
-    frame.render_widget(list, area);
-}
-
-// r[impl installer.tui.tpm-toggle]
-// r[impl image.tpm.disableable]
-fn render_tpm_toggle(frame: &mut Frame, area: Rect, state: &AppState) {
-    let status = if state.disable_tpm {
-        "DISABLED"
-    } else {
-        "ENABLED"
+    let explanation = match state.disk_encryption {
+        DiskEncryption::Tpm => vec![
+            Line::from(""),
+            Line::from("  The disk's encryption key will be sealed to this machine's TPM"),
+            Line::from("  using PCR 1 (hardware identity: motherboard, CPU, and RAM"),
+            Line::from("  model/serials). The system will boot unattended as long as the"),
+            Line::from("  hardware stays the same. If you move the disk to different"),
+            Line::from("  hardware, you will need the recovery passphrase. Changing the"),
+            Line::from("  CPU or RAM may also require the recovery passphrase."),
+        ],
+        DiskEncryption::Keyfile => vec![
+            Line::from(""),
+            Line::from("  A keyfile will be stored on the boot partition. The system will"),
+            Line::from("  boot unattended on any hardware. If the boot partition is lost,"),
+            Line::from("  you will need the recovery passphrase."),
+        ],
+        DiskEncryption::None => vec![
+            Line::from(""),
+            Line::from("  The root partition will not be encrypted."),
+        ],
     };
-    let lines = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::raw("  TPM auto-enrollment: "),
-            Span::styled(
-                status,
-                if state.disable_tpm {
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD)
-                },
-            ),
-        ]),
-        Line::from(""),
-        Line::from("  When enabled, the system will automatically enroll the LUKS key"),
-        Line::from("  in the TPM2 on first boot, allowing unattended disk unlock."),
-        Line::from(""),
-        Line::from("  Press Space to toggle, Enter to continue."),
-    ];
 
     let block = Block::default()
-        .title(" TPM Configuration ")
+        .title(" Disk Encryption ")
         .borders(Borders::ALL);
 
-    let paragraph = Paragraph::new(lines).block(block);
-    frame.render_widget(paragraph, area);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let chunks = Layout::vertical([Constraint::Length(options.len() as u16), Constraint::Min(0)])
+        .split(inner);
+
+    let list = List::new(items);
+    frame.render_widget(list, chunks[0]);
+
+    let paragraph = Paragraph::new(explanation);
+    frame.render_widget(paragraph, chunks[1]);
 }
 
 // r[impl installer.tui.hostname+5]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
-    let is_metal = state.variant == crate::config::Variant::Metal;
+    let is_encrypted = state.disk_encryption.is_encrypted();
 
-    let network_label = if is_metal {
+    let network_label = if is_encrypted {
         "Network-assigned (DHCP)"
     } else {
         "Network-assigned (DHCP / cloud-init)"
@@ -814,7 +848,7 @@ fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.confirmation+3]
+// r[impl installer.tui.confirmation+5]
 // r[impl installer.tui.password+4]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -885,6 +919,7 @@ fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, chunks[1]);
 }
 
+// r[impl installer.tui.confirmation+5]
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -898,32 +933,18 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .unwrap_or_else(|| "(none)".into());
 
-    let tpm_status = if state.variant == crate::config::Variant::Metal {
-        if state.disable_tpm {
-            "disabled"
-        } else {
-            "enabled"
-        }
-    } else {
-        "n/a"
-    };
-
     let mut lines = vec![
         Line::from(""),
         Line::from(vec![
-            Span::raw("  Target disk:  "),
+            Span::raw("  Target disk:      "),
             Span::styled(&disk_desc, Style::default().add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
-            Span::raw("  Variant:      "),
+            Span::raw("  Disk encryption:  "),
             Span::styled(
-                state.variant.to_string(),
+                state.disk_encryption.to_string(),
                 Style::default().add_modifier(Modifier::BOLD),
             ),
-        ]),
-        Line::from(vec![
-            Span::raw("  TPM enroll:   "),
-            Span::styled(tpm_status, Style::default().add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
             Span::raw("  Timezone:     "),
@@ -968,6 +989,31 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
                 ),
             ]));
         }
+    }
+
+    // r[impl installer.encryption.recovery-passphrase+2]
+    if let Some(ref passphrase) = state.recovery_passphrase {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Recovery Passphrase",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("    {passphrase}"),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(
+            "  Write this down and store it in a safe place BEFORE proceeding.",
+        ));
+        lines.push(Line::from(
+            "  You will need it if the primary unlock mechanism fails.",
+        ));
     }
 
     lines.push(Line::from(""));
@@ -1047,6 +1093,59 @@ fn render_firstboot(frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
+// r[impl installer.encryption.overview]
+fn render_encryption_setup(frame: &mut Frame, area: Rect) {
+    let lines = vec![
+        Line::from(""),
+        Line::from("  Setting up disk encryption..."),
+        Line::from(""),
+        Line::from("  Rotating master key, enrolling unlock mechanism, and generating"),
+        Line::from("  recovery passphrase. This may take a few minutes."),
+    ];
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+// r[impl installer.encryption.recovery-passphrase+2]
+fn render_recovery_passphrase(frame: &mut Frame, area: Rect, state: &AppState) {
+    let passphrase = state
+        .recovery_passphrase
+        .as_deref()
+        .unwrap_or("(unavailable)");
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Recovery Passphrase",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("  Write down this recovery passphrase and store it in a safe place."),
+        Line::from("  You will need it if the primary unlock mechanism fails (e.g. hardware"),
+        Line::from("  change, lost boot partition)."),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("    {passphrase}"),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("  Press Enter to acknowledge and continue."),
+    ];
+
+    let block = Block::default()
+        .title(" Recovery Passphrase ")
+        .borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
+}
+
 fn render_done(frame: &mut Frame, area: Rect) {
     let lines = vec![
         Line::from(""),
@@ -1073,7 +1172,7 @@ fn render_error(frame: &mut Frame, area: Rect, msg: &str) {
         Line::from(""),
         Line::from(format!("  Error: {msg}")),
         Line::from(""),
-        Line::from("  Press any key to exit."),
+        Line::from("  Press any key to reboot."),
     ];
     let block = Block::default().title(" Error ").borders(Borders::ALL);
     let paragraph = Paragraph::new(lines)
@@ -1087,5 +1186,309 @@ fn model_or_unknown(dev: &BlockDevice) -> &str {
         "unknown"
     } else {
         &dev.model
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::*;
+    use crate::config::DiskEncryption;
+    use crate::disk::TransportType;
+
+    fn make_test_state() -> AppState {
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test SSD".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        AppState::new(
+            devices,
+            DiskEncryption::None,
+            false,
+            None,
+            None,
+            None,
+            String::new(),
+            vec!["UTC".into(), "America/New_York".into()],
+        )
+    }
+
+    fn is_ratatui_border_char(ch: char) -> bool {
+        // Box-drawing characters used by ratatui's Borders widget and Gauge.
+        // The Linux console supports these via the DEC Special Graphics set,
+        // so they do not render as replacement blocks. The spec only forbids
+        // non-ASCII *text* (em dashes, curly quotes, ellipsis, etc.).
+        matches!(
+            ch,
+            '─' | '│'
+                | '┌'
+                | '┐'
+                | '└'
+                | '┘'
+                | '┤'
+                | '├'
+                | '┬'
+                | '┴'
+                | '┼'
+                | '╔'
+                | '╗'
+                | '╚'
+                | '╝'
+                | '║'
+                | '═'
+                | '╠'
+                | '╣'
+                | '╦'
+                | '╩'
+                | '╬'
+                | '╭'
+                | '╮'
+                | '╯'
+                | '╰'
+                | '▕'
+                | '█'
+                | '░'
+                | '▒'
+                | '▓'
+                | '▏'
+                | '▎'
+                | '▍'
+                | '▌'
+                | '▋'
+                | '▊'
+                | '▉'
+        )
+    }
+
+    fn assert_buffer_ascii(terminal: &Terminal<TestBackend>, screen_name: &str) {
+        let buf = terminal.backend().buffer();
+        for (i, cell) in buf.content().iter().enumerate() {
+            let symbol = cell.symbol();
+            for ch in symbol.chars() {
+                assert!(
+                    ch.is_ascii() || is_ratatui_border_char(ch),
+                    "non-ASCII character U+{:04X} ({:?}) found in {screen_name} screen at buffer index {i}",
+                    ch as u32,
+                    ch,
+                );
+            }
+        }
+    }
+
+    fn render_screen(state: &AppState) -> Terminal<TestBackend> {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(f, state)).unwrap();
+        terminal
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn welcome_screen_ascii_only() {
+        let state = make_test_state();
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Welcome");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn disk_selection_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::DiskSelection;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "DiskSelection");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn disk_encryption_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::DiskEncryption;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "DiskEncryption");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn hostname_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Hostname;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Hostname");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn hostname_input_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::HostnameInput;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "HostnameInput");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn login_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Login;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Login");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn login_tailscale_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::LoginTailscale;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "LoginTailscale");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn login_ssh_keys_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::LoginSshKeys;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "LoginSshKeys");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn login_github_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::LoginGithub;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "LoginGithub");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn timezone_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Timezone;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Timezone");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn confirmation_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Confirmation;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Confirmation");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn writing_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Writing;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Writing");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn firstboot_apply_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::FirstbootApply;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "FirstbootApply");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn encryption_setup_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::EncryptionSetup;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "EncryptionSetup");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn recovery_passphrase_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::RecoveryPassphrase;
+        state.recovery_passphrase = Some("test-recovery-phrase".into());
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "RecoveryPassphrase");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn done_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Done;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Done");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn error_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Error("disk write failed: I/O error".into());
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Error");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn network_check_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::NetworkCheck;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "NetworkCheck");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn network_results_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::NetworkResults;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "NetworkResults");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn tpm_encryption_explanation_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::DiskEncryption;
+        state.tpm_present = true;
+        state.disk_encryption = DiskEncryption::Tpm;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "DiskEncryption(Tpm)");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn keyfile_encryption_explanation_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::DiskEncryption;
+        state.disk_encryption = DiskEncryption::Keyfile;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "DiskEncryption(Keyfile)");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn confirmation_with_recovery_passphrase_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Confirmation;
+        state.disk_encryption = DiskEncryption::Tpm;
+        state.recovery_passphrase = Some("alpha-bravo-charlie-delta".into());
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Confirmation(with recovery passphrase)");
     }
 }

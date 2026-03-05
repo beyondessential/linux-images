@@ -77,7 +77,6 @@ echo "Etc/UTC" > /etc/timezone
 # ============================================================
 # Install packages from list
 # ============================================================
-# r[image.packages.install]: Install all via apt inside the chroot.
 source /tmp/packages.sh
 if [ "${#PACKAGES[@]}" -gt 0 ]; then
     echo "Installing ${#PACKAGES[@]} packages..."
@@ -102,7 +101,7 @@ install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
 # ============================================================
 # Variant identification
 # ============================================================
-# r[image.variant.types]
+# r[image.variant.types+2]
 mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 
@@ -213,20 +212,6 @@ bash /tmp/scripts/setup-snapper.sh
 install -m 755 /tmp/files/grow-root-filesystem /usr/local/bin/grow-root-filesystem
 install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/system/grow-root-filesystem.service
 systemctl enable grow-root-filesystem.service
-
-# ============================================================
-# Metal-variant encryption services
-# ============================================================
-if [ "$VARIANT" = "metal" ]; then
-    # r[image.luks.reencrypt]
-    install -m 644 /tmp/files/systemd/luks-reencrypt.service /etc/systemd/system/luks-reencrypt.service
-    systemctl enable luks-reencrypt.service
-
-    # r[image.tpm.service] r[image.tpm.enrollment]
-    install -m 755 /tmp/files/setup-tpm-unlock /usr/local/bin/setup-tpm-unlock
-    install -m 644 /tmp/files/systemd/setup-tpm-unlock.service /etc/systemd/system/setup-tpm-unlock.service
-    systemctl enable setup-tpm-unlock.service
-fi
 
 # ============================================================
 # Credentials

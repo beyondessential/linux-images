@@ -11,7 +11,8 @@ use crossterm::{cursor, execute};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
-use crate::config::{Variant, validate_hostname};
+use crate::config::validate_hostname;
+use crate::encryption;
 use crate::firstboot;
 use crate::writer;
 
@@ -24,14 +25,18 @@ enum WorkerMessage {
     WriteError(String),
     FirstbootDone,
     FirstbootError(String),
+    EncryptionDone(String),
+    EncryptionError(String),
 }
 
 /// Result of processing a single key event against the current TUI state.
+#[derive(Debug)]
 enum KeyAction {
     Continue,
     Quit,
     Reboot,
     StartWrite,
+    Shell,
 }
 
 /// Process a single key event, updating state and returning what the event
@@ -39,6 +44,15 @@ enum KeyAction {
 fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     if key.kind != KeyEventKind::Press {
         return KeyAction::Continue;
+    }
+
+    // r[impl installer.tui.debug-shell]
+    if key
+        .modifiers
+        .contains(KeyModifiers::ALT | KeyModifiers::CONTROL)
+        && key.code == KeyCode::Char('d')
+    {
+        return KeyAction::Shell;
     }
 
     match &state.screen {
@@ -85,20 +99,16 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        Screen::VariantSelection => match key.code {
+        // r[impl installer.tui.disk-encryption+2]
+        Screen::DiskEncryption => match key.code {
             KeyCode::Char('q') => return KeyAction::Quit,
             KeyCode::Esc => state.go_back(),
-            KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k') => {
-                state.toggle_variant();
+            KeyCode::Down | KeyCode::Char('j') => {
+                state.cycle_disk_encryption();
             }
-            KeyCode::Enter => state.advance(),
-            _ => {}
-        },
-
-        Screen::TpmToggle => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
-            KeyCode::Esc => state.go_back(),
-            KeyCode::Char(' ') => state.disable_tpm = !state.disable_tpm,
+            KeyCode::Up | KeyCode::Char('k') => {
+                state.cycle_disk_encryption_reverse();
+            }
             KeyCode::Enter => state.advance(),
             _ => {}
         },
@@ -328,14 +338,22 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        Screen::Writing | Screen::FirstbootApply => {}
+        Screen::Writing | Screen::FirstbootApply | Screen::EncryptionSetup => {}
+
+        // r[impl installer.encryption.recovery-passphrase+2]
+        Screen::RecoveryPassphrase => {
+            if key.code == KeyCode::Enter {
+                state.advance();
+            }
+        }
 
         Screen::Done => {
             return KeyAction::Reboot;
         }
 
+        // r[impl installer.tui.error-reboot]
         Screen::Error(_) => {
-            return KeyAction::Quit;
+            return KeyAction::Reboot;
         }
     }
 
@@ -388,9 +406,22 @@ fn event_loop(
                     state.screen = Screen::Error(e);
                 }
                 WorkerMessage::FirstbootDone => {
-                    state.screen = Screen::Done;
+                    if state.disk_encryption.is_encrypted() {
+                        state.screen = Screen::EncryptionSetup;
+                        terminal.draw(|f| render(f, state))?;
+                        start_encryption_worker(state, &worker_tx);
+                    } else {
+                        state.screen = Screen::Done;
+                    }
                 }
                 WorkerMessage::FirstbootError(e) => {
+                    state.screen = Screen::Error(e);
+                }
+                WorkerMessage::EncryptionDone(passphrase) => {
+                    state.recovery_passphrase = Some(passphrase);
+                    state.screen = Screen::RecoveryPassphrase;
+                }
+                WorkerMessage::EncryptionError(e) => {
                     state.screen = Screen::Error(e);
                 }
             }
@@ -417,6 +448,10 @@ fn event_loop(
             KeyAction::StartWrite => {
                 start_write_worker(image_path, state, &worker_tx);
             }
+            // r[impl installer.tui.debug-shell]
+            KeyAction::Shell => {
+                drop_to_shell(terminal)?;
+            }
         }
     }
 
@@ -436,7 +471,9 @@ pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState 
         state.poll_github_keys();
 
         match handle_key(key, &mut state) {
-            KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot => break,
+            KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot | KeyAction::Shell => {
+                break;
+            }
             KeyAction::Continue => {}
         }
     }
@@ -495,18 +532,12 @@ fn start_firstboot_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
             return;
         }
     };
-    let variant = state.variant;
-    let disable_tpm = state.disable_tpm;
+    let disk_encryption = state.disk_encryption;
     let firstboot_config = state.firstboot_config();
     let tx = tx.clone();
 
     thread::spawn(move || {
-        let result = run_firstboot(
-            &target_disk,
-            variant,
-            disable_tpm,
-            firstboot_config.as_ref(),
-        );
+        let result = run_firstboot(&target_disk, disk_encryption, firstboot_config.as_ref());
         match result {
             Ok(()) => {
                 let _ = tx.send(WorkerMessage::FirstbootDone);
@@ -520,26 +551,90 @@ fn start_firstboot_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
 
 fn run_firstboot(
     target_disk: &Path,
-    variant: Variant,
-    disable_tpm: bool,
+    disk_encryption: crate::config::DiskEncryption,
     config: Option<&crate::config::FirstbootConfig>,
 ) -> Result<()> {
-    let has_work = config.is_some() || (variant == Variant::Metal && disable_tpm);
-    if !has_work {
+    if config.is_none() {
         return Ok(());
     }
 
-    let mounted = firstboot::mount_target(target_disk, variant)?;
+    let mounted = firstboot::mount_target(target_disk, disk_encryption)?;
 
     if let Some(fb) = config {
         firstboot::apply_firstboot(&mounted, fb)?;
     }
 
-    if variant == Variant::Metal && disable_tpm {
-        firstboot::apply_tpm_disable(&mounted)?;
-    }
+    firstboot::unmount_target(mounted)?;
+    Ok(())
+}
+
+fn start_encryption_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
+    let target_disk = match state.selected_disk() {
+        Some(d) => d.path.clone(),
+        None => {
+            let _ = tx.send(WorkerMessage::EncryptionError("no disk selected".into()));
+            return;
+        }
+    };
+    let disk_encryption = state.disk_encryption;
+    // r[impl installer.encryption.recovery-passphrase+2]
+    let passphrase = state.recovery_passphrase.clone();
+    let tx = tx.clone();
+
+    thread::spawn(move || {
+        let result = run_encryption(&target_disk, disk_encryption, passphrase.as_deref());
+        match result {
+            Ok(enrolled_passphrase) => {
+                let _ = tx.send(WorkerMessage::EncryptionDone(enrolled_passphrase));
+            }
+            Err(e) => {
+                let _ = tx.send(WorkerMessage::EncryptionError(format!("{e:#}")));
+            }
+        }
+    });
+}
+
+fn run_encryption(
+    target_disk: &Path,
+    disk_encryption: crate::config::DiskEncryption,
+    pre_generated_passphrase: Option<&str>,
+) -> Result<String> {
+    let mounted = firstboot::mount_target(target_disk, disk_encryption)?;
+
+    let result = encryption::run_encryption_setup(
+        target_disk,
+        disk_encryption,
+        mounted.path(),
+        pre_generated_passphrase,
+    );
 
     firstboot::unmount_target(mounted)?;
+
+    let enc_result = result?;
+    Ok(enc_result.recovery_passphrase)
+}
+
+/// Leave the alternate screen, disable raw mode, spawn an interactive shell,
+/// and restore the TUI when the shell exits.
+fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+    execute!(io::stdout(), LeaveAlternateScreen, cursor::Show)?;
+    terminal::disable_raw_mode()?;
+
+    eprintln!("--- debug shell (type 'exit' to return to installer) ---");
+    let status = std::process::Command::new("/bin/bash")
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status();
+
+    match status {
+        Ok(s) => tracing::debug!("debug shell exited with {s}"),
+        Err(e) => tracing::warn!("failed to spawn debug shell: {e}"),
+    }
+
+    terminal::enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
+    terminal.clear()?;
     Ok(())
 }
 
@@ -555,7 +650,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     use super::*;
-    use crate::config::{FirstbootConfig, Variant};
+    use crate::config::{DiskEncryption, FirstbootConfig};
     use crate::disk::{BlockDevice, TransportType};
 
     fn press(code: KeyCode) -> KeyEvent {
@@ -607,7 +702,7 @@ mod tests {
         ];
         AppState::new(
             devices,
-            Variant::Metal,
+            DiskEncryption::Tpm,
             false,
             None,
             None,
@@ -624,19 +719,16 @@ mod tests {
 
     // r[verify installer.dryrun.script.headless]
     #[test]
-    fn scripted_walk_through_metal_flow() {
+    fn scripted_walk_through_encrypted_flow() {
         let state = make_state();
         let mut events = vec![
             // Welcome -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection
+            // DiskSelection -> DiskEncryptionScreen (default: Tpm)
             press(KeyCode::Enter),
-            // VariantSelection (Metal) -> TpmToggle
+            // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
-            // TpmToggle: toggle disable, then advance -> Hostname selector
-            press(KeyCode::Char(' ')),
-            press(KeyCode::Enter),
-            // Hostname selector: Static is default for metal, Enter -> HostnameInput
+            // Hostname selector: Static is default for encrypted, Enter -> HostnameInput
             press(KeyCode::Enter),
             // HostnameInput: type "myhost" then advance -> Login
             press(KeyCode::Char('m')),
@@ -663,8 +755,7 @@ mod tests {
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Writing);
-        assert_eq!(final_state.variant, Variant::Metal);
-        assert!(final_state.disable_tpm);
+        assert_eq!(final_state.disk_encryption, DiskEncryption::Tpm);
         assert_eq!(final_state.hostname_input, "myhost");
         assert_eq!(final_state.selected_disk_index, 0);
         assert!(final_state.is_confirmed());
@@ -673,17 +764,19 @@ mod tests {
 
     // r[verify installer.dryrun.script.headless]
     #[test]
-    fn scripted_cloud_skips_tpm() {
+    fn scripted_none_encryption_flow() {
         let state = make_state();
         let mut events = vec![
             // Welcome -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection
+            // DiskSelection -> DiskEncryptionScreen (default: Tpm)
             press(KeyCode::Enter),
-            // VariantSelection: toggle to Cloud, then advance (skip TpmToggle)
+            // Cycle: Tpm -> Keyfile -> None
             press(KeyCode::Down),
+            press(KeyCode::Down),
+            // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for cloud,
+            // Hostname selector: network-assigned is default for none encryption,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
             // Login: type password + confirm + advance
@@ -703,7 +796,7 @@ mod tests {
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Writing);
-        assert_eq!(final_state.variant, Variant::Cloud);
+        assert_eq!(final_state.disk_encryption, DiskEncryption::None);
     }
 
     // r[verify installer.dryrun.script.headless]
@@ -732,13 +825,13 @@ mod tests {
             press(KeyCode::Enter),
             // Navigate down to second disk
             press(KeyCode::Down),
-            // Accept
+            // Accept -> DiskEncryptionScreen
             press(KeyCode::Enter),
         ];
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.selected_disk_index, 1);
-        assert_eq!(final_state.screen, Screen::VariantSelection);
+        assert_eq!(final_state.screen, Screen::DiskEncryption);
     }
 
     // r[verify installer.dryrun.script.headless]
@@ -757,7 +850,7 @@ mod tests {
         }];
         let state = AppState::new(
             devices,
-            Variant::Cloud,
+            DiskEncryption::None,
             false,
             Some(fb),
             None,
@@ -772,7 +865,7 @@ mod tests {
         );
 
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> Hostname selector
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -803,9 +896,7 @@ mod tests {
     fn scripted_go_back_from_confirmation() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection
-            press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -835,9 +926,7 @@ mod tests {
     fn scripted_password_entry_matching() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
-            press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -869,15 +958,13 @@ mod tests {
     fn scripted_password_mismatch_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
-            press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Hostname selector: Static default -> Enter -> HostnameInput
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for metal) then advance
+            // HostnameInput: type "h" (required for encrypted) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: type password
@@ -902,14 +989,13 @@ mod tests {
     fn scripted_empty_password_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Hostname selector: Static default -> Enter -> HostnameInput
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for metal) then advance
+            // HostnameInput: type "h" (required for encrypted) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: Enter moves to confirm, then Enter again with empty fields
@@ -928,15 +1014,13 @@ mod tests {
     fn scripted_password_esc_from_confirm_returns_to_first_field() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
-            press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             // Hostname selector: Static default -> Enter -> HostnameInput
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for metal) then advance
+            // HostnameInput: type "h" (required for encrypted) then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: type password
@@ -954,11 +1038,10 @@ mod tests {
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn scripted_metal_empty_hostname_blocks_advance() {
+    fn scripted_encrypted_empty_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -970,17 +1053,16 @@ mod tests {
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::HostnameInput);
-        assert_eq!(final_state.variant, Variant::Metal);
+        assert_eq!(final_state.disk_encryption, DiskEncryption::Tpm);
         assert!(final_state.hostname_input.is_empty());
     }
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn scripted_metal_hostname_typed_allows_advance() {
+    fn scripted_encrypted_hostname_typed_allows_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1000,42 +1082,44 @@ mod tests {
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn scripted_cloud_network_assigned_default_advances_to_login() {
+    fn scripted_none_encryption_network_assigned_default_advances_to_login() {
         let state = make_state();
         let events = vec![
             // Welcome -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection
+            // DiskSelection -> DiskEncryptionScreen (default: Tpm)
             press(KeyCode::Enter),
-            // Toggle to Cloud
+            // Cycle: Tpm -> Keyfile -> None
             press(KeyCode::Down),
-            // VariantSelection -> Hostname selector (skips TpmToggle)
+            press(KeyCode::Down),
+            // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for cloud,
+            // Hostname selector: network-assigned is default for none encryption,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
         ];
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Login);
-        assert_eq!(final_state.variant, Variant::Cloud);
+        assert_eq!(final_state.disk_encryption, DiskEncryption::None);
         assert!(final_state.hostname_from_dhcp);
     }
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn scripted_cloud_static_empty_hostname_blocks_advance() {
+    fn scripted_none_encryption_static_empty_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
             // Welcome -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection
+            // DiskSelection -> DiskEncryptionScreen
             press(KeyCode::Enter),
-            // Toggle to Cloud
+            // Cycle: Tpm -> Keyfile -> None
             press(KeyCode::Down),
-            // VariantSelection -> Hostname selector (skips TpmToggle)
+            press(KeyCode::Down),
+            // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for cloud,
+            // Hostname selector: network-assigned is default for none,
             // Up to select Static -> Enter -> HostnameInput
             press(KeyCode::Up),
             press(KeyCode::Enter),
@@ -1045,17 +1129,16 @@ mod tests {
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::HostnameInput);
-        assert_eq!(final_state.variant, Variant::Cloud);
+        assert_eq!(final_state.disk_encryption, DiskEncryption::None);
         assert!(final_state.hostname_input.is_empty());
     }
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn scripted_metal_dhcp_selected_advances_to_login() {
+    fn scripted_encrypted_dhcp_selected_advances_to_login() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1072,11 +1155,10 @@ mod tests {
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn scripted_metal_dhcp_then_static_requires_hostname() {
+    fn scripted_encrypted_dhcp_then_static_requires_hostname() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1096,11 +1178,10 @@ mod tests {
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn scripted_metal_dhcp_skips_text_input() {
+    fn scripted_encrypted_dhcp_skips_text_input() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1119,8 +1200,7 @@ mod tests {
     fn scripted_hostname_input_esc_returns_to_selector() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1136,18 +1216,19 @@ mod tests {
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn scripted_cloud_selector_navigation() {
+    fn scripted_none_selector_navigation() {
         let state = make_state();
         let events = vec![
             // Welcome -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> VariantSelection
+            // DiskSelection -> DiskEncryptionScreen
             press(KeyCode::Enter),
-            // Toggle to Cloud
+            // Cycle: Tpm -> Keyfile -> None
             press(KeyCode::Down),
-            // VariantSelection -> Hostname selector
+            press(KeyCode::Down),
+            // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for cloud,
+            // Hostname selector: network-assigned is default for none,
             // Up toggles to Static, Down toggles back to network-assigned,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Up),
@@ -1165,8 +1246,7 @@ mod tests {
     fn scripted_invalid_hostname_chars_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1196,8 +1276,7 @@ mod tests {
     fn scripted_leading_hyphen_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1228,8 +1307,7 @@ mod tests {
     fn scripted_valid_hostname_advances() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1259,8 +1337,7 @@ mod tests {
     fn scripted_hostname_error_cleared_on_typing() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1283,8 +1360,7 @@ mod tests {
     fn scripted_hostname_error_shown_live_on_keystroke() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1321,13 +1397,44 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
+    fn ctrl_alt(c: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::ALT | KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        }
+    }
+
+    // r[verify installer.tui.debug-shell]
+    #[test]
+    fn ctrl_alt_d_returns_shell_action() {
+        let mut state = make_state();
+        let action = handle_key(ctrl_alt('d'), &mut state);
+        assert!(matches!(action, KeyAction::Shell));
+        // Screen should be unchanged — shell doesn't alter TUI state
+        assert_eq!(state.screen, Screen::Welcome);
+    }
+
+    // r[verify installer.tui.debug-shell]
+    #[test]
+    fn ctrl_alt_d_breaks_scripted_loop() {
+        let state = make_state();
+        let events = vec![
+            press(KeyCode::Enter), // Welcome -> DiskSelection
+            ctrl_alt('d'),         // should break immediately
+            press(KeyCode::Enter), // should never be processed
+        ];
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::DiskSelection);
+    }
+
     // r[verify installer.tui.timezone]
     #[test]
     fn scripted_timezone_accept_default_utc() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1354,8 +1461,7 @@ mod tests {
     fn scripted_timezone_navigate_down_and_select() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1385,8 +1491,7 @@ mod tests {
     fn scripted_timezone_search_filters_list() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1417,8 +1522,7 @@ mod tests {
     fn scripted_timezone_search_backspace_widens_filter() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1453,8 +1557,7 @@ mod tests {
     fn scripted_timezone_esc_goes_back_to_login() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1480,8 +1583,7 @@ mod tests {
     fn scripted_timezone_down_does_not_go_past_end() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1516,8 +1618,7 @@ mod tests {
     fn scripted_timezone_up_does_not_go_before_start() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1551,8 +1652,7 @@ mod tests {
     fn scripted_timezone_search_then_navigate() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1584,8 +1684,7 @@ mod tests {
     fn scripted_login_tailscale_sub_screen() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1614,8 +1713,7 @@ mod tests {
     fn scripted_login_ssh_keys_sub_screen() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1657,8 +1755,7 @@ mod tests {
     fn scripted_login_ssh_keys_tab_cycles_and_trailing_blank() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
-            press(KeyCode::Enter),
+            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1702,5 +1799,45 @@ mod tests {
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Login);
         assert_eq!(final_state.ssh_keys, vec!["ssh-rsa BBBB", "ssh-dss CC"]);
+    }
+
+    // r[verify installer.tui.error-reboot]
+    #[test]
+    fn error_screen_any_key_triggers_reboot() {
+        // handle_key on Screen::Error returns Reboot without mutating the
+        // screen, so we can reuse the same state for every key code.
+        let mut state = make_state();
+        state.screen = Screen::Error("something went wrong".into());
+
+        let codes = [
+            KeyCode::Enter,
+            KeyCode::Char('a'),
+            KeyCode::Char(' '),
+            KeyCode::Esc,
+            KeyCode::Backspace,
+        ];
+        for code in codes {
+            let action = handle_key(press(code), &mut state);
+            assert!(
+                matches!(action, KeyAction::Reboot),
+                "expected Reboot for {:?} on Error screen, got {:?}",
+                code,
+                action,
+            );
+            // Screen must remain Error (not silently changed)
+            assert!(matches!(state.screen, Screen::Error(_)));
+        }
+    }
+
+    // r[verify installer.tui.error-reboot]
+    #[test]
+    fn error_screen_reboot_via_scripted() {
+        let mut state = make_state();
+        state.screen = Screen::Error("disk I/O failure".into());
+
+        let events = vec![press(KeyCode::Char('x'))];
+        let final_state = run_tui_scripted(state, events);
+        // run_tui_scripted breaks on KeyAction::Reboot, preserving the Error screen
+        assert!(matches!(final_state.screen, Screen::Error(_)));
     }
 }

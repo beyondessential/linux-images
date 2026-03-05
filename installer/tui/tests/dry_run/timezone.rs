@@ -2,7 +2,7 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
 // r[verify installer.tui.timezone]
 // r[verify installer.firstboot.timezone]
-// r[verify installer.dryrun.schema+2]
+// r[verify installer.dryrun.schema+3]
 #[test]
 fn auto_timezone_defaults_to_utc() {
     let f = Fixture::new();
@@ -10,7 +10,7 @@ fn auto_timezone_defaults_to_utc() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "cloud"
+        disk-encryption = "none"
         disk = "largest-ssd"
 
         [firstboot]
@@ -38,7 +38,7 @@ fn auto_timezone_defaults_to_utc() {
 
 // r[verify installer.tui.timezone]
 // r[verify installer.firstboot.timezone]
-// r[verify installer.config.schema+2]
+// r[verify installer.config.schema+3]
 #[test]
 fn auto_timezone_from_config() {
     let f = Fixture::new();
@@ -46,7 +46,7 @@ fn auto_timezone_from_config() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "cloud"
+        disk-encryption = "none"
         disk = "largest-ssd"
 
         [firstboot]
@@ -74,7 +74,7 @@ fn auto_timezone_from_config() {
 }
 
 // r[verify installer.tui.timezone]
-// r[verify installer.dryrun.schema+2]
+// r[verify installer.dryrun.schema+3]
 #[test]
 fn auto_metal_timezone_from_config() {
     let f = Fixture::new();
@@ -82,7 +82,7 @@ fn auto_metal_timezone_from_config() {
     let config = f.write_config(
         r#"
         auto = true
-        variant = "metal"
+        disk-encryption = "tpm"
         disk = "largest-ssd"
 
         [firstboot]
@@ -121,9 +121,9 @@ fn scripted_timezone_search_and_select() {
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Variant: toggle to cloud (no hostname required)
+# DiskEncryptionScreen: cycle to None (cloud)
 down
 enter
 # Hostname selector: network-assigned is default for cloud, Enter -> Login
@@ -177,9 +177,9 @@ fn scripted_timezone_navigate_and_select() {
         "\
 # Welcome
 enter
-# Disk
+# DiskSelection
 enter
-# Variant: toggle to cloud
+# DiskEncryptionScreen: cycle to None (cloud)
 down
 enter
 # Hostname selector: network-assigned is default for cloud, Enter -> Login

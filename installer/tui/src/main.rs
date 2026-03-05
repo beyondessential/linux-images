@@ -11,6 +11,7 @@ use tracing_subscriber::prelude::*;
 
 mod config;
 mod disk;
+mod encryption;
 mod firstboot;
 mod hostname_template;
 mod net;
@@ -65,6 +66,11 @@ struct Cli {
     #[arg(long)]
     fake_timezones: Option<PathBuf>,
 
+    // r[impl installer.dryrun.fake-tpm]
+    /// Pretend a TPM device is present, regardless of whether /dev/tpm0 exists.
+    #[arg(long)]
+    fake_tpm: bool,
+
     // r[impl installer.no-reboot]
     /// Do not reboot after a successful installation. Exit cleanly instead.
     #[arg(long)]
@@ -73,26 +79,35 @@ struct Cli {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    init_logging(&cli.log);
+
+    if let Err(e) = init_logging(&cli.log) {
+        eprintln!(
+            "error: failed to initialize logging to {}: {e}",
+            cli.log.display()
+        );
+        return ExitCode::FAILURE;
+    }
 
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
+            // r[impl installer.container.error-logging]
+            tracing::error!("{e:#}");
             eprintln!("error: {e:#}");
             ExitCode::FAILURE
         }
     }
 }
 
-fn init_logging(log_path: &PathBuf) {
-    let file = File::create(log_path).ok();
-    if let Some(file) = file {
-        let file_layer = fmt::layer()
-            .with_writer(file)
-            .with_ansi(false)
-            .with_target(false);
-        tracing_subscriber::registry().with(file_layer).init();
-    }
+fn init_logging(log_path: &PathBuf) -> Result<()> {
+    let file = File::create(log_path)
+        .with_context(|| format!("creating log file {}", log_path.display()))?;
+    let file_layer = fmt::layer()
+        .with_writer(file)
+        .with_ansi(false)
+        .with_target(false);
+    tracing_subscriber::registry().with(file_layer).init();
+    Ok(())
 }
 
 fn run(cli: Cli) -> Result<()> {
@@ -133,6 +148,14 @@ fn run(cli: Cli) -> Result<()> {
         tracing::info!("boot device: {}", bd.display());
     }
 
+    // r[impl installer.dryrun.fake-tpm]
+    let tpm_present = if cli.fake_devices.is_some() {
+        cli.fake_tpm
+    } else {
+        cli.fake_tpm || std::path::Path::new("/dev/tpm0").exists()
+    };
+    tracing::info!("TPM present: {tpm_present}");
+
     let config_warnings = install_config.validate();
     for w in &config_warnings {
         tracing::warn!("config: {w}");
@@ -141,27 +164,28 @@ fn run(cli: Cli) -> Result<()> {
     match mode {
         config::OperatingMode::Auto => run_auto(
             install_config,
+            tpm_present,
             &arch,
             &devices,
             &boot_device,
             config_warnings,
             &cli,
         ),
-        // r[impl installer.mode.auto-incomplete+2]
+        // r[impl installer.mode.auto-incomplete+3]
         config::OperatingMode::AutoIncomplete {
-            missing_variant,
+            missing_disk_encryption,
             missing_disk,
             missing_hostname,
         } => {
             let mut missing = Vec::new();
-            if missing_variant {
-                missing.push("variant");
+            if missing_disk_encryption {
+                missing.push("disk-encryption");
             }
             if missing_disk {
                 missing.push("disk");
             }
             if missing_hostname {
-                missing.push("hostname strategy (hostname, hostname-from-dhcp, or hostname-template required for metal variant)");
+                missing.push("hostname strategy (hostname, hostname-from-dhcp, or hostname-template required for encrypted variants)");
             }
             eprintln!(
                 "auto mode requested but required fields are missing: {}",
@@ -171,6 +195,7 @@ fn run(cli: Cli) -> Result<()> {
             run_interactive(
                 install_config,
                 &mode,
+                tpm_present,
                 &arch,
                 devices,
                 boot_device,
@@ -182,6 +207,7 @@ fn run(cli: Cli) -> Result<()> {
         config::OperatingMode::Interactive | config::OperatingMode::Prefilled => run_interactive(
             install_config,
             &mode,
+            tpm_present,
             &arch,
             devices,
             boot_device,
@@ -227,16 +253,20 @@ fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMod
     }
 }
 
-// r[impl installer.mode.auto+2]
+// r[impl installer.mode.auto+3]
 fn run_auto(
     cfg: config::InstallConfig,
+    tpm_present: bool,
     arch: &str,
     devices: &[disk::BlockDevice],
     boot_device: &Option<PathBuf>,
     config_warnings: Vec<String>,
     cli: &Cli,
 ) -> Result<()> {
-    let variant = cfg.variant.expect("auto mode requires variant");
+    let disk_encryption = cfg
+        .disk_encryption
+        .expect("auto mode requires disk-encryption");
+    let variant = disk_encryption.variant();
     let disk_selector = cfg.disk.as_ref().expect("auto mode requires disk");
 
     let hostname_from_template = cfg
@@ -261,9 +291,9 @@ fn run_auto(
     if cli.dry_run {
         let plan = plan::InstallPlan::new(
             &config::OperatingMode::Auto,
-            variant,
+            disk_encryption,
             Some(target),
-            cfg.disable_tpm,
+            tpm_present,
             cfg.firstboot.as_ref(),
             hostname_from_template,
             effective_timezone,
@@ -276,6 +306,7 @@ fn run_auto(
     let image_path = image_path.unwrap();
 
     eprintln!("BES Installer -- automatic mode");
+    eprintln!("  encryption: {disk_encryption}");
     eprintln!("  variant:    {variant}");
     eprintln!(
         "  target:     {} ({})",
@@ -283,7 +314,7 @@ fn run_auto(
         target.size_display()
     );
     eprintln!("  image:      {}", image_path.display());
-    eprintln!("  disable-tpm: {}", cfg.disable_tpm);
+    eprintln!("  tpm:        {tpm_present}");
 
     if let Some(ref fb) = cfg.firstboot {
         if fb.hostname_from_dhcp {
@@ -350,20 +381,37 @@ fn run_auto(
 
     {
         eprintln!("applying first-boot configuration...");
-        let mounted = firstboot::mount_target(&target.path, variant)?;
+        let mounted = firstboot::mount_target(&target.path, disk_encryption)?;
 
         if let Some(ref fb) = cfg.firstboot {
             firstboot::apply_firstboot(&mounted, fb)?;
         } else {
             // r[impl installer.firstboot.timezone]
-            // Even without a [firstboot] section, always set timezone to UTC.
             firstboot::apply_timezone_default(&mounted)?;
-        }
-        if variant == config::Variant::Metal && cfg.disable_tpm {
-            firstboot::apply_tpm_disable(&mounted)?;
         }
 
         firstboot::unmount_target(mounted)?;
+    }
+
+    // r[impl installer.encryption.overview]
+    if disk_encryption.is_encrypted() {
+        eprintln!("setting up disk encryption...");
+        let mounted = firstboot::mount_target(&target.path, disk_encryption)?;
+        let enc_result =
+            encryption::run_encryption_setup(&target.path, disk_encryption, mounted.path(), None)
+                .context("encryption setup")?;
+        firstboot::unmount_target(mounted)?;
+
+        // r[impl installer.encryption.recovery-passphrase+2]
+        eprintln!();
+        eprintln!("=== RECOVERY PASSPHRASE ===");
+        eprintln!();
+        eprintln!("  {}", enc_result.recovery_passphrase);
+        eprintln!();
+        eprintln!("Write down this passphrase and store it in a safe place.");
+        eprintln!("You will need it if the primary unlock mechanism fails.");
+        eprintln!("===========================");
+        eprintln!();
     }
 
     // r[impl installer.no-reboot]
@@ -376,7 +424,7 @@ fn run_auto(
     Ok(())
 }
 
-// r[impl installer.mode.interactive]
+// r[impl installer.mode.interactive+2]
 // r[impl installer.mode.prefilled]
 #[expect(
     clippy::too_many_arguments,
@@ -385,6 +433,7 @@ fn run_auto(
 fn run_interactive(
     cfg: config::InstallConfig,
     mode: &config::OperatingMode,
+    tpm_present: bool,
     arch: &str,
     devices: Vec<disk::BlockDevice>,
     boot_device: Option<PathBuf>,
@@ -392,7 +441,12 @@ fn run_interactive(
     config_warnings: Vec<String>,
     cli: &Cli,
 ) -> Result<()> {
-    let variant = cfg.variant.unwrap_or(config::Variant::Metal);
+    let disk_encryption = cfg.disk_encryption.unwrap_or(if tpm_present {
+        config::DiskEncryption::Tpm
+    } else {
+        config::DiskEncryption::Keyfile
+    });
+    let variant = disk_encryption.variant();
 
     let default_disk_index = cfg.disk.as_ref().and_then(|sel| {
         disk::resolve_disk(sel, &devices, boot_device.as_ref())
@@ -415,8 +469,8 @@ fn run_interactive(
 
     let state = ui::AppState::new(
         devices,
-        variant,
-        cfg.disable_tpm,
+        disk_encryption,
+        tpm_present,
         cfg.firstboot,
         boot_device,
         default_disk_index,
@@ -472,9 +526,9 @@ fn plan_from_tui_state(
     let firstboot = state.firstboot_config();
     plan::InstallPlan::new(
         mode,
-        state.variant,
+        state.disk_encryption,
         disk,
-        state.disable_tpm,
+        state.tpm_present,
         firstboot.as_ref(),
         state.hostname_from_template || hostname_from_template,
         state.effective_timezone(),

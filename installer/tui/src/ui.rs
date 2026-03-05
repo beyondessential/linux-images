@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::config::{FirstbootConfig, Variant};
+use crate::config::{DiskEncryption, FirstbootConfig};
 use crate::disk::BlockDevice;
 use crate::net::{self, CheckPhase, CheckResult, GithubKeysResult, NetcheckResult};
 
@@ -19,12 +19,12 @@ mod run;
 pub use run::{run_tui, run_tui_scripted};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+// r[impl installer.tui.disk-encryption+2]
 pub enum Screen {
     Welcome,
     NetworkCheck,
     DiskSelection,
-    VariantSelection,
-    TpmToggle,
+    DiskEncryption,
     Hostname,
     HostnameInput,
     Login,
@@ -36,6 +36,8 @@ pub enum Screen {
     Confirmation,
     Writing,
     FirstbootApply,
+    EncryptionSetup,
+    RecoveryPassphrase,
     Done,
     Error(String),
 }
@@ -44,12 +46,13 @@ pub struct AppState {
     pub screen: Screen,
     pub devices: Vec<BlockDevice>,
     pub selected_disk_index: usize,
-    pub variant: Variant,
-    pub disable_tpm: bool,
+    pub disk_encryption: DiskEncryption,
+    pub tpm_present: bool,
     pub boot_device: Option<PathBuf>,
     pub write_progress: Option<ProgressSnapshot>,
     pub confirm_input: String,
     pub build_info: String,
+    pub recovery_passphrase: Option<String>,
 
     pub hostname_input: String,
     pub hostname_from_dhcp: bool,
@@ -122,8 +125,8 @@ impl AppState {
     )]
     pub fn new(
         devices: Vec<BlockDevice>,
-        variant: Variant,
-        disable_tpm: bool,
+        disk_encryption: DiskEncryption,
+        tpm_present: bool,
         firstboot: Option<FirstbootConfig>,
         boot_device: Option<PathBuf>,
         default_disk_index: Option<usize>,
@@ -132,6 +135,7 @@ impl AppState {
     ) -> Self {
         let endpoints = net::default_endpoints();
         let net_check_total = net::total_check_count(&endpoints);
+        let variant = disk_encryption.variant();
         let (
             hostname_input,
             hostname_from_dhcp,
@@ -161,7 +165,7 @@ impl AppState {
                 } else if fb.hostname_from_dhcp {
                     true
                 } else {
-                    variant == Variant::Cloud
+                    variant == crate::config::Variant::Cloud
                 };
                 (
                     fb.hostname.clone().unwrap_or_default(),
@@ -175,7 +179,7 @@ impl AppState {
             }
             None => (
                 String::new(),
-                variant == Variant::Cloud,
+                variant == crate::config::Variant::Cloud,
                 false,
                 String::new(),
                 vec![String::new()],
@@ -195,8 +199,8 @@ impl AppState {
             screen: Screen::Welcome,
             selected_disk_index: default_disk_index.unwrap_or(0),
             devices,
-            variant,
-            disable_tpm,
+            disk_encryption,
+            tpm_present,
             boot_device,
             write_progress: None,
             confirm_input: String::new(),
@@ -233,11 +237,13 @@ impl AppState {
             ssh_github_fetching: false,
             ssh_github_error: None,
             ssh_github_rx: None,
+            recovery_passphrase: None,
         };
         state.ensure_trailing_blank();
         state
     }
 
+    // r[impl installer.tui.disk-encryption+2]
     // r[impl installer.tui.hostname+5]
     // r[impl installer.tui.tailscale+3]
     // r[impl installer.tui.ssh-keys+5]
@@ -322,14 +328,40 @@ impl AppState {
         }
     }
 
-    // r[impl installer.tui.variant-selection]
-    pub fn toggle_variant(&mut self) {
-        self.variant = match self.variant {
-            Variant::Metal => Variant::Cloud,
-            Variant::Cloud => Variant::Metal,
-        };
+    // r[impl installer.tui.disk-encryption+2]
+    pub fn cycle_disk_encryption(&mut self) {
+        if self.tpm_present {
+            self.disk_encryption = match self.disk_encryption {
+                DiskEncryption::Tpm => DiskEncryption::Keyfile,
+                DiskEncryption::Keyfile => DiskEncryption::None,
+                DiskEncryption::None => DiskEncryption::Tpm,
+            };
+        } else {
+            self.disk_encryption = match self.disk_encryption {
+                DiskEncryption::Keyfile => DiskEncryption::None,
+                _ => DiskEncryption::Keyfile,
+            };
+        }
         if self.hostname_input.trim().is_empty() && !self.hostname_from_template {
-            self.hostname_from_dhcp = self.variant == Variant::Cloud;
+            self.hostname_from_dhcp = !self.disk_encryption.is_encrypted();
+        }
+    }
+
+    pub fn cycle_disk_encryption_reverse(&mut self) {
+        if self.tpm_present {
+            self.disk_encryption = match self.disk_encryption {
+                DiskEncryption::Tpm => DiskEncryption::None,
+                DiskEncryption::Keyfile => DiskEncryption::Tpm,
+                DiskEncryption::None => DiskEncryption::Keyfile,
+            };
+        } else {
+            self.disk_encryption = match self.disk_encryption {
+                DiskEncryption::Keyfile => DiskEncryption::None,
+                _ => DiskEncryption::Keyfile,
+            };
+        }
+        if self.hostname_input.trim().is_empty() && !self.hostname_from_template {
+            self.hostname_from_dhcp = !self.disk_encryption.is_encrypted();
         }
     }
 
@@ -489,7 +521,7 @@ impl AppState {
         }
     }
 
-    // r[impl installer.tui.tpm-toggle]
+    // r[impl installer.tui.disk-encryption+2]
     // r[impl installer.tui.hostname+5]
     // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
@@ -501,10 +533,8 @@ impl AppState {
                 Screen::DiskSelection
             }
             Screen::NetworkCheck => return,
-            Screen::DiskSelection => Screen::VariantSelection,
-            Screen::VariantSelection if self.variant == Variant::Metal => Screen::TpmToggle,
-            Screen::VariantSelection => Screen::Hostname,
-            Screen::TpmToggle => Screen::Hostname,
+            Screen::DiskSelection => Screen::DiskEncryption,
+            Screen::DiskEncryption => Screen::Hostname,
             Screen::Hostname => {
                 if self.hostname_from_dhcp {
                     Screen::Login
@@ -516,10 +546,28 @@ impl AppState {
             Screen::Login => Screen::Timezone,
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
-            Screen::NetworkResults => Screen::Confirmation,
+            // r[impl installer.tui.confirmation+5]
+            // r[impl installer.encryption.recovery-passphrase+2]
+            Screen::NetworkResults => {
+                if self.disk_encryption.is_encrypted() && self.recovery_passphrase.is_none() {
+                    self.recovery_passphrase =
+                        Some(crate::encryption::generate_recovery_passphrase());
+                }
+                Screen::Confirmation
+            }
             Screen::Confirmation => Screen::Writing,
             Screen::Writing => Screen::FirstbootApply,
-            Screen::FirstbootApply => Screen::Done,
+            // r[impl installer.encryption.overview]
+            Screen::FirstbootApply => {
+                if self.disk_encryption.is_encrypted() {
+                    Screen::EncryptionSetup
+                } else {
+                    Screen::Done
+                }
+            }
+            Screen::EncryptionSetup => Screen::RecoveryPassphrase,
+            // r[impl installer.encryption.recovery-passphrase+2]
+            Screen::RecoveryPassphrase => Screen::Done,
             Screen::Done | Screen::Error(_) => return,
         };
     }
@@ -528,15 +576,8 @@ impl AppState {
         self.screen = match &self.screen {
             Screen::NetworkCheck => Screen::Welcome,
             Screen::DiskSelection => Screen::Welcome,
-            Screen::VariantSelection => Screen::DiskSelection,
-            Screen::TpmToggle => Screen::VariantSelection,
-            Screen::Hostname => {
-                if self.variant == Variant::Metal {
-                    Screen::TpmToggle
-                } else {
-                    Screen::VariantSelection
-                }
-            }
+            Screen::DiskEncryption => Screen::DiskSelection,
+            Screen::Hostname => Screen::DiskEncryption,
             Screen::HostnameInput => Screen::Hostname,
             Screen::Login => {
                 if self.hostname_from_dhcp {
@@ -549,6 +590,7 @@ impl AppState {
             Screen::Timezone => Screen::Login,
             Screen::NetworkResults => Screen::Timezone,
             Screen::Confirmation => Screen::NetworkResults,
+            // No going back from encryption/recovery — those are post-write
             _ => return,
         };
     }
@@ -563,7 +605,7 @@ impl AppState {
         "yes"
     }
 
-    // r[impl installer.tui.confirmation+3]
+    // r[impl installer.tui.confirmation+5]
     pub fn is_confirmed(&self) -> bool {
         self.confirm_input
             .trim()
@@ -736,6 +778,10 @@ mod tests {
     }
 
     fn make_state() -> AppState {
+        make_state_with_tpm(true)
+    }
+
+    fn make_state_with_tpm(tpm_present: bool) -> AppState {
         use crate::disk::TransportType;
         let devices = vec![
             BlockDevice {
@@ -753,10 +799,15 @@ mod tests {
                 removable: false,
             },
         ];
+        let default_encryption = if tpm_present {
+            DiskEncryption::Tpm
+        } else {
+            DiskEncryption::Keyfile
+        };
         AppState::new(
             devices,
-            Variant::Metal,
-            false,
+            default_encryption,
+            tpm_present,
             None,
             None,
             None,
@@ -771,8 +822,8 @@ mod tests {
         let state = make_state();
         assert_eq!(state.screen, Screen::Welcome);
         assert_eq!(state.selected_disk_index, 0);
-        assert_eq!(state.variant, Variant::Metal);
-        assert!(!state.disable_tpm);
+        assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
+        assert!(state.tpm_present);
         assert_eq!(state.net_check_phase, CheckPhase::NotStarted);
         assert_eq!(state.netcheck_phase, CheckPhase::NotStarted);
         assert!(!state.net_checks_started);
@@ -871,34 +922,45 @@ mod tests {
         assert_eq!(state.selected_disk_index, 0);
     }
 
-    // r[verify installer.tui.variant-selection]
+    // r[verify installer.tui.disk-encryption+2]
     #[test]
-    fn variant_toggle() {
+    fn disk_encryption_cycle_with_tpm() {
         let mut state = make_state();
-        assert_eq!(state.variant, Variant::Metal);
-        state.toggle_variant();
-        assert_eq!(state.variant, Variant::Cloud);
-        state.toggle_variant();
-        assert_eq!(state.variant, Variant::Metal);
+        assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
+        state.cycle_disk_encryption();
+        assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
+        state.cycle_disk_encryption();
+        assert_eq!(state.disk_encryption, DiskEncryption::None);
+        state.cycle_disk_encryption();
+        assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
     }
 
-    // r[verify installer.tui.tpm-toggle]
+    // r[verify installer.tui.disk-encryption+2]
+    #[test]
+    fn disk_encryption_cycle_without_tpm() {
+        let mut state = make_state_with_tpm(false);
+        assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
+        state.cycle_disk_encryption();
+        assert_eq!(state.disk_encryption, DiskEncryption::None);
+        state.cycle_disk_encryption();
+        assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
+    }
+
+    // r[verify installer.tui.disk-encryption+2]
     // r[verify installer.tui.password+4]
     #[test]
-    fn advance_metal_flow() {
+    fn advance_encrypted_flow() {
         let mut state = make_state();
-        state.variant = Variant::Metal;
+        state.disk_encryption = DiskEncryption::Tpm;
 
         assert_eq!(state.screen, Screen::Welcome);
         state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
-        assert_eq!(state.screen, Screen::VariantSelection);
-        state.advance();
-        assert_eq!(state.screen, Screen::TpmToggle);
+        assert_eq!(state.screen, Screen::DiskEncryption);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
-        // Static is default for metal (hostname_from_dhcp = false), advance to HostnameInput
+        // Static is default for encrypted (hostname_from_dhcp = false), advance to HostnameInput
         state.advance();
         assert_eq!(state.screen, Screen::HostnameInput);
         state.advance();
@@ -911,23 +973,23 @@ mod tests {
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
-    // r[verify installer.tui.variant-selection]
+    // r[verify installer.tui.disk-encryption+2]
     // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
-    fn advance_cloud_skips_tpm() {
+    fn advance_none_encryption_flow() {
         let mut state = make_state();
-        state.variant = Variant::Cloud;
+        state.disk_encryption = DiskEncryption::None;
         state.hostname_from_dhcp = true;
 
         assert_eq!(state.screen, Screen::Welcome);
         state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
-        assert_eq!(state.screen, Screen::VariantSelection);
+        assert_eq!(state.screen, Screen::DiskEncryption);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
-        // Cloud defaults to hostname_from_dhcp = true (network-assigned),
+        // None encryption defaults to hostname_from_dhcp = true (network-assigned),
         // so advance skips HostnameInput and goes to Login directly.
         state.advance();
         assert_eq!(state.screen, Screen::Login);
@@ -940,9 +1002,9 @@ mod tests {
     }
 
     #[test]
-    fn advance_cloud_static_goes_to_hostname_input() {
+    fn advance_none_static_goes_to_hostname_input() {
         let mut state = make_state();
-        state.variant = Variant::Cloud;
+        state.disk_encryption = DiskEncryption::None;
         state.hostname_from_dhcp = false;
 
         state.screen = Screen::Hostname;
@@ -951,9 +1013,9 @@ mod tests {
     }
 
     #[test]
-    fn advance_metal_dhcp_skips_hostname_input() {
+    fn advance_encrypted_dhcp_skips_hostname_input() {
         let mut state = make_state();
-        state.variant = Variant::Metal;
+        state.disk_encryption = DiskEncryption::Tpm;
         state.hostname_from_dhcp = true;
 
         state.screen = Screen::Hostname;
@@ -961,13 +1023,13 @@ mod tests {
         assert_eq!(state.screen, Screen::Login);
     }
 
-    // r[verify installer.tui.tpm-toggle]
+    // r[verify installer.tui.disk-encryption+2]
     // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
-    fn go_back_through_metal_flow() {
+    fn go_back_through_encrypted_flow() {
         let mut state = make_state();
-        state.variant = Variant::Metal;
+        state.disk_encryption = DiskEncryption::Tpm;
         state.screen = Screen::Confirmation;
 
         state.go_back();
@@ -976,28 +1038,26 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
-        // Metal: hostname_from_dhcp is false, so Login goes back to HostnameInput
+        // Encrypted: hostname_from_dhcp is false, so Login goes back to HostnameInput
         state.go_back();
         assert_eq!(state.screen, Screen::HostnameInput);
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
-        assert_eq!(state.screen, Screen::TpmToggle);
-        state.go_back();
-        assert_eq!(state.screen, Screen::VariantSelection);
+        assert_eq!(state.screen, Screen::DiskEncryption);
         state.go_back();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.go_back();
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.variant-selection]
+    // r[verify installer.tui.disk-encryption+2]
     // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
-    fn go_back_cloud_skips_tpm() {
+    fn go_back_none_encryption_flow() {
         let mut state = make_state();
-        state.variant = Variant::Cloud;
+        state.disk_encryption = DiskEncryption::None;
         state.hostname_from_dhcp = true;
         state.screen = Screen::Confirmation;
 
@@ -1007,17 +1067,17 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
-        // Cloud: hostname_from_dhcp is true by default, so Login goes back to Hostname selector
+        // None encryption: hostname_from_dhcp is true by default, so Login goes back to Hostname selector
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
-        assert_eq!(state.screen, Screen::VariantSelection);
+        assert_eq!(state.screen, Screen::DiskEncryption);
     }
 
     #[test]
     fn go_back_from_login_with_dhcp_goes_to_hostname_selector() {
         let mut state = make_state();
-        state.variant = Variant::Metal;
+        state.disk_encryption = DiskEncryption::Tpm;
         state.hostname_from_dhcp = true;
         state.screen = Screen::Login;
 
@@ -1059,7 +1119,7 @@ mod tests {
         assert_eq!(state.screen, Screen::LoginGithub);
     }
 
-    // r[verify installer.tui.confirmation+3]
+    // r[verify installer.tui.confirmation+5]
     #[test]
     fn confirmation_requires_explicit_yes() {
         let mut state = make_state();
@@ -1072,7 +1132,7 @@ mod tests {
         assert!(state.is_confirmed());
     }
 
-    // r[verify installer.tui.confirmation+3]
+    // r[verify installer.tui.confirmation+5]
     #[test]
     fn done_and_error_do_not_advance() {
         let mut state = make_state();
@@ -1102,7 +1162,7 @@ mod tests {
         };
         let state = AppState::new(
             devices,
-            Variant::Cloud,
+            DiskEncryption::None,
             false,
             Some(fb),
             None,
@@ -1115,14 +1175,11 @@ mod tests {
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn cloud_defaults_to_dhcp() {
+    fn none_encryption_defaults_to_dhcp() {
         let state = make_state();
-        let mut cloud_state = make_state();
-        cloud_state.variant = Variant::Cloud;
-        // make_state creates Metal which defaults to false
+        // make_state creates Tpm (encrypted) which defaults to false
         assert!(!state.hostname_from_dhcp);
-        // But cloud defaults need to be set at construction time. make_state
-        // constructs as Metal. Let's construct a cloud state properly.
+        // Construct a none-encryption state properly.
         use crate::disk::TransportType;
         let devices = vec![BlockDevice {
             path: PathBuf::from("/dev/sda"),
@@ -1131,9 +1188,9 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let cloud = AppState::new(
+        let none_enc = AppState::new(
             devices,
-            Variant::Cloud,
+            DiskEncryption::None,
             false,
             None,
             None,
@@ -1141,7 +1198,7 @@ mod tests {
             String::new(),
             test_timezones(),
         );
-        assert!(cloud.hostname_from_dhcp);
+        assert!(none_enc.hostname_from_dhcp);
     }
 
     // r[verify installer.tui.hostname+5]
@@ -1161,7 +1218,7 @@ mod tests {
         };
         let state = AppState::new(
             devices,
-            Variant::Cloud,
+            DiskEncryption::None,
             false,
             Some(fb),
             None,
@@ -1191,7 +1248,7 @@ mod tests {
         };
         let state = AppState::new(
             devices,
-            Variant::Cloud,
+            DiskEncryption::None,
             false,
             Some(fb),
             None,
@@ -1219,7 +1276,7 @@ mod tests {
         };
         let state = AppState::new(
             devices,
-            Variant::Cloud,
+            DiskEncryption::None,
             false,
             Some(fb),
             None,
@@ -1317,7 +1374,7 @@ mod tests {
         };
         let state = AppState::new(
             devices,
-            Variant::Cloud,
+            DiskEncryption::None,
             false,
             Some(fb),
             None,
@@ -1336,35 +1393,35 @@ mod tests {
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn hostname_required_for_metal() {
+    fn hostname_required_for_encrypted() {
         let mut state = make_state();
-        state.variant = Variant::Metal;
+        state.disk_encryption = DiskEncryption::Tpm;
         assert!(state.hostname_required());
     }
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn hostname_required_for_cloud_static() {
+    fn hostname_required_for_none_static() {
         let mut state = make_state();
-        state.variant = Variant::Cloud;
+        state.disk_encryption = DiskEncryption::None;
         state.hostname_from_dhcp = false;
         assert!(state.hostname_required());
     }
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn hostname_not_required_for_cloud_dhcp() {
+    fn hostname_not_required_for_none_dhcp() {
         let mut state = make_state();
-        state.variant = Variant::Cloud;
+        state.disk_encryption = DiskEncryption::None;
         state.hostname_from_dhcp = true;
         assert!(!state.hostname_required());
     }
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn hostname_not_required_for_metal_with_dhcp() {
+    fn hostname_not_required_for_encrypted_with_dhcp() {
         let mut state = make_state();
-        state.variant = Variant::Metal;
+        state.disk_encryption = DiskEncryption::Tpm;
         state.hostname_from_dhcp = true;
         assert!(!state.hostname_required());
     }
@@ -1405,8 +1462,8 @@ mod tests {
         };
         let state = AppState::new(
             devices,
-            Variant::Metal,
-            false,
+            DiskEncryption::Tpm,
+            true,
             Some(fb),
             None,
             None,
@@ -1442,8 +1499,8 @@ mod tests {
         };
         let state = AppState::new(
             devices,
-            Variant::Metal,
-            false,
+            DiskEncryption::Tpm,
+            true,
             Some(fb),
             None,
             None,
@@ -1649,7 +1706,7 @@ mod tests {
         };
         let state = AppState::new(
             devices,
-            Variant::Cloud,
+            DiskEncryption::None,
             false,
             Some(fb),
             None,
@@ -1721,5 +1778,73 @@ mod tests {
         let fb = state.firstboot_config();
         assert!(fb.is_some());
         assert_eq!(fb.unwrap().timezone.as_deref(), Some("Asia/Tokyo"));
+    }
+
+    // r[verify installer.encryption.overview]
+    #[test]
+    fn advance_encrypted_firstboot_goes_to_encryption_setup() {
+        let mut state = make_state();
+        state.disk_encryption = DiskEncryption::Tpm;
+        state.screen = Screen::FirstbootApply;
+        state.advance();
+        assert_eq!(state.screen, Screen::EncryptionSetup);
+    }
+
+    // r[verify installer.encryption.overview]
+    #[test]
+    fn advance_keyfile_firstboot_goes_to_encryption_setup() {
+        let mut state = make_state();
+        state.disk_encryption = DiskEncryption::Keyfile;
+        state.screen = Screen::FirstbootApply;
+        state.advance();
+        assert_eq!(state.screen, Screen::EncryptionSetup);
+    }
+
+    // r[verify installer.encryption.overview]
+    #[test]
+    fn advance_none_firstboot_goes_to_done() {
+        let mut state = make_state();
+        state.disk_encryption = DiskEncryption::None;
+        state.screen = Screen::FirstbootApply;
+        state.advance();
+        assert_eq!(state.screen, Screen::Done);
+    }
+
+    // r[verify installer.encryption.recovery-passphrase+2]
+    #[test]
+    fn advance_encryption_setup_goes_to_recovery_passphrase() {
+        let mut state = make_state();
+        state.disk_encryption = DiskEncryption::Tpm;
+        state.screen = Screen::EncryptionSetup;
+        state.advance();
+        assert_eq!(state.screen, Screen::RecoveryPassphrase);
+    }
+
+    // r[verify installer.encryption.recovery-passphrase+2]
+    #[test]
+    fn advance_recovery_passphrase_goes_to_done() {
+        let mut state = make_state();
+        state.screen = Screen::RecoveryPassphrase;
+        state.recovery_passphrase = Some("alpha-bravo-charlie-delta-echo-foxtrot".into());
+        state.advance();
+        assert_eq!(state.screen, Screen::Done);
+    }
+
+    // r[verify installer.encryption.recovery-passphrase+2]
+    #[test]
+    fn recovery_passphrase_no_go_back() {
+        let mut state = make_state();
+        state.screen = Screen::RecoveryPassphrase;
+        state.go_back();
+        assert_eq!(state.screen, Screen::RecoveryPassphrase);
+    }
+
+    // r[verify installer.encryption.overview]
+    #[test]
+    fn encryption_setup_no_go_back() {
+        let mut state = make_state();
+        state.screen = Screen::EncryptionSetup;
+        state.go_back();
+        assert_eq!(state.screen, Screen::EncryptionSetup);
     }
 }
