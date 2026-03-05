@@ -172,16 +172,17 @@ fn enroll_keyfile(root_part: &Path, mount_path: &Path) -> Result<()> {
     let new_str = tmp_new_keyfile.to_str().unwrap_or_default();
 
     run_command(
-        "systemd-cryptenroll",
+        "cryptsetup",
         &[
+            "luksAddKey",
             part_str,
-            "--unlock-key-file",
-            empty_str,
-            "--key-file",
             new_str,
+            "--key-file",
+            empty_str,
+            "--batch-mode",
         ],
     )
-    .context("enrolling new keyfile via systemd-cryptenroll")?;
+    .context("enrolling new keyfile via cryptsetup luksAddKey")?;
 
     let _ = fs::remove_file(&tmp_empty_keyfile);
 
@@ -255,36 +256,32 @@ fn enroll_recovery_passphrase(root_part: &Path, passphrase: &str) -> Result<()> 
     let part_str = root_part.to_str().unwrap_or_default();
     let keyfile_str = tmp_keyfile.to_str().unwrap_or_default();
 
-    let output = Command::new("systemd-cryptenroll")
-        .args([part_str, "--unlock-key-file", keyfile_str, "--password"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("spawning systemd-cryptenroll for recovery passphrase")?;
+    // Write the new passphrase to a temp file so we can pass it to
+    // cryptsetup luksAddKey without interactive prompting.
+    let tmp_passphrase = PathBuf::from("/tmp/bes-recovery-passphrase");
+    fs::write(&tmp_passphrase, passphrase).context("writing temporary passphrase file")?;
+    fs::set_permissions(&tmp_passphrase, fs::Permissions::from_mode(0o400))
+        .context("setting passphrase file permissions")?;
 
-    // systemd-cryptenroll --password reads the new password from stdin.
-    // It prompts twice (new + confirm), so we provide the passphrase twice.
-    use std::io::Write;
-    let mut child = output;
-    if let Some(mut stdin) = child.stdin.take() {
-        writeln!(stdin, "{passphrase}")?;
-        writeln!(stdin, "{passphrase}")?;
-    }
+    let passphrase_str = tmp_passphrase.to_str().unwrap_or_default();
 
-    let output = child
-        .wait_with_output()
-        .context("waiting for systemd-cryptenroll (recovery passphrase)")?;
+    let result = run_command(
+        "cryptsetup",
+        &[
+            "luksAddKey",
+            part_str,
+            passphrase_str,
+            "--key-file",
+            keyfile_str,
+            "--batch-mode",
+        ],
+    )
+    .context("enrolling recovery passphrase via cryptsetup luksAddKey");
 
     let _ = fs::remove_file(&tmp_keyfile);
+    let _ = fs::remove_file(&tmp_passphrase);
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "systemd-cryptenroll --password failed (exit {}): {stderr}",
-            output.status
-        );
-    }
+    result?;
 
     tracing::info!("recovery passphrase enrolled");
     Ok(())
