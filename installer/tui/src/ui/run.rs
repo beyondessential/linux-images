@@ -579,7 +579,7 @@ fn run_full_install(
 
     // Firstboot (~96%)
     {
-        let mounted = firstboot::mount_target(target, disk_encryption)?;
+        let mounted = firstboot::mount_target(target, disk_encryption, recovery_passphrase)?;
 
         // r[impl installer.write.fstab-fixup]
         // r[impl installer.write.variant-fixup]
@@ -603,7 +603,7 @@ fn run_full_install(
 
     // Encryption setup (~96-100%)
     let passphrase = if let Some(pp) = recovery_passphrase {
-        let mounted = firstboot::mount_target(target, disk_encryption)?;
+        let mounted = firstboot::mount_target(target, disk_encryption, recovery_passphrase)?;
         encryption::run_encryption_setup(target, disk_encryption, mounted.path(), pp)
             .context("encryption setup")?;
         firstboot::unmount_target(mounted)?;

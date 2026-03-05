@@ -25,10 +25,11 @@ impl MountedTarget {
     }
 }
 
-// r[impl installer.firstboot.mount+2]
+// r[impl installer.firstboot.mount+3]
 pub fn mount_target(
     target_device: &Path,
     disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
 ) -> Result<MountedTarget> {
     // r[impl installer.container.partition-devices+2]
     writer::ensure_partition_devices(target_device)
@@ -38,7 +39,7 @@ pub fn mount_target(
 
     let luks_active = disk_encryption.is_encrypted();
     let btrfs_dev = if luks_active {
-        open_luks(&root_part)?
+        open_luks(&root_part, passphrase.unwrap_or_default())?
     } else {
         root_part
     };
@@ -397,10 +398,10 @@ fn resolve_uid_gid_from_passwd(root: &Path, username: &str) -> Result<(u32, u32)
     bail!("user '{username}' not found in target /etc/passwd");
 }
 
-fn open_luks(partition: &Path) -> Result<PathBuf> {
+fn open_luks(partition: &Path, passphrase: &str) -> Result<PathBuf> {
     tracing::info!("opening LUKS on {}", partition.display());
 
-    let keyfile = create_empty_keyfile()?;
+    let keyfile = create_passphrase_keyfile(passphrase)?;
 
     run_command(
         "cryptsetup",
@@ -423,9 +424,9 @@ fn close_luks() -> Result<()> {
     run_command("cryptsetup", &["close", LUKS_NAME]).context("closing LUKS volume")
 }
 
-fn create_empty_keyfile() -> Result<PathBuf> {
-    let path = PathBuf::from("/tmp/bes-empty-keyfile");
-    fs::write(&path, b"").context("creating empty keyfile")?;
+fn create_passphrase_keyfile(passphrase: &str) -> Result<PathBuf> {
+    let path = PathBuf::from("/tmp/bes-luks-keyfile");
+    fs::write(&path, passphrase.as_bytes()).context("creating passphrase keyfile")?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o400))
         .context("setting keyfile permissions")?;
     Ok(path)
@@ -466,21 +467,21 @@ fn run_command(program: &str, args: &[&str]) -> Result<()> {
 mod tests {
     use super::*;
 
-    // r[verify installer.firstboot.mount+2]
+    // r[verify installer.firstboot.mount+3]
     #[test]
     fn partition_path_scsi_disk() {
         let p = partition_path(Path::new("/dev/sda"), 3).unwrap();
         assert_eq!(p, PathBuf::from("/dev/sda3"));
     }
 
-    // r[verify installer.firstboot.mount+2]
+    // r[verify installer.firstboot.mount+3]
     #[test]
     fn partition_path_nvme() {
         let p = partition_path(Path::new("/dev/nvme0n1"), 1).unwrap();
         assert_eq!(p, PathBuf::from("/dev/nvme0n1p1"));
     }
 
-    // r[verify installer.firstboot.mount+2]
+    // r[verify installer.firstboot.mount+3]
     #[test]
     fn partition_path_loop() {
         let p = partition_path(Path::new("/dev/loop0"), 2).unwrap();

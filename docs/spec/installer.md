@@ -611,11 +611,11 @@ with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 
 ## First-Boot Configuration
 
-r[installer.firstboot.mount+2]
+r[installer.firstboot.mount+3]
 After writing the image, the installer must mount the target disk's root
 BTRFS partition (subvol `@`) to apply first-boot configuration. For the
 metal variant (disk encryption `"tpm"` or `"keyfile"`), it must unlock the
-LUKS volume using the empty keyfile first.
+LUKS volume using the recovery passphrase.
 
 r[installer.firstboot.hostname]
 If `hostname` is set (including hostnames generated from a template), the

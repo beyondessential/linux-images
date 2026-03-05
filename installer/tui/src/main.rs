@@ -423,7 +423,11 @@ fn run_auto(
 
     {
         eprintln!("applying first-boot configuration...");
-        let mounted = firstboot::mount_target(&target.path, disk_encryption)?;
+        let mounted = firstboot::mount_target(
+            &target.path,
+            disk_encryption,
+            recovery_passphrase.as_deref(),
+        )?;
 
         // r[impl installer.write.fstab-fixup]
         // r[impl installer.write.variant-fixup]
@@ -449,7 +453,11 @@ fn run_auto(
     // r[impl installer.encryption.overview+2]
     if let Some(ref passphrase) = recovery_passphrase {
         eprintln!("setting up disk encryption...");
-        let mounted = firstboot::mount_target(&target.path, disk_encryption)?;
+        let mounted = firstboot::mount_target(
+            &target.path,
+            disk_encryption,
+            recovery_passphrase.as_deref(),
+        )?;
         encryption::run_encryption_setup(&target.path, disk_encryption, mounted.path(), passphrase)
             .context("encryption setup")?;
         firstboot::unmount_target(mounted)?;
