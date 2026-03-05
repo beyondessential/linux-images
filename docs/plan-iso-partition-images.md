@@ -13,30 +13,65 @@ Both the metal and cloud full-disk images are still built and published as
 standalone artifacts for direct-imaging workflows. Only the ISO payload
 changes.
 
-This plan assumes the disk encryption rework (see
-`plan-disk-encryption-rework.md`) is complete. In particular, it assumes:
-
-- The installer already has a `DiskEncryption` enum (`TpmBound`, `Keyfile`,
-  `None`) and derives the variant from it.
-- The installer already performs all LUKS setup (key rotation, TPM/keyfile
-  enrollment, recovery passphrase, empty-slot wipe, initramfs rebuild).
-- The metal image no longer contains any first-boot TPM enrollment services.
-
 ## Current state
 
-The ISO embeds both `metal-<arch>.raw.zst` and `cloud-<arch>.raw.zst`. These
-are complete GPT disk images (EFI + xboot + root). The installer picks one
-based on the user's variant selection, decompresses it as a whole-disk stream
-to the target device, then expands partitions to fill the disk.
+The disk encryption rework is complete. Specifically:
+
+- `DiskEncryption` is an enum (`Tpm`, `Keyfile`, `None`) in
+  `installer/tui/src/config.rs`. The variant is derived from it
+  (`Tpm`/`Keyfile` -> `metal`, `None` -> `cloud`).
+- The installer already performs all LUKS setup after writing the image:
+  key rotation, TPM/keyfile enrollment, recovery passphrase, empty-slot
+  wipe, initramfs rebuild (see `installer/tui/src/encryption.rs`,
+  `run_encryption_setup`).
+- The metal image ships with LUKS2 + empty passphrase; the installer
+  rotates the key and enrolls the real mechanism at install time.
+
+The ISO currently embeds both `*-metal-<arch>-*.raw.zst` and
+`*-cloud-<arch>-*.raw.zst`. These are complete GPT disk images (EFI + xboot
++ root). The installer picks one based on the variant derived from
+`DiskEncryption`, decompresses it as a whole-disk stream to the target
+device, then expands partitions to fill the disk.
 
 The metal and cloud images differ only in:
 
 1. The root partition: metal wraps BTRFS in LUKS2; cloud has bare BTRFS.
 2. A handful of config files: `/etc/crypttab`, `/etc/fstab`,
-   `/etc/bes/image-variant`, `/etc/luks/empty-keyfile`, dracut LUKS config.
+   `/etc/bes/image-variant`, `/etc/luks/empty-keyfile`, dracut LUKS config,
+   `/etc/hostname`.
 
 This means the ISO ships approximately 2x the compressed data for what is
 essentially the same OS content.
+
+### Relevant code paths today
+
+- **`iso/build-iso.sh` Phase 5**: Copies all `*.raw.zst` files (and their
+  `.size` sidecars) from `IMAGE_DIR` into `$STAGING/images/`.
+- **`justfile` `iso` recipe**: Requires both metal and cloud `.raw.zst`
+  images to exist under `output/<arch>/`.
+- **`writer::find_image_path`**: Searches `/run/live/medium/images` (and
+  fallback dirs) for a file matching `{variant}-{arch}` ending in `.raw.zst`.
+- **`writer::write_image`**: Calls `wipe_disk`, then stream-decompresses
+  the entire `.raw.zst` to the target block device.
+- **`writer::image_uncompressed_size`**: Reads a `.size` sidecar (whole
+  disk image size).
+- **`writer::expand_partitions`**: Moves GPT secondary header, runs
+  `growpart` on partition 3, re-reads table.
+- **`writer::verify_partition_table`**: Uses `sfdisk --json` to check for
+  `efi`, `xboot`, `root` partition labels.
+- **`main.rs` `run_auto`**: Calls `find_image_path` with variant+arch,
+  then `write_image`, `reread_partition_table`, `verify_partition_table`,
+  `expand_partitions`, firstboot, then encryption setup.
+- **`ui/run.rs` `start_write_worker`**: Same flow for interactive mode.
+- **`plan.rs` `InstallPlan`**: Has `image_path: Option<PathBuf>` field.
+- **`firstboot.rs` `mount_target`**: Opens LUKS with empty keyfile if
+  encrypted, then mounts btrfs `subvol=@`.
+- **`encryption.rs` `run_encryption_setup`**: Operates on the already-
+  written metal image's LUKS partition (rotates key, enrolls mechanism,
+  etc.).
+- **`tests/test-iso-structure.sh`**: Checks for `*.raw.zst` images on
+  ISO, checks for metal and cloud images by name pattern, checks `.size`
+  sidecars.
 
 ## Design
 
@@ -46,11 +81,11 @@ The ISO will contain three compressed partition images extracted from the
 cloud image, plus metadata:
 
 ```
-/images/efi.img.zst          # FAT32 EFI System Partition (512 MiB uncompressed)
-/images/efi.img.size          # uncompressed byte count
-/images/xboot.img.zst         # ext4 extended boot partition (1 GiB uncompressed)
+/images/efi.img.zst            # FAT32 EFI System Partition (512 MiB uncompressed)
+/images/efi.img.size           # uncompressed byte count
+/images/xboot.img.zst          # ext4 extended boot partition (1 GiB uncompressed)
 /images/xboot.img.size
-/images/root.img.zst          # bare BTRFS root partition (~3.5 GiB uncompressed)
+/images/root.img.zst           # bare BTRFS root partition (~3.5 GiB uncompressed)
 /images/root.img.size
 /images/partitions.json        # partition geometry and type UUIDs (see below)
 ```
@@ -90,60 +125,107 @@ arm64 uses `B921B045-1DF0-41C3-AF44-4C6F280D3FAE`).
 
 ### Installer write flow (new)
 
-Currently:
+Current flow (`run_auto` / `start_write_worker`):
 
-1. Wipe disk.
-2. Stream-decompress whole `.raw.zst` to block device.
-3. Re-read partition table.
-4. Expand partitions.
+1. `find_image_path(variant, arch)` -- locates the `.raw.zst` by variant.
+2. `image_uncompressed_size` -- reads `.size` sidecar for disk size check.
+3. `check_disk_size` -- compares image size to target disk.
+4. `write_image` -- calls `wipe_disk`, then streams whole `.raw.zst` to
+   block device.
+5. `reread_partition_table`.
+6. `verify_partition_table`.
+7. `expand_partitions` -- moves GPT header, growpart on partition 3.
+8. Firstboot (mount, apply config, unmount).
+9. Encryption setup (if encrypted).
 
 New flow:
 
-1. Wipe disk.
-2. Read `partitions.json`.
-3. Create GPT and partitions via `sgdisk`.
-4. Re-read partition table.
-5. Write EFI partition: decompress `efi.img.zst` -> `/dev/sdX1`.
-6. Write xboot partition: decompress `xboot.img.zst` -> `/dev/sdX2`.
-7. Write root partition:
-   - If encryption is `None`: decompress `root.img.zst` -> `/dev/sdX3`.
-   - If encryption is `TpmBound` or `Keyfile`:
+1. `find_partition_manifest()` -- locates and parses `partitions.json`.
+2. Compute total uncompressed size from the three `.size` sidecars.
+3. `check_disk_size` -- sum of fixed partition sizes + root image size +
+   GPT overhead.
+4. `wipe_disk`.
+5. `create_partition_table` -- create GPT and three partitions via `sgdisk`
+   using geometry from `partitions.json`.
+6. `reread_partition_table` (includes `ensure_partition_devices`).
+7. Stream-decompress `efi.img.zst` -> `/dev/sdX1`.
+8. Stream-decompress `xboot.img.zst` -> `/dev/sdX2`.
+9. Root partition:
+   - If encryption is `None`: stream-decompress `root.img.zst` -> `/dev/sdX3`.
+   - If encryption is `Tpm` or `Keyfile`:
      a. `cryptsetup luksFormat --type luks2` on `/dev/sdX3` with empty
         passphrase.
      b. `cryptsetup open` -> `/dev/mapper/root`.
-     c. Decompress `root.img.zst` -> `/dev/mapper/root`.
-     d. Close LUKS (it will be reopened by the encryption setup phase).
-8. Expand root partition to fill disk (same `growpart` logic as today, but
-   now the partition was created at the right size so this is only needed
-   for the BTRFS resize at boot).
+     c. Stream-decompress `root.img.zst` -> `/dev/mapper/root`.
+     d. `cryptsetup close root`.
+10. `verify_partition_table`.
+11. Firstboot (mount, apply config, unmount). When encryption is not
+    `None`, also fix up fstab and write variant marker.
+12. Encryption setup (if encrypted) -- same as today: `run_encryption_setup`
+    handles key rotation, enrollment, recovery passphrase, initramfs.
 
-Steps 5-7 reuse the existing `zstd::Decoder` streaming logic from
-`write_image`, factored out to accept a source path and a target device path.
+Step 7 is unnecessary for `expand_partitions` because partition 3 was
+created to span all remaining space by `sgdisk`. The BTRFS resize still
+happens at boot via `grow-root-filesystem.service`. However, the BTRFS
+filesystem inside `root.img.zst` is smaller than the partition, so `btrfs
+filesystem resize max` at boot is still needed (and already exists).
 
 ### Config fixups
 
-The cloud image's root filesystem has cloud-style config. When encryption is
-enabled, the installer must patch the following files during the firstboot
-mount phase (which already exists):
+The cloud image's root filesystem has cloud-style config. When the installer
+is producing a metal variant (encryption is not `None`), it must patch
+certain files during the firstboot mount phase. This is a new
+responsibility since we are now always starting from cloud partition images.
 
-- **`/etc/fstab`**: Replace `by-partlabel/root` references with
-  `/dev/mapper/root` for the root and postgresql mount entries.
-- **`/etc/crypttab`**: Create the file with the appropriate entry (device
-  `by-partlabel/root`, keyfile and options depend on encryption mode -- this
-  is already handled by `installer.encryption.configure-system`).
-- **`/etc/bes/image-variant`**: Write `metal` (already planned: the
-  installer derives variant from `DiskEncryption` and writes it).
-- **`/etc/luks/empty-keyfile`**: Create with mode 000 (needed for the
-  initial unlock before key rotation -- the encryption setup phase already
-  handles this).
-- **Dracut LUKS config**: Install the keyfile include directive so the
-  initramfs can unlock at boot (already part of
-  `installer.encryption.configure-system`).
-- **Initramfs rebuild**: Run `dracut` in a chroot (already part of
-  `installer.encryption.configure-system`).
+Files to fix up when encryption is not `None`:
+
+- **`/etc/fstab`**: Replace `by-partlabel/root` with `/dev/mapper/root`
+  for the root (`/`) and postgresql (`/var/lib/postgresql`) mount entries.
+- **`/etc/bes/image-variant`**: Write `metal`. (Today the image already
+  has the correct value baked in because the installer picks the right
+  image. Now we always start from cloud and must fix it up.)
+- **`/etc/hostname`**: The cloud image ships `ubuntu` as the hostname; the
+  metal image ships an empty file. When encryption is enabled and no
+  explicit hostname is configured, truncate to empty (matching metal
+  behavior). When an explicit hostname is set, `apply_hostname` in
+  firstboot already handles it.
+
+The following are already handled by `encryption.rs`
+`configure_installed_system` and do not need new code:
+
+- `/etc/crypttab` creation
+- `/etc/luks/empty-keyfile` creation
+- Dracut LUKS keyfile config
+- Initramfs rebuild
 
 When encryption is `None`, no fixups are needed -- the cloud image's fstab
-and lack of crypttab are already correct.
+and config are already correct. The variant marker `/etc/bes/image-variant`
+should be left as `cloud` (or written explicitly to `cloud` for clarity).
+
+### LUKS setup before write
+
+This is a new phase that does not exist today. Currently the metal image
+already has LUKS on the root partition, and the installer writes it as-is.
+In the new flow, the installer must create the LUKS container on the raw
+partition before writing the BTRFS content into it.
+
+The initial LUKS setup uses an empty passphrase (matching what the metal
+image build does today via `image.luks.format`). The subsequent
+`run_encryption_setup` phase then rotates the key, enrolls the real
+mechanism, and wipes the empty slot -- exactly as it does today.
+
+Implementation:
+
+```
+cryptsetup luksFormat --type luks2 --key-file /tmp/bes-empty-keyfile /dev/sdX3
+cryptsetup open --type luks2 --key-file /tmp/bes-empty-keyfile /dev/sdX3 bes-target-root
+# stream-decompress root.img.zst -> /dev/mapper/bes-target-root
+cryptsetup close bes-target-root
+```
+
+The empty keyfile (`/tmp/bes-empty-keyfile`) is already created by
+`encryption.rs::create_empty_keyfile`. We can reuse that or create a
+parallel helper in `writer.rs`.
 
 ### Progress reporting
 
@@ -157,47 +239,63 @@ three streams.
 The minimum disk size is the sum of the fixed partition sizes (512 MiB +
 1 GiB) plus the uncompressed root image size, with some slack for GPT
 overhead. In practice, reading `root.img.size` and adding 1.5 GiB is
-sufficient. Alternatively, `partitions.json` could include a
-`min_disk_bytes` field computed at ISO build time.
+sufficient. `partitions.json` could include a `min_disk_bytes` field
+computed at ISO build time for extra clarity.
 
 ## Spec changes
 
 ### `docs/spec/live-iso.md`
 
-- **`iso.contents`**: Replace "compressed disk images for all variants" with
-  "compressed partition images extracted from the cloud disk image". Describe
-  the `partitions.json` manifest and `.size` sidecars.
-- Remove references to selecting between metal/cloud images on the ISO.
+- **`iso.contents`**: Replace current text ("compressed disk images
+  (`.raw.zst`) for all variants of the ISO's architecture") with:
+  "compressed partition images extracted from the cloud disk image, a
+  `partitions.json` manifest describing the partition layout, and the TUI
+  installer binary". Remove references to selecting between metal/cloud
+  images on the ISO.
 
 ### `docs/spec/installer.md`
 
-- **`installer.write.source`**: The installer reads `partitions.json` from
-  the ISO filesystem rather than searching for a `.raw.zst` by variant name.
-  There is one set of partition images per architecture, not per variant.
-- **`installer.write.partitions`**: After wiping the disk, the installer
-  creates the GPT table and all three partitions using the geometry from
-  `partitions.json`. Partition type UUIDs, labels, and sizes match the
-  original image spec.
-- **`installer.write.decompress-stream`**: The installer stream-decompresses
+- **`installer.write.source`**: Replace current text about selecting the
+  correct image by architecture and variant. New text: "The installer reads
+  `partitions.json` from the ISO filesystem rather than searching for a
+  `.raw.zst` by variant name. There is one set of partition images per
+  architecture, not per variant."
+- **`installer.write.partitions`**: Replace current text. New: "Before
+  writing partition images, the installer must wipe all existing filesystem,
+  RAID, and partition-table signatures from the target disk. It must then
+  create the GPT table and all three partitions using the geometry from
+  `partitions.json`. After writing, the installer must verify the partition
+  table."
+- **`installer.write.disk-size-check`**: Replace "uncompressed image size
+  from the zstd frame header" with "sum of partition image sizes from the
+  `.size` sidecar files".
+- **`installer.write.decompress-stream`**: Update to describe streaming
   each partition image to its corresponding partition device (or to the
   opened LUKS device for the root partition when encryption is enabled).
-- **`installer.write.disk-size-check`**: The check uses the sum of partition
-  image sizes rather than a single whole-disk image size.
 - **`installer.write.luks-before-write`**: (New) When encryption is not
-  `None`, the installer must format the root partition with LUKS2 and open
-  it before writing the root partition image. This is the initial LUKS
-  setup with an empty passphrase; key rotation and mechanism enrollment
+  `None`, the installer must format the root partition with LUKS2 using an
+  empty passphrase and open it before writing the root partition image.
+  This is the initial LUKS setup; key rotation and mechanism enrollment
   happen in the subsequent `installer.encryption.*` phase.
 - **`installer.write.fstab-fixup`**: (New) When encryption is not `None`,
   the installer must rewrite `/etc/fstab` on the installed system to
   reference `/dev/mapper/root` instead of `/dev/disk/by-partlabel/root`
   for the root and postgresql mounts.
+- **`installer.write.variant-fixup`**: (New) The installer must write the
+  correct variant name to `/etc/bes/image-variant` on the installed system:
+  `metal` when encryption is not `None`, `cloud` when encryption is `None`.
 
 ### `docs/spec/disk-images.md`
 
 No changes. Both metal and cloud images are still built and published. The
 metal image remains available for direct-imaging workflows outside the
 installer.
+
+### `installer.dryrun.schema`
+
+- Replace `image_path` field with `manifest_path` (path to
+  `partitions.json` on the ISO). This is a minor schema change; existing
+  dry-run tests must be updated.
 
 ## Code changes
 
@@ -216,97 +314,174 @@ Replace Phase 5 ("Copy disk images into staging") with a new phase that:
 6. Generates `partitions.json` from the image's `sgdisk --info` output.
 7. Detaches the loop device and cleans up.
 
-The ISO build no longer requires the metal image to be present. The
-`justfile` `iso` recipe should be updated to require only the cloud image.
-
-### `installer/tui/src/writer.rs`
-
-- **`find_image_path`**: Replace with `find_partition_manifest` that locates
-  and parses `partitions.json` from the ISO filesystem. Returns a struct
-  with paths to each partition image file, their sizes, and GPT metadata.
-- **`write_image`**: Replace with `write_partitions` that:
-  1. Calls `wipe_disk`.
-  2. Calls a new `create_partition_table` function (wraps `sgdisk`).
-  3. Calls `reread_partition_table`.
-  4. Streams each partition image to its device. For the root partition,
-     if encryption is enabled, sets up LUKS first and writes to the mapper
-     device.
-  5. Reports unified progress across all three writes.
-- **`image_uncompressed_size`**: Adapt to work with per-partition `.size`
-  files and provide a combined total for the disk size check.
-- **`expand_partitions`**: Simplify. The GPT was created by the installer
-  with partition 3 already spanning all remaining space, so `growpart` is
-  unnecessary. The only remaining job is ensuring the GPT secondary header
-  is at the end of the disk (it will be, since `sgdisk` placed it there).
-  The BTRFS `resize max` still happens at boot via `grow-root-filesystem`.
-- **`check_disk_size`**: Accept the sum of partition sizes plus overhead.
-
-### `installer/tui/src/firstboot.rs`
-
-- **`mount_target`**: When encryption is not `None`, the LUKS volume may
-  already be closed after the partition write phase. The encryption setup
-  phase (from the disk encryption rework) reopens it. This function's
-  existing logic for opening LUKS with the empty keyfile remains correct.
-- Add `fixup_fstab_for_encryption`: Reads `/etc/fstab`, replaces
-  `by-partlabel/root` with `/dev/mapper/root` on the root and postgresql
-  lines. Called after mounting the target when encryption is enabled. (The
-  crypttab, keyfile, dracut config, and initramfs rebuild are already
-  handled by the encryption setup phase.)
-
-### `installer/tui/src/main.rs`
-
-- Update `run_auto` and `run_interactive` to call the new `write_partitions`
-  instead of `write_image`, passing the `DiskEncryption` mode.
-- The fstab fixup is called in the firstboot phase, gated on encryption
-  being enabled.
-
-### `installer/tui/src/plan.rs`
-
-- Remove `image_path` from `InstallPlan` (there is no longer a single image
-  path; the manifest path could replace it if needed for diagnostics).
+The ISO build no longer requires the metal image. Update the cleanup
+function to handle new temporary files (raw decompressed image, loop
+device).
 
 ### `justfile`
 
-- Update the `iso` recipe to require only the cloud image, not both.
-- Consider adding a `partition-images` recipe for debugging that extracts
-  partition images without building a full ISO.
+- **`iso` recipe**: Change to require only the cloud image, not both.
+  Remove the check for `METAL_IMAGE`. Keep the check for `CLOUD_IMAGE`.
+
+### `installer/tui/src/writer.rs`
+
+- **`PartitionManifest` struct** (new): Parsed representation of
+  `partitions.json`. Contains `arch: String` and `partitions:
+  Vec<PartitionEntry>`. Each `PartitionEntry` has `label`, `type_uuid`,
+  `size_mib`, `image` (filename).
+- **`find_partition_manifest`** (new, replaces `find_image_path`): Searches
+  the same directories (`/run/live/medium/images`, etc.) for
+  `partitions.json`. Parses and returns a `PartitionManifest`. Also returns
+  the directory path so image files can be located relative to it.
+- **`partition_images_total_size`** (new, replaces
+  `image_uncompressed_size`): Reads each partition's `.size` sidecar and
+  returns the sum.
+- **`create_partition_table`** (new): Wraps `sgdisk` calls to create the
+  GPT and all three partitions from `PartitionManifest` data. For each
+  partition with `size_mib > 0`, uses `-n N:0:+{size_mib}M`. For
+  `size_mib == 0`, uses `-n N:0:0`. Sets type UUID with `-t` and label
+  with `-c` for each.
+- **`format_luks_for_root`** (new): Creates an empty keyfile, runs
+  `cryptsetup luksFormat --type luks2`, opens the volume, returns the
+  mapper device path. Caller is responsible for closing after write.
+- **`close_luks_root`** (new): Runs `cryptsetup close`.
+- **`decompress_to_device`** (new, extracted from `write_image`): Takes a
+  source `.img.zst` path, a target device path, and a progress callback.
+  Streams zstd-decompressed data to the device. This is the inner loop of
+  the old `write_image`, factored out.
+- **`write_partitions`** (new, replaces `write_image`): Orchestrates the
+  full new write flow. Calls `wipe_disk`, `create_partition_table`,
+  `reread_partition_table`, then `decompress_to_device` for each partition.
+  For root when encryption is enabled, calls `format_luks_for_root` first
+  and writes to the mapper device. Reports unified progress.
+- **`expand_partitions`**: Simplify. Since the GPT was created by the
+  installer with partition 3 already spanning all remaining space, neither
+  `growpart` nor `--move-second-header` is needed. This function can be
+  removed or reduced to a no-op. The BTRFS resize still happens at boot.
+- **`check_disk_size`**: No signature change needed; callers pass the new
+  summed size.
+- **`find_image_path`**: Delete (replaced by `find_partition_manifest`).
+- **`image_uncompressed_size`**: Keep as a helper but it is no longer the
+  primary entry point for disk size checks.
+- **`write_image`**: Delete (replaced by `write_partitions`).
+
+### `installer/tui/src/firstboot.rs`
+
+- **`fixup_for_metal_variant`** (new): Called after `mount_target` when
+  encryption is not `None`. Performs:
+  1. Rewrite `/etc/fstab`: replace `by-partlabel/root` with
+     `/dev/mapper/root` on root and postgresql lines.
+  2. Write `metal` to `/etc/bes/image-variant`.
+  3. If no explicit hostname is configured, truncate `/etc/hostname` to
+     empty (matching metal image behavior from `image.hostname.metal-dhcp`).
+  4. Create `/etc/luks/empty-keyfile` with mode 000 (needed for the
+     initial unlock before key rotation). Note: `encryption.rs`
+     `create_empty_keyfile` creates one at `/tmp/`; we need one on the
+     target filesystem at the standard path.
+- **`mount_target`**: When this function is called after the new write
+  flow, the LUKS volume will be closed. For encrypted variants, it must
+  re-open LUKS with the empty keyfile. This already works because
+  `open_luks` in `firstboot.rs` uses the empty keyfile. However, the
+  empty keyfile at `/etc/luks/empty-keyfile` is on the *target* system
+  which is not yet mounted. The current code creates a temporary empty
+  keyfile at `/tmp/bes-empty-keyfile` for this purpose, which is fine.
+  No change needed here.
+
+### `installer/tui/src/main.rs`
+
+- **`run_auto`**: Replace `find_image_path` + `write_image` sequence with
+  `find_partition_manifest` + `write_partitions`. Pass `disk_encryption` to
+  `write_partitions` so it knows whether to set up LUKS. After write +
+  verify, call `firstboot::fixup_for_metal_variant` before `apply_firstboot`
+  when encryption is enabled. Remove `expand_partitions` call.
+- **`run_interactive`**: Replace `find_image_path` call with
+  `find_partition_manifest`. Pass manifest to `ui::run_tui`.
+
+### `installer/tui/src/ui/run.rs`
+
+- **`start_write_worker`**: Replace `write_image` with `write_partitions`.
+  Pass `disk_encryption` from `AppState`. After write, call
+  `verify_partition_table` (remove `expand_partitions`).
+- **`start_firstboot_worker`**: Add call to `fixup_for_metal_variant` when
+  encryption is enabled, before `apply_firstboot`.
+
+### `installer/tui/src/plan.rs`
+
+- Rename `image_path: Option<PathBuf>` to `manifest_path: Option<PathBuf>`.
+  Update `InstallPlan::new` signature and all callers.
+- Update dry-run schema in spec to match.
+
+### `tests/test-iso-structure.sh`
+
+- Remove checks for `*-metal-*` and `*-cloud-*` `.raw.zst` images.
+- Add checks for:
+  - `partitions.json` exists and is valid JSON.
+  - `efi.img.zst`, `xboot.img.zst`, `root.img.zst` exist.
+  - Corresponding `.size` sidecars exist.
+  - No `.raw.zst` whole-disk images present (ensure clean migration).
+
+### `tests/container-install-scenarios.json`
+
+- No changes needed. Scenarios are defined by `disk-encryption` and
+  firstboot config, not by image selection. The installer derives the
+  variant from encryption mode as before.
 
 ## Testing
 
 ### Unit tests (`installer/tui`)
 
-- Test `partitions.json` parsing (valid, missing fields, bad JSON).
-- Test `create_partition_table` generates the expected `sgdisk` commands
-  (mock or capture).
-- Test `fixup_fstab_for_encryption` correctly rewrites fstab entries.
+- Test `partitions.json` parsing: valid, missing fields, bad JSON,
+  unknown arch.
+- Test `create_partition_table` generates the expected `sgdisk` command
+  arguments (capture `Command` or verify via mock).
+- Test `fixup_for_metal_variant` correctly rewrites fstab entries (create
+  temp file with cloud-style fstab, run fixup, verify output).
+- Test `partition_images_total_size` sums correctly.
 - Test disk size check with summed partition sizes.
-- Update existing `write_image` tests to cover the new `write_partitions`
-  flow.
+- Update existing `find_image_path` tests to test `find_partition_manifest`.
+- Update `image_uncompressed_size` tests (still used as a helper).
+- Update `InstallPlan` serialization tests to use `manifest_path` instead
+  of `image_path`.
 
-### Integration tests
+### Integration tests (container-based)
 
-- Existing container-based install tests (`test-container-install`) should
-  work with minimal changes -- they exercise the full installer flow against
-  a loop device.
-- Add a test that verifies the ISO contains `partitions.json` and the
-  expected partition image files (no `.raw.zst` whole-disk images).
-- Add a test that installs with encryption enabled and verifies the fstab
-  contains `/dev/mapper/root` references.
+- Existing `test-container-install-all.sh` scenarios exercise the full
+  installer flow against a loop device. They should work with minimal
+  changes once the ISO is rebuilt with partition images.
+- The test scenarios already cover `tpm`, `keyfile`, and `none` encryption
+  modes, which now all start from the same cloud partition images.
+- Add verification in the install test that checks `/etc/fstab` references
+  `/dev/mapper/root` when encryption is enabled.
+- Add verification that `/etc/bes/image-variant` is `metal` or `cloud`
+  as appropriate.
 
 ### Manual verification
 
 - Build an ISO and confirm it is roughly half the size of the old ISO.
 - Boot the ISO in a VM and install with each encryption mode (TPM, keyfile,
   none). Verify the installed system boots correctly.
+- Verify the installed system's fstab, crypttab, and variant marker are
+  correct for each mode.
 
-## Migration notes
+## Implementation order
 
-- Old ISOs with whole-disk `.raw.zst` images will not work with the new
-  installer, and new ISOs will not work with the old installer. This is
-  acceptable since the ISO and installer are always built together.
-- The standalone metal and cloud `.raw.zst` images are unchanged and remain
-  compatible with direct `dd`-to-disk workflows.
-- `bes-install.toml` files do not need changes.
+1. **Spec changes** -- update `live-iso.md`, `installer.md` with the new
+   spec items.
+2. **`writer.rs` refactor** -- add `PartitionManifest`,
+   `find_partition_manifest`, `decompress_to_device`, `create_partition_table`,
+   `format_luks_for_root`, `write_partitions`. Keep old functions temporarily
+   for compilation.
+3. **`firstboot.rs` additions** -- add `fixup_for_metal_variant`.
+4. **`main.rs` / `ui/run.rs` rewiring** -- switch `run_auto` and
+   `start_write_worker` to the new flow.
+5. **`plan.rs`** -- rename `image_path` to `manifest_path`.
+6. **`iso/build-iso.sh`** -- replace Phase 5 with partition extraction.
+7. **`justfile`** -- relax `iso` recipe to require only cloud image.
+8. **`test-iso-structure.sh`** -- update checks.
+9. **Delete old code** -- remove `find_image_path`, `write_image`,
+   simplify `expand_partitions`.
+10. **Run full test suite** -- `cargo clippy`, `cargo fmt`, `tracey query
+    status`, then container install tests.
 
 ## Resolved decisions
 
@@ -323,3 +498,24 @@ The ISO build no longer requires the metal image to be present. The
   nearly nothing. A `btrfs send` stream would save marginal space while
   requiring `mkfs.btrfs` + `btrfs receive` on the target (different write
   path, subvolume snapshot semantics to manage). Not worth the complexity.
+- **LUKS mapper name is `bes-target-root`** (matching the existing constant
+  `LUKS_NAME` in `firstboot.rs`). Both the new `format_luks_for_root` in
+  `writer.rs` and the existing `mount_target` in `firstboot.rs` use this
+  name.
+- **The cloud image's hostname (`ubuntu`) is overwritten for metal.**
+  When encryption is enabled and no explicit hostname is configured, the
+  fixup truncates `/etc/hostname` to match `image.hostname.metal-dhcp`.
+  When a hostname IS configured, `apply_hostname` in firstboot already
+  writes it, overriding the cloud default.
+
+## Migration notes
+
+- Old ISOs with whole-disk `.raw.zst` images will not work with the new
+  installer, and new ISOs will not work with the old installer. This is
+  acceptable since the ISO and installer are always built together.
+- The standalone metal and cloud `.raw.zst` images are unchanged and remain
+  compatible with direct `dd`-to-disk workflows.
+- `bes-install.toml` files do not need changes.
+- The `variant` field in the dry-run schema is still derived from
+  `disk_encryption`; nothing changes for consumers of the plan JSON except
+  the `image_path` -> `manifest_path` rename.
