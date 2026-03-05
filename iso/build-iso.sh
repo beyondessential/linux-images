@@ -15,7 +15,7 @@
 #     ARCH            - amd64 or arm64 (default: amd64)
 #     OUTPUT          - output file path (default: output/<arch>/bes-installer-<arch>.iso)
 #     INSTALLER_BIN   - path to the bes-installer binary
-#     CLOUD_IMAGE     - path to the cloud .raw.zst image to extract partitions from
+#     CLOUD_IMAGE     - path to the cloud image (.raw or .raw.zst) to extract partitions from
 #     UBUNTU_SUITE    - Ubuntu suite name (default: noble)
 #     UBUNTU_MIRROR   - mirror URL (auto-selected per arch if unset)
 #     BESCONF_SIZE_MB - BESCONF partition size in MiB (default: 4)
@@ -26,7 +26,7 @@ UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
 BESCONF_SIZE_MB="${BESCONF_SIZE_MB:-4}"
 BUILD_DATE="$(date -u +%Y-%m-%d)"
 INSTALLER_BIN="${INSTALLER_BIN:?INSTALLER_BIN must point to the bes-installer binary}"
-CLOUD_IMAGE="${CLOUD_IMAGE:?CLOUD_IMAGE must point to the cloud .raw.zst image}"
+CLOUD_IMAGE="${CLOUD_IMAGE:?CLOUD_IMAGE must point to the cloud image (.raw or .raw.zst)}"
 OUTPUT="${OUTPUT:-output/${ARCH}/bes-installer-${ARCH}.iso}"
 
 # r[impl iso.per-arch]
@@ -431,8 +431,13 @@ echo "==> Phase 5: Extracting partition images from cloud image..."
 mkdir -p "$STAGING/images"
 
 CLOUD_RAW="$WORK_DIR/cloud.raw"
-echo "    Decompressing $CLOUD_IMAGE ..."
-zstd -d "$CLOUD_IMAGE" -o "$CLOUD_RAW"
+if [[ "$CLOUD_IMAGE" == *.zst ]]; then
+    echo "    Decompressing $CLOUD_IMAGE ..."
+    zstd -d "$CLOUD_IMAGE" -o "$CLOUD_RAW"
+else
+    echo "    Copying $CLOUD_IMAGE (already uncompressed)..."
+    cp "$CLOUD_IMAGE" "$CLOUD_RAW"
+fi
 
 EXTRACT_LOOP="$(losetup -f --show -P "$CLOUD_RAW")"
 echo "    Loop device: $EXTRACT_LOOP"

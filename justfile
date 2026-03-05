@@ -124,12 +124,16 @@ iso: _validate-arch installer-build
   #!/usr/bin/env bash
   set -euo pipefail
 
-  # Verify we have the cloud image (partition images are extracted from it)
+  # Verify we have the cloud image (partition images are extracted from it).
+  # Prefer .raw.zst but accept uncompressed .raw too.
   CLOUD_IMAGE="$(find "{{output_arch_dir}}" -path '*/cloud/*' -name '*.raw.zst' | head -1)"
+  if [ -z "$CLOUD_IMAGE" ]; then
+    CLOUD_IMAGE="$(find "{{output_arch_dir}}" -path '*/cloud/*' -name '*.raw' | head -1)"
+  fi
 
   if [ -z "$CLOUD_IMAGE" ]; then
-    echo "ERROR: need a cloud .raw.zst image under {{output_arch_dir}}"
-    echo "Run 'just arch={{arch}} variant=cloud build' first."
+    echo "ERROR: need a cloud .raw or .raw.zst image under {{output_arch_dir}}"
+    echo "Run 'just arch={{arch}} variant=cloud raw' first."
     exit 1
   fi
 
