@@ -360,15 +360,13 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
                 + " using our disk images, which may be more suitable for bulk installs.",
         ),
         Line::from(""),
-        Line::from(
-            Span::styled("For support, contact BES at: ", Style::default())
-                + Span::styled(
-                    "https://bes.au",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::UNDERLINED),
-                ),
-        ),
+        Span::styled("For support, contact BES at: ", Style::default())
+            + Span::styled(
+                "https://bes.au",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED),
+            ),
         Line::from(""),
         Line::from("Sources for this installer, and other images, are available at:"),
         Line::from(Span::styled(
@@ -382,7 +380,7 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     if !state.build_info.is_empty() {
         description.push(Line::from(""));
         description.push(Line::from(Span::styled(
-            format!("{}", state.build_info),
+            state.build_info.to_string(),
             Style::default().fg(Color::DarkGray),
         )));
     }
