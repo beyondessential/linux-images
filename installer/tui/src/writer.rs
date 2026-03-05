@@ -1,4 +1,4 @@
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Command;
@@ -372,6 +372,86 @@ pub fn reread_partition_table(target: &Path) -> Result<()> {
     let _ = Command::new("udevadm")
         .args(["settle", "--timeout=5"])
         .status();
+
+    ensure_partition_devices(target)?;
+
+    Ok(())
+}
+
+/// Create partition device nodes that the kernel knows about (via sysfs) but
+/// that don't exist in `/dev`.
+///
+/// Inside containers (e.g. systemd-nspawn), `partprobe` tells the kernel to
+/// re-read the partition table and the kernel creates device nodes on the
+/// *host's* devtmpfs, but the container has its own private `/dev` where
+/// those nodes never appear. This function bridges the gap by reading
+/// `/sys/class/block/<disk>p*` entries and calling `mknod` for any that are
+/// missing from `/dev`.
+fn ensure_partition_devices(target: &Path) -> Result<()> {
+    let dev_name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .context("getting device name from target path")?;
+
+    let sysfs_dir = format!("/sys/class/block/{dev_name}");
+    let sysfs_path = Path::new(&sysfs_dir);
+    if !sysfs_path.exists() {
+        tracing::debug!("sysfs path {sysfs_dir} does not exist, skipping partition device check");
+        return Ok(());
+    }
+
+    let entries =
+        fs::read_dir(sysfs_path).with_context(|| format!("reading sysfs directory {sysfs_dir}"))?;
+
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+
+        // Partition entries look like "loop0p1", "nvme0n1p2", "sda3" — they
+        // are subdirectories of the parent block device in sysfs and contain
+        // a "dev" file with "major:minor".
+        let dev_file = entry.path().join("dev");
+        if !dev_file.exists() {
+            continue;
+        }
+
+        let dev_path = Path::new("/dev").join(&*name);
+        if dev_path.exists() {
+            continue;
+        }
+
+        let majmin = fs::read_to_string(&dev_file)
+            .with_context(|| format!("reading {}", dev_file.display()))?;
+        let majmin = majmin.trim();
+
+        let (major_str, minor_str) = majmin
+            .split_once(':')
+            .with_context(|| format!("parsing major:minor from {majmin:?}"))?;
+        let major: u32 = major_str
+            .parse()
+            .with_context(|| format!("parsing major number from {major_str:?}"))?;
+        let minor: u32 = minor_str
+            .parse()
+            .with_context(|| format!("parsing minor number from {minor_str:?}"))?;
+
+        tracing::info!("creating missing device node /dev/{name} (block {major}:{minor})");
+
+        let status = Command::new("mknod")
+            .args([
+                dev_path.to_str().unwrap_or_default(),
+                "b",
+                &major.to_string(),
+                &minor.to_string(),
+            ])
+            .output()
+            .with_context(|| format!("running mknod for /dev/{name}"))?;
+
+        if !status.status.success() {
+            let stderr = String::from_utf8_lossy(&status.stderr);
+            tracing::warn!("mknod /dev/{name} failed: {stderr}");
+        }
+    }
 
     Ok(())
 }

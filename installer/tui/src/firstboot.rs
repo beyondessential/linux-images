@@ -316,6 +316,8 @@ fn resolve_uid_gid_from_passwd(root: &Path, username: &str) -> Result<(u32, u32)
 }
 
 fn open_luks(partition: &Path) -> Result<PathBuf> {
+    tracing::info!("opening LUKS on {}", partition.display());
+
     let keyfile = create_empty_keyfile()?;
 
     run_command(
