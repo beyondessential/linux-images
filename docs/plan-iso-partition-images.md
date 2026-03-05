@@ -308,16 +308,18 @@ The ISO build no longer requires the metal image to be present. The
   compatible with direct `dd`-to-disk workflows.
 - `bes-install.toml` files do not need changes.
 
-## Open questions
+## Resolved decisions
 
-- Should `partitions.json` include a schema version field for future
-  extensibility?
-- Should the EFI and xboot partition images be compressed at all? They are
-  small (512 MiB and 1 GiB uncompressed) and compress well, but skipping
-  compression would simplify the write path at the cost of a modest ISO size
-  increase. Probably still worth compressing.
-- The root partition image is extracted at its original size from the 5 GiB
-  cloud image (~3.5 GiB). This compresses very well since most of it is
-  empty BTRFS space. An alternative is to use `btrfs send` to capture only
-  allocated data, but that adds complexity for a marginal size improvement
-  over zstd compression of sparse data. Not worth it for now.
+- **No schema version in `partitions.json`.** The installer binary and the
+  ISO are always built together in the same pipeline. There is no scenario
+  where they drift apart, so versioning the manifest format adds complexity
+  for no benefit.
+- **All three partition images are zstd-compressed.** EFI is mostly empty
+  (just a GRUB binary and config), xboot has a kernel and initramfs, and
+  both compress extremely well. Keeping them compressed avoids special-casing
+  the write path and saves over 1 GiB of ISO space for no extra complexity.
+- **Raw `dd` extraction, not `btrfs send`.** The root partition is ~3.5 GiB
+  uncompressed but mostly unallocated BTRFS space, which zstd compresses to
+  nearly nothing. A `btrfs send` stream would save marginal space while
+  requiring `mkfs.btrfs` + `btrfs receive` on the target (different write
+  path, subvolume snapshot semantics to manage). Not worth the complexity.
