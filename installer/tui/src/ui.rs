@@ -225,7 +225,7 @@ impl AppState {
 
     // r[impl installer.tui.hostname+2]
     // r[impl installer.tui.tailscale+3]
-    // r[impl installer.tui.ssh-keys+4]
+    // r[impl installer.tui.ssh-keys+5]
     // r[impl installer.tui.password+3]
     // r[impl installer.tui.timezone]
     /// Build a `FirstbootConfig` from the current interactive input fields.
@@ -550,7 +550,7 @@ impl AppState {
             .any(|r| matches!(r, Some(r) if r.label == "github.com" && r.passed))
     }
 
-    // r[impl installer.tui.ssh-keys+4]
+    // r[impl installer.tui.ssh-keys+5]
 
     /// Recognized SSH public key type prefixes.
     const SSH_KEY_PREFIXES: &[&str] = &[
@@ -948,7 +948,7 @@ mod tests {
         assert_eq!(state.screen, Screen::VariantSelection);
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn login_sub_screens_go_back_to_login() {
         let mut state = make_state();
@@ -965,7 +965,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Login);
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn login_sub_screens_do_not_advance() {
         let mut state = make_state();
@@ -1066,7 +1066,7 @@ mod tests {
         assert_eq!(state.tailscale_input, "tskey-auth-xxx");
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn ssh_keys_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1113,7 +1113,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tailscale+3]
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn firstboot_config_all_fields() {
         let mut state = make_state();
@@ -1434,7 +1434,7 @@ mod tests {
         assert!(state.ssh_github_error.is_some());
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn filter_ssh_keys_removes_invalid() {
         let mut state = make_state();
@@ -1450,7 +1450,7 @@ mod tests {
         assert_eq!(state.ssh_keys[1], "ssh-rsa BBBB key2");
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn filter_ssh_keys_ensures_one_empty() {
         let mut state = make_state();
@@ -1459,7 +1459,7 @@ mod tests {
         assert_eq!(state.ssh_keys, vec![String::new()]);
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn ensure_trailing_blank_appends_when_last_nonempty() {
         let mut state = make_state();
@@ -1468,7 +1468,7 @@ mod tests {
         assert_eq!(state.ssh_keys, vec!["ssh-ed25519 AAAA key1", ""]);
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn ensure_trailing_blank_noop_when_last_empty() {
         let mut state = make_state();
@@ -1477,7 +1477,7 @@ mod tests {
         assert_eq!(state.ssh_keys, vec!["ssh-ed25519 AAAA key1", ""]);
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn ensure_trailing_blank_on_empty_vec() {
         let mut state = make_state();
@@ -1486,7 +1486,7 @@ mod tests {
         assert_eq!(state.ssh_keys, vec![String::new()]);
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn constructor_has_trailing_blank_with_prefilled_keys() {
         use crate::disk::TransportType;
@@ -1517,7 +1517,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn ssh_key_summary_with_comment() {
         let summary =
@@ -1526,7 +1526,7 @@ mod tests {
         assert!(summary.contains("me@host"));
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn ssh_key_summary_empty() {
         assert_eq!(AppState::ssh_key_summary(""), "(empty)");

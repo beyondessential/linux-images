@@ -295,13 +295,16 @@ for a Tailscale auth key. The field may be pre-filled from the configuration
 file. The user can leave it empty to skip Tailscale configuration. Enter or
 Esc returns to the Login screen.
 
-r[installer.tui.ssh-keys+4]
+r[installer.tui.ssh-keys+5]
 The SSH keys sub-screen is accessed via the `Alt+s` keybind from the Login
 screen. It displays a list of individual key entry fields with a trailing
 blank field always present at the end. The selected field is expanded for
 editing as a bordered text input; non-selected fields are collapsed to a
 one-line summary showing the key type, start of the key material, and the
-comment (if any). Empty entries are shown as `(empty)` in gray. When the
+comment (if any). Empty entries are shown as `(empty)` in gray. Non-empty
+entries that do not pass the validity check are highlighted in red (both
+when selected for editing and when collapsed) to indicate they will be
+discarded on exit. When the
 user types into the trailing blank field, a new blank field is automatically
 appended so there is always a blank field at the end. Tab cycles forward
 through the fields (wrapping from the last to the first). Shift+Tab cycles

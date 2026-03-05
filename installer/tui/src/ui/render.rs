@@ -561,7 +561,7 @@ fn mask(input: &str) -> String {
 
 // r[impl installer.tui.password+3]
 // r[impl installer.tui.tailscale+3]
-// r[impl installer.tui.ssh-keys+4]
+// r[impl installer.tui.ssh-keys+5]
 fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
@@ -695,7 +695,7 @@ fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.ssh-keys+4]
+// r[impl installer.tui.ssh-keys+5]
 fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     let intro_lines = vec![
         Line::from(""),
@@ -714,7 +714,14 @@ fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut key_lines: Vec<Line> = Vec::new();
     for (i, key) in state.ssh_keys.iter().enumerate() {
         let is_selected = i == state.ssh_key_cursor;
+        let is_empty = key.trim().is_empty();
+        let is_valid = is_empty || AppState::is_valid_ssh_key(key);
         if is_selected {
+            let text_color = if is_empty || is_valid {
+                Color::Yellow
+            } else {
+                Color::Red
+            };
             key_lines.push(Line::from(vec![
                 Span::styled(
                     format!("  > {}: ", i + 1),
@@ -724,18 +731,18 @@ fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
                 ),
                 Span::styled(
                     key.as_str(),
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(text_color).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled("_", Style::default().fg(Color::DarkGray)),
             ]));
         } else {
             let summary = AppState::ssh_key_summary(key);
-            let style = if key.trim().is_empty() {
+            let style = if is_empty {
                 Style::default().fg(Color::DarkGray)
-            } else {
+            } else if is_valid {
                 Style::default().fg(Color::White)
+            } else {
+                Style::default().fg(Color::Red)
             };
             key_lines.push(Line::from(vec![
                 Span::raw(format!("    {}: ", i + 1)),

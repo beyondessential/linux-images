@@ -130,7 +130,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.password+3]
         // r[impl installer.tui.tailscale+3]
-        // r[impl installer.tui.ssh-keys+4]
+        // r[impl installer.tui.ssh-keys+5]
         // r[impl installer.tui.ssh-keys.github+4]
         Screen::Login => match key.code {
             KeyCode::Esc => {
@@ -199,7 +199,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.ssh-keys+4]
+        // r[impl installer.tui.ssh-keys+5]
         Screen::LoginSshKeys => match key.code {
             KeyCode::Esc | KeyCode::Enter => {
                 state.filter_ssh_keys();
@@ -1319,7 +1319,7 @@ mod tests {
         assert_eq!(final_state.tailscale_input, "tsk");
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn scripted_login_ssh_keys_sub_screen() {
         let state = make_state();
@@ -1360,7 +1360,7 @@ mod tests {
         assert_eq!(final_state.ssh_keys, vec!["ssh-ed25519 AAAA"]);
     }
 
-    // r[verify installer.tui.ssh-keys+4]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn scripted_login_ssh_keys_tab_cycles_and_trailing_blank() {
         let state = make_state();
