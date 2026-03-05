@@ -164,6 +164,12 @@ for i in $(seq 0 $((TOTAL - 1))); do
     SCENARIO_NUM=$((i + 1))
     echo "[$SCENARIO_NUM/$TOTAL] $name"
 
+    # Default PRIVATE_NETWORK to "true" when the scenario does not specify it.
+    scenario_private_network="$(jq_str "$SCENARIO" '."private-network"')"
+    if [ -z "$scenario_private_network" ]; then
+        scenario_private_network="true"
+    fi
+
     set +e
     SCENARIO_NAME="$name" \
     ROOTFS_DIR="$ROOTFS_DIR" \
@@ -178,6 +184,7 @@ for i in $(seq 0 $((TOTAL - 1))); do
     SET_PASSWORD_HASH="$(jq_str "$SCENARIO" '."password-hash"')" \
     SET_TIMEZONE="$(jq_str "$SCENARIO" '.timezone')" \
     SET_COPY_INSTALL_LOG="$(jq_str "$SCENARIO" '."copy-install-log"')" \
+    PRIVATE_NETWORK="$scenario_private_network" \
         "$SCRIPT_DIR/test-container-install.sh" "$disk_encryption" "$ARCH"
     RC=$?
     set -e

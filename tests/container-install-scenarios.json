@@ -73,5 +73,11 @@
     "disk-encryption": "none",
     "hostname": "test-cloud-nolog",
     "copy-install-log": false
+  },
+  {
+    "name": "cloud-with-network",
+    "disk-encryption": "none",
+    "hostname": "test-cloud-net",
+    "private-network": false
   }
 ]

@@ -666,7 +666,7 @@ filesystems and close any LUKS volumes before prompting for reboot.
 
 ## Container Isolation
 
-> r[installer.container.isolation+2]
+> r[installer.container.isolation+3]
 > When the installer is run inside a container (e.g. `systemd-nspawn`) for
 > integration testing, it must never have access to the host's real block
 > devices. Safety is enforced by three layers:
@@ -674,10 +674,19 @@ filesystems and close any LUKS volumes before prompting for reboot.
 > 1. `systemd-nspawn` provides its own `/dev`; host block devices are not
 >    present unless explicitly bound in. Only the loop device itself is
 >    bound — partition device nodes are **not** bound from the host.
+>    The host `/dev` must **never** be bind-mounted into the container.
 > 2. The installer is invoked with `--fake-devices`, which bypasses `lsblk`
 >    discovery entirely and presents only the loop device.
-> 3. The container runs with `--private-network` to prevent any network
->    side-effects.
+> 3. The container runs with `--private-network` by default to prevent any
+>    network side-effects. Individual test scenarios may opt out of
+>    `--private-network` (e.g. to exercise network-dependent code paths);
+>    at least one scenario must run **with** `--private-network` to serve
+>    as the enforcement mechanism for `r[iso.offline]`.
+>
+> The `systemd-nspawn` options and bind-mount configuration used by all
+> container scripts (interactive trial, integration tests, isolation test)
+> must be defined in a single shared file so that the isolation test
+> validates the same container configuration that the installer tests use.
 >
 > A test must verify this property by launching a container without running
 > the installer and confirming that no host block devices (e.g. `/dev/sda`,

@@ -24,6 +24,7 @@
 #   SET_PASSWORD   — plaintext password for ubuntu user, or "" to skip (default: "")
 #   SET_PASSWORD_HASH — pre-hashed password for ubuntu user, or "" to skip (default: "")
 #   SET_COPY_INSTALL_LOG — "false" to disable install log copy, or "" for default (default: "")
+#   PRIVATE_NETWORK — "1"/"true"/"yes" to enable --private-network (default: enabled)
 #
 # Requires: systemd-nspawn, losetup, lsblk, partprobe, cryptsetup,
 #           btrfs-progs, util-linux. Must run as root.
@@ -58,6 +59,7 @@ SET_PASSWORD="${SET_PASSWORD:-}"
 SET_PASSWORD_HASH="${SET_PASSWORD_HASH:-}"
 SET_TIMEZONE="${SET_TIMEZONE:-}"
 SET_COPY_INSTALL_LOG="${SET_COPY_INSTALL_LOG:-}"
+PRIVATE_NETWORK="${PRIVATE_NETWORK:-true}"
 
 TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-10G}"
 
@@ -151,6 +153,7 @@ echo "  password:      ${SET_PASSWORD:+(plaintext provided)}${SET_PASSWORD:-(not
 echo "  password-hash: ${SET_PASSWORD_HASH:+(hash provided)}${SET_PASSWORD_HASH:-(not set)}"
 echo "  timezone:      ${SET_TIMEZONE:-(not set, defaults to UTC)}"
 echo "  copy-log:      ${SET_COPY_INSTALL_LOG:-(not set, defaults to true)}"
+echo "  private-net:   $PRIVATE_NETWORK"
 echo "  disk size:     $TARGET_DISK_SIZE"
 echo ""
 
@@ -260,15 +263,15 @@ done
 # ============================================================
 echo "==> Running installer in systemd-nspawn container..."
 
-# r[impl installer.container.isolation+2] (layer 1): only the loop device is
-# bound into the container.
-NSPAWN_BINDS=(
-    "--bind=$LOOP_DEV"
-)
-NSPAWN_BINDS+=("--bind-ro=$IMAGES_DIR:/run/live/medium/images")
-NSPAWN_BINDS+=("--bind-ro=$CONFIG_TOML:/run/besconf/bes-install.toml")
-NSPAWN_BINDS+=("--bind-ro=$DEVICES_JSON:/tmp/devices.json")
-NSPAWN_BINDS+=("--bind=/dev")
+# r[impl installer.container.isolation+3]: build nspawn options and binds
+# from the shared library. The host /dev is never bind-mounted; the
+# container gets nspawn's own private /dev. After partprobe, partition
+# device nodes only appear on the host's devtmpfs — the installer handles
+# this by reading /sys/class/block/ and creating missing nodes via mknod
+# (see r[installer.container.partition-devices+2]).
+nspawn_opts
+nspawn_installer_binds "$LOOP_DEV" "$IMAGES_DIR" "$DEVICES_JSON" \
+    "$CONFIG_TOML" ""
 
 INSTALLER_LOG="$WORK_DIR/installer.log"
 INSTALLER_OUTPUT="$WORK_DIR/installer-output.txt"
@@ -276,15 +279,16 @@ INSTALLER_OUTPUT="$WORK_DIR/installer-output.txt"
 echo "    Running installer (disk-encryption=$DISK_ENCRYPTION, target=$LOOP_DEV)..."
 echo ""
 
-# r[impl installer.container.isolation+2] (layer 2): --fake-devices bypasses
+# r[impl installer.container.isolation+3] (layer 2): --fake-devices bypasses
 # lsblk discovery so the installer sees only the loop device.
-# r[impl installer.container.isolation+2] (layer 3): --private-network prevents
-# any network side-effects from the container. This also serves as the
-# enforcement mechanism for r[verify iso.offline]: a successful install with
-# no network proves the ISO is fully self-contained.
+# r[impl installer.container.isolation+3] (layer 3): when PRIVATE_NETWORK is
+# enabled (the default), --private-network prevents any network side-effects
+# from the container. This also serves as the enforcement mechanism for
+# r[verify iso.offline]: a successful install with no network proves the ISO
+# is fully self-contained.
 set +e
 systemd-nspawn \
-    "${NSPAWN_COMMON_OPTS[@]}" \
+    "${NSPAWN_OPTS[@]}" \
     --directory="$SCENARIO_ROOTFS" \
     "${NSPAWN_BINDS[@]}" \
     /usr/local/bin/bes-installer \
@@ -311,9 +315,17 @@ if [ $INSTALLER_RC -ne 0 ]; then
     exit 1
 fi
 
-# r[verify iso.offline]: the installer completed successfully inside a
-# container with --private-network, proving no network access was needed.
+# r[verify iso.offline]: when --private-network is active, a successful
+# install proves no network access was needed.
 echo "    Installer exited successfully."
+case "$PRIVATE_NETWORK" in
+    1|true|yes)
+        echo "    PASS: offline install verified (--private-network was active)"
+        ;;
+    *)
+        echo "    (--private-network disabled — not verifying offline install)"
+        ;;
+esac
 
 # r[verify installer.no-reboot]
 if [ -f "$SCENARIO_ROOTFS/$REBOOT_SENTINEL" ]; then
