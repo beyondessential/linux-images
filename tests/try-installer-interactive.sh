@@ -52,10 +52,15 @@ fi
 # ============================================================
 WORK_DIR=""
 LOOP_DEV=""
+DEV_OVERLAY=""
 
 cleanup() {
     local exit_code=$?
     set +e
+
+    if [ -n "$DEV_OVERLAY" ] && mountpoint -q "$DEV_OVERLAY" 2>/dev/null; then
+        umount "$DEV_OVERLAY" 2>/dev/null
+    fi
 
     if [ -n "$LOOP_DEV" ]; then
         losetup -d "$LOOP_DEV" 2>/dev/null
@@ -191,19 +196,64 @@ echo "    Rootfs ready"
 echo ""
 
 # ============================================================
-# Phase 5: Launch interactive installer
+# Phase 5: Build /dev overlay that masks host block devices
+# ============================================================
+# The installer needs access to dynamically-created device nodes (partition
+# sub-devices from partprobe, device-mapper nodes from cryptsetup), which
+# requires a live view of devtmpfs. But we must not expose host disks.
+#
+# Solution: mount an overlayfs with the host /dev as the lower layer and
+# delete (whiteout) all host block devices and device-mapper entries from the
+# merged view. New nodes created by the kernel (loop partitions, dm-* from
+# cryptsetup) appear through the lower layer automatically.
+echo "==> Building masked /dev overlay..."
+
+DEV_OVERLAY="$WORK_DIR/dev-overlay/merged"
+mkdir -p "$WORK_DIR/dev-overlay/upper" "$WORK_DIR/dev-overlay/work" "$DEV_OVERLAY"
+
+mount -t overlay overlay \
+    -o "lowerdir=/dev,upperdir=$WORK_DIR/dev-overlay/upper,workdir=$WORK_DIR/dev-overlay/work" \
+    "$DEV_OVERLAY"
+
+# Mask host disk block devices (nvme, scsi, virtio, ide, mmc, existing dm-*)
+MASKED=0
+for dev in "$DEV_OVERLAY"/nvme* "$DEV_OVERLAY"/sd* "$DEV_OVERLAY"/vd* \
+           "$DEV_OVERLAY"/hd* "$DEV_OVERLAY"/mmcblk* "$DEV_OVERLAY"/dm-*; do
+    [ -e "$dev" ] || [ -L "$dev" ] || continue
+    rm -f "$dev" 2>/dev/null && MASKED=$((MASKED + 1))
+done
+
+# Mask existing device-mapper symlinks (keep /dev/mapper/control for cryptsetup)
+for entry in "$DEV_OVERLAY"/mapper/*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    name=$(basename "$entry")
+    [ "$name" = "control" ] && continue
+    rm -f "$entry" 2>/dev/null && MASKED=$((MASKED + 1))
+done
+
+# Clean up dangling symlinks left by systemd (gpt-auto-root etc.)
+find "$DEV_OVERLAY" -maxdepth 1 -xtype l -delete 2>/dev/null || true
+
+echo "    Masked $MASKED host device(s)"
+echo "    Overlay at $DEV_OVERLAY"
+echo ""
+
+# ============================================================
+# Phase 6: Launch interactive installer
 # ============================================================
 echo "==> Launching interactive installer in container..."
 echo "    (The installer TUI will take over the terminal.)"
 echo ""
 
-# Similar nspawn options to the automated tests, but with --console=interactive
-# instead of --pipe (so the TUI can drive the terminal) and without
-# --private-network (so network checks and tailscale netcheck work).
+# nspawn options: --pipe instead of --console=interactive so that the
+# bind-mounted /dev overlay does not conflict with nspawn's /dev/console
+# setup. The TUI works fine in pipe mode — crossterm operates on the
+# inherited terminal fd directly. --private-network is omitted so
+# tailscale netcheck works.
 NSPAWN_OPTS=(
     --register=no
     --quiet
-    --console=interactive
+    --pipe
     --capability=CAP_SYS_ADMIN
     --system-call-filter=mount
     --property=DeviceAllow='block-loop rwm'
@@ -214,6 +264,7 @@ NSPAWN_OPTS=(
 
 NSPAWN_BINDS=(
     "--bind=$LOOP_DEV"
+    "--bind=$DEV_OVERLAY:/dev"
     "--bind-ro=$IMAGES_DIR:/run/live/medium/images"
     "--bind-ro=$DEVICES_JSON:/tmp/devices.json"
 )
