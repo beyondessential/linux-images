@@ -96,7 +96,7 @@ The image selected for writing is derived the same way (metal or cloud).
 
 ### Config file changes
 
-Replace the `variant` and `disable-tpm` fields with a single
+Remove the `variant` and `disable-tpm` fields. Replace them with a single
 `disk-encryption` field:
 
 ```toml
@@ -104,12 +104,8 @@ Replace the `variant` and `disable-tpm` fields with a single
 disk-encryption = "tpm"
 ```
 
-Keep backward compatibility: if `variant = "metal"` / `variant = "cloud"` is
-found (with optional `disable-tpm`), map them to the new model:
-- `variant = "cloud"` -> `DiskEncryption::None`
-- `variant = "metal"` + `disable-tpm = false` -> `DiskEncryption::TpmBound`
-  (if TPM present) or `DiskEncryption::Keyfile` (if not)
-- `variant = "metal"` + `disable-tpm = true` -> `DiskEncryption::Keyfile`
+No backward compatibility for the old `variant` / `disable-tpm` fields.
+Existing config files must be updated to use `disk-encryption`.
 
 ### Dry-run / install plan changes
 
@@ -226,8 +222,9 @@ This screen is only shown when disk encryption is TpmBound or Keyfile.
 
 ## Migration Notes
 
-- Existing `bes-install.toml` files using `variant` and `disable-tpm` will
-  continue to work via the backward-compatibility mapping.
+- Existing `bes-install.toml` files using `variant` and `disable-tpm` must
+  be updated to use the new `disk-encryption` field. The old fields are
+  removed with no backward compatibility.
 - Already-installed systems with the old `setup-tpm-unlock.service` are
   unaffected (the service is idempotent and self-disabling). New installs
   simply will not have it.
