@@ -546,7 +546,15 @@ impl AppState {
             Screen::Login => Screen::Timezone,
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
-            Screen::NetworkResults => Screen::Confirmation,
+            // r[impl installer.tui.confirmation+5]
+            // r[impl installer.encryption.recovery-passphrase+2]
+            Screen::NetworkResults => {
+                if self.disk_encryption.is_encrypted() && self.recovery_passphrase.is_none() {
+                    self.recovery_passphrase =
+                        Some(crate::encryption::generate_recovery_passphrase());
+                }
+                Screen::Confirmation
+            }
             Screen::Confirmation => Screen::Writing,
             Screen::Writing => Screen::FirstbootApply,
             // r[impl installer.encryption.overview]
@@ -558,7 +566,7 @@ impl AppState {
                 }
             }
             Screen::EncryptionSetup => Screen::RecoveryPassphrase,
-            // r[impl installer.encryption.recovery-passphrase]
+            // r[impl installer.encryption.recovery-passphrase+2]
             Screen::RecoveryPassphrase => Screen::Done,
             Screen::Done | Screen::Error(_) => return,
         };
@@ -597,7 +605,7 @@ impl AppState {
         "yes"
     }
 
-    // r[impl installer.tui.confirmation+4]
+    // r[impl installer.tui.confirmation+5]
     pub fn is_confirmed(&self) -> bool {
         self.confirm_input
             .trim()
@@ -1111,7 +1119,7 @@ mod tests {
         assert_eq!(state.screen, Screen::LoginGithub);
     }
 
-    // r[verify installer.tui.confirmation+4]
+    // r[verify installer.tui.confirmation+5]
     #[test]
     fn confirmation_requires_explicit_yes() {
         let mut state = make_state();
@@ -1124,7 +1132,7 @@ mod tests {
         assert!(state.is_confirmed());
     }
 
-    // r[verify installer.tui.confirmation+4]
+    // r[verify installer.tui.confirmation+5]
     #[test]
     fn done_and_error_do_not_advance() {
         let mut state = make_state();
@@ -1802,7 +1810,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Done);
     }
 
-    // r[verify installer.encryption.recovery-passphrase]
+    // r[verify installer.encryption.recovery-passphrase+2]
     #[test]
     fn advance_encryption_setup_goes_to_recovery_passphrase() {
         let mut state = make_state();
@@ -1812,7 +1820,7 @@ mod tests {
         assert_eq!(state.screen, Screen::RecoveryPassphrase);
     }
 
-    // r[verify installer.encryption.recovery-passphrase]
+    // r[verify installer.encryption.recovery-passphrase+2]
     #[test]
     fn advance_recovery_passphrase_goes_to_done() {
         let mut state = make_state();
@@ -1822,7 +1830,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Done);
     }
 
-    // r[verify installer.encryption.recovery-passphrase]
+    // r[verify installer.encryption.recovery-passphrase+2]
     #[test]
     fn recovery_passphrase_no_go_back() {
         let mut state = make_state();

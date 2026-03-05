@@ -398,11 +398,11 @@ fn run_auto(
         eprintln!("setting up disk encryption...");
         let mounted = firstboot::mount_target(&target.path, disk_encryption)?;
         let enc_result =
-            encryption::run_encryption_setup(&target.path, disk_encryption, mounted.path())
+            encryption::run_encryption_setup(&target.path, disk_encryption, mounted.path(), None)
                 .context("encryption setup")?;
         firstboot::unmount_target(mounted)?;
 
-        // r[impl installer.encryption.recovery-passphrase]
+        // r[impl installer.encryption.recovery-passphrase+2]
         eprintln!();
         eprintln!("=== RECOVERY PASSPHRASE ===");
         eprintln!();

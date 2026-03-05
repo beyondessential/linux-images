@@ -585,7 +585,7 @@ fn tpm_enrollment_updates_crypttab() {
     );
 }
 
-// r[verify installer.encryption.recovery-passphrase]
+// r[verify installer.encryption.recovery-passphrase+2]
 #[test]
 fn recovery_passphrase_enrollment_creates_working_slot() {
     let fix = LuksFixture::setup();
@@ -729,7 +729,7 @@ fn configure_system_writes_expected_files() {
 
 // r[verify installer.encryption.key-rotation]
 // r[verify installer.encryption.keyfile-enroll]
-// r[verify installer.encryption.recovery-passphrase]
+// r[verify installer.encryption.recovery-passphrase+2]
 // r[verify installer.encryption.wipe-empty-slot]
 #[test]
 fn full_keyfile_encryption_flow() {

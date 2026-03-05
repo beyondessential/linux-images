@@ -335,7 +335,7 @@ enter
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.confirmation+4]
+// r[verify installer.tui.confirmation+5]
 #[test]
 fn scripted_wrong_confirmation_does_not_advance() {
     let f = Fixture::new();

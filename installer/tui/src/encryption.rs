@@ -28,17 +28,18 @@ pub struct EncryptionResult {
 /// the function operates directly on the raw partition for cryptsetup
 /// commands and writes files into the mounted filesystem.
 ///
-/// Steps:
-/// 1. Rotate the LUKS master key.
-/// 2. Enroll the chosen unlock mechanism (TPM or keyfile).
-/// 3. Generate and enroll a recovery passphrase.
-/// 4. Remove the original empty-passphrase key slot.
-/// 5. Configure the installed system (crypttab, initramfs).
+/// If `pre_generated_passphrase` is `Some`, that passphrase is enrolled
+/// into the LUKS volume instead of generating a new one. This is the
+/// normal path for the interactive TUI, which generates the passphrase at
+/// confirmation time so the user can write it down before the destructive
+/// write begins. In automatic mode, `None` is passed and a fresh
+/// passphrase is generated here.
 // r[impl installer.encryption.overview]
 pub fn run_encryption_setup(
     target_device: &Path,
     disk_encryption: DiskEncryption,
     mount_path: &Path,
+    pre_generated_passphrase: Option<&str>,
 ) -> Result<EncryptionResult> {
     if !disk_encryption.is_encrypted() {
         bail!("encryption setup called with disk_encryption=none");
@@ -53,8 +54,11 @@ pub fn run_encryption_setup(
     // r[impl installer.encryption.keyfile-enroll]
     enroll_unlock_mechanism(&root_part, disk_encryption, mount_path)?;
 
-    // r[impl installer.encryption.recovery-passphrase]
-    let passphrase = generate_recovery_passphrase();
+    // r[impl installer.encryption.recovery-passphrase+2]
+    let passphrase = match pre_generated_passphrase {
+        Some(p) => p.to_string(),
+        None => generate_recovery_passphrase(),
+    };
     enroll_recovery_passphrase(&root_part, &passphrase)?;
 
     // r[impl installer.encryption.wipe-empty-slot]
@@ -230,7 +234,7 @@ fn enroll_keyfile(root_part: &Path, mount_path: &Path) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.encryption.recovery-passphrase]
+// r[impl installer.encryption.recovery-passphrase+2]
 pub fn generate_recovery_passphrase() -> String {
     use static_lang_word_lists::AOSP_ENGLISH_LATIN;
 
@@ -247,7 +251,7 @@ pub fn generate_recovery_passphrase() -> String {
     words.join("-")
 }
 
-// r[impl installer.encryption.recovery-passphrase]
+// r[impl installer.encryption.recovery-passphrase+2]
 fn enroll_recovery_passphrase(root_part: &Path, passphrase: &str) -> Result<()> {
     tracing::info!("enrolling recovery passphrase");
 
@@ -491,7 +495,7 @@ fn run_command(program: &str, args: &[&str]) -> Result<()> {
 mod tests {
     use super::*;
 
-    // r[verify installer.encryption.recovery-passphrase]
+    // r[verify installer.encryption.recovery-passphrase+2]
     #[test]
     fn recovery_passphrase_has_correct_word_count() {
         let passphrase = generate_recovery_passphrase();
@@ -503,7 +507,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.encryption.recovery-passphrase]
+    // r[verify installer.encryption.recovery-passphrase+2]
     #[test]
     fn recovery_passphrase_words_are_nonempty() {
         let passphrase = generate_recovery_passphrase();
@@ -512,7 +516,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.encryption.recovery-passphrase]
+    // r[verify installer.encryption.recovery-passphrase+2]
     #[test]
     fn recovery_passphrases_are_unique() {
         let p1 = generate_recovery_passphrase();
@@ -546,6 +550,7 @@ mod tests {
             Path::new("/dev/sda"),
             DiskEncryption::None,
             Path::new("/mnt/target"),
+            None,
         );
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
