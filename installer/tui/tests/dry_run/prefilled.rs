@@ -29,7 +29,9 @@ enter
 enter
 # TpmToggle
 enter
-# Hostname
+# Hostname selector: Static is default (hostname prefilled), Enter -> HostnameInput
+enter
+# HostnameInput: accept prefilled hostname, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -103,7 +105,9 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname: clear 'old-host' (8 chars), type 'new-host'
+# Hostname selector: Static is default (hostname prefilled), Enter -> HostnameInput
+enter
+# HostnameInput: clear 'old-host' (8 chars), type 'new-host'
 backspace
 backspace
 backspace
@@ -175,7 +179,8 @@ enter
 enter
 # Variant
 enter
-# Hostname
+# Hostname selector: network-assigned via Down, Enter -> Login (skip HostnameInput)
+down
 enter
 # Login: type password
 type:pw

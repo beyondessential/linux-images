@@ -310,7 +310,7 @@ fn auto_invalid_hostname_template_emits_warning() {
         .failure();
 }
 
-// r[verify installer.tui.hostname+2]
+// r[verify installer.tui.hostname+3]
 #[test]
 fn scripted_metal_dhcp_toggle_produces_dhcp_sentinel() {
     let f = Fixture::new();
@@ -322,11 +322,10 @@ enter
 enter
 # VariantSelection -> TpmToggle
 enter
-# TpmToggle -> Hostname
+# TpmToggle -> Hostname selector
 enter
-# Hostname: toggle DHCP on
-tab
-# Hostname -> Tailscale
+# Hostname selector: Down to select DHCP, Enter -> Login (skip HostnameInput)
+down
 enter
 # Login: type password
 type:pw

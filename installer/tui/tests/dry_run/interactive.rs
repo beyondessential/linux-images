@@ -17,7 +17,9 @@ enter
 # TpmToggle: disable, advance
 space
 enter
-# Hostname
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type hostname then advance
 type:my-server
 enter
 # Login: enter tailscale sub-screen
@@ -90,7 +92,8 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname: skip
+# Hostname selector: network-assigned via Down, Enter -> Login (skip HostnameInput)
+down
 enter
 # Login: type password
 type:pw
@@ -129,7 +132,7 @@ enter
     assert!(!plan["disable_tpm"].as_bool().unwrap());
 }
 
-// r[verify installer.tui.hostname+2]
+// r[verify installer.tui.hostname+3]
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 #[test]
@@ -145,6 +148,9 @@ enter
 # Variant: toggle to cloud
 down
 enter
+# Hostname selector: Static is default, Enter -> HostnameInput
+enter
+# HostnameInput: type hostname then advance
 type:my-host
 enter
 # Login: enter tailscale sub-screen
@@ -196,7 +202,7 @@ enter
     assert_eq!(plan["firstboot"]["timezone"], "UTC");
 }
 
-// r[verify installer.tui.hostname+2]
+// r[verify installer.tui.hostname+3]
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 // r[verify installer.tui.password+4]
@@ -216,7 +222,9 @@ enter
 # Toggle to cloud (hostname optional)
 down
 enter
-# Hostname: skip
+# Hostname selector: Static is default, Enter -> HostnameInput
+enter
+# HostnameInput: leave empty (allowed for cloud), Enter -> Login
 enter
 # Login: type password (required)
 type:pw
@@ -285,7 +293,9 @@ enter
 enter
 # TpmToggle
 enter
-# Hostname: type 'h' (required for metal)
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type 'h' (required for metal)
 type:h
 enter
 # Login: type password
@@ -397,7 +407,8 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname: skip
+# Hostname selector: network-assigned via Down, Enter -> Login (skip HostnameInput)
+down
 enter
 # Login: type password
 type:pw

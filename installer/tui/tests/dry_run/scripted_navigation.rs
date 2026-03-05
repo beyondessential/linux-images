@@ -18,7 +18,9 @@ enter
 space
 space
 enter
-# Hostname: type 'h' (required for metal)
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type 'h' (required for metal)
 type:h
 enter
 # Login: type password
@@ -71,7 +73,9 @@ down
 enter
 # Now we should be on TpmToggle (metal flow)
 enter
-# Hostname: type 'h' (required for metal)
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type 'h' (required for metal)
 type:h
 enter
 # Login: type password
@@ -124,7 +128,9 @@ enter
 enter
 # TpmToggle
 enter
-# Hostname: type 'h' (required for metal)
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type 'h' (required for metal)
 type:h
 enter
 # Login: type password
@@ -175,7 +181,9 @@ enter
 enter
 # TpmToggle
 enter
-# Hostname: type 'h' (required for metal)
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type 'h' (required for metal)
 type:h
 enter
 # Login: type password
@@ -209,7 +217,7 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/sda");
 }
 
-// r[verify installer.tui.hostname+2]
+// r[verify installer.tui.hostname+3]
 #[test]
 fn scripted_hostname_with_backspace_correction() {
     let f = Fixture::new();
@@ -223,7 +231,9 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname: type 'baaad', backspace 3 times, type 'd'
+# Hostname selector: Static is default, Enter -> HostnameInput
+enter
+# HostnameInput: type 'baaad', backspace 3 times, type 'd'
 type:baaad
 backspace
 backspace
@@ -275,7 +285,8 @@ enter
 # Variant: toggle to cloud
 down
 enter
-# Hostname: skip
+# Hostname selector: network-assigned via Down, Enter -> Login (skip HostnameInput)
+down
 enter
 
 # Login: enter ssh keys sub-screen
@@ -333,7 +344,9 @@ enter
 enter
 # TpmToggle
 enter
-# Hostname: type 'h' (required for metal)
+# Hostname selector: Static is default for metal, Enter -> HostnameInput
+enter
+# HostnameInput: type 'h' (required for metal)
 type:h
 enter
 # Login: type password

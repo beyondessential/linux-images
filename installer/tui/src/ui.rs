@@ -26,6 +26,7 @@ pub enum Screen {
     VariantSelection,
     TpmToggle,
     Hostname,
+    HostnameInput,
     Login,
     LoginTailscale,
     LoginSshKeys,
@@ -225,7 +226,7 @@ impl AppState {
         state
     }
 
-    // r[impl installer.tui.hostname+2]
+    // r[impl installer.tui.hostname+3]
     // r[impl installer.tui.tailscale+3]
     // r[impl installer.tui.ssh-keys+5]
     // r[impl installer.tui.password+4]
@@ -474,6 +475,7 @@ impl AppState {
     }
 
     // r[impl installer.tui.tpm-toggle]
+    // r[impl installer.tui.hostname+3]
     // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
@@ -488,7 +490,14 @@ impl AppState {
             Screen::VariantSelection if self.variant == Variant::Metal => Screen::TpmToggle,
             Screen::VariantSelection => Screen::Hostname,
             Screen::TpmToggle => Screen::Hostname,
-            Screen::Hostname => Screen::Login,
+            Screen::Hostname => {
+                if self.hostname_from_dhcp {
+                    Screen::Login
+                } else {
+                    Screen::HostnameInput
+                }
+            }
+            Screen::HostnameInput => Screen::Login,
             Screen::Login => Screen::Timezone,
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
@@ -513,7 +522,14 @@ impl AppState {
                     Screen::VariantSelection
                 }
             }
-            Screen::Login => Screen::Hostname,
+            Screen::HostnameInput => Screen::Hostname,
+            Screen::Login => {
+                if self.hostname_from_dhcp {
+                    Screen::Hostname
+                } else {
+                    Screen::HostnameInput
+                }
+            }
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => Screen::Login,
             Screen::Timezone => Screen::Login,
             Screen::NetworkResults => Screen::Timezone,
@@ -539,7 +555,7 @@ impl AppState {
             .eq_ignore_ascii_case(self.confirmation_text())
     }
 
-    // r[impl installer.tui.hostname+2]
+    // r[impl installer.tui.hostname+3]
     pub fn hostname_required(&self) -> bool {
         self.variant == Variant::Metal && !self.hostname_from_dhcp
     }
@@ -867,6 +883,9 @@ mod tests {
         assert_eq!(state.screen, Screen::TpmToggle);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
+        // Static is default for metal (hostname_from_dhcp = false)
+        state.advance();
+        assert_eq!(state.screen, Screen::HostnameInput);
         state.advance();
         assert_eq!(state.screen, Screen::Login);
         state.advance();
@@ -892,6 +911,11 @@ mod tests {
         assert_eq!(state.screen, Screen::VariantSelection);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
+        // Cloud defaults to hostname_from_dhcp = false in make_state, so
+        // advance goes to HostnameInput. But with DHCP selected it would
+        // skip to Login. Test the static path here.
+        state.advance();
+        assert_eq!(state.screen, Screen::HostnameInput);
         state.advance();
         assert_eq!(state.screen, Screen::Login);
         state.advance();
@@ -900,6 +924,28 @@ mod tests {
         assert_eq!(state.screen, Screen::NetworkResults);
         state.advance();
         assert_eq!(state.screen, Screen::Confirmation);
+    }
+
+    #[test]
+    fn advance_cloud_dhcp_skips_hostname_input() {
+        let mut state = make_state();
+        state.variant = Variant::Cloud;
+        state.hostname_from_dhcp = true;
+
+        state.screen = Screen::Hostname;
+        state.advance();
+        assert_eq!(state.screen, Screen::Login);
+    }
+
+    #[test]
+    fn advance_metal_dhcp_skips_hostname_input() {
+        let mut state = make_state();
+        state.variant = Variant::Metal;
+        state.hostname_from_dhcp = true;
+
+        state.screen = Screen::Hostname;
+        state.advance();
+        assert_eq!(state.screen, Screen::Login);
     }
 
     // r[verify installer.tui.tpm-toggle]
@@ -917,6 +963,9 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
+        // hostname_from_dhcp is false, so Login goes back to HostnameInput
+        state.go_back();
+        assert_eq!(state.screen, Screen::HostnameInput);
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
@@ -944,10 +993,24 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
+        // hostname_from_dhcp is false, so Login goes back to HostnameInput
+        state.go_back();
+        assert_eq!(state.screen, Screen::HostnameInput);
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
         assert_eq!(state.screen, Screen::VariantSelection);
+    }
+
+    #[test]
+    fn go_back_from_login_with_dhcp_goes_to_hostname_selector() {
+        let mut state = make_state();
+        state.variant = Variant::Metal;
+        state.hostname_from_dhcp = true;
+        state.screen = Screen::Login;
+
+        state.go_back();
+        assert_eq!(state.screen, Screen::Hostname);
     }
 
     // r[verify installer.tui.ssh-keys+5]
@@ -1010,7 +1073,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Error("test".into()));
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+3]
     #[test]
     fn hostname_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1099,7 +1162,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+3]
     #[test]
     fn firstboot_config_from_inputs() {
         let mut state = make_state();
@@ -1132,7 +1195,7 @@ mod tests {
         assert!(fb.password_hash.is_none());
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+3]
     #[test]
     fn firstboot_config_empty_strings_are_none() {
         let mut state = make_state();
@@ -1200,7 +1263,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+3]
     #[test]
     fn hostname_required_for_metal() {
         let mut state = make_state();
@@ -1208,7 +1271,7 @@ mod tests {
         assert!(state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+3]
     #[test]
     fn hostname_not_required_for_cloud() {
         let mut state = make_state();
@@ -1216,7 +1279,7 @@ mod tests {
         assert!(!state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+2]
+    // r[verify installer.tui.hostname+3]
     #[test]
     fn hostname_not_required_for_metal_with_dhcp() {
         let mut state = make_state();
