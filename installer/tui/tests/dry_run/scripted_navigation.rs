@@ -21,13 +21,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -77,13 +74,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -133,13 +127,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -187,13 +178,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -242,13 +230,10 @@ backspace
 backspace
 type:d
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -276,7 +261,7 @@ enter
     assert_eq!(plan["firstboot"]["hostname"], "bad");
 }
 
-// r[verify installer.tui.ssh-keys]
+// r[verify installer.tui.ssh-keys+5]
 #[test]
 fn scripted_multiline_ssh_keys() {
     let f = Fixture::new();
@@ -292,17 +277,17 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
-enter
-# SSH keys: two keys separated by Enter (newline in SSH keys screen)
+
+# Login: enter ssh keys sub-screen
+alt:s
 type:ssh-ed25519 AAAA key1
-enter
+tab
 type:ssh-rsa BBBB key2
-# Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
 enter
+# Login: type password
+type:pw
+enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -330,7 +315,7 @@ enter
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.confirmation+2]
+// r[verify installer.tui.confirmation+3]
 #[test]
 fn scripted_wrong_confirmation_does_not_advance() {
     let f = Fixture::new();
@@ -351,13 +336,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # NetworkResults
 enter

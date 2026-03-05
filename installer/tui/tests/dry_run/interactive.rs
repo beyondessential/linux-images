@@ -20,16 +20,18 @@ enter
 # Hostname
 type:my-server
 enter
-# Tailscale
+# Login: enter tailscale sub-screen
+alt:t
 type:tskey-auth-test
 enter
-# SSH keys
+# Login: enter ssh keys sub-screen
+alt:s
 type:ssh-ed25519 AAAA testkey
-# Tab -> GitHub focus, Tab -> advance to Password
-tab
-tab
-# Password: skip (empty)
 enter
+# Login: type password
+type:pw
+enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter
@@ -90,13 +92,10 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter
@@ -131,8 +130,8 @@ enter
 }
 
 // r[verify installer.tui.hostname+2]
-// r[verify installer.tui.tailscale]
-// r[verify installer.tui.ssh-keys]
+// r[verify installer.tui.tailscale+3]
+// r[verify installer.tui.ssh-keys+5]
 #[test]
 fn interactive_firstboot_fields_captured() {
     let f = Fixture::new();
@@ -148,16 +147,20 @@ down
 enter
 type:my-host
 enter
+# Login: enter tailscale sub-screen
+alt:t
 type:tskey-auth-mykey
 enter
+# Login: enter ssh keys sub-screen
+alt:s
 type:ssh-ed25519 AAAA key1
-enter
+tab
 type:ssh-rsa BBBB key2
-# Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
 enter
+# Login: type password
+type:pw
+enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter
@@ -194,13 +197,16 @@ enter
 }
 
 // r[verify installer.tui.hostname+2]
-// r[verify installer.tui.tailscale]
-// r[verify installer.tui.ssh-keys]
+// r[verify installer.tui.tailscale+3]
+// r[verify installer.tui.ssh-keys+5]
+// r[verify installer.tui.password+4]
 #[test]
 fn interactive_empty_firstboot_is_null() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Use cloud variant so hostname is optional — all empty firstboot fields yield null
+    // Use cloud variant so hostname is optional — password is the only required
+    // firstboot field in interactive mode. With only a password set, firstboot
+    // is still present but all other fields are empty/null.
     let script = f.write_script(
         "\
 # Welcome
@@ -212,13 +218,10 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
+# Login: type password (required)
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip
-enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter
@@ -248,7 +251,22 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert!(plan["firstboot"].is_null());
+    // Password is always set in interactive mode, so firstboot is not null
+    assert!(!plan["firstboot"].is_null());
+    assert!(plan["firstboot"]["password_set"].as_bool().unwrap());
+    // But all other optional fields should be empty/default
+    assert!(
+        plan["firstboot"]["hostname"].is_null(),
+        "hostname should be null when skipped"
+    );
+    assert!(
+        !plan["firstboot"]["tailscale_authkey"].as_bool().unwrap(),
+        "tailscale should be false when skipped"
+    );
+    assert_eq!(
+        plan["firstboot"]["ssh_authorized_keys_count"], 0,
+        "ssh keys should be empty when skipped"
+    );
 }
 
 // r[verify installer.tui.disk-detection+3]
@@ -270,13 +288,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter
@@ -366,7 +381,7 @@ fn interactive_empty_script_uses_initial_state() {
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.confirmation+2]
+// r[verify installer.tui.confirmation+3]
 #[test]
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();
@@ -384,13 +399,10 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
-enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter
@@ -402,17 +414,11 @@ esc
 esc
 # Back on Timezone, go back
 esc
-# Back on Password, go back
-esc
-# Back on SshKeys, go back again
-esc
-# Back on Tailscale, enter an authkey
+# Back on Login, enter tailscale sub-screen
+alt:t
 type:tskey-auth-late
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip (empty)
+# Login: password already set from first pass, Enter to confirm + Enter to advance
 enter
 enter
 # Timezone: accept default (UTC)

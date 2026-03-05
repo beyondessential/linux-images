@@ -128,13 +128,10 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SSH keys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip
-enter
+type:pw
 enter
 # Timezone: search for 'auck', select first match
 type:auck
@@ -187,13 +184,10 @@ down
 enter
 # Hostname: skip
 enter
-# Tailscale: skip
+# Login: type password
+type:pw
 enter
-# SshKeys: Tab -> GitHub, Tab -> advance
-tab
-tab
-# Password: skip
-enter
+type:pw
 enter
 # Timezone: up twice from UTC(3) -> Europe/London(1), then select
 up

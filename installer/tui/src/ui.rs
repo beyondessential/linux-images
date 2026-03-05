@@ -26,9 +26,10 @@ pub enum Screen {
     VariantSelection,
     TpmToggle,
     Hostname,
-    Tailscale,
-    SshKeys,
-    Password,
+    Login,
+    LoginTailscale,
+    LoginSshKeys,
+    LoginGithub,
     Timezone,
     NetworkResults,
     Confirmation,
@@ -53,11 +54,13 @@ pub struct AppState {
     pub hostname_from_dhcp: bool,
     pub hostname_from_template: bool,
     pub tailscale_input: String,
-    pub ssh_keys_input: String,
+    pub ssh_keys: Vec<String>,
+    pub ssh_key_cursor: usize,
     pub password_input: String,
     pub password_confirm_input: String,
     pub password_confirming: bool,
     pub password_mismatch: bool,
+    pub password_empty: bool,
     /// Pre-hashed password from config file (takes precedence over plaintext).
     pub config_password_hash: Option<String>,
 
@@ -68,7 +71,7 @@ pub struct AppState {
     pub timezone_filtered: Vec<usize>,
     pub timezone_cursor: usize,
 
-    // r[impl installer.tui.network-check+3]
+    // r[impl installer.tui.network-check+4]
     pub net_check_phase: CheckPhase,
     pub net_check_results: Vec<Option<CheckResult>>,
     pub net_check_rx: Option<mpsc::Receiver<CheckResult>>,
@@ -83,9 +86,8 @@ pub struct AppState {
     pub net_pane: NetPane,
     pub net_scroll: u16,
 
-    // r[impl installer.tui.ssh-keys.github]
+    // r[impl installer.tui.ssh-keys.github+4]
     pub ssh_github_input: String,
-    pub ssh_github_focus: bool,
     pub ssh_github_fetching: bool,
     pub ssh_github_error: Option<String>,
     pub ssh_github_rx: Option<mpsc::Receiver<GithubKeysResult>>,
@@ -133,25 +135,38 @@ impl AppState {
             hostname_from_dhcp,
             hostname_from_template,
             tailscale_input,
-            ssh_keys_input,
+            ssh_keys,
             config_password_hash,
             timezone_from_config,
         ) = match firstboot {
-            Some(ref fb) => (
-                fb.hostname.clone().unwrap_or_default(),
-                fb.hostname_from_dhcp,
-                fb.hostname_template.is_some(),
-                fb.tailscale_authkey.clone().unwrap_or_default(),
-                fb.ssh_authorized_keys.join("\n"),
-                fb.password_hash.clone(),
-                fb.timezone.clone(),
-            ),
+            Some(ref fb) => {
+                let keys: Vec<String> = fb
+                    .ssh_authorized_keys
+                    .iter()
+                    .filter(|k| !k.trim().is_empty())
+                    .cloned()
+                    .collect();
+                let keys = if keys.is_empty() {
+                    vec![String::new()]
+                } else {
+                    keys
+                };
+                (
+                    fb.hostname.clone().unwrap_or_default(),
+                    fb.hostname_from_dhcp,
+                    fb.hostname_template.is_some(),
+                    fb.tailscale_authkey.clone().unwrap_or_default(),
+                    keys,
+                    fb.password_hash.clone(),
+                    fb.timezone.clone(),
+                )
+            }
             None => (
                 String::new(),
                 false,
                 false,
                 String::new(),
-                String::new(),
+                vec![String::new()],
                 None,
                 None,
             ),
@@ -164,7 +179,7 @@ impl AppState {
             .position(|z| z == &timezone_selected)
             .unwrap_or(0);
 
-        Self {
+        let mut state = Self {
             screen: Screen::Welcome,
             selected_disk_index: default_disk_index.unwrap_or(0),
             devices,
@@ -178,11 +193,13 @@ impl AppState {
             hostname_from_dhcp,
             hostname_from_template,
             tailscale_input,
-            ssh_keys_input,
+            ssh_keys,
+            ssh_key_cursor: 0,
             password_input: String::new(),
             password_confirm_input: String::new(),
             password_confirming: false,
             password_mismatch: false,
+            password_empty: false,
             config_password_hash,
             available_timezones,
             timezone_search: String::new(),
@@ -200,17 +217,18 @@ impl AppState {
             net_pane: NetPane::Connectivity,
             net_scroll: 0,
             ssh_github_input: String::new(),
-            ssh_github_focus: false,
             ssh_github_fetching: false,
             ssh_github_error: None,
             ssh_github_rx: None,
-        }
+        };
+        state.ensure_trailing_blank();
+        state
     }
 
     // r[impl installer.tui.hostname+2]
-    // r[impl installer.tui.tailscale]
-    // r[impl installer.tui.ssh-keys]
-    // r[impl installer.tui.password]
+    // r[impl installer.tui.tailscale+3]
+    // r[impl installer.tui.ssh-keys+5]
+    // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
@@ -228,10 +246,10 @@ impl AppState {
         };
 
         let ssh_authorized_keys: Vec<String> = self
-            .ssh_keys_input
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
+            .ssh_keys
+            .iter()
+            .map(|k| k.trim().to_string())
+            .filter(|k| !k.is_empty())
             .collect();
 
         let password = if self.password_input.is_empty() {
@@ -299,7 +317,7 @@ impl AppState {
         };
     }
 
-    // r[impl installer.tui.network-check+3]
+    // r[impl installer.tui.network-check+4]
     /// Start (or restart) all network connectivity checks and tailscale netcheck.
     pub fn start_net_checks(&mut self) {
         let endpoints = net::default_endpoints();
@@ -413,7 +431,7 @@ impl AppState {
         self.net_scroll = 0;
     }
 
-    // r[impl installer.tui.ssh-keys.github]
+    // r[impl installer.tui.ssh-keys.github+4]
     /// Start fetching SSH keys for the current GitHub username.
     pub fn start_github_key_fetch(&mut self) {
         if self.ssh_github_input.trim().is_empty() {
@@ -435,14 +453,17 @@ impl AppState {
             Ok(result) => {
                 self.ssh_github_fetching = false;
                 if result.success {
+                    while self.ssh_keys.last().is_some_and(|k| k.trim().is_empty()) {
+                        self.ssh_keys.pop();
+                    }
+                    let first_new = self.ssh_keys.len();
                     for key in &result.keys {
-                        if !self.ssh_keys_input.is_empty() && !self.ssh_keys_input.ends_with('\n') {
-                            self.ssh_keys_input.push('\n');
-                        }
-                        self.ssh_keys_input.push_str(key);
-                        self.ssh_keys_input.push('\n');
+                        self.ssh_keys.push(key.clone());
                     }
                     self.ssh_github_error = None;
+                    self.ensure_trailing_blank();
+                    self.ssh_key_cursor = first_new;
+                    self.screen = Screen::LoginSshKeys;
                 } else {
                     self.ssh_github_error = result.error;
                 }
@@ -453,12 +474,12 @@ impl AppState {
     }
 
     // r[impl installer.tui.tpm-toggle]
-    // r[impl installer.tui.password]
+    // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
             Screen::Welcome => {
-                // r[impl installer.tui.network-check+3]
+                // r[impl installer.tui.network-check+4]
                 self.ensure_net_checks_started();
                 Screen::DiskSelection
             }
@@ -467,10 +488,9 @@ impl AppState {
             Screen::VariantSelection if self.variant == Variant::Metal => Screen::TpmToggle,
             Screen::VariantSelection => Screen::Hostname,
             Screen::TpmToggle => Screen::Hostname,
-            Screen::Hostname => Screen::Tailscale,
-            Screen::Tailscale => Screen::SshKeys,
-            Screen::SshKeys => Screen::Password,
-            Screen::Password => Screen::Timezone,
+            Screen::Hostname => Screen::Login,
+            Screen::Login => Screen::Timezone,
+            Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
             Screen::NetworkResults => Screen::Confirmation,
             Screen::Confirmation => Screen::Writing,
@@ -493,10 +513,9 @@ impl AppState {
                     Screen::VariantSelection
                 }
             }
-            Screen::Tailscale => Screen::Hostname,
-            Screen::SshKeys => Screen::Tailscale,
-            Screen::Password => Screen::SshKeys,
-            Screen::Timezone => Screen::Password,
+            Screen::Login => Screen::Hostname,
+            Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => Screen::Login,
+            Screen::Timezone => Screen::Login,
             Screen::NetworkResults => Screen::Timezone,
             Screen::Confirmation => Screen::NetworkResults,
             _ => return,
@@ -513,7 +532,7 @@ impl AppState {
         "yes"
     }
 
-    // r[impl installer.tui.confirmation+2]
+    // r[impl installer.tui.confirmation+3]
     pub fn is_confirmed(&self) -> bool {
         self.confirm_input
             .trim()
@@ -525,7 +544,104 @@ impl AppState {
         self.variant == Variant::Metal && !self.hostname_from_dhcp
     }
 
-    // r[impl installer.tui.password]
+    // r[impl installer.tui.network-check+4]
+    /// Whether github.com is reachable per background network checks.
+    pub fn github_reachable(&self) -> bool {
+        self.net_check_results
+            .iter()
+            .any(|r| matches!(r, Some(r) if r.label == "github.com" && r.passed))
+    }
+
+    // r[impl installer.tui.ssh-keys+5]
+
+    /// Recognized SSH public key type prefixes.
+    const SSH_KEY_PREFIXES: &[&str] = &[
+        "ssh-rsa",
+        "ssh-ed25519",
+        "ssh-dss",
+        "ecdsa-sha2-nistp256",
+        "ecdsa-sha2-nistp384",
+        "ecdsa-sha2-nistp521",
+        "sk-ssh-ed25519@openssh.com",
+        "sk-ecdsa-sha2-nistp256@openssh.com",
+    ];
+
+    /// Check whether a string looks like a valid SSH public key.
+    pub fn is_valid_ssh_key(key: &str) -> bool {
+        let trimmed = key.trim();
+        Self::SSH_KEY_PREFIXES.iter().any(|prefix| {
+            if let Some(rest) = trimmed.strip_prefix(prefix) {
+                rest.starts_with(' ')
+                    && rest.trim().len() > prefix.len() - prefix.len()
+                    && rest[1..].contains(|c: char| !c.is_whitespace())
+            } else {
+                false
+            }
+        })
+    }
+
+    /// Filter ssh_keys: remove empty and invalid entries. Ensure at least one
+    /// empty entry remains.
+    pub fn filter_ssh_keys(&mut self) {
+        self.ssh_keys
+            .retain(|k| !k.trim().is_empty() && Self::is_valid_ssh_key(k));
+        if self.ssh_keys.is_empty() {
+            self.ssh_keys.push(String::new());
+        }
+        if self.ssh_key_cursor >= self.ssh_keys.len() {
+            self.ssh_key_cursor = 0;
+        }
+    }
+
+    /// Ensure the ssh_keys list always has a trailing blank entry.
+    /// If the last entry is non-empty, a new blank entry is appended.
+    /// Does not move the cursor.
+    pub fn ensure_trailing_blank(&mut self) {
+        if self.ssh_keys.is_empty() || !self.ssh_keys.last().unwrap().trim().is_empty() {
+            self.ssh_keys.push(String::new());
+        }
+    }
+
+    /// Build a summary line for a collapsed SSH key field.
+    pub fn ssh_key_summary(key: &str) -> String {
+        let trimmed = key.trim();
+        if trimmed.is_empty() {
+            return "(empty)".into();
+        }
+        let parts: Vec<&str> = trimmed.splitn(3, ' ').collect();
+        match parts.len() {
+            1 => {
+                if parts[0].len() > 40 {
+                    format!("{}...", &parts[0][..37])
+                } else {
+                    parts[0].to_string()
+                }
+            }
+            2 => {
+                let key_type = parts[0];
+                let key_data = parts[1];
+                let truncated = if key_data.len() > 20 {
+                    format!("{}...{}", &key_data[..8], &key_data[key_data.len() - 8..])
+                } else {
+                    key_data.to_string()
+                };
+                format!("{key_type} {truncated}")
+            }
+            _ => {
+                let key_type = parts[0];
+                let key_data = parts[1];
+                let comment = parts[2];
+                let truncated = if key_data.len() > 20 {
+                    format!("{}...{}", &key_data[..8], &key_data[key_data.len() - 8..])
+                } else {
+                    key_data.to_string()
+                };
+                format!("{key_type} {truncated} {comment}")
+            }
+        }
+    }
+
+    // r[impl installer.tui.password+4]
     pub fn password_matches(&self) -> bool {
         self.password_input == self.password_confirm_input
     }
@@ -628,11 +744,10 @@ mod tests {
         assert!(!state.disable_tpm);
         assert_eq!(state.net_check_phase, CheckPhase::NotStarted);
         assert_eq!(state.netcheck_phase, CheckPhase::NotStarted);
-        assert!(!state.ssh_github_focus);
         assert!(!state.net_checks_started);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn welcome_advances_to_disk_selection() {
         let mut state = make_state();
@@ -641,7 +756,7 @@ mod tests {
         assert!(state.net_checks_started);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn open_network_check_from_welcome() {
         let mut state = make_state();
@@ -650,7 +765,7 @@ mod tests {
         assert!(state.net_checks_started);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn network_check_goes_back_to_welcome() {
         let mut state = make_state();
@@ -659,7 +774,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn network_check_advance_is_noop() {
         let mut state = make_state();
@@ -668,7 +783,7 @@ mod tests {
         assert_eq!(state.screen, Screen::NetworkCheck);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn disk_selection_goes_back_to_welcome() {
         let mut state = make_state();
@@ -677,7 +792,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn timezone_advances_to_network_results() {
         let mut state = make_state();
@@ -687,7 +802,7 @@ mod tests {
         assert_eq!(state.screen, Screen::NetworkResults);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn network_results_advances_to_confirmation() {
         let mut state = make_state();
@@ -696,7 +811,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Confirmation);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn network_results_goes_back_to_timezone() {
         let mut state = make_state();
@@ -705,7 +820,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
     }
 
-    // r[verify installer.tui.network-check+3]
+    // r[verify installer.tui.network-check+4]
     #[test]
     fn confirmation_goes_back_to_network_results() {
         let mut state = make_state();
@@ -737,7 +852,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tpm-toggle]
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+4]
     #[test]
     fn advance_metal_flow() {
         let mut state = make_state();
@@ -753,11 +868,7 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
         state.advance();
-        assert_eq!(state.screen, Screen::Tailscale);
-        state.advance();
-        assert_eq!(state.screen, Screen::SshKeys);
-        state.advance();
-        assert_eq!(state.screen, Screen::Password);
+        assert_eq!(state.screen, Screen::Login);
         state.advance();
         assert_eq!(state.screen, Screen::Timezone);
         state.advance();
@@ -767,7 +878,7 @@ mod tests {
     }
 
     // r[verify installer.tui.variant-selection]
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
     fn advance_cloud_skips_tpm() {
@@ -782,11 +893,7 @@ mod tests {
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
         state.advance();
-        assert_eq!(state.screen, Screen::Tailscale);
-        state.advance();
-        assert_eq!(state.screen, Screen::SshKeys);
-        state.advance();
-        assert_eq!(state.screen, Screen::Password);
+        assert_eq!(state.screen, Screen::Login);
         state.advance();
         assert_eq!(state.screen, Screen::Timezone);
         state.advance();
@@ -796,7 +903,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tpm-toggle]
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
     fn go_back_through_metal_flow() {
@@ -809,11 +916,7 @@ mod tests {
         state.go_back();
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
-        assert_eq!(state.screen, Screen::Password);
-        state.go_back();
-        assert_eq!(state.screen, Screen::SshKeys);
-        state.go_back();
-        assert_eq!(state.screen, Screen::Tailscale);
+        assert_eq!(state.screen, Screen::Login);
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
@@ -827,7 +930,7 @@ mod tests {
     }
 
     // r[verify installer.tui.variant-selection]
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
     fn go_back_cloud_skips_tpm() {
@@ -840,18 +943,48 @@ mod tests {
         state.go_back();
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
-        assert_eq!(state.screen, Screen::Password);
-        state.go_back();
-        assert_eq!(state.screen, Screen::SshKeys);
-        state.go_back();
-        assert_eq!(state.screen, Screen::Tailscale);
+        assert_eq!(state.screen, Screen::Login);
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
         assert_eq!(state.screen, Screen::VariantSelection);
     }
 
-    // r[verify installer.tui.confirmation+2]
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn login_sub_screens_go_back_to_login() {
+        let mut state = make_state();
+        state.screen = Screen::LoginTailscale;
+        state.go_back();
+        assert_eq!(state.screen, Screen::Login);
+
+        state.screen = Screen::LoginSshKeys;
+        state.go_back();
+        assert_eq!(state.screen, Screen::Login);
+
+        state.screen = Screen::LoginGithub;
+        state.go_back();
+        assert_eq!(state.screen, Screen::Login);
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn login_sub_screens_do_not_advance() {
+        let mut state = make_state();
+        state.screen = Screen::LoginTailscale;
+        state.advance();
+        assert_eq!(state.screen, Screen::LoginTailscale);
+
+        state.screen = Screen::LoginSshKeys;
+        state.advance();
+        assert_eq!(state.screen, Screen::LoginSshKeys);
+
+        state.screen = Screen::LoginGithub;
+        state.advance();
+        assert_eq!(state.screen, Screen::LoginGithub);
+    }
+
+    // r[verify installer.tui.confirmation+3]
     #[test]
     fn confirmation_requires_explicit_yes() {
         let mut state = make_state();
@@ -864,7 +997,7 @@ mod tests {
         assert!(state.is_confirmed());
     }
 
-    // r[verify installer.tui.confirmation+2]
+    // r[verify installer.tui.confirmation+3]
     #[test]
     fn done_and_error_do_not_advance() {
         let mut state = make_state();
@@ -904,10 +1037,10 @@ mod tests {
         );
         assert_eq!(state.hostname_input, "myhost");
         assert_eq!(state.tailscale_input, "");
-        assert_eq!(state.ssh_keys_input, "");
+        assert_eq!(state.ssh_keys, vec![String::new()]);
     }
 
-    // r[verify installer.tui.tailscale]
+    // r[verify installer.tui.tailscale+3]
     #[test]
     fn tailscale_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -935,7 +1068,7 @@ mod tests {
         assert_eq!(state.tailscale_input, "tskey-auth-xxx");
     }
 
-    // r[verify installer.tui.ssh-keys]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn ssh_keys_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -961,8 +1094,8 @@ mod tests {
             test_timezones(),
         );
         assert_eq!(
-            state.ssh_keys_input,
-            "ssh-ed25519 AAAA key1\nssh-rsa BBBB key2"
+            state.ssh_keys,
+            vec!["ssh-ed25519 AAAA key1", "ssh-rsa BBBB key2", ""]
         );
     }
 
@@ -981,14 +1114,14 @@ mod tests {
         assert!(fb.password_hash.is_none());
     }
 
-    // r[verify installer.tui.tailscale]
-    // r[verify installer.tui.ssh-keys]
+    // r[verify installer.tui.tailscale+3]
+    // r[verify installer.tui.ssh-keys+5]
     #[test]
     fn firstboot_config_all_fields() {
         let mut state = make_state();
         state.hostname_input = "host".into();
         state.tailscale_input = "tskey-auth-123".into();
-        state.ssh_keys_input = "ssh-ed25519 AAAA\nssh-rsa BBBB\n".into();
+        state.ssh_keys = vec!["ssh-ed25519 AAAA".into(), "ssh-rsa BBBB".into()];
         state.password_input = "s3cret".into();
 
         let fb = state.firstboot_config().unwrap();
@@ -1005,11 +1138,11 @@ mod tests {
         let mut state = make_state();
         state.hostname_input = "   ".into();
         state.tailscale_input = "  ".into();
-        state.ssh_keys_input = "\n\n".into();
+        state.ssh_keys = vec![String::new(), "  ".into()];
         assert!(state.firstboot_config().is_none());
     }
 
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+4]
     #[test]
     fn password_match_logic() {
         let mut state = make_state();
@@ -1023,7 +1156,7 @@ mod tests {
         assert!(!state.password_matches());
     }
 
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+4]
     #[test]
     fn has_password_from_input() {
         let mut state = make_state();
@@ -1033,7 +1166,7 @@ mod tests {
         assert!(state.has_password());
     }
 
-    // r[verify installer.tui.password]
+    // r[verify installer.tui.password+4]
     #[test]
     fn has_password_from_config_hash() {
         use crate::disk::TransportType;
@@ -1206,14 +1339,14 @@ mod tests {
         assert_eq!(state.timezone_filtered.len(), 0);
     }
 
-    // r[verify installer.tui.ssh-keys.github]
+    // r[verify installer.tui.ssh-keys.github+4]
     #[test]
     fn github_key_fetch_appends_to_ssh_keys() {
         let mut state = make_state();
-        state.ssh_keys_input = "ssh-ed25519 existing-key\n".into();
-        state.ssh_github_focus = true;
+        state.screen = Screen::LoginGithub;
+        // Realistic state: one existing key followed by the trailing blank
+        state.ssh_keys = vec!["ssh-ed25519 existing-key".into(), String::new()];
 
-        // Simulate receiving keys
         let (tx, rx) = std::sync::mpsc::channel();
         state.ssh_github_fetching = true;
         state.ssh_github_rx = Some(rx);
@@ -1226,14 +1359,53 @@ mod tests {
 
         assert!(state.poll_github_keys());
         assert!(!state.ssh_github_fetching);
-        assert!(state.ssh_keys_input.contains("ssh-rsa fetched-key"));
-        assert!(state.ssh_keys_input.contains("ssh-ed25519 existing-key"));
+        assert_eq!(
+            state.ssh_keys,
+            vec!["ssh-ed25519 existing-key", "ssh-rsa fetched-key", ""],
+            "trailing blank should be stripped before import, then re-added at the end"
+        );
+        assert_eq!(
+            state.screen,
+            Screen::LoginSshKeys,
+            "should navigate to SSH Keys sub-screen after successful fetch"
+        );
+        assert_eq!(
+            state.ssh_key_cursor, 1,
+            "cursor should point to the first imported key"
+        );
+    }
+
+    // r[verify installer.tui.ssh-keys.github+4]
+    #[test]
+    fn github_key_fetch_from_empty_state_has_no_leading_blank() {
+        let mut state = make_state();
+        state.screen = Screen::LoginGithub;
+        // Default state: just the trailing blank
+        state.ssh_keys = vec![String::new()];
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        state.ssh_github_fetching = true;
+        state.ssh_github_rx = Some(rx);
+        tx.send(crate::net::GithubKeysResult {
+            success: true,
+            keys: vec!["ssh-rsa fetched-key".into()],
+            error: None,
+        })
+        .unwrap();
+
+        assert!(state.poll_github_keys());
+        assert_eq!(
+            state.ssh_keys,
+            vec!["ssh-rsa fetched-key", ""],
+            "empty leading field must be removed, only trailing blank remains"
+        );
+        assert_eq!(state.ssh_key_cursor, 0);
     }
 
     #[test]
     fn github_key_fetch_error_sets_message() {
         let mut state = make_state();
-        state.ssh_github_focus = true;
+        state.screen = Screen::LoginGithub;
 
         let (tx, rx) = std::sync::mpsc::channel();
         state.ssh_github_fetching = true;
@@ -1248,6 +1420,11 @@ mod tests {
         assert!(state.poll_github_keys());
         assert!(!state.ssh_github_fetching);
         assert_eq!(state.ssh_github_error.as_deref(), Some("user not found"));
+        assert_eq!(
+            state.screen,
+            Screen::LoginGithub,
+            "should stay on GitHub screen when fetch fails"
+        );
     }
 
     #[test]
@@ -1257,6 +1434,120 @@ mod tests {
         state.start_github_key_fetch();
         assert!(!state.ssh_github_fetching);
         assert!(state.ssh_github_error.is_some());
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn filter_ssh_keys_removes_invalid() {
+        let mut state = make_state();
+        state.ssh_keys = vec![
+            "ssh-ed25519 AAAA key1".into(),
+            "not-a-key".into(),
+            String::new(),
+            "ssh-rsa BBBB key2".into(),
+        ];
+        state.filter_ssh_keys();
+        assert_eq!(state.ssh_keys.len(), 2);
+        assert_eq!(state.ssh_keys[0], "ssh-ed25519 AAAA key1");
+        assert_eq!(state.ssh_keys[1], "ssh-rsa BBBB key2");
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn filter_ssh_keys_ensures_one_empty() {
+        let mut state = make_state();
+        state.ssh_keys = vec!["invalid".into(), String::new()];
+        state.filter_ssh_keys();
+        assert_eq!(state.ssh_keys, vec![String::new()]);
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn ensure_trailing_blank_appends_when_last_nonempty() {
+        let mut state = make_state();
+        state.ssh_keys = vec!["ssh-ed25519 AAAA key1".into()];
+        state.ensure_trailing_blank();
+        assert_eq!(state.ssh_keys, vec!["ssh-ed25519 AAAA key1", ""]);
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn ensure_trailing_blank_noop_when_last_empty() {
+        let mut state = make_state();
+        state.ssh_keys = vec!["ssh-ed25519 AAAA key1".into(), String::new()];
+        state.ensure_trailing_blank();
+        assert_eq!(state.ssh_keys, vec!["ssh-ed25519 AAAA key1", ""]);
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn ensure_trailing_blank_on_empty_vec() {
+        let mut state = make_state();
+        state.ssh_keys = vec![];
+        state.ensure_trailing_blank();
+        assert_eq!(state.ssh_keys, vec![String::new()]);
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn constructor_has_trailing_blank_with_prefilled_keys() {
+        use crate::disk::TransportType;
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        let fb = FirstbootConfig {
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
+            ..Default::default()
+        };
+        let state = AppState::new(
+            devices,
+            Variant::Cloud,
+            false,
+            Some(fb),
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+        );
+        assert_eq!(
+            state.ssh_keys,
+            vec!["ssh-ed25519 AAAA key1", "ssh-rsa BBBB key2", ""]
+        );
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn ssh_key_summary_with_comment() {
+        let summary =
+            AppState::ssh_key_summary("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAbcdef me@host");
+        assert!(summary.starts_with("ssh-ed25519 "));
+        assert!(summary.contains("me@host"));
+    }
+
+    // r[verify installer.tui.ssh-keys+5]
+    #[test]
+    fn ssh_key_summary_empty() {
+        assert_eq!(AppState::ssh_key_summary(""), "(empty)");
+    }
+
+    // r[verify installer.tui.network-check+4]
+    #[test]
+    fn github_reachable_when_check_passes() {
+        let mut state = make_state();
+        assert!(!state.github_reachable());
+        // Simulate github.com check passing
+        let idx = state.net_check_results.len() - 2; // github.com is second-to-last (before NTP)
+        state.net_check_results[idx] = Some(crate::net::CheckResult {
+            index: idx,
+            label: "github.com".into(),
+            passed: true,
+            detail: "HTTP 301".into(),
+        });
+        assert!(state.github_reachable());
     }
 
     #[test]

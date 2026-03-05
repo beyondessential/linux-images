@@ -11,6 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 /// - A named key: `enter`, `esc`, `tab`, `backspace`, `up`, `down`, `left`,
 ///   `right`, `space`
 /// - `type:<text>` — emits one `Char` keypress per character of `<text>`
+/// - `alt:<text>` — emits one `Char` keypress per character with the Alt
+///   modifier held (e.g. `alt:t` produces Alt+t)
 /// - Lines starting with `#` are comments and are ignored
 /// - Empty lines are ignored
 pub fn parse_script_file(path: &Path) -> Result<Vec<KeyEvent>> {
@@ -32,6 +34,13 @@ pub fn parse_script(contents: &str) -> Result<Vec<KeyEvent>> {
         if let Some(text) = line.strip_prefix("type:") {
             for ch in text.chars() {
                 events.push(make_key(KeyCode::Char(ch)));
+            }
+            continue;
+        }
+
+        if let Some(text) = line.strip_prefix("alt:") {
+            for ch in text.chars() {
+                events.push(make_alt_key(KeyCode::Char(ch)));
             }
             continue;
         }
@@ -65,6 +74,15 @@ fn make_key(code: KeyCode) -> KeyEvent {
     KeyEvent {
         code,
         modifiers: KeyModifiers::empty(),
+        kind: KeyEventKind::Press,
+        state: crossterm::event::KeyEventState::empty(),
+    }
+}
+
+fn make_alt_key(code: KeyCode) -> KeyEvent {
+    KeyEvent {
+        code,
+        modifiers: KeyModifiers::ALT,
         kind: KeyEventKind::Press,
         state: crossterm::event::KeyEventState::empty(),
     }
@@ -110,6 +128,28 @@ mod tests {
         let script = "type:";
         let events = parse_script(script).unwrap();
         assert!(events.is_empty());
+    }
+
+    // r[verify installer.dryrun.script]
+    #[test]
+    fn parse_alt_directive() {
+        let script = "alt:t";
+        let events = parse_script(script).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].code, KeyCode::Char('t'));
+        assert!(events[0].modifiers.contains(KeyModifiers::ALT));
+    }
+
+    // r[verify installer.dryrun.script]
+    #[test]
+    fn parse_alt_multiple_chars() {
+        let script = "alt:sg";
+        let events = parse_script(script).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].code, KeyCode::Char('s'));
+        assert!(events[0].modifiers.contains(KeyModifiers::ALT));
+        assert_eq!(events[1].code, KeyCode::Char('g'));
+        assert!(events[1].modifiers.contains(KeyModifiers::ALT));
     }
 
     // r[verify installer.dryrun.script]
