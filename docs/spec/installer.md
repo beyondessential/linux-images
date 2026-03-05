@@ -413,7 +413,7 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+5]
+r[installer.tui.confirmation+6]
 After the timezone screen, and after the pre-summary network results screen,
 the TUI must show a summary screen listing: target disk (path, model, size),
 chosen disk encryption mode, and any first-boot configuration. The summary
@@ -425,8 +425,9 @@ When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
 screen must also generate and display the recovery passphrase. This gives
 the user an opportunity to write it down **before** the destructive write
 begins. The same passphrase is later enrolled into the LUKS volume during
-encryption setup. The post-write "Recovery Passphrase" screen remains as a
-final reminder.
+encryption setup. The completion screen displays the recovery passphrase
+again as a final reminder; the user must press Enter to acknowledge before
+the system reboots.
 
 r[installer.tui.ascii-rendering]
 All text rendered by the TUI must use only printable ASCII characters. In
@@ -443,9 +444,18 @@ Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
 set), not simply quit the process. On bare-metal hardware, quitting without
 rebooting leaves the machine in an unusable state.
 
-r[installer.tui.progress]
-During image writing, the TUI must display a progress bar showing bytes
-written and estimated time remaining.
+r[installer.tui.progress+2]
+The TUI must display a single progress bar that covers the entire
+installation, not just the image write. The progress bar is shown on one
+`Installing` screen from the moment the user confirms until all steps
+complete. Partition image writes (which have byte-level progress) occupy
+approximately 90% of the bar. Each post-write step (filesystem expansion,
+UUID randomization, boot config rebuild, partition verification, first-boot
+configuration, and encryption setup) occupies a small fixed slice of the
+remaining 10%, advancing the bar when the step completes. After all steps
+finish, the TUI transitions to a completion screen. For encrypted installs,
+the completion screen also displays the recovery passphrase (replacing the
+separate recovery passphrase screen).
 
 r[installer.tui.debug-shell]
 Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an

@@ -297,12 +297,51 @@ picks up the encryption config. Combining them would require reordering
 the encryption setup to happen before firstboot, which would complicate
 the flow for marginal benefit.
 
-### Progress reporting
+### Progress reporting and TUI screen flow
 
-EFI (~512 MiB) and xboot (~1 GiB) are small relative to root (~3.5 GiB).
-Show a single unified progress bar across all three writes. Sum the three
-`.size` sidecars for the total, and accumulate bytes written across all
-three streams.
+Today the TUI has separate screens for each post-write phase: `Writing`,
+`FirstbootApply`, `EncryptionSetup`, `RecoveryPassphrase`, `Done`. This
+means the progress bar disappears after the image write and the user sees
+a sequence of brief "Applying..." screens with no progress indication.
+
+In the new design, a single `Installing` screen with one progress bar
+covers the entire installation. The progress bar is weighted so that the
+partition writes (which have byte-level progress) occupy the bulk of the
+bar, and each post-write step gets a 1% slice even though we only know
+when it starts and finishes. This gives the user a sense of forward motion
+throughout the entire process.
+
+Approximate weight allocation:
+
+- Partition writes (EFI + xboot + root): ~90% (proportional to bytes,
+  tracked precisely via the existing `WriteProgress` mechanism).
+- Expand root filesystem: 1%
+- Randomize UUIDs: 1%
+- Rebuild boot config (dracut + update-grub): 2%
+- Verify partition table: 1%
+- First-boot configuration: 1%
+- Encryption setup (if encrypted): 4% (or 0% if `None`)
+
+The exact percentages are not critical; what matters is that the bar
+moves for every phase. Each post-write step jumps the bar forward by its
+slice when it completes.
+
+After all steps complete, the TUI transitions to a `Done` screen. For
+encrypted installs, the `Done` screen also displays the recovery
+passphrase (which was pre-generated at confirmation time and is now
+enrolled). The user must press Enter to acknowledge. This replaces the
+separate `RecoveryPassphrase` screen.
+
+The `Screen` enum changes:
+- `Writing` -> `Installing` (covers all phases, not just image write).
+- Remove `FirstbootApply` and `EncryptionSetup` (folded into
+  `Installing`).
+- Remove `RecoveryPassphrase` (folded into `Done`).
+- `Done` shows the recovery passphrase when encryption is enabled.
+
+For automatic mode (`run_auto`), the same structure applies: a single
+progress output covering all phases, with the recovery passphrase printed
+to stderr at the end.
 
 ### Disk size check
 
@@ -414,27 +453,49 @@ device).
   keyfile at `/tmp/bes-empty-keyfile` for this purpose, which is fine.
   No change needed here.
 
+### `installer/tui/src/ui.rs`
+
+- **`Screen` enum**: Replace `Writing`, `FirstbootApply`,
+  `EncryptionSetup`, `RecoveryPassphrase` with a single `Installing`
+  screen. The `Done` screen now also displays the recovery passphrase
+  when encryption is enabled.
+- **`AppState`**: Add an `install_phase: InstallPhase` enum field to
+  track which phase the install worker is in (e.g. `WritingPartitions`,
+  `ExpandingRoot`, `RandomizingUuids`, `RebuildingBoot`,
+  `VerifyingPartitions`, `ApplyingFirstboot`, `SettingUpEncryption`).
+  Add `install_progress: f64` (0.0 to 1.0) for the unified bar.
+- **`advance`**: `Confirmation` -> `Installing`. `Installing` does not
+  advance (the worker sends a message when done). Worker completion
+  transitions to `Done`.
+
 ### `installer/tui/src/main.rs`
 
 - **`run_auto`**: Replace `find_image_path` + `write_image` sequence with
-  `find_partition_manifest` + `write_partitions`. Pass `disk_encryption` to
-  `write_partitions` so it knows whether to set up LUKS. After write, call
-  `expand_root_filesystem`, `randomize_filesystem_uuids`,
-  `rebuild_boot_config`, then `verify_partition_table`, then
-  `firstboot::fixup_for_metal_variant` before `apply_firstboot` when
-  encryption is enabled. Remove `expand_partitions` call.
+  `find_partition_manifest` + `write_partitions`. The entire install
+  sequence (write, expand, randomize UUIDs, rebuild boot config, verify,
+  firstboot, encryption) runs in order with progress printed to stderr.
+  Recovery passphrase is printed at the end.
 - **`run_interactive`**: Replace `find_image_path` call with
   `find_partition_manifest`. Pass manifest to `ui::run_tui`.
 
 ### `installer/tui/src/ui/run.rs`
 
-- **`start_write_worker`**: Replace `write_image` with `write_partitions`.
-  Pass `disk_encryption` from `AppState`. After write, call
-  `expand_root_filesystem`, `randomize_filesystem_uuids`,
-  `rebuild_boot_config`, then `verify_partition_table` (remove
-  `expand_partitions`).
-- **`start_firstboot_worker`**: Add call to `fixup_for_metal_variant` when
-  encryption is enabled, before `apply_firstboot`.
+- **`start_install_worker`** (replaces `start_write_worker` +
+  `start_firstboot_worker` + `start_encryption_worker`): A single worker
+  thread that runs the entire install sequence, sending
+  `WorkerMessage::Phase(InstallPhase)` and
+  `WorkerMessage::Progress(f64)` messages as it goes. The worker calls:
+  1. `write_partitions` (with byte-level progress mapped to 0-90%).
+  2. `expand_root_filesystem` (90-91%).
+  3. `randomize_filesystem_uuids` (91-92%).
+  4. `rebuild_boot_config` (92-94%).
+  5. `verify_partition_table` (94-95%).
+  6. `fixup_for_metal_variant` + `apply_firstboot` (95-96%).
+  7. `run_encryption_setup` if encrypted (96-100%), or jump to 100%.
+  On completion, sends `WorkerMessage::InstallDone`. On error, sends
+  `WorkerMessage::InstallError(String)`.
+- Delete `start_firstboot_worker` and `start_encryption_worker` (folded
+  into `start_install_worker`).
 
 ### `installer/tui/src/plan.rs`
 
