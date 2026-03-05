@@ -232,10 +232,6 @@ Dracut must be configured to include this keyfile in the initramfs.
 r[image.luks.crypttab]
 `/etc/crypttab` must be configured to automatically decrypt the root on boot.
 
-The image does not include any first-boot services for master key rotation or
-TPM enrollment. The installer handles all encryption setup at install time
-(see `installer.encryption.*`).
-
 ## Output
 
 r[image.output.raw]
