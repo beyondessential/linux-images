@@ -329,7 +329,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         Screen::Writing | Screen::FirstbootApply | Screen::EncryptionSetup => {}
 
-        // r[impl installer.encryption.recovery-passphrase]
+        // r[impl installer.encryption.recovery-passphrase+2]
         Screen::RecoveryPassphrase => {
             if key.code == KeyCode::Enter {
                 state.advance();
@@ -340,8 +340,9 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             return KeyAction::Reboot;
         }
 
+        // r[impl installer.tui.error-reboot]
         Screen::Error(_) => {
-            return KeyAction::Quit;
+            return KeyAction::Reboot;
         }
     }
 
@@ -559,13 +560,15 @@ fn start_encryption_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
         }
     };
     let disk_encryption = state.disk_encryption;
+    // r[impl installer.encryption.recovery-passphrase+2]
+    let passphrase = state.recovery_passphrase.clone();
     let tx = tx.clone();
 
     thread::spawn(move || {
-        let result = run_encryption(&target_disk, disk_encryption);
+        let result = run_encryption(&target_disk, disk_encryption, passphrase.as_deref());
         match result {
-            Ok(passphrase) => {
-                let _ = tx.send(WorkerMessage::EncryptionDone(passphrase));
+            Ok(enrolled_passphrase) => {
+                let _ = tx.send(WorkerMessage::EncryptionDone(enrolled_passphrase));
             }
             Err(e) => {
                 let _ = tx.send(WorkerMessage::EncryptionError(format!("{e:#}")));
@@ -577,10 +580,16 @@ fn start_encryption_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
 fn run_encryption(
     target_disk: &Path,
     disk_encryption: crate::config::DiskEncryption,
+    pre_generated_passphrase: Option<&str>,
 ) -> Result<String> {
     let mounted = firstboot::mount_target(target_disk, disk_encryption)?;
 
-    let result = encryption::run_encryption_setup(target_disk, disk_encryption, mounted.path());
+    let result = encryption::run_encryption_setup(
+        target_disk,
+        disk_encryption,
+        mounted.path(),
+        pre_generated_passphrase,
+    );
 
     firstboot::unmount_target(mounted)?;
 

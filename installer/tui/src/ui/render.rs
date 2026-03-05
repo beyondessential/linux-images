@@ -328,13 +328,14 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::EncryptionSetup => "Please wait...".into(),
         Screen::RecoveryPassphrase => "Press Enter to acknowledge".into(),
         Screen::Done => "Press any key to reboot".into(),
-        Screen::Error(_) => "Press any key to exit".into(),
+        Screen::Error(_) => "Press any key to reboot".into(),
     };
     let paragraph = Paragraph::new(hints);
     frame.render_widget(paragraph, area);
 }
 
 // r[impl installer.tui.welcome+3]
+// r[impl installer.tui.ascii-rendering]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut description = vec![
         Line::from(""),
@@ -349,11 +350,11 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
         Line::from("  Available variants:"),
         Line::from(Span::styled(
-            "    metal  — Full-disk encryption, hardware-locked when a TPM is available",
+            "    metal  -- Full-disk encryption, hardware-locked when a TPM is available",
             Style::default().fg(Color::Yellow),
         )),
         Line::from(Span::styled(
-            "    cloud  — For cloud or on-prem VMs where disk encryption is not needed",
+            "    cloud  -- For cloud or on-prem VMs where disk encryption is not needed",
             Style::default().fg(Color::Yellow),
         )),
         Line::from(""),
@@ -828,7 +829,7 @@ fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.confirmation+4]
+// r[impl installer.tui.confirmation+5]
 // r[impl installer.tui.password+4]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -899,7 +900,7 @@ fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, chunks[1]);
 }
 
-// r[impl installer.tui.confirmation+4]
+// r[impl installer.tui.confirmation+5]
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -969,6 +970,31 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
                 ),
             ]));
         }
+    }
+
+    // r[impl installer.encryption.recovery-passphrase+2]
+    if let Some(ref passphrase) = state.recovery_passphrase {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Recovery Passphrase",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("    {passphrase}"),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(
+            "  Write this down and store it in a safe place BEFORE proceeding.",
+        ));
+        lines.push(Line::from(
+            "  You will need it if the primary unlock mechanism fails.",
+        ));
     }
 
     lines.push(Line::from(""));
@@ -1061,7 +1087,7 @@ fn render_encryption_setup(frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.encryption.recovery-passphrase]
+// r[impl installer.encryption.recovery-passphrase+2]
 fn render_recovery_passphrase(frame: &mut Frame, area: Rect, state: &AppState) {
     let passphrase = state
         .recovery_passphrase
@@ -1127,7 +1153,7 @@ fn render_error(frame: &mut Frame, area: Rect, msg: &str) {
         Line::from(""),
         Line::from(format!("  Error: {msg}")),
         Line::from(""),
-        Line::from("  Press any key to exit."),
+        Line::from("  Press any key to reboot."),
     ];
     let block = Block::default().title(" Error ").borders(Borders::ALL);
     let paragraph = Paragraph::new(lines)
