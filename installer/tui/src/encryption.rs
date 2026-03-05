@@ -289,18 +289,96 @@ fn enroll_recovery_passphrase(root_part: &Path, passphrase: &str) -> Result<()> 
 
 // r[impl installer.encryption.wipe-empty-slot]
 fn wipe_empty_passphrase_slot(root_part: &Path) -> Result<()> {
-    tracing::info!("wiping empty passphrase slot (slot 0)");
+    tracing::info!("finding and wiping the empty-passphrase key slot");
+
+    let slot =
+        find_slot_for_empty_keyfile(root_part).context("locating the empty-passphrase key slot")?;
+
+    tracing::info!("empty passphrase is in slot {slot}");
 
     let part_str = root_part.to_str().unwrap_or_default();
+    let slot_str = slot.to_string();
 
     run_command(
         "cryptsetup",
-        &["luksKillSlot", part_str, "0", "--batch-mode"],
+        &["luksKillSlot", part_str, &slot_str, "--batch-mode"],
     )
-    .context("wiping empty passphrase key slot 0")?;
+    .with_context(|| format!("wiping empty passphrase key slot {slot}"))?;
 
-    tracing::info!("empty passphrase slot wiped");
+    tracing::info!("empty passphrase slot {slot} wiped");
     Ok(())
+}
+
+/// Probe each active LUKS key slot to find the one that unlocks with an
+/// empty keyfile. Returns the slot number. After `cryptsetup reencrypt` the
+/// original slot 0 is typically replaced by a new slot (often slot 1), so
+/// we cannot assume the empty-passphrase key is always in slot 0.
+fn find_slot_for_empty_keyfile(root_part: &Path) -> Result<u32> {
+    let tmp_keyfile = create_empty_keyfile()?;
+    let part_str = root_part.to_str().unwrap_or_default();
+    let kf_str = tmp_keyfile.to_str().unwrap_or_default();
+
+    // Parse active slot numbers from luksDump
+    let dump_output = Command::new("cryptsetup")
+        .args(["luksDump", part_str])
+        .output()
+        .context("running cryptsetup luksDump")?;
+    if !dump_output.status.success() {
+        let stderr = String::from_utf8_lossy(&dump_output.stderr);
+        bail!("cryptsetup luksDump failed: {stderr}");
+    }
+    let dump = String::from_utf8_lossy(&dump_output.stdout);
+
+    let mut slots = Vec::new();
+    let mut in_keyslots = false;
+    for line in dump.lines() {
+        if line.starts_with("Keyslots:") {
+            in_keyslots = true;
+            continue;
+        }
+        if !in_keyslots {
+            continue;
+        }
+        // A new top-level section starts at column 0 with a letter
+        // (e.g. "Tokens:", "Digests:"). Stop there.
+        if !line.is_empty() && !line.starts_with(' ') && !line.starts_with('\t') {
+            break;
+        }
+        // Slot headers have exactly two leading spaces then a digit:
+        //   "  0: luks2"
+        // Detail lines start with a tab: "\tKey:  512 bits"
+        if line.starts_with("  ") && !line.starts_with("   ") && !line.starts_with('\t') {
+            let trimmed = line.trim();
+            if let Some(colon) = trimmed.find(':')
+                && let Ok(slot) = trimmed[..colon].trim().parse::<u32>()
+            {
+                slots.push(slot);
+            }
+        }
+    }
+
+    for slot in &slots {
+        let ok = Command::new("cryptsetup")
+            .args([
+                "open",
+                "--test-passphrase",
+                "--key-slot",
+                &slot.to_string(),
+                "--key-file",
+                kf_str,
+                part_str,
+            ])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if ok {
+            let _ = fs::remove_file(&tmp_keyfile);
+            return Ok(*slot);
+        }
+    }
+
+    let _ = fs::remove_file(&tmp_keyfile);
+    bail!("no LUKS key slot unlocks with the empty keyfile (checked slots: {slots:?})")
 }
 
 // r[impl installer.encryption.configure-system]
