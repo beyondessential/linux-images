@@ -1,11 +1,13 @@
-use std::fs;
-use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::{
+    fs,
+    io::Read,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use anyhow::{Context, Result, bail};
-use rand::Rng;
+use rand::{distr::slice::Choose, prelude::*};
 
 use crate::config::DiskEncryption;
 
@@ -236,16 +238,14 @@ fn enroll_keyfile(root_part: &Path, mount_path: &Path) -> Result<()> {
 
 // r[impl installer.encryption.recovery-passphrase+2]
 pub fn generate_recovery_passphrase() -> String {
-    use static_lang_word_lists::AOSP_ENGLISH_LATIN;
-
-    let word_count = AOSP_ENGLISH_LATIN.len();
     let mut rng = rand::rng();
 
-    let words: Vec<&str> = (0..PASSPHRASE_WORD_COUNT)
-        .map(|_| {
-            let idx = rng.random_range(0..word_count);
-            &AOSP_ENGLISH_LATIN[idx]
-        })
+    let wordlist = Choose::new(&diceware_wordlists::MINILOCK_WORDLIST).unwrap();
+    let words: Vec<String> = wordlist
+        .sample_iter(&mut rng)
+        .filter(|w| w.len() >= 5 && w.chars().all(|c| c.is_ascii_alphanumeric()))
+        .map(|w| w.to_ascii_lowercase())
+        .take(PASSPHRASE_WORD_COUNT)
         .collect();
 
     words.join("-")
