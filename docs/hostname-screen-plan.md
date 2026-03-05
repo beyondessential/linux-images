@@ -29,39 +29,51 @@ Replace the hostname screen for both variants with a two-step flow:
 If the user selects the network-assigned option, the flow proceeds directly from
 the selection step to the Login screen with no text input step.
 
-## Spec Changes
+## Spec
 
-### `installer.tui.hostname` (rewrite)
+The spec has already been updated. The requirement `installer.tui.hostname+3`
+in `docs/spec/installer.md` describes the full behavior. All 22 existing
+references to `+2` across 6 files are now stale and need to be updated as
+part of the implementation.
 
-Replace the current rule with:
+## Stale References
 
-> After variant/TPM configuration, the TUI presents a hostname selection
-> screen. The screen offers two options via an Up/Down selector:
->
-> - **Static hostname**
-> - **Network-assigned (DHCP)** (metal variant) or **Network-assigned
->   (DHCP / cloud-init)** (cloud variant)
->
-> For the metal variant, "Static hostname" is selected by default. For the
-> cloud variant, the network-assigned option is selected by default.
->
-> Enter confirms the selection. If "Static hostname" is chosen, a second
-> sub-screen (`HostnameInput`) presents a text input for the hostname. The
-> field may be pre-filled from the configuration file or a resolved hostname
-> template. For the metal variant, the hostname is required: the user must
-> enter a non-empty value to advance, and an inline error is shown if the
-> field is empty on Enter. For the cloud variant, the hostname is optional:
-> if left empty, the image's built-in default hostname (`ubuntu`) is kept.
-> Esc from the text input returns to the selection screen.
->
-> If the network-assigned option is chosen, the TUI advances directly to
-> the Login screen with `hostname_from_dhcp` set to true and no text input
-> step. Esc from the selection screen returns to the previous screen
-> (TpmToggle for metal, VariantSelection for cloud).
->
-> When a `hostname-template` is present in the configuration, the template
-> is resolved to a concrete hostname at startup, pre-fills the text input,
-> and the selector defaults to "Static hostname" regardless of variant.
+These are the files and lines that reference the old `installer.tui.hostname+2`
+and must be updated to `+3` once their code matches the new spec:
+
+### `installer/tui/src/ui.rs`
+- line 228: `firstboot_config()` — impl annotation (logic unchanged)
+- line 542: `hostname_required()` — impl annotation (logic unchanged)
+- line 1013: `hostname_prefilled_from_config` test
+- line 1102: `firstboot_config_from_inputs` test
+- line 1135: `firstboot_config_empty_strings_are_none` test
+- line 1203: `hostname_required_for_metal` test
+- line 1211: `hostname_not_required_for_cloud` test
+- line 1219: `hostname_not_required_for_metal_with_dhcp` test
+
+### `installer/tui/src/ui/render.rs`
+- line 488: `render_hostname()` — needs full rewrite for selector UI
+
+### `installer/tui/src/ui/run.rs`
+- line 106: `Screen::Hostname` key handler — needs full rewrite for selector
+- line 911: `scripted_metal_empty_hostname_blocks_advance` test
+- line 931: `scripted_metal_hostname_typed_allows_advance` test
+- line 953: `scripted_cloud_empty_hostname_allows_advance` test
+- line 976: `scripted_metal_dhcp_toggle_allows_advance_with_empty_hostname` test
+- line 997: `scripted_metal_dhcp_toggle_via_space` test
+- line 1017: `scripted_metal_dhcp_toggle_on_off_requires_hostname` test
+- line 1040: `scripted_metal_dhcp_on_ignores_typing` test
+- line 1065: `scripted_cloud_tab_does_not_toggle_dhcp` test
+
+### `installer/tui/tests/dry_run/hostname.rs`
+- line 313: `scripted_metal_dhcp_toggle_produces_dhcp_sentinel` test
+
+### `installer/tui/tests/dry_run/interactive.rs`
+- line 132: `interactive_firstboot_fields_captured` test
+- line 199: `interactive_empty_firstboot_is_null` test
+
+### `installer/tui/tests/dry_run/scripted_navigation.rs`
+- line 212: `scripted_hostname_with_backspace_correction` test
 
 ## Screen Variants
 
@@ -171,56 +183,118 @@ Header step: `3/6 Hostname`
 - Auto mode advancement: both screens are skipped (the advance logic jumps
   from `Hostname` past `HostnameInput` when appropriate).
 
-## Test Changes
+## Implementation Checklist
 
-### Unit tests to update
+Work through these in order. Each step should be a separate commit.
 
-- `hostname_required_for_metal` — hostname is required only on
-  `HostnameInput` when the metal variant reaches it (static chosen).
-- `hostname_not_required_for_metal_with_dhcp` — DHCP path never reaches
-  `HostnameInput`, so this becomes a navigation test.
-- `firstboot_config_with_dhcp_hostname` — unchanged logic, just different UI
-  path to reach the same state.
-- Tests for advance flow: both variants now go
-  `Hostname -> HostnameInput -> Login` or `Hostname -> Login` depending on
-  selection.
+### Step 1: Add `Screen::HostnameInput` to the `Screen` enum
 
-### Unit tests to add
+- [ ] Add `HostnameInput` variant to `Screen` in `installer/tui/src/ui.rs`.
+- [ ] Update `advance()` to route `Hostname -> HostnameInput -> Login` when
+  static is selected, and `Hostname -> Login` when network-assigned is selected.
+- [ ] Update `go_back()` so `HostnameInput` goes back to `Hostname`.
+- [ ] Ensure `advance()` handles auto-mode correctly: skip both screens when
+  config provides a hostname or hostname-from-dhcp.
 
-- Metal selector: Down selects DHCP, Enter advances to Login (skipping input).
-- Metal selector: default (Static) + Enter advances to HostnameInput.
-- Cloud selector: default (network-assigned) + Enter advances to Login.
-- Cloud selector: Up selects Static, Enter advances to HostnameInput.
-- HostnameInput (metal): empty hostname blocks advance.
-- HostnameInput (cloud): empty hostname allowed, advances to Login.
-- HostnameInput: Esc returns to Hostname selector.
-- Config `hostname-from-dhcp = true`: selector starts on network-assigned for
-  both variants.
-- Config `hostname = "foo"`: selector starts on Static for both variants.
+### Step 2: Rewrite key handling for `Screen::Hostname` (selector)
 
-### Scripted / integration tests to update
+- [ ] Replace the current key handler in `installer/tui/src/ui/run.rs` that
+  handles text input + Tab/Space DHCP toggle with a simple Up/Down selector.
+- [ ] Up/Down toggles `hostname_from_dhcp` (false = Static, true = Network).
+- [ ] Enter confirms: if `hostname_from_dhcp`, advance to Login; else advance
+  to `HostnameInput`.
+- [ ] Esc goes back (already handled by `go_back()`).
+- [ ] Bump the `r[impl installer.tui.hostname+2]` annotation to `+3`.
 
-- All metal flow scripts that previously used `Tab` or `Space` to toggle DHCP
-  need to use `Down + Enter` to select DHCP instead.
-- All metal flow scripts that typed a hostname need an extra `Enter` at the
-  selector (Static is default for metal, so Enter goes to input, then type
-  hostname, then Enter to advance).
-- Cloud flow scripts that previously just typed a hostname need an extra step:
-  `Up + Enter` to select Static (since cloud defaults to network-assigned),
-  then type hostname, then Enter.
-- Cloud flow scripts that previously skipped hostname with an empty Enter now
-  just press Enter at the selector (network-assigned is the default for cloud).
+### Step 3: Implement key handling for `Screen::HostnameInput`
 
-## Implementation Steps
+- [ ] Handle character input, Backspace, Enter, Esc.
+- [ ] On Enter for metal: block advance if hostname is empty, show error.
+- [ ] On Enter for cloud: allow empty hostname, advance to Login.
+- [ ] Esc returns to `Screen::Hostname`.
+- [ ] Annotate with `r[impl installer.tui.hostname+3]`.
 
-1. Update spec in `docs/spec/installer.md`. Run `tracey bump`.
-2. Add `Screen::HostnameInput` to the `Screen` enum.
-3. Update `advance()` and `go_back()` for the new screen.
-4. Implement key handling for selector in `Screen::Hostname` (both variants).
-5. Implement key handling for `Screen::HostnameInput`.
-6. Implement render functions for both screens.
-7. Update footer and header step labels.
-8. Update all unit tests.
-9. Update all scripted / integration tests.
-10. Run `cargo clippy`, `cargo fmt`, `tracey query status`.
-11. Commit and push.
+### Step 4: Rewrite render functions
+
+- [ ] Rewrite `render_hostname()` in `installer/tui/src/ui/render.rs` to show
+  the two-option selector instead of the text input + toggle.
+- [ ] Add `render_hostname_input()` for the text input sub-screen.
+- [ ] Update footer text for both screens.
+- [ ] Keep header step label as `3/6 Hostname` for both.
+- [ ] Bump the render annotation to `+3`.
+
+### Step 5: Update unit tests in `installer/tui/src/ui.rs`
+
+- [ ] `hostname_prefilled_from_config` — may only need annotation bump if
+  `firstboot_config()` logic is unchanged.
+- [ ] `firstboot_config_from_inputs` — annotation bump.
+- [ ] `firstboot_config_empty_strings_are_none` — annotation bump.
+- [ ] `hostname_required_for_metal` — verify it still passes; annotation bump.
+- [ ] `hostname_not_required_for_cloud` — annotation bump.
+- [ ] `hostname_not_required_for_metal_with_dhcp` — annotation bump.
+- [ ] Bump all `r[verify installer.tui.hostname+2]` to `+3`.
+
+### Step 6: Update scripted unit tests in `installer/tui/src/ui/run.rs`
+
+These tests use input scripts and need their scripts adjusted for the new
+two-step flow:
+
+- [ ] `scripted_metal_empty_hostname_blocks_advance` — enter selector (Static
+  default) -> Enter -> empty input -> Enter should block. Rewrite script.
+- [ ] `scripted_metal_hostname_typed_allows_advance` — enter selector -> Enter
+  -> type hostname -> Enter. Rewrite script.
+- [ ] `scripted_cloud_empty_hostname_allows_advance` — cloud defaults to
+  network-assigned, so this test changes: Enter at selector goes straight to
+  Login. Or change to test static path with empty input. Decide based on what
+  the test is actually verifying.
+- [ ] `scripted_metal_dhcp_toggle_allows_advance_with_empty_hostname` — now:
+  Down to select DHCP -> Enter -> should advance to Login. Rewrite script.
+- [ ] `scripted_metal_dhcp_toggle_via_space` — Space no longer toggles; this
+  test should be replaced with a Down/Enter test.
+- [ ] `scripted_metal_dhcp_toggle_on_off_requires_hostname` — now: Down (DHCP)
+  -> Up (Static) -> Enter -> empty input -> Enter should block. Rewrite.
+- [ ] `scripted_metal_dhcp_on_ignores_typing` — no longer applicable (DHCP
+  path never shows text input). Replace with test that DHCP selection skips
+  input entirely.
+- [ ] `scripted_cloud_tab_does_not_toggle_dhcp` — Tab no longer relevant.
+  Replace with cloud selector navigation test.
+- [ ] Bump all annotations to `+3`.
+
+### Step 7: Add new unit tests
+
+- [ ] Metal selector: Down selects DHCP, Enter advances to Login (skip input).
+- [ ] Metal selector: default (Static) + Enter advances to HostnameInput.
+- [ ] Cloud selector: default (network-assigned) + Enter advances to Login.
+- [ ] Cloud selector: Up selects Static, Enter advances to HostnameInput.
+- [ ] HostnameInput (metal): empty hostname blocks advance.
+- [ ] HostnameInput (cloud): empty hostname allowed, advances to Login.
+- [ ] HostnameInput: Esc returns to Hostname selector.
+- [ ] Config `hostname-from-dhcp = true`: selector starts on network-assigned
+  for both variants.
+- [ ] Config `hostname = "foo"`: selector starts on Static for both variants.
+
+(Some of these may overlap with rewrites in step 6 — deduplicate as needed.)
+
+### Step 8: Update integration tests (`installer/tui/tests/dry_run/`)
+
+- [ ] `hostname.rs` line 313: `scripted_metal_dhcp_toggle_produces_dhcp_sentinel`
+  — rewrite script to use Down + Enter at selector instead of Tab toggle.
+- [ ] `interactive.rs` line 132: `interactive_firstboot_fields_captured` — cloud
+  variant, currently types hostname directly. Needs: Up (select Static) ->
+  Enter -> type hostname -> Enter.
+- [ ] `interactive.rs` line 199: `interactive_empty_firstboot_is_null` — cloud
+  variant, currently presses Enter to skip hostname. Now: Enter at selector
+  (network-assigned default) goes to Login. Script likely needs fewer steps.
+- [ ] `scripted_navigation.rs` line 212:
+  `scripted_hostname_with_backspace_correction` — cloud variant, currently
+  types directly. Needs: Up (select Static) -> Enter -> type + backspace ->
+  Enter.
+- [ ] Bump all annotations to `+3`.
+
+### Step 9: Final checks
+
+- [ ] `cargo fmt`
+- [ ] `cargo clippy`
+- [ ] `tracey query status` — confirm no stale references remain and coverage
+  is restored.
+- [ ] `cargo test` — all tests pass.
