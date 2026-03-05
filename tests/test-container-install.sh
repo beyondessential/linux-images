@@ -14,7 +14,7 @@
 #
 # Required environment:
 #   ROOTFS_DIR   — path to pre-extracted live rootfs
-#   IMAGES_DIR   — path to directory containing .raw.zst images
+#   IMAGES_DIR   — path to directory containing partitions.json and .img.zst images
 #
 # Scenario environment (all optional):
 #   SCENARIO_NAME  — human-readable name (default: "unnamed")
@@ -23,6 +23,7 @@
 #   SET_SSH_KEYS   — SSH public key to set, or "" to skip (default: "")
 #   SET_PASSWORD   — plaintext password for ubuntu user, or "" to skip (default: "")
 #   SET_PASSWORD_HASH — pre-hashed password for ubuntu user, or "" to skip (default: "")
+#   SET_COPY_INSTALL_LOG — "false" to disable install log copy, or "" for default (default: "")
 #
 # Requires: systemd-nspawn, losetup, lsblk, partprobe, cryptsetup,
 #           btrfs-progs, util-linux. Must run as root.
@@ -56,6 +57,7 @@ SET_SSH_KEYS="${SET_SSH_KEYS:-}"
 SET_PASSWORD="${SET_PASSWORD:-}"
 SET_PASSWORD_HASH="${SET_PASSWORD_HASH:-}"
 SET_TIMEZONE="${SET_TIMEZONE:-}"
+SET_COPY_INSTALL_LOG="${SET_COPY_INSTALL_LOG:-}"
 
 TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-10G}"
 
@@ -135,6 +137,7 @@ echo "  ssh-keys:      ${SET_SSH_KEYS:+(key provided)}${SET_SSH_KEYS:-(not set)}
 echo "  password:      ${SET_PASSWORD:+(plaintext provided)}${SET_PASSWORD:-(not set)}"
 echo "  password-hash: ${SET_PASSWORD_HASH:+(hash provided)}${SET_PASSWORD_HASH:-(not set)}"
 echo "  timezone:      ${SET_TIMEZONE:-(not set, defaults to UTC)}"
+echo "  copy-log:      ${SET_COPY_INSTALL_LOG:-(not set, defaults to true)}"
 echo "  disk size:     $TARGET_DISK_SIZE"
 echo ""
 
@@ -175,6 +178,9 @@ CONFIG_TOML="$WORK_DIR/bes-install.toml"
     echo 'auto = true'
     echo "disk-encryption = \"$DISK_ENCRYPTION\""
     echo "disk = \"$LOOP_DEV\""
+    if [ "$SET_COPY_INSTALL_LOG" = "false" ]; then
+        echo "copy-install-log = false"
+    fi
 
     if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_HOSTNAME_FROM_DHCP" ] || [ -n "$SET_HOSTNAME_TEMPLATE" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ] || [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ] || [ -n "$SET_TIMEZONE" ]; then
         echo ""
@@ -571,6 +577,88 @@ if [ -n "$BTRFS_DEV" ]; then
                 check "timezone file contains 'UTC' (default)" \
                     test "$ACTUAL_TZ" = "UTC"
             fi
+        fi
+
+        # --- /etc/fstab references ---
+        # r[verify installer.write.fstab-fixup]
+        if [ "$VARIANT" = "metal" ]; then
+            FSTAB="$VERIFY_MOUNT/etc/fstab"
+            if [ -f "$FSTAB" ]; then
+                check "fstab root entry uses /dev/mapper/root" \
+                    grep -q '^/dev/mapper/root[[:space:]]' "$FSTAB"
+                check "fstab has no by-partlabel/root references" \
+                    test "$(grep -c 'by-partlabel/root' "$FSTAB")" -eq 0
+            else
+                check "fstab exists" false
+            fi
+        else
+            FSTAB="$VERIFY_MOUNT/etc/fstab"
+            if [ -f "$FSTAB" ]; then
+                check "fstab root entry uses by-partlabel/root (cloud)" \
+                    grep -q 'by-partlabel/root' "$FSTAB"
+            else
+                check "fstab exists" false
+            fi
+        fi
+
+        # --- /etc/bes/image-variant ---
+        # r[verify installer.write.variant-fixup]
+        VARIANT_FILE="$VERIFY_MOUNT/etc/bes/image-variant"
+        if [ -f "$VARIANT_FILE" ]; then
+            ACTUAL_VARIANT="$(tr -d '[:space:]' < "$VARIANT_FILE")"
+            check "image-variant is '$VARIANT'" \
+                test "$ACTUAL_VARIANT" = "$VARIANT"
+        else
+            check "image-variant file exists" false
+        fi
+
+        # --- Install log ---
+        # r[verify installer.firstboot.copy-install-log]
+        INSTALL_LOG="$VERIFY_MOUNT/var/log/bes-installer.log"
+        if [ "$SET_COPY_INSTALL_LOG" = "false" ]; then
+            check "install log absent when copy-install-log=false" \
+                test ! -f "$INSTALL_LOG"
+        else
+            if [ -f "$INSTALL_LOG" ]; then
+                LOG_SIZE="$(stat -c%s "$INSTALL_LOG")"
+                check "install log exists and is non-empty" \
+                    test "$LOG_SIZE" -gt 0
+            else
+                check "install log exists" false
+            fi
+        fi
+
+        # --- Filesystem UUID / grub.cfg consistency ---
+        # r[verify installer.write.randomize-uuids]
+        # r[verify installer.write.rebuild-boot-config]
+        # Mount /boot so we can read grub.cfg
+        BOOT_MNT="$WORK_DIR/verify-boot"
+        mkdir -p "$BOOT_MNT"
+        XBOOT_PART="${LOOP_DEV}p2"
+        set +e
+        mount -o ro "$XBOOT_PART" "$BOOT_MNT" 2>/dev/null
+        BOOT_MOUNT_RC=$?
+        set -e
+        if [ $BOOT_MOUNT_RC -eq 0 ]; then
+            GRUB_CFG="$BOOT_MNT/grub/grub.cfg"
+            if [ ! -f "$GRUB_CFG" ]; then
+                GRUB_CFG="$BOOT_MNT/efi/EFI/ubuntu/grub.cfg"
+            fi
+            if [ -f "$GRUB_CFG" ]; then
+                # Get the actual BTRFS UUID of the root device
+                ACTUAL_ROOT_UUID="$(blkid -o value -s UUID "$BTRFS_DEV" 2>/dev/null || true)"
+                if [ -n "$ACTUAL_ROOT_UUID" ]; then
+                    check "grub.cfg references actual root UUID ($ACTUAL_ROOT_UUID)" \
+                        grep -q "$ACTUAL_ROOT_UUID" "$GRUB_CFG"
+                else
+                    echo "    (could not read root UUID — skipping grub.cfg UUID check)"
+                fi
+            else
+                echo "    (grub.cfg not found — skipping UUID consistency check)"
+            fi
+            umount "$BOOT_MNT"
+        else
+            echo "    (could not mount xboot — skipping grub.cfg checks)"
         fi
 
         umount "$VERIFY_MOUNT"

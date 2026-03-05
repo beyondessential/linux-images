@@ -67,5 +67,11 @@
   {
     "name": "cloud-timezone-default",
     "disk-encryption": "none"
+  },
+  {
+    "name": "cloud-no-install-log",
+    "disk-encryption": "none",
+    "hostname": "test-cloud-nolog",
+    "copy-install-log": false
   }
 ]

@@ -103,12 +103,12 @@ xorriso -osirrox on -indev "$ISO" \
     -extract /images "$IMAGES_DIR" \
     2>/dev/null
 
-IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.raw.zst' | wc -l)
-if [ "$IMAGE_COUNT" -eq 0 ]; then
-    echo "ERROR: no .raw.zst images found in ISO /images/"
+if [ ! -f "$IMAGES_DIR/partitions.json" ]; then
+    echo "ERROR: partitions.json not found in ISO /images/"
     exit 1
 fi
-echo "    Extracted $IMAGE_COUNT disk image(s)"
+PART_IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.img.zst' | wc -l)
+echo "    Extracted partitions.json + $PART_IMAGE_COUNT partition image(s)"
 echo ""
 
 # ============================================================
@@ -177,6 +177,7 @@ for i in $(seq 0 $((TOTAL - 1))); do
     SET_PASSWORD="$(jq_str "$SCENARIO" '.password')" \
     SET_PASSWORD_HASH="$(jq_str "$SCENARIO" '."password-hash"')" \
     SET_TIMEZONE="$(jq_str "$SCENARIO" '.timezone')" \
+    SET_COPY_INSTALL_LOG="$(jq_str "$SCENARIO" '."copy-install-log"')" \
         "$SCRIPT_DIR/test-container-install.sh" "$disk_encryption" "$ARCH"
     RC=$?
     set -e
