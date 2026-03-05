@@ -15,7 +15,7 @@
 #     ARCH            - amd64 or arm64 (default: amd64)
 #     OUTPUT          - output file path (default: output/<arch>/bes-installer-<arch>.iso)
 #     INSTALLER_BIN   - path to the bes-installer binary
-#     IMAGE_DIR       - directory containing .raw.zst images to embed
+#     CLOUD_IMAGE     - path to the cloud .raw.zst image to extract partitions from
 #     UBUNTU_SUITE    - Ubuntu suite name (default: noble)
 #     UBUNTU_MIRROR   - mirror URL (auto-selected per arch if unset)
 #     BESCONF_SIZE_MB - BESCONF partition size in MiB (default: 4)
@@ -26,7 +26,7 @@ UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
 BESCONF_SIZE_MB="${BESCONF_SIZE_MB:-4}"
 BUILD_DATE="$(date -u +%Y-%m-%d)"
 INSTALLER_BIN="${INSTALLER_BIN:?INSTALLER_BIN must point to the bes-installer binary}"
-IMAGE_DIR="${IMAGE_DIR:?IMAGE_DIR must point to directory with .raw.zst images}"
+CLOUD_IMAGE="${CLOUD_IMAGE:?CLOUD_IMAGE must point to the cloud .raw.zst image}"
 OUTPUT="${OUTPUT:-output/${ARCH}/bes-installer-${ARCH}.iso}"
 
 # r[impl iso.per-arch]
@@ -57,23 +57,13 @@ if [ ! -f "$INSTALLER_BIN" ]; then
     exit 1
 fi
 
-if [ ! -d "$IMAGE_DIR" ]; then
-    echo "ERROR: image directory not found: $IMAGE_DIR"
-    exit 1
-fi
-
-IMAGE_FILES=()
-while IFS= read -r -d '' f; do
-    IMAGE_FILES+=("$f")
-done < <(find "$IMAGE_DIR" -name "*.raw.zst" -print0)
-
-if [ "${#IMAGE_FILES[@]}" -eq 0 ]; then
-    echo "ERROR: no .raw.zst images found in $IMAGE_DIR"
+if [ ! -f "$CLOUD_IMAGE" ]; then
+    echo "ERROR: cloud image not found: $CLOUD_IMAGE"
     exit 1
 fi
 
 MISSING=()
-for cmd in debootstrap mksquashfs sgdisk mkfs.vfat losetup grub-mkimage xorriso; do
+for cmd in debootstrap mksquashfs sfdisk mkfs.vfat losetup grub-mkimage xorriso zstd jq; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -87,8 +77,7 @@ echo "=============================="
 echo "Architecture:  $ARCH"
 echo "Output:        $OUTPUT"
 echo "Installer:     $INSTALLER_BIN"
-echo "Image dir:     $IMAGE_DIR"
-echo "Images:        ${IMAGE_FILES[*]}"
+echo "Cloud image:   $CLOUD_IMAGE"
 echo "Suite:         $UBUNTU_SUITE"
 echo "BESCONF size:  ${BESCONF_SIZE_MB} MiB"
 echo "Build date:    $BUILD_DATE"
@@ -102,6 +91,7 @@ WORK_DIR=""
 MNT_ROOTFS=""
 MNT_ESP=""
 CHROOT_MOUNTS_ACTIVE=0
+EXTRACT_LOOP=""
 
 cleanup() {
     local exit_code=$?
@@ -124,6 +114,7 @@ cleanup() {
 
     [ -n "$MNT_ESP" ] && mountpoint -q "$MNT_ESP" 2>/dev/null && umount "$MNT_ESP"
     [ -n "$MNT_ROOTFS" ] && mountpoint -q "$MNT_ROOTFS" 2>/dev/null && umount "$MNT_ROOTFS"
+    [ -n "$EXTRACT_LOOP" ] && losetup -d "$EXTRACT_LOOP" 2>/dev/null
 
     if [ -n "$WORK_DIR" ]; then
         rm -rf "$WORK_DIR"
@@ -433,23 +424,98 @@ rm -rf "$MNT_ROOTFS"
 echo "    squashfs: $(du -h "$STAGING/live/filesystem.squashfs" | cut -f1)"
 
 # ============================================================
-# Phase 5: Copy disk images into staging
+# Phase 5: Extract partition images from cloud image
 # ============================================================
 # r[impl iso.contents]
-echo "==> Phase 5: Copying disk images into staging..."
+echo "==> Phase 5: Extracting partition images from cloud image..."
 mkdir -p "$STAGING/images"
-for img in "${IMAGE_FILES[@]}"; do
-    echo "    $(basename "$img")"
-    cp "$img" "$STAGING/images/"
-    # Copy the .size sidecar (used by the installer for disk size checks)
-    SIZE_FILE="${img%.zst}.size"
-    if [ -f "$SIZE_FILE" ]; then
-        echo "    $(basename "$SIZE_FILE")"
-        cp "$SIZE_FILE" "$STAGING/images/"
-    else
-        echo "WARNING: no .size sidecar for $(basename "$img")"
-    fi
+
+CLOUD_RAW="$WORK_DIR/cloud.raw"
+echo "    Decompressing $CLOUD_IMAGE ..."
+zstd -d "$CLOUD_IMAGE" -o "$CLOUD_RAW"
+
+EXTRACT_LOOP="$(losetup -f --show -P "$CLOUD_RAW")"
+echo "    Loop device: $EXTRACT_LOOP"
+partprobe "$EXTRACT_LOOP"
+udevadm settle
+sleep 1
+
+PART_COUNT="$(lsblk -ln -o NAME "$EXTRACT_LOOP" | grep -c "^$(basename "$EXTRACT_LOOP")p")"
+if [ "$PART_COUNT" -ne 3 ]; then
+    echo "ERROR: expected 3 partitions in cloud image, got $PART_COUNT"
+    exit 1
+fi
+
+EFI_PART="${EXTRACT_LOOP}p1"
+XBOOT_PART="${EXTRACT_LOOP}p2"
+ROOT_PART="${EXTRACT_LOOP}p3"
+
+PART_NAMES=("efi" "xboot" "root")
+PART_DEVS=("$EFI_PART" "$XBOOT_PART" "$ROOT_PART")
+
+# Read partition geometry via sfdisk JSON output
+SFDISK_JSON="$(sfdisk --json "$EXTRACT_LOOP")"
+SECTOR_SIZE="$(echo "$SFDISK_JSON" | jq '.partitiontable.sectorsize')"
+
+PART_TYPES=()
+PART_SIZES_MIB=()
+for i in 0 1 2; do
+    PART_TYPE="$(echo "$SFDISK_JSON" | jq -r ".partitiontable.partitions[$i].type")"
+    PART_SIZE_SECTORS="$(echo "$SFDISK_JSON" | jq ".partitiontable.partitions[$i].size")"
+    SIZE_MIB=$(( (PART_SIZE_SECTORS * SECTOR_SIZE) / 1048576 ))
+    PART_TYPES+=("$PART_TYPE")
+    PART_SIZES_MIB+=("$SIZE_MIB")
 done
+
+# Root partition uses size_mib=0 to mean "use all remaining space"
+PART_SIZES_MIB[2]=0
+
+for idx in 0 1 2; do
+    NAME="${PART_NAMES[$idx]}"
+    DEV="${PART_DEVS[$idx]}"
+    UNCOMPRESSED="$WORK_DIR/${NAME}.img"
+
+    echo "    Extracting $NAME partition from $DEV ..."
+    dd if="$DEV" of="$UNCOMPRESSED" bs=4M status=none
+
+    UNCOMPRESSED_SIZE="$(stat --format='%s' "$UNCOMPRESSED")"
+    echo "$UNCOMPRESSED_SIZE" > "$STAGING/images/${NAME}.img.size"
+    echo "    ${NAME}.img.size: $UNCOMPRESSED_SIZE bytes"
+
+    echo "    Compressing ${NAME}.img -> ${NAME}.img.zst ..."
+    zstd -6 "$UNCOMPRESSED" -o "$STAGING/images/${NAME}.img.zst"
+    rm -f "$UNCOMPRESSED"
+
+    COMPRESSED_SIZE="$(stat --format='%s' "$STAGING/images/${NAME}.img.zst")"
+    echo "    ${NAME}.img.zst: $(( COMPRESSED_SIZE / 1048576 )) MiB"
+done
+
+losetup -d "$EXTRACT_LOOP"
+EXTRACT_LOOP=""
+rm -f "$CLOUD_RAW"
+
+# Generate partitions.json
+echo "    Generating partitions.json ..."
+jq -n \
+    --arg arch "$ARCH" \
+    --arg efi_type "${PART_TYPES[0]}" \
+    --argjson efi_size "${PART_SIZES_MIB[0]}" \
+    --arg xboot_type "${PART_TYPES[1]}" \
+    --argjson xboot_size "${PART_SIZES_MIB[1]}" \
+    --arg root_type "${PART_TYPES[2]}" \
+    --argjson root_size "${PART_SIZES_MIB[2]}" \
+    '{
+        arch: $arch,
+        partitions: [
+            { label: "efi",   type_uuid: $efi_type,   size_mib: $efi_size,   image: "efi.img.zst" },
+            { label: "xboot", type_uuid: $xboot_type,  size_mib: $xboot_size, image: "xboot.img.zst" },
+            { label: "root",  type_uuid: $root_type,   size_mib: $root_size,  image: "root.img.zst" }
+        ]
+    }' > "$STAGING/images/partitions.json"
+
+echo "    partitions.json:"
+cat "$STAGING/images/partitions.json"
+echo ""
 
 # ============================================================
 # Phase 6: Build GRUB EFI bootloader and ESP image

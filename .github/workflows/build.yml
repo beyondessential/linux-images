@@ -177,13 +177,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             debootstrap gdisk dosfstools e2fsprogs squashfs-tools \
             ${{ matrix.grub_pkg }} grub-common \
-            parted util-linux zstd cryptsetup xorriso
-
-      - name: Download metal raw image
-        uses: actions/download-artifact@v8
-        with:
-          name: image-raw-metal-${{ matrix.arch }}
-          path: output/${{ matrix.arch }}/metal/
+            parted util-linux zstd cryptsetup xorriso jq
 
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
@@ -202,17 +196,22 @@ jobs:
 
       - name: List inputs
         run: |
-          echo "=== Images ==="
-          ls -lhR output/${{ matrix.arch }}/metal/ output/${{ matrix.arch }}/cloud/ || true
+          echo "=== Cloud Image ==="
+          ls -lhR output/${{ matrix.arch }}/cloud/ || true
           echo "=== Installer ==="
           ls -lh installer-bin/
 
       - name: Build ISO
         run: |
+          CLOUD_IMAGE="$(find output/${{ matrix.arch }}/cloud/ -name '*.raw.zst' | head -1)"
+          if [ -z "$CLOUD_IMAGE" ]; then
+            echo "ERROR: no cloud .raw.zst found under output/${{ matrix.arch }}/cloud/"
+            exit 1
+          fi
           sudo ARCH=${{ matrix.arch }} \
                OUTPUT=output/${{ matrix.arch }}/bes-installer-${{ matrix.arch }}.iso \
                INSTALLER_BIN=installer-bin/bes-installer \
-               IMAGE_DIR=output/${{ matrix.arch }} \
+               CLOUD_IMAGE="$CLOUD_IMAGE" \
                UBUNTU_SUITE=${{ env.UBUNTU_SUITE }} \
                iso/build-iso.sh
         timeout-minutes: 30

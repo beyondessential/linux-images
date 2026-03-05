@@ -124,20 +124,19 @@ iso: _validate-arch installer-build
   #!/usr/bin/env bash
   set -euo pipefail
 
-  # Verify we have images for both variants
-  METAL_IMAGE="$(find "{{output_arch_dir}}" -name '*-metal-*.raw.zst' | head -1)"
-  CLOUD_IMAGE="$(find "{{output_arch_dir}}" -name '*-cloud-*.raw.zst' | head -1)"
+  # Verify we have the cloud image (partition images are extracted from it)
+  CLOUD_IMAGE="$(find "{{output_arch_dir}}" -path '*/cloud/*' -name '*.raw.zst' | head -1)"
 
-  if [ -z "$METAL_IMAGE" ] || [ -z "$CLOUD_IMAGE" ]; then
-    echo "ERROR: need both metal and cloud .raw.zst images under {{output_arch_dir}}"
-    echo "Run 'just arch={{arch}} variant=metal build' and 'just arch={{arch}} variant=cloud build' first."
+  if [ -z "$CLOUD_IMAGE" ]; then
+    echo "ERROR: need a cloud .raw.zst image under {{output_arch_dir}}"
+    echo "Run 'just arch={{arch}} variant=cloud build' first."
     exit 1
   fi
 
   sudo ARCH="{{arch}}" \
        OUTPUT="{{output_iso}}" \
        INSTALLER_BIN="{{installer_bin}}" \
-       IMAGE_DIR="{{output_arch_dir}}" \
+       CLOUD_IMAGE="$CLOUD_IMAGE" \
        UBUNTU_SUITE="{{ubuntu_suite}}" \
        UBUNTU_MIRROR="{{ubuntu_mirror}}" \
        iso/build-iso.sh
