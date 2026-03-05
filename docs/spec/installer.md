@@ -557,14 +557,14 @@ filesystems and close any LUKS volumes before prompting for reboot.
 
 ## Container Isolation
 
-> r[installer.container.isolation]
+> r[installer.container.isolation+2]
 > When the installer is run inside a container (e.g. `systemd-nspawn`) for
 > integration testing, it must never have access to the host's real block
 > devices. Safety is enforced by three layers:
 >
 > 1. `systemd-nspawn` provides its own `/dev`; host block devices are not
->    present unless explicitly bound in. Only the loop device and its
->    partitions are bound.
+>    present unless explicitly bound in. Only the loop device itself is
+>    bound — partition device nodes are **not** bound from the host.
 > 2. The installer is invoked with `--fake-devices`, which bypasses `lsblk`
 >    discovery entirely and presents only the loop device.
 > 3. The container runs with `--private-network` to prevent any network
@@ -573,3 +573,23 @@ filesystems and close any LUKS volumes before prompting for reboot.
 > A test must verify this property by launching a container without running
 > the installer and confirming that no host block devices (e.g. `/dev/sda`,
 > `/dev/nvme*`) are visible inside.
+
+r[installer.container.partition-devices]
+Inside a container with a private `/dev`, running `partprobe` tells the
+kernel to re-read the partition table but the resulting device nodes are
+created on the **host's** devtmpfs, not inside the container. The container's
+`/sys` may also not expose partition sub-entries under
+`/sys/class/block/<disk>/`. The installer must therefore ensure that
+partition device nodes exist before any operation that accesses them (e.g.
+`cryptsetup open`, `mount`). When sysfs entries for partition sub-devices
+are available, their `dev` file (major:minor) is used to `mknod` missing
+nodes. When sysfs entries are absent, the installer must fall back to
+reading the partition table with `sfdisk --json`, deriving each partition's
+major:minor from the parent device's major number and computing
+`parent_minor + partition_index`, and then creating the nodes with `mknod`.
+
+r[installer.container.error-logging]
+Fatal errors that propagate to the installer's top-level must be logged via
+the tracing/log file **in addition to** being printed to stderr, so that
+container-based test harnesses that only capture the log file can see the
+failure reason.

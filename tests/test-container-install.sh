@@ -243,7 +243,7 @@ done
 # ============================================================
 echo "==> Running installer in systemd-nspawn container..."
 
-# r[impl installer.container.isolation] (layer 1): only the loop device is
+# r[impl installer.container.isolation+2] (layer 1): only the loop device is
 # bound into the container.
 NSPAWN_BINDS=(
     "--bind=$LOOP_DEV"
@@ -259,9 +259,9 @@ INSTALLER_OUTPUT="$WORK_DIR/installer-output.txt"
 echo "    Running installer (variant=$VARIANT, target=$LOOP_DEV)..."
 echo ""
 
-# r[impl installer.container.isolation] (layer 2): --fake-devices bypasses
+# r[impl installer.container.isolation+2] (layer 2): --fake-devices bypasses
 # lsblk discovery so the installer sees only the loop device.
-# r[impl installer.container.isolation] (layer 3): --private-network prevents
+# r[impl installer.container.isolation+2] (layer 3): --private-network prevents
 # any network side-effects from the container. This also serves as the
 # enforcement mechanism for r[verify iso.offline]: a successful install with
 # no network proves the ISO is fully self-contained.

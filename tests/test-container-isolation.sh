@@ -117,7 +117,7 @@ echo "==> Phase 3: Launching container to inspect /dev..."
 
 CONTAINER_DEV_LIST="$WORK_DIR/container-dev-list.txt"
 
-# r[verify installer.container.isolation] (layer 1): launch the container
+# r[verify installer.container.isolation+2] (layer 1): launch the container
 # without binding any host block devices. systemd-nspawn provides its own
 # /dev, so only devices explicitly bound in would be visible.
 systemd-nspawn \
@@ -176,7 +176,7 @@ done < "$CONTAINER_DEV_LIST"
 
 LEAKED_COUNT=$(wc -l < "$LEAKED_DEVS")
 
-# r[verify installer.container.isolation]: the container must not expose
+# r[verify installer.container.isolation+2]: the container must not expose
 # any real host block devices.
 check "no host disk devices visible inside container" test "$LEAKED_COUNT" -eq 0
 
