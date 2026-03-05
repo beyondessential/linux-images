@@ -1190,3 +1190,307 @@ fn model_or_unknown(dev: &BlockDevice) -> &str {
         &dev.model
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::*;
+    use crate::config::DiskEncryption;
+    use crate::disk::TransportType;
+
+    fn make_test_state() -> AppState {
+        let devices = vec![BlockDevice {
+            path: PathBuf::from("/dev/sda"),
+            size_bytes: 500_000_000_000,
+            model: "Test SSD".into(),
+            transport: TransportType::Nvme,
+            removable: false,
+        }];
+        AppState::new(
+            devices,
+            DiskEncryption::None,
+            false,
+            None,
+            None,
+            None,
+            String::new(),
+            vec!["UTC".into(), "America/New_York".into()],
+        )
+    }
+
+    fn is_ratatui_border_char(ch: char) -> bool {
+        // Box-drawing characters used by ratatui's Borders widget and Gauge.
+        // The Linux console supports these via the DEC Special Graphics set,
+        // so they do not render as replacement blocks. The spec only forbids
+        // non-ASCII *text* (em dashes, curly quotes, ellipsis, etc.).
+        matches!(
+            ch,
+            '─' | '│'
+                | '┌'
+                | '┐'
+                | '└'
+                | '┘'
+                | '┤'
+                | '├'
+                | '┬'
+                | '┴'
+                | '┼'
+                | '╔'
+                | '╗'
+                | '╚'
+                | '╝'
+                | '║'
+                | '═'
+                | '╠'
+                | '╣'
+                | '╦'
+                | '╩'
+                | '╬'
+                | '╭'
+                | '╮'
+                | '╯'
+                | '╰'
+                | '▕'
+                | '█'
+                | '░'
+                | '▒'
+                | '▓'
+                | '▏'
+                | '▎'
+                | '▍'
+                | '▌'
+                | '▋'
+                | '▊'
+                | '▉'
+        )
+    }
+
+    fn assert_buffer_ascii(terminal: &Terminal<TestBackend>, screen_name: &str) {
+        let buf = terminal.backend().buffer();
+        for (i, cell) in buf.content().iter().enumerate() {
+            let symbol = cell.symbol();
+            for ch in symbol.chars() {
+                assert!(
+                    ch.is_ascii() || is_ratatui_border_char(ch),
+                    "non-ASCII character U+{:04X} ({:?}) found in {screen_name} screen at buffer index {i}",
+                    ch as u32,
+                    ch,
+                );
+            }
+        }
+    }
+
+    fn render_screen(state: &AppState) -> Terminal<TestBackend> {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| render(f, state)).unwrap();
+        terminal
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn welcome_screen_ascii_only() {
+        let state = make_test_state();
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Welcome");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn disk_selection_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::DiskSelection;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "DiskSelection");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn disk_encryption_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::DiskEncryption;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "DiskEncryption");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn hostname_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Hostname;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Hostname");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn hostname_input_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::HostnameInput;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "HostnameInput");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn login_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Login;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Login");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn login_tailscale_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::LoginTailscale;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "LoginTailscale");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn login_ssh_keys_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::LoginSshKeys;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "LoginSshKeys");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn login_github_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::LoginGithub;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "LoginGithub");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn timezone_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Timezone;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Timezone");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn confirmation_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Confirmation;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Confirmation");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn writing_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Writing;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Writing");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn firstboot_apply_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::FirstbootApply;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "FirstbootApply");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn encryption_setup_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::EncryptionSetup;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "EncryptionSetup");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn recovery_passphrase_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::RecoveryPassphrase;
+        state.recovery_passphrase = Some("test-recovery-phrase".into());
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "RecoveryPassphrase");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn done_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Done;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Done");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn error_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Error("disk write failed: I/O error".into());
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Error");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn network_check_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::NetworkCheck;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "NetworkCheck");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn network_results_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::NetworkResults;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "NetworkResults");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn tpm_encryption_explanation_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::DiskEncryption;
+        state.tpm_present = true;
+        state.disk_encryption = DiskEncryption::Tpm;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "DiskEncryption(Tpm)");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn keyfile_encryption_explanation_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::DiskEncryption;
+        state.disk_encryption = DiskEncryption::Keyfile;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "DiskEncryption(Keyfile)");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn confirmation_with_recovery_passphrase_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Confirmation;
+        state.disk_encryption = DiskEncryption::Tpm;
+        state.recovery_passphrase = Some("alpha-bravo-charlie-delta".into());
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Confirmation(with recovery passphrase)");
+    }
+}

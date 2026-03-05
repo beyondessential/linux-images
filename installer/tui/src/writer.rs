@@ -692,4 +692,65 @@ mod tests {
 
         assert!(image_uncompressed_size(&path).is_err());
     }
+
+    // r[verify installer.container.partition-devices+2]
+    #[test]
+    fn parse_major_minor_valid() {
+        let (major, minor) = parse_major_minor("259:22").unwrap();
+        assert_eq!(major, 259);
+        assert_eq!(minor, 22);
+    }
+
+    // r[verify installer.container.partition-devices+2]
+    #[test]
+    fn parse_major_minor_zero() {
+        let (major, minor) = parse_major_minor("0:0").unwrap();
+        assert_eq!(major, 0);
+        assert_eq!(minor, 0);
+    }
+
+    // r[verify installer.container.partition-devices+2]
+    #[test]
+    fn parse_major_minor_missing_colon() {
+        assert!(parse_major_minor("259").is_err());
+    }
+
+    // r[verify installer.container.partition-devices+2]
+    #[test]
+    fn parse_major_minor_non_numeric() {
+        assert!(parse_major_minor("abc:22").is_err());
+        assert!(parse_major_minor("259:xyz").is_err());
+    }
+
+    // r[verify installer.container.partition-devices+2]
+    #[test]
+    fn parse_major_minor_empty() {
+        assert!(parse_major_minor("").is_err());
+    }
+
+    // r[verify installer.container.partition-devices+2]
+    #[test]
+    fn is_valid_block_device_nonexistent_path() {
+        assert!(!is_valid_block_device(
+            Path::new("/dev/nonexistent_xyz_test"),
+            8,
+            0
+        ));
+    }
+
+    // r[verify installer.container.partition-devices+2]
+    #[test]
+    fn is_valid_block_device_regular_file_is_not_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("regular_file");
+        std::fs::write(&path, b"hello").unwrap();
+        assert!(!is_valid_block_device(&path, 8, 0));
+    }
+
+    // r[verify installer.container.partition-devices+2]
+    #[test]
+    fn ensure_partition_devices_via_sysfs_nonexistent_dir() {
+        let count = ensure_partition_devices_via_sysfs("nonexistent_device_xyzzy_test").unwrap();
+        assert_eq!(count, 0);
+    }
 }

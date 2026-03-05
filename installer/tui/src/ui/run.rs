@@ -30,6 +30,7 @@ enum WorkerMessage {
 }
 
 /// Result of processing a single key event against the current TUI state.
+#[derive(Debug)]
 enum KeyAction {
     Continue,
     Quit,
@@ -1798,5 +1799,45 @@ mod tests {
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Login);
         assert_eq!(final_state.ssh_keys, vec!["ssh-rsa BBBB", "ssh-dss CC"]);
+    }
+
+    // r[verify installer.tui.error-reboot]
+    #[test]
+    fn error_screen_any_key_triggers_reboot() {
+        // handle_key on Screen::Error returns Reboot without mutating the
+        // screen, so we can reuse the same state for every key code.
+        let mut state = make_state();
+        state.screen = Screen::Error("something went wrong".into());
+
+        let codes = [
+            KeyCode::Enter,
+            KeyCode::Char('a'),
+            KeyCode::Char(' '),
+            KeyCode::Esc,
+            KeyCode::Backspace,
+        ];
+        for code in codes {
+            let action = handle_key(press(code), &mut state);
+            assert!(
+                matches!(action, KeyAction::Reboot),
+                "expected Reboot for {:?} on Error screen, got {:?}",
+                code,
+                action,
+            );
+            // Screen must remain Error (not silently changed)
+            assert!(matches!(state.screen, Screen::Error(_)));
+        }
+    }
+
+    // r[verify installer.tui.error-reboot]
+    #[test]
+    fn error_screen_reboot_via_scripted() {
+        let mut state = make_state();
+        state.screen = Screen::Error("disk I/O failure".into());
+
+        let events = vec![press(KeyCode::Char('x'))];
+        let final_state = run_tui_scripted(state, events);
+        // run_tui_scripted breaks on KeyAction::Reboot, preserving the Error screen
+        assert!(matches!(final_state.screen, Screen::Error(_)));
     }
 }
