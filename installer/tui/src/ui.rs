@@ -95,7 +95,7 @@ pub struct AppState {
     pub ssh_github_rx: Option<mpsc::Receiver<GithubKeysResult>>,
 }
 
-// r[impl installer.tui.progress]
+// r[impl installer.tui.progress+2]
 #[derive(Debug, Clone)]
 pub struct ProgressSnapshot {
     pub bytes_written: u64,
@@ -592,7 +592,7 @@ impl AppState {
         "yes"
     }
 
-    // r[impl installer.tui.confirmation+5]
+    // r[impl installer.tui.confirmation+6]
     pub fn is_confirmed(&self) -> bool {
         self.confirm_input
             .trim()
@@ -1106,7 +1106,7 @@ mod tests {
         assert_eq!(state.screen, Screen::LoginGithub);
     }
 
-    // r[verify installer.tui.confirmation+5]
+    // r[verify installer.tui.confirmation+6]
     #[test]
     fn confirmation_requires_explicit_yes() {
         let mut state = make_state();
@@ -1119,7 +1119,7 @@ mod tests {
         assert!(state.is_confirmed());
     }
 
-    // r[verify installer.tui.confirmation+5]
+    // r[verify installer.tui.confirmation+6]
     #[test]
     fn done_and_error_do_not_advance() {
         let mut state = make_state();

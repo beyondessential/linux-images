@@ -426,7 +426,7 @@ echo "    squashfs: $(du -h "$STAGING/live/filesystem.squashfs" | cut -f1)"
 # ============================================================
 # Phase 5: Extract partition images from cloud image
 # ============================================================
-# r[impl iso.contents]
+# r[impl iso.contents+2]
 echo "==> Phase 5: Extracting partition images from cloud image..."
 mkdir -p "$STAGING/images"
 

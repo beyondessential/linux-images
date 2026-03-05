@@ -3,7 +3,7 @@ use serde_json::Value;
 use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
 // r[verify installer.config.schema+3]
-// r[verify installer.dryrun.schema+3]
+// r[verify installer.dryrun.schema+4]
 #[test]
 fn auto_metal_hostname_from_dhcp() {
     let f = Fixture::new();
@@ -49,7 +49,7 @@ fn auto_metal_hostname_from_dhcp() {
 }
 
 // r[verify installer.config.hostname-template]
-// r[verify installer.dryrun.schema+3]
+// r[verify installer.dryrun.schema+4]
 #[test]
 fn auto_metal_hostname_template() {
     let f = Fixture::new();

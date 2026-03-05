@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::config::{DiskEncryption, FirstbootConfig, OperatingMode};
 use crate::disk::BlockDevice;
 
-// r[impl installer.dryrun.schema+3]
+// r[impl installer.dryrun.schema+4]
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallPlan {
     pub mode: String,
@@ -27,7 +27,7 @@ pub struct DiskInfo {
     pub transport: String,
 }
 
-// r[impl installer.dryrun.schema+3]
+// r[impl installer.dryrun.schema+4]
 #[derive(Debug, Clone, Serialize)]
 pub struct FirstbootInfo {
     pub hostname: Option<String>,

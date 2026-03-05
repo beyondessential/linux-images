@@ -2,7 +2,7 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
 // r[verify installer.tui.timezone]
 // r[verify installer.firstboot.timezone]
-// r[verify installer.dryrun.schema+3]
+// r[verify installer.dryrun.schema+4]
 #[test]
 fn auto_timezone_defaults_to_utc() {
     let f = Fixture::new();
@@ -74,7 +74,7 @@ fn auto_timezone_from_config() {
 }
 
 // r[verify installer.tui.timezone]
-// r[verify installer.dryrun.schema+3]
+// r[verify installer.dryrun.schema+4]
 #[test]
 fn auto_metal_timezone_from_config() {
     let f = Fixture::new();

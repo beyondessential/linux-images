@@ -206,7 +206,7 @@ if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
     check "grub.cfg contains boot=live" grep -q "boot=live" "$ISO_MNT/boot/grub/grub.cfg"
 fi
 
-# r[verify iso.contents]
+# r[verify iso.contents+2]
 check "partitions.json exists" test -f "$ISO_MNT/images/partitions.json"
 
 # Verify partitions.json is valid JSON with expected structure
@@ -252,7 +252,7 @@ if [ -f "$ISO_MNT/images/partitions.json" ]; then
     done
 fi
 
-# r[verify iso.contents]
+# r[verify iso.contents+2]
 # Verify partition image files and their .size sidecars
 for name in efi xboot root; do
     check "${name}.img.zst exists" test -f "$ISO_MNT/images/${name}.img.zst"
@@ -267,7 +267,7 @@ for name in efi xboot root; do
         fi
     fi
 
-    # r[verify installer.write.disk-size-check]
+    # r[verify installer.write.disk-size-check+2]
     if [ -f "$ISO_MNT/images/${name}.img.size" ]; then
         pass ".size sidecar exists for ${name}.img.zst"
         SIZE_VALUE="$(cat "$ISO_MNT/images/${name}.img.size")"
@@ -302,7 +302,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     mount -o loop,ro "$ISO_MNT/live/filesystem.squashfs" "$SQFS_MNT"
     SQFS_MOUNTED=1
 
-    # r[verify iso.contents]
+    # r[verify iso.contents+2]
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
 
     # r[verify iso.boot.autostart]

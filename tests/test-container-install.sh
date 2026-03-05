@@ -325,6 +325,7 @@ if [ -n "$STALE_MOUNTS" ]; then
 fi
 echo "    PASS: no stale mounts from ${LOOP_DEV}"
 
+# r[verify installer.write.luks-before-write]
 if [ "$VARIANT" = "metal" ]; then
     if [ -e /dev/mapper/bes-target-root ]; then
         echo "    FAIL: LUKS volume bes-target-root still open"
@@ -371,7 +372,8 @@ check "root partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"r
 # r[verify installer.mode.auto.progress]
 check "non-interactive write summary printed" grep -q "write complete:.*MiB in.*MiB/s" "$INSTALLER_OUTPUT"
 
-# r[verify installer.write.partitions]
+# r[verify installer.write.partitions+2]
+# r[verify installer.write.expand-root]
 ROOT_PART_SIZE=$(lsblk --bytes --noheadings --output SIZE "${LOOP_DEV}p3" 2>/dev/null | tr -d '[:space:]')
 ROOT_PART_SIZE="${ROOT_PART_SIZE:-0}"
 IMAGE_RAW_SIZE=5368709120
@@ -384,6 +386,7 @@ mkdir -p "$VERIFY_MOUNT"
 
 ROOT_PART="${LOOP_DEV}p3"
 
+# r[verify installer.write.luks-before-write]
 if [ "$VARIANT" = "metal" ]; then
     echo "    Opening LUKS volume..."
     EMPTY_KEYFILE="$WORK_DIR/empty-keyfile"
@@ -625,6 +628,20 @@ if [ -n "$BTRFS_DEV" ]; then
                     test "$LOG_SIZE" -gt 0
             else
                 check "install log exists" false
+            fi
+        fi
+
+        # --- Encryption setup verification (metal only) ---
+        # r[verify installer.encryption.overview]
+        if [ "$VARIANT" = "metal" ]; then
+            ROTATED_MARKER="$VERIFY_MOUNT/etc/luks/rotated"
+            check "LUKS master key rotation marker exists" test -f "$ROTATED_MARKER"
+
+            CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
+            check "crypttab exists" test -f "$CRYPTTAB"
+            if [ -f "$CRYPTTAB" ]; then
+                check "crypttab references root partition" \
+                    grep -q 'root' "$CRYPTTAB"
             fi
         fi
 

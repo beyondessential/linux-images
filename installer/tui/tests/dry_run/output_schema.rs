@@ -75,7 +75,7 @@ fn dry_run_output_to_stdout() {
     assert_eq!(plan["disk_encryption"], "tpm");
 }
 
-// r[verify installer.dryrun.schema+3]
+// r[verify installer.dryrun.schema+4]
 #[test]
 fn plan_contains_all_required_fields() {
     let f = Fixture::new();
@@ -137,7 +137,7 @@ fn plan_contains_all_required_fields() {
     }
 }
 
-// r[verify installer.dryrun.schema+3]
+// r[verify installer.dryrun.schema+4]
 #[test]
 fn plan_tailscale_authkey_is_bool_not_string() {
     let f = Fixture::new();

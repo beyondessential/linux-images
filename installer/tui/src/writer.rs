@@ -13,7 +13,7 @@ use crate::config::DiskEncryption;
 const LUKS_NAME: &str = "bes-target-root";
 const MOUNT_BASE: &str = "/mnt/target";
 
-// r[impl installer.tui.progress]
+// r[impl installer.tui.progress+2]
 pub struct WriteProgress {
     pub bytes_written: u64,
     pub total_bytes: Option<u64>,
@@ -60,7 +60,13 @@ pub fn format_eta(d: std::time::Duration) -> String {
 // r[impl installer.write.source+2]
 #[derive(Debug, Clone, Deserialize)]
 pub struct PartitionManifest {
-    #[expect(dead_code, reason = "deserialized from JSON for future validation")]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "read only in tests; kept for manifest schema completeness"
+        )
+    )]
     pub arch: String,
     pub partitions: Vec<PartitionEntry>,
 }
@@ -939,7 +945,7 @@ fn run_command(program: &str, args: &[&str]) -> Result<()> {
 mod tests {
     use super::*;
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_fraction_with_total() {
         let p = WriteProgress {
@@ -950,7 +956,7 @@ mod tests {
         assert!((p.fraction().unwrap() - 0.5).abs() < f64::EPSILON);
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_fraction_without_total() {
         let p = WriteProgress {
@@ -961,7 +967,7 @@ mod tests {
         assert!(p.fraction().is_none());
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_eta_calculation() {
         let p = WriteProgress {
@@ -973,7 +979,7 @@ mod tests {
         assert!((eta.as_secs_f64() - 10.0).abs() < 0.1);
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_eta_at_zero() {
         let p = WriteProgress {
@@ -984,7 +990,7 @@ mod tests {
         assert!(p.eta().is_none());
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_eta_complete() {
         let p = WriteProgress {
@@ -996,7 +1002,7 @@ mod tests {
         assert!(eta.as_secs_f64() < 0.1);
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_throughput() {
         let p = WriteProgress {
@@ -1007,7 +1013,7 @@ mod tests {
         assert!((p.throughput_mbps() - 10.0).abs() < 0.1);
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn eta_formatting() {
         assert_eq!(format_eta(std::time::Duration::from_secs(45)), "45s");
