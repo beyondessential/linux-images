@@ -14,6 +14,7 @@ anyhow = "1.0.102"
 clap = { version = "4.5.60", features = ["derive"] }
 crossterm = "0.29.0"
 diceware_wordlists = "1.2.3"
+libc = "0.2.182"
 rand = "0.9.1"
 ratatui = "0.30.0"
 serde = { version = "1.0.228", features = ["derive"] }

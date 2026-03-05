@@ -620,7 +620,7 @@ fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     terminal::disable_raw_mode()?;
 
     eprintln!("--- debug shell (type 'exit' to return to installer) ---");
-    let status = std::process::Command::new("/bin/sh")
+    let status = std::process::Command::new("/bin/bash")
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
