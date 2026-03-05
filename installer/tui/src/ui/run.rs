@@ -136,12 +136,22 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 }
             }
             KeyCode::Backspace => {
-                state.hostname_error = None;
                 state.hostname_input.pop();
+                let trimmed = state.hostname_input.trim();
+                if trimmed.is_empty() {
+                    state.hostname_error = None;
+                } else {
+                    state.hostname_error = validate_hostname(trimmed).err();
+                }
             }
             KeyCode::Char(c) => {
-                state.hostname_error = None;
                 state.hostname_input.push(c);
+                let trimmed = state.hostname_input.trim();
+                if trimmed.is_empty() {
+                    state.hostname_error = None;
+                } else {
+                    state.hostname_error = validate_hostname(trimmed).err();
+                }
             }
             _ => {}
         },
@@ -1256,16 +1266,44 @@ mod tests {
             press(KeyCode::Enter),
             // Hostname selector: Static default -> Enter -> HostnameInput
             press(KeyCode::Enter),
-            // HostnameInput: type invalid hostname, try to advance (error set)
-            press(KeyCode::Char('!')),
-            press(KeyCode::Enter),
-            // Now type a character — error should be cleared
+            // HostnameInput: type a leading hyphen (error set live), then delete it
+            // and type a valid char — error should be cleared
+            press(KeyCode::Char('-')),
+            press(KeyCode::Backspace),
             press(KeyCode::Char('a')),
         ];
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::HostnameInput);
         assert!(final_state.hostname_error.is_none());
+    }
+
+    // r[verify installer.tui.hostname+5]
+    #[test]
+    fn scripted_hostname_error_shown_live_on_keystroke() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname selector
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname selector: Static default -> Enter -> HostnameInput
+            press(KeyCode::Enter),
+            // HostnameInput: type an invalid character — error should appear without Enter
+            press(KeyCode::Char('!')),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::HostnameInput);
+        assert!(final_state.hostname_error.is_some());
+        assert!(
+            final_state
+                .hostname_error
+                .as_ref()
+                .unwrap()
+                .contains("letters, digits, and hyphens")
+        );
     }
 
     // r[verify installer.dryrun.script.headless]
