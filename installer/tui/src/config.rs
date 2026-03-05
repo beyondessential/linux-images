@@ -18,6 +18,9 @@ pub struct InstallConfig {
 
     pub disk: Option<DiskSelector>,
 
+    #[serde(default, rename = "copy-install-log")]
+    pub copy_install_log: Option<bool>,
+
     pub firstboot: Option<FirstbootConfig>,
 }
 
@@ -483,6 +486,7 @@ mod tests {
                 hostname: Some("my-server".into()),
                 ..Default::default()
             }),
+            ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
@@ -498,6 +502,7 @@ mod tests {
                 hostname_from_dhcp: true,
                 ..Default::default()
             }),
+            ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
@@ -513,6 +518,7 @@ mod tests {
                 hostname_template: Some("srv-{hex:6}".into()),
                 ..Default::default()
             }),
+            ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
@@ -683,6 +689,7 @@ mod tests {
                 password_hash: None,
                 timezone: None,
             }),
+            ..Default::default()
         };
         let issues = config.validate();
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");

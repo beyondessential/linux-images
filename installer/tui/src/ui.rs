@@ -34,10 +34,7 @@ pub enum Screen {
     Timezone,
     NetworkResults,
     Confirmation,
-    Writing,
-    FirstbootApply,
-    EncryptionSetup,
-    RecoveryPassphrase,
+    Installing,
     Done,
     Error(String),
 }
@@ -546,7 +543,7 @@ impl AppState {
             Screen::Login => Screen::Timezone,
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
-            // r[impl installer.tui.confirmation+5]
+            // r[impl installer.tui.confirmation+6]
             // r[impl installer.encryption.recovery-passphrase+2]
             Screen::NetworkResults => {
                 if self.disk_encryption.is_encrypted() && self.recovery_passphrase.is_none() {
@@ -555,19 +552,9 @@ impl AppState {
                 }
                 Screen::Confirmation
             }
-            Screen::Confirmation => Screen::Writing,
-            Screen::Writing => Screen::FirstbootApply,
-            // r[impl installer.encryption.overview]
-            Screen::FirstbootApply => {
-                if self.disk_encryption.is_encrypted() {
-                    Screen::EncryptionSetup
-                } else {
-                    Screen::Done
-                }
-            }
-            Screen::EncryptionSetup => Screen::RecoveryPassphrase,
-            // r[impl installer.encryption.recovery-passphrase+2]
-            Screen::RecoveryPassphrase => Screen::Done,
+            // r[impl installer.tui.progress+2]
+            Screen::Confirmation => Screen::Installing,
+            Screen::Installing => return,
             Screen::Done | Screen::Error(_) => return,
         };
     }
@@ -590,7 +577,7 @@ impl AppState {
             Screen::Timezone => Screen::Login,
             Screen::NetworkResults => Screen::Timezone,
             Screen::Confirmation => Screen::NetworkResults,
-            // No going back from encryption/recovery — those are post-write
+            // No going back from installing/done — those are post-write
             _ => return,
         };
     }
@@ -1780,71 +1767,31 @@ mod tests {
         assert_eq!(fb.unwrap().timezone.as_deref(), Some("Asia/Tokyo"));
     }
 
-    // r[verify installer.encryption.overview]
+    // r[verify installer.tui.progress+2]
     #[test]
-    fn advance_encrypted_firstboot_goes_to_encryption_setup() {
+    fn confirmation_advances_to_installing() {
         let mut state = make_state();
-        state.disk_encryption = DiskEncryption::Tpm;
-        state.screen = Screen::FirstbootApply;
+        state.screen = Screen::Confirmation;
+        state.confirm_input = "yes".into();
         state.advance();
-        assert_eq!(state.screen, Screen::EncryptionSetup);
+        assert_eq!(state.screen, Screen::Installing);
     }
 
-    // r[verify installer.encryption.overview]
+    // r[verify installer.tui.progress+2]
     #[test]
-    fn advance_keyfile_firstboot_goes_to_encryption_setup() {
+    fn installing_advance_is_noop() {
         let mut state = make_state();
-        state.disk_encryption = DiskEncryption::Keyfile;
-        state.screen = Screen::FirstbootApply;
+        state.screen = Screen::Installing;
         state.advance();
-        assert_eq!(state.screen, Screen::EncryptionSetup);
+        assert_eq!(state.screen, Screen::Installing);
     }
 
-    // r[verify installer.encryption.overview]
+    // r[verify installer.tui.progress+2]
     #[test]
-    fn advance_none_firstboot_goes_to_done() {
+    fn installing_no_go_back() {
         let mut state = make_state();
-        state.disk_encryption = DiskEncryption::None;
-        state.screen = Screen::FirstbootApply;
-        state.advance();
-        assert_eq!(state.screen, Screen::Done);
-    }
-
-    // r[verify installer.encryption.recovery-passphrase+2]
-    #[test]
-    fn advance_encryption_setup_goes_to_recovery_passphrase() {
-        let mut state = make_state();
-        state.disk_encryption = DiskEncryption::Tpm;
-        state.screen = Screen::EncryptionSetup;
-        state.advance();
-        assert_eq!(state.screen, Screen::RecoveryPassphrase);
-    }
-
-    // r[verify installer.encryption.recovery-passphrase+2]
-    #[test]
-    fn advance_recovery_passphrase_goes_to_done() {
-        let mut state = make_state();
-        state.screen = Screen::RecoveryPassphrase;
-        state.recovery_passphrase = Some("alpha-bravo-charlie-delta-echo-foxtrot".into());
-        state.advance();
-        assert_eq!(state.screen, Screen::Done);
-    }
-
-    // r[verify installer.encryption.recovery-passphrase+2]
-    #[test]
-    fn recovery_passphrase_no_go_back() {
-        let mut state = make_state();
-        state.screen = Screen::RecoveryPassphrase;
+        state.screen = Screen::Installing;
         state.go_back();
-        assert_eq!(state.screen, Screen::RecoveryPassphrase);
-    }
-
-    // r[verify installer.encryption.overview]
-    #[test]
-    fn encryption_setup_no_go_back() {
-        let mut state = make_state();
-        state.screen = Screen::EncryptionSetup;
-        state.go_back();
-        assert_eq!(state.screen, Screen::EncryptionSetup);
+        assert_eq!(state.screen, Screen::Installing);
     }
 }

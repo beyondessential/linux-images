@@ -118,7 +118,8 @@ fn plan_contains_all_required_fields() {
         "disk",
         "tpm_present",
         "firstboot",
-        "image_path",
+        "manifest_path",
+        "copy_install_log",
         "config_warnings",
     ];
     for key in &required_top {
@@ -243,7 +244,7 @@ fn dry_run_no_config_is_interactive() {
 
 // r[verify installer.dryrun]
 #[test]
-fn dry_run_image_path_is_null_when_no_images() {
+fn dry_run_manifest_path_is_null_when_no_images() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -274,8 +275,12 @@ fn dry_run_image_path_is_null_when_no_images() {
 
     let plan = f.read_plan();
     assert!(
-        plan["image_path"].is_null(),
-        "image_path should be null in dry-run without actual images"
+        plan["manifest_path"].is_null(),
+        "manifest_path should be null in dry-run without actual images"
+    );
+    assert!(
+        plan["copy_install_log"].as_bool().unwrap(),
+        "copy_install_log should default to true"
     );
 }
 

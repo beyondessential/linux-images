@@ -9,6 +9,8 @@ use sha_crypt::{Sha512Params, sha512_simple};
 use crate::config::{DiskEncryption, FirstbootConfig};
 use crate::writer;
 
+const INSTALL_LOG_TARGET: &str = "var/log/bes-installer.log";
+
 const MOUNT_BASE: &str = "/mnt/target";
 const LUKS_NAME: &str = "bes-target-root";
 
@@ -106,6 +108,81 @@ pub fn apply_firstboot(target: &MountedTarget, config: &FirstbootConfig) -> Resu
 // r[impl installer.firstboot.timezone]
 pub fn apply_timezone_default(target: &MountedTarget) -> Result<()> {
     apply_timezone(target.path(), "UTC")
+}
+
+// r[impl installer.write.fstab-fixup]
+// r[impl installer.write.variant-fixup]
+pub fn fixup_for_metal_variant(
+    target: &MountedTarget,
+    firstboot_config: &Option<FirstbootConfig>,
+) -> Result<()> {
+    let root = target.path();
+
+    tracing::info!("applying metal variant fixups");
+
+    // Rewrite /etc/fstab: replace by-partlabel/root with /dev/mapper/root
+    let fstab_path = root.join("etc/fstab");
+    if fstab_path.exists() {
+        let contents = fs::read_to_string(&fstab_path).context("reading target /etc/fstab")?;
+        let new_contents = contents.replace("/dev/disk/by-partlabel/root", "/dev/mapper/root");
+        if new_contents != contents {
+            fs::write(&fstab_path, &new_contents).context("writing target /etc/fstab")?;
+            tracing::info!("rewrote /etc/fstab for metal variant");
+        }
+    }
+
+    // Write variant marker
+    let variant_dir = root.join("etc/bes");
+    fs::create_dir_all(&variant_dir).context("creating /etc/bes")?;
+    let variant_path = variant_dir.join("image-variant");
+    fs::write(&variant_path, "metal\n").context("writing /etc/bes/image-variant")?;
+    tracing::info!("set image-variant to metal");
+
+    // Truncate /etc/hostname if no explicit hostname is configured
+    let has_hostname = firstboot_config.as_ref().is_some_and(|fb| {
+        fb.hostname.is_some() || fb.hostname_from_dhcp || fb.hostname_template.is_some()
+    });
+    if !has_hostname {
+        let hostname_path = root.join("etc/hostname");
+        fs::write(&hostname_path, "").context("truncating /etc/hostname for metal")?;
+        tracing::info!("truncated /etc/hostname for metal variant (no explicit hostname)");
+    }
+
+    // Create /etc/luks/empty-keyfile with mode 000
+    let luks_dir = root.join("etc/luks");
+    fs::create_dir_all(&luks_dir).context("creating /etc/luks")?;
+    let keyfile_path = luks_dir.join("empty-keyfile");
+    fs::write(&keyfile_path, b"").context("creating /etc/luks/empty-keyfile")?;
+    fs::set_permissions(&keyfile_path, fs::Permissions::from_mode(0o000))
+        .context("setting empty-keyfile permissions to 000")?;
+    tracing::info!("created /etc/luks/empty-keyfile");
+
+    Ok(())
+}
+
+// r[impl installer.firstboot.copy-install-log]
+pub fn copy_install_log(target: &MountedTarget, log_path: &Path) {
+    let dest = target.path().join(INSTALL_LOG_TARGET);
+
+    if let Some(parent) = dest.parent()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        tracing::warn!("failed to create directory for install log: {e}");
+        return;
+    }
+
+    match fs::copy(log_path, &dest) {
+        Ok(bytes) => {
+            tracing::info!("copied install log ({bytes} bytes) to {}", dest.display());
+        }
+        Err(e) => {
+            tracing::warn!(
+                "failed to copy install log from {} to {}: {e}",
+                log_path.display(),
+                dest.display()
+            );
+        }
+    }
 }
 
 // r[impl installer.firstboot.timezone]

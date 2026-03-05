@@ -257,7 +257,7 @@ fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMod
 fn run_auto(
     cfg: config::InstallConfig,
     tpm_present: bool,
-    arch: &str,
+    _arch: &str,
     devices: &[disk::BlockDevice],
     boot_device: &Option<PathBuf>,
     config_warnings: Vec<String>,
@@ -269,17 +269,22 @@ fn run_auto(
     let variant = disk_encryption.variant();
     let disk_selector = cfg.disk.as_ref().expect("auto mode requires disk");
 
+    let copy_install_log = cfg.copy_install_log.unwrap_or(true);
+
     let hostname_from_template = cfg
         .firstboot
         .as_ref()
         .is_some_and(|fb| fb.hostname_template.is_some());
 
     let target = disk::resolve_disk(disk_selector, devices, boot_device.as_ref())?;
-    let image_path = if cli.dry_run {
-        writer::find_image_path(&variant.to_string(), arch).ok()
+    let manifest_result = if cli.dry_run {
+        writer::find_partition_manifest().ok()
     } else {
-        Some(writer::find_image_path(&variant.to_string(), arch)?)
+        Some(writer::find_partition_manifest()?)
     };
+    let manifest_path = manifest_result
+        .as_ref()
+        .map(|(_, dir)| dir.join("partitions.json"));
 
     let effective_timezone = cfg
         .firstboot
@@ -297,13 +302,14 @@ fn run_auto(
             cfg.firstboot.as_ref(),
             hostname_from_template,
             effective_timezone,
-            image_path,
+            manifest_path,
+            copy_install_log,
             config_warnings,
         );
         return emit_plan(&plan, cli);
     }
 
-    let image_path = image_path.unwrap();
+    let (manifest, images_dir) = manifest_result.unwrap();
 
     eprintln!("BES Installer -- automatic mode");
     eprintln!("  encryption: {disk_encryption}");
@@ -313,7 +319,10 @@ fn run_auto(
         target.path.display(),
         target.size_display()
     );
-    eprintln!("  image:      {}", image_path.display());
+    eprintln!(
+        "  manifest:   {}",
+        images_dir.join("partitions.json").display()
+    );
     eprintln!("  tpm:        {tpm_present}");
 
     if let Some(ref fb) = cfg.firstboot {
@@ -338,56 +347,79 @@ fn run_auto(
         }
     }
 
-    // r[impl installer.write.disk-size-check]
-    let image_size =
-        writer::image_uncompressed_size(&image_path).context("reading uncompressed image size")?;
-    writer::check_disk_size(image_size, target.size_bytes).context("disk size check")?;
+    // r[impl installer.write.disk-size-check+2]
+    let total_image_size = writer::partition_images_total_size(&manifest, &images_dir)
+        .context("reading partition image sizes")?;
+    writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
 
     eprintln!();
-    eprintln!("writing image...");
+    eprintln!("writing partitions...");
 
     // r[impl installer.mode.auto.progress]
     let interactive = std::io::stderr().is_terminal();
     let write_start = Instant::now();
-    writer::write_image(&image_path, &target.path, &mut |progress| {
-        if interactive {
-            let pct = progress.fraction().map(|f| f * 100.0).unwrap_or(0.0);
-            let mbps = progress.throughput_mbps();
-            let eta = progress
-                .eta()
-                .map(writer::format_eta)
-                .unwrap_or_else(|| "...".into());
-            eprint!("\r  {pct:5.1}% | {mbps:.1} MiB/s | ETA: {eta}    ");
-        }
-    })
-    .context("writing image")?;
-    let write_elapsed = write_start.elapsed();
+    writer::write_partitions(
+        &manifest,
+        &images_dir,
+        &target.path,
+        disk_encryption,
+        &mut |progress| {
+            if interactive {
+                let pct = progress.fraction().map(|f| f * 100.0).unwrap_or(0.0);
+                let mbps = progress.throughput_mbps();
+                let eta = progress
+                    .eta()
+                    .map(writer::format_eta)
+                    .unwrap_or_else(|| "...".into());
+                eprint!("\r  {pct:5.1}% | {mbps:.1} MiB/s | ETA: {eta}    ");
+            }
+        },
+    )
+    .context("writing partitions")?;
 
     // r[impl installer.mode.auto.progress]
     if interactive {
         eprintln!();
     } else {
-        let size_mib = image_size as f64 / (1024.0 * 1024.0);
-        let secs = write_elapsed.as_secs_f64();
+        let size_mib = total_image_size as f64 / (1024.0 * 1024.0);
+        let secs = write_start.elapsed().as_secs_f64();
         let mbps = if secs > 0.0 { size_mib / secs } else { 0.0 };
         eprintln!("write complete: {size_mib:.1} MiB in {secs:.1}s ({mbps:.1} MiB/s)");
     }
 
-    writer::reread_partition_table(&target.path).context("re-reading partition table")?;
-    writer::verify_partition_table(&target.path).context("verifying partition table")?;
+    eprintln!("expanding root filesystem...");
+    writer::expand_root_filesystem(&target.path, disk_encryption)
+        .context("expanding root filesystem")?;
 
-    eprintln!("expanding partitions to fill disk...");
-    writer::expand_partitions(&target.path).context("expanding partitions")?;
+    eprintln!("randomizing filesystem UUIDs...");
+    writer::randomize_filesystem_uuids(&target.path, disk_encryption)
+        .context("randomizing filesystem UUIDs")?;
+
+    eprintln!("rebuilding boot config (initramfs + grub)...");
+    writer::rebuild_boot_config(&target.path, disk_encryption).context("rebuilding boot config")?;
+
+    writer::verify_partition_table(&target.path).context("verifying partition table")?;
 
     {
         eprintln!("applying first-boot configuration...");
         let mounted = firstboot::mount_target(&target.path, disk_encryption)?;
+
+        // r[impl installer.write.fstab-fixup]
+        // r[impl installer.write.variant-fixup]
+        if disk_encryption.is_encrypted() {
+            firstboot::fixup_for_metal_variant(&mounted, &cfg.firstboot)?;
+        }
 
         if let Some(ref fb) = cfg.firstboot {
             firstboot::apply_firstboot(&mounted, fb)?;
         } else {
             // r[impl installer.firstboot.timezone]
             firstboot::apply_timezone_default(&mounted)?;
+        }
+
+        // r[impl installer.firstboot.copy-install-log]
+        if copy_install_log {
+            firstboot::copy_install_log(&mounted, &cli.log);
         }
 
         firstboot::unmount_target(mounted)?;
@@ -434,7 +466,7 @@ fn run_interactive(
     cfg: config::InstallConfig,
     mode: &config::OperatingMode,
     tpm_present: bool,
-    arch: &str,
+    _arch: &str,
     devices: Vec<disk::BlockDevice>,
     boot_device: Option<PathBuf>,
     available_timezones: Vec<String>,
@@ -446,7 +478,8 @@ fn run_interactive(
     } else {
         config::DiskEncryption::Keyfile
     });
-    let variant = disk_encryption.variant();
+
+    let copy_install_log = cfg.copy_install_log.unwrap_or(true);
 
     let default_disk_index = cfg.disk.as_ref().and_then(|sel| {
         disk::resolve_disk(sel, &devices, boot_device.as_ref())
@@ -454,11 +487,14 @@ fn run_interactive(
             .and_then(|resolved| devices.iter().position(|d| d.path == resolved.path))
     });
 
-    let image_path = if cli.dry_run {
-        writer::find_image_path(&variant.to_string(), arch).ok()
+    let manifest_result = if cli.dry_run {
+        writer::find_partition_manifest().ok()
     } else {
-        Some(writer::find_image_path(&variant.to_string(), arch)?)
+        Some(writer::find_partition_manifest()?)
     };
+    let manifest_path = manifest_result
+        .as_ref()
+        .map(|(_, dir)| dir.join("partitions.json"));
 
     let build_info = read_build_info();
 
@@ -489,7 +525,8 @@ fn run_interactive(
                 &final_state,
                 mode,
                 hostname_from_template,
-                &image_path,
+                &manifest_path,
+                copy_install_log,
                 &config_warnings,
             );
             return emit_plan(&plan, cli);
@@ -505,21 +542,30 @@ fn run_interactive(
             &state,
             mode,
             hostname_from_template,
-            &image_path,
+            &manifest_path,
+            copy_install_log,
             &config_warnings,
         );
         return emit_plan(&plan, cli);
     }
 
-    let image_path = image_path.unwrap();
-    ui::run_tui(state, &image_path, cli.no_reboot)
+    let (manifest, images_dir) = manifest_result.unwrap();
+    ui::run_tui(
+        state,
+        &manifest,
+        &images_dir,
+        copy_install_log,
+        &cli.log,
+        cli.no_reboot,
+    )
 }
 
 fn plan_from_tui_state(
     state: &ui::AppState,
     mode: &config::OperatingMode,
     hostname_from_template: bool,
-    image_path: &Option<PathBuf>,
+    manifest_path: &Option<PathBuf>,
+    copy_install_log: bool,
     config_warnings: &[String],
 ) -> plan::InstallPlan {
     let disk = state.selected_disk();
@@ -532,7 +578,8 @@ fn plan_from_tui_state(
         firstboot.as_ref(),
         state.hostname_from_template || hostname_from_template,
         state.effective_timezone(),
-        image_path.clone(),
+        manifest_path.clone(),
+        copy_install_log,
         config_warnings.to_vec(),
     )
 }
