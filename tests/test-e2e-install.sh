@@ -119,9 +119,8 @@ cp "$ISO" "$MODIFIED_ISO"
 
 cat > "$WORK_DIR/bes-install.toml" << EOF
 auto = true
-variant = "$VARIANT"
+disk-encryption = "$([ "$VARIANT" = "metal" ] && echo "keyfile" || echo "none")"
 disk = "largest"
-disable-tpm = true
 
 [firstboot]
 hostname = "e2e-test-$VARIANT"
