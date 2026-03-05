@@ -9,6 +9,11 @@ files. The installer then creates the GPT table itself and writes each
 partition individually. When encryption is enabled, the installer sets up LUKS
 on the root partition before writing the filesystem content into it.
 
+Additionally, the installer copies its own log file into the finished
+installation at `/var/log/bes-installer.log` so it can be referred to
+after the first boot. This is enabled by default and can be disabled via
+the configuration file.
+
 Both the metal and cloud full-disk images are still built and published as
 standalone artifacts for direct-imaging workflows. Only the ISO payload
 changes.
@@ -172,7 +177,8 @@ New flow:
 13. `verify_partition_table`.
 14. Firstboot (mount, apply config, unmount). When encryption is not
     `None`, also fix up fstab and write variant marker.
-15. Encryption setup (if encrypted) -- same as today: `run_encryption_setup`
+15. Copy installation log into the target (see below).
+16. Encryption setup (if encrypted) -- same as today: `run_encryption_setup`
     handles key rotation, enrollment, recovery passphrase, initramfs.
     Note: `configure_installed_system` in `encryption.rs` already rebuilds
     the initramfs; since step 12 now does this unconditionally, the
@@ -184,6 +190,23 @@ space, neither `growpart` nor `--move-second-header` is needed. The BTRFS
 filesystem inside `root.img.zst` is smaller than the partition it is written
 into, so the installer must resize it to fill the available space. This is
 done at install time rather than deferring to a boot-time service.
+
+### Installation log copy
+
+After firstboot configuration and before encryption setup, the installer
+copies its own log file (default `/var/log/bes-installer.log` on the live
+system) into the installed root at `/var/log/bes-installer.log`. This
+preserves the full installation log for post-install diagnostics. The target
+filesystem is already mounted at this point (from the firstboot phase), so
+the copy is a straightforward file write.
+
+This is enabled by default. A configuration option `copy-install-log`
+(boolean, default `true`) can be set to `false` in `bes-install.toml` to
+disable it. There is no TUI screen for this option -- it is config-file-only.
+
+If the copy fails (e.g. filesystem full, permissions), the installer logs a
+warning but does not treat it as a fatal error. The installation proceeds
+normally.
 
 ### Config fixups
 
@@ -297,6 +320,19 @@ picks up the encryption config. Combining them would require reordering
 the encryption setup to happen before firstboot, which would complicate
 the flow for marginal benefit.
 
+### Installation log copy (config)
+
+The `bes-install.toml` schema gains a new top-level boolean field:
+
+```toml
+# Copy the installer log into the installed system at /var/log/bes-installer.log.
+# Default: true. Set to false to disable.
+copy-install-log = true
+```
+
+This field has no corresponding TUI screen. It is only settable via the
+config file. When absent, it defaults to `true`.
+
 ### Progress reporting and TUI screen flow
 
 Today the TUI has separate screens for each post-write phase: `Writing`,
@@ -320,6 +356,7 @@ Approximate weight allocation:
 - Rebuild boot config (dracut + update-grub): 2%
 - Verify partition table: 1%
 - First-boot configuration: 1%
+- Copy installation log: <1% (negligible, grouped with firstboot)
 - Encryption setup (if encrypted): 4% (or 0% if `None`)
 
 The exact percentages are not critical; what matters is that the bar
@@ -431,6 +468,12 @@ device).
   primary entry point for disk size checks.
 - **`write_image`**: Delete (replaced by `write_partitions`).
 
+### `installer/tui/src/config.rs`
+
+- Add `copy_install_log: Option<bool>` field to the config struct,
+  deserialized from the TOML key `copy-install-log`. Defaults to `true`
+  when absent.
+
 ### `installer/tui/src/firstboot.rs`
 
 - **`fixup_for_metal_variant`** (new): Called after `mount_target` when
@@ -452,6 +495,12 @@ device).
   which is not yet mounted. The current code creates a temporary empty
   keyfile at `/tmp/bes-empty-keyfile` for this purpose, which is fine.
   No change needed here.
+
+- **`copy_install_log`** (new): Copies the installer's log file (path
+  passed as argument) into the mounted target at
+  `/var/log/bes-installer.log`. Creates the directory if needed. Logs a
+  warning and returns `Ok(())` on failure (non-fatal). Skipped entirely
+  when `copy_install_log` config is `false`.
 
 ### `installer/tui/src/ui.rs`
 
@@ -491,7 +540,8 @@ device).
   4. `rebuild_boot_config` (92-94%).
   5. `verify_partition_table` (94-95%).
   6. `fixup_for_metal_variant` + `apply_firstboot` (95-96%).
-  7. `run_encryption_setup` if encrypted (96-100%), or jump to 100%.
+  7. `copy_install_log` if enabled (non-fatal, negligible progress).
+  8. `run_encryption_setup` if encrypted (96-100%), or jump to 100%.
   On completion, sends `WorkerMessage::InstallDone`. On error, sends
   `WorkerMessage::InstallError(String)`.
 - Delete `start_firstboot_worker` and `start_encryption_worker` (folded
@@ -501,6 +551,8 @@ device).
 
 - Rename `image_path: Option<PathBuf>` to `manifest_path: Option<PathBuf>`.
   Update `InstallPlan::new` signature and all callers.
+- Add `copy_install_log: bool` to the plan JSON output (reflects the
+  resolved config value, default `true`).
 - Update dry-run schema in spec to match.
 
 ### `tests/test-iso-structure.sh`
@@ -532,10 +584,16 @@ device).
   filesystems; may be integration-test-only).
 - Test `partition_images_total_size` sums correctly.
 - Test disk size check with summed partition sizes.
+- Test `copy_install_log` copies the file to the target path and creates
+  the directory if needed. Test that it returns `Ok(())` when the source
+  file does not exist (non-fatal). Test that it is skipped when the config
+  option is `false`.
+- Test config parsing of `copy-install-log`: absent (defaults to `true`),
+  explicit `true`, explicit `false`.
 - Update existing `find_image_path` tests to test `find_partition_manifest`.
 - Update `image_uncompressed_size` tests (still used as a helper).
 - Update `InstallPlan` serialization tests to use `manifest_path` instead
-  of `image_path`.
+  of `image_path` and to include `copy_install_log`.
 
 ### Integration tests (container-based)
 
@@ -551,6 +609,10 @@ device).
 - Add verification that filesystem UUIDs on the installed disk differ from
   a known set (or at minimum that `grub.cfg` references the actual
   filesystem UUID of the root partition).
+- Verify that `/var/log/bes-installer.log` exists on the installed system
+  and is non-empty (for the default `copy-install-log = true` case).
+- Add a scenario with `copy-install-log = false` and verify the file does
+  not exist on the installed system.
 
 ### Manual verification
 
@@ -561,6 +623,8 @@ device).
   correct for each mode.
 - Install two disks from the same ISO and verify they have different
   filesystem UUIDs.
+- After installation, check that `/var/log/bes-installer.log` exists on
+  the installed system and contains the installation log.
 
 ## Implementation order
 
@@ -581,6 +645,13 @@ device).
    status`, then container install tests.
 
 ## Resolved decisions
+
+- **Installation log is copied by default.** The log provides useful
+  diagnostics for field-deployed systems. Disabling it via
+  `copy-install-log = false` is available for environments where the log
+  might contain sensitive information or where minimizing writes is
+  important. There is no TUI control for this -- it is a config-file-only
+  knob for advanced users.
 
 - **No schema version in `partitions.json`.** The installer binary and the
   ISO are always built together in the same pipeline. There is no scenario

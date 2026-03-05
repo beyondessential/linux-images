@@ -31,6 +31,10 @@
 > # Strategies: "largest-ssd", "largest", "smallest"
 > disk = "largest-ssd"
 >
+> # Copy the installer log into the installed system at /var/log/bes-installer.log.
+> # Default: true. Set to false to disable. No TUI control for this option.
+> copy-install-log = true
+>
 > [firstboot]
 > hostname = "server-01"
 > # Use DHCP-provided hostname instead of a static one.
@@ -159,6 +163,7 @@ plan. If omitted, the plan is written to stdout.
 >     "timezone": "UTC"
 >   },
 >   "manifest_path": "/run/live/medium/images/partitions.json",
+>   "copy_install_log": true,
 >   "config_warnings": []
 > }
 > ```
@@ -643,6 +648,16 @@ The installer must set the system timezone on the installed system by
 creating a symlink at `/etc/localtime` pointing to the corresponding
 file under `/usr/share/zoneinfo/` and writing the timezone name to
 `/etc/timezone`. The default timezone is `UTC`.
+
+r[installer.firstboot.copy-install-log]
+After applying first-boot configuration and before encryption setup, the
+installer must copy its own log file into the installed system at
+`/var/log/bes-installer.log`. This is enabled by default. When
+`copy-install-log` is set to `false` in the configuration file, the copy
+must be skipped. If the copy fails (e.g. the target filesystem is full or
+the source log file does not exist), the installer must log a warning but
+must not treat it as a fatal error. There is no TUI control for this
+option.
 
 r[installer.firstboot.unmount]
 After applying configuration, the installer must cleanly unmount all
