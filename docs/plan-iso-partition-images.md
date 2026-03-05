@@ -158,17 +158,26 @@ New flow:
      b. `cryptsetup open` -> `/dev/mapper/root`.
      c. Stream-decompress `root.img.zst` -> `/dev/mapper/root`.
      d. `cryptsetup close root`.
-10. `verify_partition_table`.
-11. Firstboot (mount, apply config, unmount). When encryption is not
+10. Expand root filesystem:
+    - If encryption is `Tpm` or `Keyfile`: `cryptsetup open` (if not
+      already open), `cryptsetup resize root`, then
+      `btrfs filesystem resize max` on the mounted filesystem.
+    - If encryption is `None`: `btrfs filesystem resize max` on the
+      mounted filesystem.
+    This requires a temporary mount of the BTRFS (subvol `@`), resize,
+    then unmount. This ensures the installed system has a fully expanded
+    filesystem and does not depend on `grow-root-filesystem.service`.
+11. `verify_partition_table`.
+12. Firstboot (mount, apply config, unmount). When encryption is not
     `None`, also fix up fstab and write variant marker.
-12. Encryption setup (if encrypted) -- same as today: `run_encryption_setup`
+13. Encryption setup (if encrypted) -- same as today: `run_encryption_setup`
     handles key rotation, enrollment, recovery passphrase, initramfs.
 
-Step 7 is unnecessary for `expand_partitions` because partition 3 was
-created to span all remaining space by `sgdisk`. The BTRFS resize still
-happens at boot via `grow-root-filesystem.service`. However, the BTRFS
-filesystem inside `root.img.zst` is smaller than the partition, so `btrfs
-filesystem resize max` at boot is still needed (and already exists).
+Since the installer creates the GPT with partition 3 spanning all remaining
+space, neither `growpart` nor `--move-second-header` is needed. The BTRFS
+filesystem inside `root.img.zst` is smaller than the partition it is written
+into, so the installer must resize it to fill the available space. This is
+done at install time rather than deferring to a boot-time service.
 
 ### Config fixups
 
@@ -299,10 +308,14 @@ device).
   `reread_partition_table`, then `decompress_to_device` for each partition.
   For root when encryption is enabled, calls `format_luks_for_root` first
   and writes to the mapper device. Reports unified progress.
-- **`expand_partitions`**: Simplify. Since the GPT was created by the
-  installer with partition 3 already spanning all remaining space, neither
-  `growpart` nor `--move-second-header` is needed. This function can be
-  removed or reduced to a no-op. The BTRFS resize still happens at boot.
+- **`expand_root_filesystem`** (new, replaces `expand_partitions`):
+  Temporarily opens the LUKS volume (if encrypted) and mounts the BTRFS
+  root, runs `btrfs filesystem resize max /mnt/target`, then unmounts and
+  closes LUKS. If encrypted, also runs `cryptsetup resize root` before the
+  BTRFS resize.
+- **`expand_partitions`**: Delete. The GPT is created with correct geometry
+  so `growpart` and `--move-second-header` are unnecessary, and the BTRFS
+  resize is now handled by `expand_root_filesystem`.
 - **`check_disk_size`**: No signature change needed; callers pass the new
   summed size.
 - **`find_image_path`**: Delete (replaced by `find_partition_manifest`).
@@ -336,9 +349,10 @@ device).
 
 - **`run_auto`**: Replace `find_image_path` + `write_image` sequence with
   `find_partition_manifest` + `write_partitions`. Pass `disk_encryption` to
-  `write_partitions` so it knows whether to set up LUKS. After write +
-  verify, call `firstboot::fixup_for_metal_variant` before `apply_firstboot`
-  when encryption is enabled. Remove `expand_partitions` call.
+  `write_partitions` so it knows whether to set up LUKS. After write, call
+  `expand_root_filesystem`, then `verify_partition_table`, then
+  `firstboot::fixup_for_metal_variant` before `apply_firstboot` when
+  encryption is enabled. Remove `expand_partitions` call.
 - **`run_interactive`**: Replace `find_image_path` call with
   `find_partition_manifest`. Pass manifest to `ui::run_tui`.
 
@@ -346,7 +360,8 @@ device).
 
 - **`start_write_worker`**: Replace `write_image` with `write_partitions`.
   Pass `disk_encryption` from `AppState`. After write, call
-  `verify_partition_table` (remove `expand_partitions`).
+  `expand_root_filesystem`, then `verify_partition_table` (remove
+  `expand_partitions`).
 - **`start_firstboot_worker`**: Add call to `fixup_for_metal_variant` when
   encryption is enabled, before `apply_firstboot`.
 
@@ -422,7 +437,7 @@ device).
 6. **`justfile`** -- relax `iso` recipe to require only cloud image.
 7. **`test-iso-structure.sh`** -- update checks.
 8. **Delete old code** -- remove `find_image_path`, `write_image`,
-   simplify `expand_partitions`.
+   `expand_partitions`.
 9. **Run full test suite** -- `cargo clippy`, `cargo fmt`, `tracey query
    status`, then container install tests.
 

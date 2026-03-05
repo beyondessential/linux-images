@@ -510,6 +510,15 @@ The installer must write the correct variant name to `/etc/bes/image-variant`
 on the installed system: `metal` when disk encryption is not `"none"`, `cloud`
 when disk encryption is `"none"`.
 
+r[installer.write.expand-root]
+After writing the root partition image, the installer must expand the root
+filesystem to fill the partition. When disk encryption is enabled, the
+installer must first open the LUKS volume and run `cryptsetup resize` to
+expand it to fill the partition, then run `btrfs filesystem resize max` on
+the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is
+needed. This ensures the installed system has a fully expanded filesystem
+without depending on a boot-time growth service.
+
 ## Encryption Setup
 
 > r[installer.encryption.overview]
