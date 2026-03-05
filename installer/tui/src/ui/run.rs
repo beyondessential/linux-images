@@ -35,6 +35,7 @@ enum KeyAction {
     Quit,
     Reboot,
     StartWrite,
+    Shell,
 }
 
 /// Process a single key event, updating state and returning what the event
@@ -42,6 +43,15 @@ enum KeyAction {
 fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     if key.kind != KeyEventKind::Press {
         return KeyAction::Continue;
+    }
+
+    // r[impl installer.tui.debug-shell]
+    if key
+        .modifiers
+        .contains(KeyModifiers::ALT | KeyModifiers::CONTROL)
+        && key.code == KeyCode::Char('d')
+    {
+        return KeyAction::Shell;
     }
 
     match &state.screen {
@@ -437,6 +447,10 @@ fn event_loop(
             KeyAction::StartWrite => {
                 start_write_worker(image_path, state, &worker_tx);
             }
+            // r[impl installer.tui.debug-shell]
+            KeyAction::Shell => {
+                drop_to_shell(terminal)?;
+            }
         }
     }
 
@@ -456,7 +470,9 @@ pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState 
         state.poll_github_keys();
 
         match handle_key(key, &mut state) {
-            KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot => break,
+            KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot | KeyAction::Shell => {
+                break;
+            }
             KeyAction::Continue => {}
         }
     }
@@ -595,6 +611,30 @@ fn run_encryption(
 
     let enc_result = result?;
     Ok(enc_result.recovery_passphrase)
+}
+
+/// Leave the alternate screen, disable raw mode, spawn an interactive shell,
+/// and restore the TUI when the shell exits.
+fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+    execute!(io::stdout(), LeaveAlternateScreen, cursor::Show)?;
+    terminal::disable_raw_mode()?;
+
+    eprintln!("--- debug shell (type 'exit' to return to installer) ---");
+    let status = std::process::Command::new("/bin/sh")
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status();
+
+    match status {
+        Ok(s) => tracing::debug!("debug shell exited with {s}"),
+        Err(e) => tracing::warn!("failed to spawn debug shell: {e}"),
+    }
+
+    terminal::enable_raw_mode()?;
+    execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
+    terminal.clear()?;
+    Ok(())
 }
 
 fn reboot() {
@@ -1354,6 +1394,38 @@ mod tests {
         let action = handle_key(release, &mut state);
         assert!(matches!(action, KeyAction::Continue));
         assert_eq!(state.screen, Screen::Welcome);
+    }
+
+    fn ctrl_alt(c: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::ALT | KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        }
+    }
+
+    // r[verify installer.tui.debug-shell]
+    #[test]
+    fn ctrl_alt_d_returns_shell_action() {
+        let mut state = make_state();
+        let action = handle_key(ctrl_alt('d'), &mut state);
+        assert!(matches!(action, KeyAction::Shell));
+        // Screen should be unchanged — shell doesn't alter TUI state
+        assert_eq!(state.screen, Screen::Welcome);
+    }
+
+    // r[verify installer.tui.debug-shell]
+    #[test]
+    fn ctrl_alt_d_breaks_scripted_loop() {
+        let state = make_state();
+        let events = vec![
+            press(KeyCode::Enter), // Welcome -> DiskSelection
+            ctrl_alt('d'),         // should break immediately
+            press(KeyCode::Enter), // should never be processed
+        ];
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::DiskSelection);
     }
 
     // r[verify installer.tui.timezone]

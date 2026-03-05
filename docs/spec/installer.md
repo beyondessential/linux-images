@@ -447,6 +447,15 @@ r[installer.tui.progress]
 During image writing, the TUI must display a progress bar showing bytes
 written and estimated time remaining.
 
+r[installer.tui.debug-shell]
+Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
+interactive shell (`/bin/sh`). The TUI must leave the alternate screen,
+disable raw mode, and spawn the shell as a child process, waiting for it to
+exit. When the shell exits, the TUI must re-enter the alternate screen,
+re-enable raw mode, and redraw. This keybind is intentionally undocumented
+in the on-screen help; it is a debugging aid for diagnosing failures in
+container and bare-metal environments.
+
 r[installer.tui.loop-device]
 The installer's TUI and write pipeline must not assume the target device is
 real hardware. It must work correctly when targeting a loop device backed by
