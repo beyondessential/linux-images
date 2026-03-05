@@ -305,9 +305,7 @@ name, and transport type (SSD, HDD, NVMe, USB, etc.).
 > - **Not bound to hardware**: "A keyfile will be stored on the boot
 >   partition. The system will boot unattended on any hardware. If the boot
 >   partition is lost, you will need the recovery passphrase."
-> - **No encryption**: "The root partition will not be encrypted. This is
->   suitable for cloud environments where encryption at rest is provided by
->   the infrastructure."
+> - **No encryption**: "The root partition will not be encrypted."
 
 r[installer.tui.tpm-toggle]
 When the `metal` variant is selected, the TUI must offer a toggle to disable
