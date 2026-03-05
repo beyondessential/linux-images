@@ -10,6 +10,7 @@ PACKAGES=(
     cryptsetup
     snapper
     gdisk
+    mtools
 
     # for growpart
     cloud-guest-utils

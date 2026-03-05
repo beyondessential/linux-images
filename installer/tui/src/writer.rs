@@ -471,10 +471,17 @@ pub fn expand_root_filesystem(target: &Path, disk_encryption: DiskEncryption) ->
         let mapper_dev = open_luks_root(&root_part)?;
 
         tracing::info!("resizing LUKS container to fill partition");
+        let keyfile = create_empty_keyfile()?;
         let output = Command::new("cryptsetup")
-            .args(["resize", LUKS_NAME])
+            .args([
+                "resize",
+                "--key-file",
+                keyfile.to_str().unwrap_or_default(),
+                LUKS_NAME,
+            ])
             .output()
             .context("running cryptsetup resize")?;
+        let _ = fs::remove_file(&keyfile);
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("cryptsetup resize failed: {stderr}");
@@ -532,13 +539,21 @@ pub fn randomize_filesystem_uuids(target: &Path, disk_encryption: DiskEncryption
     let xboot_part = partition_path(target, 2)?;
     let root_part = partition_path(target, 3)?;
 
-    let efi_result = Command::new("mlabel")
+    match Command::new("mlabel")
         .args(["-n", "-i", efi_part.to_str().unwrap_or_default(), "::"])
         .output()
-        .context("running mlabel to randomize EFI serial")?;
-    if !efi_result.status.success() {
-        let stderr = String::from_utf8_lossy(&efi_result.stderr);
-        tracing::warn!("mlabel failed (non-fatal): {stderr}");
+    {
+        Ok(efi_result) if !efi_result.status.success() => {
+            let stderr = String::from_utf8_lossy(&efi_result.stderr);
+            tracing::warn!("mlabel failed (non-fatal): {stderr}");
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::warn!("mlabel not found (non-fatal): EFI serial not randomized");
+        }
+        Err(e) => {
+            tracing::warn!("mlabel failed (non-fatal): {e}");
+        }
     }
 
     let xboot_result = Command::new("tune2fs")
