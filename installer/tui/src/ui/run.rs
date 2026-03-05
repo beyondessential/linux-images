@@ -12,6 +12,7 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use crate::config::validate_hostname;
+use crate::encryption;
 use crate::firstboot;
 use crate::writer;
 
@@ -24,6 +25,8 @@ enum WorkerMessage {
     WriteError(String),
     FirstbootDone,
     FirstbootError(String),
+    EncryptionDone(String),
+    EncryptionError(String),
 }
 
 /// Result of processing a single key event against the current TUI state.
@@ -324,7 +327,14 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        Screen::Writing | Screen::FirstbootApply => {}
+        Screen::Writing | Screen::FirstbootApply | Screen::EncryptionSetup => {}
+
+        // r[impl installer.encryption.recovery-passphrase]
+        Screen::RecoveryPassphrase => {
+            if key.code == KeyCode::Enter {
+                state.advance();
+            }
+        }
 
         Screen::Done => {
             return KeyAction::Reboot;
@@ -384,9 +394,22 @@ fn event_loop(
                     state.screen = Screen::Error(e);
                 }
                 WorkerMessage::FirstbootDone => {
-                    state.screen = Screen::Done;
+                    if state.disk_encryption.is_encrypted() {
+                        state.screen = Screen::EncryptionSetup;
+                        terminal.draw(|f| render(f, state))?;
+                        start_encryption_worker(state, &worker_tx);
+                    } else {
+                        state.screen = Screen::Done;
+                    }
                 }
                 WorkerMessage::FirstbootError(e) => {
+                    state.screen = Screen::Error(e);
+                }
+                WorkerMessage::EncryptionDone(passphrase) => {
+                    state.recovery_passphrase = Some(passphrase);
+                    state.screen = Screen::RecoveryPassphrase;
+                }
+                WorkerMessage::EncryptionError(e) => {
                     state.screen = Screen::Error(e);
                 }
             }
@@ -525,6 +548,44 @@ fn run_firstboot(
 
     firstboot::unmount_target(mounted)?;
     Ok(())
+}
+
+fn start_encryption_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
+    let target_disk = match state.selected_disk() {
+        Some(d) => d.path.clone(),
+        None => {
+            let _ = tx.send(WorkerMessage::EncryptionError("no disk selected".into()));
+            return;
+        }
+    };
+    let disk_encryption = state.disk_encryption;
+    let tx = tx.clone();
+
+    thread::spawn(move || {
+        let result = run_encryption(&target_disk, disk_encryption);
+        match result {
+            Ok(passphrase) => {
+                let _ = tx.send(WorkerMessage::EncryptionDone(passphrase));
+            }
+            Err(e) => {
+                let _ = tx.send(WorkerMessage::EncryptionError(format!("{e:#}")));
+            }
+        }
+    });
+}
+
+fn run_encryption(
+    target_disk: &Path,
+    disk_encryption: crate::config::DiskEncryption,
+) -> Result<String> {
+    let mounted = firstboot::mount_target(target_disk, disk_encryption)?;
+
+    let result = encryption::run_encryption_setup(target_disk, disk_encryption, mounted.path());
+
+    firstboot::unmount_target(mounted)?;
+
+    let enc_result = result?;
+    Ok(enc_result.recovery_passphrase)
 }
 
 fn reboot() {

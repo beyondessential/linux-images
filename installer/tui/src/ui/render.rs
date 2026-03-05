@@ -38,6 +38,8 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::Confirmation => render_confirmation(frame, chunks[1], state),
         Screen::Writing => render_writing(frame, chunks[1], state),
         Screen::FirstbootApply => render_firstboot(frame, chunks[1]),
+        Screen::EncryptionSetup => render_encryption_setup(frame, chunks[1]),
+        Screen::RecoveryPassphrase => render_recovery_passphrase(frame, chunks[1], state),
         Screen::Done => render_done(frame, chunks[1]),
         Screen::Error(msg) => render_error(frame, chunks[1], msg),
     }
@@ -62,6 +64,8 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Confirmation => "6/6 Confirm",
         Screen::Writing => "Writing Image",
         Screen::FirstbootApply => "Applying Configuration",
+        Screen::EncryptionSetup => "Encryption Setup",
+        Screen::RecoveryPassphrase => "Recovery Passphrase",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
     };
@@ -321,6 +325,8 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit".into(),
         Screen::Writing => "Please wait...".into(),
         Screen::FirstbootApply => "Please wait...".into(),
+        Screen::EncryptionSetup => "Please wait...".into(),
+        Screen::RecoveryPassphrase => "Press Enter to acknowledge".into(),
         Screen::Done => "Press any key to reboot".into(),
         Screen::Error(_) => "Press any key to exit".into(),
     };
@@ -1039,6 +1045,59 @@ fn render_firstboot(frame: &mut Frame, area: Rect) {
         Line::from("  Mounting target filesystem and writing settings."),
     ];
     let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+// r[impl installer.encryption.overview]
+fn render_encryption_setup(frame: &mut Frame, area: Rect) {
+    let lines = vec![
+        Line::from(""),
+        Line::from("  Setting up disk encryption..."),
+        Line::from(""),
+        Line::from("  Rotating master key, enrolling unlock mechanism, and generating"),
+        Line::from("  recovery passphrase. This may take a few minutes."),
+    ];
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+// r[impl installer.encryption.recovery-passphrase]
+fn render_recovery_passphrase(frame: &mut Frame, area: Rect, state: &AppState) {
+    let passphrase = state
+        .recovery_passphrase
+        .as_deref()
+        .unwrap_or("(unavailable)");
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Recovery Passphrase",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("  Write down this recovery passphrase and store it in a safe place."),
+        Line::from("  You will need it if the primary unlock mechanism fails (e.g. hardware"),
+        Line::from("  change, lost boot partition)."),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("    {passphrase}"),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("  Press Enter to acknowledge and continue."),
+    ];
+
+    let block = Block::default()
+        .title(" Recovery Passphrase ")
+        .borders(Borders::ALL);
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
