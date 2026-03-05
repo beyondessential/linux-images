@@ -135,7 +135,7 @@ r[installer.dryrun.output]
 The `--dry-run-output <path>` flag specifies the path for the JSON install
 plan. If omitted, the plan is written to stdout.
 
-> r[installer.dryrun.schema+3]
+> r[installer.dryrun.schema+4]
 > The install plan JSON has the following structure:
 >
 > ```json
@@ -158,7 +158,7 @@ plan. If omitted, the plan is written to stdout.
 >     "password_set": true,
 >     "timezone": "UTC"
 >   },
->   "image_path": "/run/live/medium/images/metal-amd64.raw.zst",
+>   "manifest_path": "/run/live/medium/images/partitions.json",
 >   "config_warnings": []
 > }
 > ```
@@ -466,26 +466,49 @@ no SCSI/ATA-specific ioctls.
 
 ## Image Writing
 
-r[installer.write.partitions]
-Before writing an image, the installer must wipe all existing filesystem,
-RAID, and partition-table signatures from the target disk.
-After writing the image, the installer must verify the partition table, and expand the disk and root partition to fit.
+r[installer.write.partitions+2]
+Before writing partition images, the installer must wipe all existing
+filesystem, RAID, and partition-table signatures from the target disk. It
+must then create the GPT table and all three partitions (EFI, xboot, root)
+using the geometry from `partitions.json`. After writing all partition
+images, the installer must verify the partition table.
 
-r[installer.write.source]
-Compressed disk images (`.raw.zst`) must be stored on the ISO filesystem. The
-installer must select the correct image for the running CPU architecture and
-chosen variant.
+r[installer.write.source+2]
+The installer must read `partitions.json` from the ISO filesystem to locate
+the partition images and their layout metadata. There is one set of partition
+images per architecture, not per variant. The installer must search the
+standard ISO mount paths (`/run/live/medium/images`, `/cdrom/images`, etc.)
+for the manifest file.
 
-r[installer.write.disk-size-check]
-Before writing, the installer must read the uncompressed image size from the
-zstd frame header and verify that the target disk is at least that large. If
-the disk is too small, the installer must refuse to write and report the
-image size and disk size in the error message.
+r[installer.write.disk-size-check+2]
+Before writing, the installer must read the uncompressed size of each
+partition image from its `.size` sidecar file and verify that the target disk
+is at least as large as the sum of all partition sizes (plus GPT overhead).
+If the disk is too small, the installer must refuse to write and report the
+required size and disk size in the error message.
 
-r[installer.write.decompress-stream]
-The installer must stream-decompress the zstd image directly to the target
-block device, avoiding the need to hold the uncompressed image in memory or
-on a temporary filesystem.
+r[installer.write.decompress-stream+2]
+The installer must stream-decompress each zstd-compressed partition image
+directly to its corresponding partition device (or to the opened LUKS mapper
+device for the root partition when encryption is enabled), avoiding the need
+to hold the uncompressed image in memory or on a temporary filesystem.
+
+r[installer.write.luks-before-write]
+When disk encryption is not `"none"`, the installer must format the root
+partition with LUKS2 using an empty passphrase and open the LUKS volume
+before writing the root partition image. After writing, the LUKS volume must
+be closed. This is the initial LUKS setup; key rotation and mechanism
+enrollment happen in the subsequent `installer.encryption.*` phase.
+
+r[installer.write.fstab-fixup]
+When disk encryption is not `"none"`, the installer must rewrite `/etc/fstab`
+on the installed system to reference `/dev/mapper/root` instead of
+`/dev/disk/by-partlabel/root` for the root and postgresql mount entries.
+
+r[installer.write.variant-fixup]
+The installer must write the correct variant name to `/etc/bes/image-variant`
+on the installed system: `metal` when disk encryption is not `"none"`, `cloud`
+when disk encryption is `"none"`.
 
 ## Encryption Setup
 

@@ -242,61 +242,6 @@ overhead. In practice, reading `root.img.size` and adding 1.5 GiB is
 sufficient. `partitions.json` could include a `min_disk_bytes` field
 computed at ISO build time for extra clarity.
 
-## Spec changes
-
-### `docs/spec/live-iso.md`
-
-- **`iso.contents`**: Replace current text ("compressed disk images
-  (`.raw.zst`) for all variants of the ISO's architecture") with:
-  "compressed partition images extracted from the cloud disk image, a
-  `partitions.json` manifest describing the partition layout, and the TUI
-  installer binary". Remove references to selecting between metal/cloud
-  images on the ISO.
-
-### `docs/spec/installer.md`
-
-- **`installer.write.source`**: Replace current text about selecting the
-  correct image by architecture and variant. New text: "The installer reads
-  `partitions.json` from the ISO filesystem rather than searching for a
-  `.raw.zst` by variant name. There is one set of partition images per
-  architecture, not per variant."
-- **`installer.write.partitions`**: Replace current text. New: "Before
-  writing partition images, the installer must wipe all existing filesystem,
-  RAID, and partition-table signatures from the target disk. It must then
-  create the GPT table and all three partitions using the geometry from
-  `partitions.json`. After writing, the installer must verify the partition
-  table."
-- **`installer.write.disk-size-check`**: Replace "uncompressed image size
-  from the zstd frame header" with "sum of partition image sizes from the
-  `.size` sidecar files".
-- **`installer.write.decompress-stream`**: Update to describe streaming
-  each partition image to its corresponding partition device (or to the
-  opened LUKS device for the root partition when encryption is enabled).
-- **`installer.write.luks-before-write`**: (New) When encryption is not
-  `None`, the installer must format the root partition with LUKS2 using an
-  empty passphrase and open it before writing the root partition image.
-  This is the initial LUKS setup; key rotation and mechanism enrollment
-  happen in the subsequent `installer.encryption.*` phase.
-- **`installer.write.fstab-fixup`**: (New) When encryption is not `None`,
-  the installer must rewrite `/etc/fstab` on the installed system to
-  reference `/dev/mapper/root` instead of `/dev/disk/by-partlabel/root`
-  for the root and postgresql mounts.
-- **`installer.write.variant-fixup`**: (New) The installer must write the
-  correct variant name to `/etc/bes/image-variant` on the installed system:
-  `metal` when encryption is not `None`, `cloud` when encryption is `None`.
-
-### `docs/spec/disk-images.md`
-
-No changes. Both metal and cloud images are still built and published. The
-metal image remains available for direct-imaging workflows outside the
-installer.
-
-### `installer.dryrun.schema`
-
-- Replace `image_path` field with `manifest_path` (path to
-  `partitions.json` on the ISO). This is a minor schema change; existing
-  dry-run tests must be updated.
-
 ## Code changes
 
 ### `iso/build-iso.sh`
@@ -465,23 +410,21 @@ device).
 
 ## Implementation order
 
-1. **Spec changes** -- update `live-iso.md`, `installer.md` with the new
-   spec items.
-2. **`writer.rs` refactor** -- add `PartitionManifest`,
+1. **`writer.rs` refactor** -- add `PartitionManifest`,
    `find_partition_manifest`, `decompress_to_device`, `create_partition_table`,
    `format_luks_for_root`, `write_partitions`. Keep old functions temporarily
    for compilation.
-3. **`firstboot.rs` additions** -- add `fixup_for_metal_variant`.
-4. **`main.rs` / `ui/run.rs` rewiring** -- switch `run_auto` and
+2. **`firstboot.rs` additions** -- add `fixup_for_metal_variant`.
+3. **`main.rs` / `ui/run.rs` rewiring** -- switch `run_auto` and
    `start_write_worker` to the new flow.
-5. **`plan.rs`** -- rename `image_path` to `manifest_path`.
-6. **`iso/build-iso.sh`** -- replace Phase 5 with partition extraction.
-7. **`justfile`** -- relax `iso` recipe to require only cloud image.
-8. **`test-iso-structure.sh`** -- update checks.
-9. **Delete old code** -- remove `find_image_path`, `write_image`,
+4. **`plan.rs`** -- rename `image_path` to `manifest_path`.
+5. **`iso/build-iso.sh`** -- replace Phase 5 with partition extraction.
+6. **`justfile`** -- relax `iso` recipe to require only cloud image.
+7. **`test-iso-structure.sh`** -- update checks.
+8. **Delete old code** -- remove `find_image_path`, `write_image`,
    simplify `expand_partitions`.
-10. **Run full test suite** -- `cargo clippy`, `cargo fmt`, `tracey query
-    status`, then container install tests.
+9. **Run full test suite** -- `cargo clippy`, `cargo fmt`, `tracey query
+   status`, then container install tests.
 
 ## Resolved decisions
 

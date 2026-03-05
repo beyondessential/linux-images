@@ -37,9 +37,14 @@ r[iso.offline]
 The live ISO must be fully functional without network connectivity. No
 packages or data are downloaded during the installation process.
 
-r[iso.contents]
-The ISO must contain the compressed disk images (`.raw.zst`) for all variants
-of the ISO's architecture, and the TUI installer binary.
+r[iso.contents+2]
+The ISO must contain compressed partition images extracted from the cloud disk
+image, a `partitions.json` manifest describing the partition layout, and the
+TUI installer binary. There is one set of partition images per architecture,
+not per variant. The partition images are `efi.img.zst`, `xboot.img.zst`, and
+`root.img.zst`, each with a `.size` sidecar containing the uncompressed byte
+count. The installer reconstructs the GPT and writes each partition
+individually, setting up LUKS on the root partition when encryption is enabled.
 
 r[iso.boot.uefi]
 The ISO must be UEFI-bootable via an El Torito EFI boot catalog. The EFI
