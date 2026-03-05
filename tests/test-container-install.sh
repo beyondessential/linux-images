@@ -101,6 +101,19 @@ cleanup() {
         umount "$VERIFY_MOUNT"
     fi
 
+    # Clean up any mounts the installer left on the target device or its
+    # LUKS mapper before closing LUKS / detaching the loop.
+    if [ -n "$LOOP_DEV" ]; then
+        grep "$LOOP_DEV\|bes-target-root" /proc/mounts 2>/dev/null \
+            | awk '{print $2}' | sort -r | while read -r mp; do
+            umount "$mp" 2>/dev/null
+        done
+    fi
+
+    if [ -e /dev/mapper/bes-target-root ]; then
+        cryptsetup close bes-target-root 2>/dev/null
+    fi
+
     if [ -e "/dev/mapper/$LUKS_NAME" ]; then
         cryptsetup close "$LUKS_NAME" 2>/dev/null
     fi
