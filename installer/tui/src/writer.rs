@@ -572,7 +572,7 @@ pub fn randomize_filesystem_uuids(target: &Path, disk_encryption: DiskEncryption
     };
 
     let btrfs_result = Command::new("btrfstune")
-        .args(["-u", btrfs_dev.to_str().unwrap_or_default()])
+        .args(["-f", "-u", btrfs_dev.to_str().unwrap_or_default()])
         .output()
         .context("running btrfstune to randomize root UUID")?;
 
