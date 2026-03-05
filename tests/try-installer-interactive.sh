@@ -57,6 +57,19 @@ cleanup() {
     local exit_code=$?
     set +e
 
+    # Unmount any stale mounts the installer left on the target device or
+    # its LUKS mapper before closing LUKS / detaching the loop.
+    if [ -n "$LOOP_DEV" ]; then
+        grep "$LOOP_DEV\|bes-target-root" /proc/mounts 2>/dev/null \
+            | awk '{print $2}' | sort -r | while read -r mp; do
+            umount "$mp" 2>/dev/null
+        done
+    fi
+
+    if [ -e /dev/mapper/bes-target-root ]; then
+        cryptsetup close bes-target-root 2>/dev/null
+    fi
+
     if [ -n "$LOOP_DEV" ]; then
         losetup -d "$LOOP_DEV" 2>/dev/null
     fi
@@ -116,12 +129,16 @@ xorriso -osirrox on -indev "$ISO" \
     -extract /images "$IMAGES_DIR" \
     2>/dev/null
 
-IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.raw.zst' | wc -l)
-if [ "$IMAGE_COUNT" -eq 0 ]; then
-    echo "ERROR: no .raw.zst images found in ISO /images/"
+if [ ! -f "$IMAGES_DIR/partitions.json" ]; then
+    echo "ERROR: partitions.json not found in ISO /images/"
     exit 1
 fi
-echo "    Extracted $IMAGE_COUNT disk image(s)"
+PART_IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.img.zst' | wc -l)
+if [ "$PART_IMAGE_COUNT" -eq 0 ]; then
+    echo "ERROR: no .img.zst partition images found in ISO /images/"
+    exit 1
+fi
+echo "    Extracted partitions.json + $PART_IMAGE_COUNT partition image(s)"
 echo ""
 
 # ============================================================
