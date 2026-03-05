@@ -75,6 +75,7 @@ cleanup() {
 trap cleanup EXIT
 
 WORK_DIR="$(mktemp -d -t bes-try-installer-XXXXXX)"
+mkdir -p "$WORK_DIR/log"
 
 echo "=============================="
 echo "BES Interactive Installer Trial"
@@ -265,10 +266,12 @@ NSPAWN_OPTS=(
 NSPAWN_BINDS=(
     "--bind=$LOOP_DEV"
     "--bind=$DEV_OVERLAY:/dev"
+    "--bind=$WORK_DIR/log:/log"
     "--bind-ro=$IMAGES_DIR:/run/live/medium/images"
     "--bind-ro=$DEVICES_JSON:/tmp/devices.json"
 )
 
+set -x
 set +e
 systemd-nspawn \
     "${NSPAWN_OPTS[@]}" \
@@ -277,11 +280,22 @@ systemd-nspawn \
     /usr/local/bin/bes-installer \
         --fake-devices /tmp/devices.json \
         --fake-tpm \
-        --no-reboot
+        --no-reboot \
+        --log /log/installer.log
 RC=$?
 set -e
+set +x
 
 echo ""
+if [ -f "$WORK_DIR/log/installer.log" ]; then
+    echo "Installer log saved to: $WORK_DIR/log/installer.log"
+    echo ""
+    echo "=== Installer log ==="
+    cat  "$WORK_DIR/log/installer.log"
+    echo "=== End installer log ==="
+    echo ""
+fi
+
 if [ $RC -eq 0 ]; then
     echo "Installer exited successfully."
 else
