@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Padding, Paragraph, Wrap};
 
 use crate::disk::BlockDevice;
 use crate::net::CheckPhase;
@@ -340,27 +340,37 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut description = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "  Tamanu Linux",
+            "Tamanu Linux",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  Tamanu Linux is BES's preferred system layout for Linux deployments."),
-        Line::from("  It is based on Ubuntu Server. If you're not installing a Tamanu or"),
-        Line::from("  other BES system, you may want to use the normal Ubuntu Server ISO."),
+        Line::from(
+            String::from("Tamanu Linux is BES's preferred system layout for Linux deployments.")
+                + " It is based on Ubuntu Server. If you're not installing a Tamanu or"
+                + " other BES system, you may want to use the normal Ubuntu Server ISO.",
+        ),
         Line::from(""),
-        Line::from("  Available variants:"),
-        Line::from(Span::styled(
-            "    metal  -- Full-disk encryption, hardware-locked when a TPM is available",
-            Style::default().fg(Color::Yellow),
-        )),
-        Line::from(Span::styled(
-            "    cloud  -- For cloud or on-prem VMs where disk encryption is not needed",
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(
+            String::from("If you want to automate installs, and this is booting from a USB,")
+                + " plug the USB drive into a computer and open the BESCONF volume."
+                + " Within, you will find a bes-install.toml text file that you can use"
+                + " to configure an automated install. You can also image disks directly"
+                + " using our disk images, which may be more suitable for bulk installs.",
+        ),
         Line::from(""),
-        Line::from("  For support, contact BES at:"),
+        Line::from(
+            Span::styled("For support, contact BES at: ", Style::default())
+                + Span::styled(
+                    "https://bes.au",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::UNDERLINED),
+                ),
+        ),
+        Line::from(""),
+        Line::from("Sources for this installer, and other images, are available at:"),
         Line::from(Span::styled(
-            "    https://bes.au",
+            "https://github.com/beyondessential/linux-images",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::UNDERLINED),
@@ -370,18 +380,27 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     if !state.build_info.is_empty() {
         description.push(Line::from(""));
         description.push(Line::from(Span::styled(
-            format!("  {}", state.build_info),
+            format!("{}", state.build_info),
             Style::default().fg(Color::DarkGray),
         )));
     }
 
     description.push(Line::from(""));
     description.push(Line::from(
-        "  Press Enter to begin, or 'n' for a network check.",
+        "Press Enter to begin, or 'n' for a network check.",
     ));
 
-    let paragraph = Paragraph::new(description).wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
+    frame.render_widget(
+        Paragraph::new(description)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::uniform(1))
+                    .border_style(Style::default().fg(Color::White)),
+            )
+            .wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
 // r[impl installer.tui.disk-detection+3]
