@@ -159,7 +159,7 @@ Example of an automatic config:
 
 ```toml
 auto = true
-variant = "metal"
+disk-encryption = "tpm"
 disk = "largest-ssd"
 
 [firstboot]
@@ -167,11 +167,11 @@ hostname = "server-01"
 tailscale-authkey = "tskey-auth-xxxxx"
 ```
 
-Example using DHCP hostname (metal variant, no static hostname):
+Example using DHCP hostname (encrypted, no static hostname):
 
 ```toml
 auto = true
-variant = "metal"
+disk-encryption = "keyfile"
 disk = "largest-ssd"
 
 [firstboot]
@@ -182,7 +182,7 @@ Example using a hostname template (generates a unique hostname per install):
 
 ```toml
 auto = true
-variant = "metal"
+disk-encryption = "tpm"
 disk = "largest-ssd"
 
 [firstboot]
@@ -192,7 +192,7 @@ hostname-template = "tamanu-{hex:6}"
 Example of a config setting custom defaults only:
 
 ```toml
-variant = "cloud"
+disk-encryption = "none"
 
 [firstboot]
 hostname = "server-02"
@@ -206,16 +206,15 @@ All fields are optional. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `variant` and `disk`; additionally, the `metal` variant requires a hostname strategy (`hostname`, `hostname-from-dhcp`, or `hostname-template`) in the `[firstboot]` table. |
-| `variant` | string | — | Image variant to install. `"metal"` for full-disk encryption (LUKS2) with optional TPM auto-unlock, or `"cloud"` for no encryption (intended for environments with host-level disk encryption). |
+| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `disk-encryption` and `disk`; additionally, when disk encryption is `"tpm"` or `"keyfile"`, a hostname strategy (`hostname`, `hostname-from-dhcp`, or `hostname-template`) is required in the `[firstboot]` table. |
+| `disk-encryption` | string | — | Disk encryption mode. `"tpm"` for LUKS + TPM PCR 1 (requires a TPM; default when TPM present), `"keyfile"` for LUKS + keyfile on boot partition (default when no TPM), or `"none"` for no encryption (cloud image). |
 | `disk` | string | — | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
-| `disable-tpm` | boolean | `false` | Disable automatic TPM2 enrollment on first boot. Only meaningful with the `metal` variant; ignored (with a warning) for `cloud`. The LUKS volume is still created but will not be bound to the TPM. |
 
 #### `[firstboot]` table
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `hostname` | string | — | Hostname to set on first boot. Required for the `metal` variant unless `hostname-from-dhcp` or `hostname-template` is used; optional for `cloud` (defaults to `ubuntu`, typically overridden by DHCP/cloud-init). Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Mutually exclusive with `hostname-from-dhcp` and `hostname-template`. |
+| `hostname` | string | — | Hostname to set on first boot. Required when `disk-encryption` is `"tpm"` or `"keyfile"` unless `hostname-from-dhcp` or `hostname-template` is used; optional for `"none"` (defaults to `ubuntu`, typically overridden by DHCP/cloud-init). Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Mutually exclusive with `hostname-from-dhcp` and `hostname-template`. |
 | `hostname-from-dhcp` | boolean | `false` | Use the DHCP-provided hostname instead of a static one. When enabled, `/etc/hostname` is left empty so that `systemd-hostnamed` accepts the transient hostname from DHCP. Mutually exclusive with `hostname` and `hostname-template`. |
 | `hostname-template` | string | — | Generate a unique hostname from a template pattern. The template contains literal characters and `{hex:N}` or `{num:N}` placeholders (e.g. `"tamanu-{hex:6}"` produces `"tamanu-a3f1b2"`). Must contain at least one placeholder; literals must be `[a-z0-9-]`; result must not exceed 63 characters. Mutually exclusive with `hostname` and `hostname-from-dhcp`. |
 | `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`) used to automatically join the Tailscale network on first boot. |

@@ -531,14 +531,14 @@ cat > "$MNT_ESP/bes-install.toml" << 'TEMPLATE'
 # will be used as defaults (or to drive a fully automatic install).
 
 # Run fully automatically without prompts.
-# Requires at minimum: variant and disk.
+# Requires at minimum: disk-encryption and disk.
 # auto = true
 
-# Image variant: "metal" or "cloud"
-#   metal - Full-disk encryption (LUKS2) with optional TPM auto-unlock
-#   cloud - No encryption, for cloud VMs or environments with
-#           host-level disk encryption
-# variant = "metal"
+# Disk encryption mode: "tpm", "keyfile", or "none".
+#   tpm     - LUKS + TPM PCR 1 (requires a TPM; default when TPM present)
+#   keyfile - LUKS + keyfile on boot partition (default when no TPM)
+#   none    - No encryption (cloud image)
+# disk-encryption = "tpm"
 
 # Target disk: a device path (e.g. "/dev/sda") or a selection strategy.
 # Strategies:
@@ -546,10 +546,6 @@ cat > "$MNT_ESP/bes-install.toml" << 'TEMPLATE'
 #   "largest"     - largest disk of any type
 #   "smallest"    - smallest disk of any type
 # disk = "largest-ssd"
-
-# Disable TPM auto-enrollment (metal variant only).
-# When true, the LUKS volume will not be bound to the TPM on first boot.
-# disable-tpm = false
 
 # [firstboot]
 # hostname = "server-01"
