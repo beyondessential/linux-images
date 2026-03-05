@@ -341,7 +341,9 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
         Line::from(Span::styled(
             "Tamanu Linux",
-            Style::default().add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(
