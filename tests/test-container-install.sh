@@ -338,7 +338,7 @@ if [ -n "$STALE_MOUNTS" ]; then
 fi
 echo "    PASS: no stale mounts from ${LOOP_DEV}"
 
-# r[verify installer.write.luks-before-write]
+# r[verify installer.write.luks-before-write+2]
 if [ "$VARIANT" = "metal" ]; then
     if [ -e /dev/mapper/bes-target-root ]; then
         echo "    FAIL: LUKS volume bes-target-root still open"
@@ -399,24 +399,38 @@ mkdir -p "$VERIFY_MOUNT"
 
 ROOT_PART="${LOOP_DEV}p3"
 
-# r[verify installer.write.luks-before-write]
+# r[verify installer.write.luks-before-write+2]
 if [ "$VARIANT" = "metal" ]; then
     echo "    Opening LUKS volume..."
-    EMPTY_KEYFILE="$WORK_DIR/empty-keyfile"
-    touch "$EMPTY_KEYFILE"
-    chmod 400 "$EMPTY_KEYFILE"
 
-    set +e
-    cryptsetup open "$ROOT_PART" "$LUKS_NAME" --key-file "$EMPTY_KEYFILE" 2>/dev/null
-    LUKS_RC=$?
-    set -e
+    # The installer uses the recovery passphrase as the initial LUKS key.
+    # Extract it from the installer output (printed between === markers).
+    RECOVERY_PASSPHRASE=""
+    if [ -f "$INSTALLER_OUTPUT" ]; then
+        RECOVERY_PASSPHRASE="$(sed -n '/=== RECOVERY PASSPHRASE ===/,/==========================/{/===/d; s/^[[:space:]]*//; /^$/d; p;}' "$INSTALLER_OUTPUT" | head -1)"
+    fi
+
+    LUKS_RC=1
+    if [ -n "$RECOVERY_PASSPHRASE" ]; then
+        PASSPHRASE_KEYFILE="$WORK_DIR/passphrase-keyfile"
+        printf '%s' "$RECOVERY_PASSPHRASE" > "$PASSPHRASE_KEYFILE"
+        chmod 400 "$PASSPHRASE_KEYFILE"
+
+        set +e
+        cryptsetup open "$ROOT_PART" "$LUKS_NAME" --key-file "$PASSPHRASE_KEYFILE" 2>/dev/null
+        LUKS_RC=$?
+        set -e
+    fi
 
     if [ $LUKS_RC -eq 0 ]; then
-        check "LUKS volume opened with empty keyfile" true
+        check "LUKS volume opened with recovery passphrase" true
         BTRFS_DEV="/dev/mapper/$LUKS_NAME"
     else
-        check "LUKS volume opened with empty keyfile" false
+        check "LUKS volume opened with recovery passphrase" false
         echo "    Cannot open LUKS volume; skipping filesystem checks."
+        if [ -z "$RECOVERY_PASSPHRASE" ]; then
+            echo "    (recovery passphrase not found in installer output)"
+        fi
         BTRFS_DEV=""
     fi
 else
@@ -645,11 +659,8 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Encryption setup verification (metal only) ---
-        # r[verify installer.encryption.overview]
+        # r[verify installer.encryption.overview+2]
         if [ "$VARIANT" = "metal" ]; then
-            ROTATED_MARKER="$VERIFY_MOUNT/etc/luks/rotated"
-            check "LUKS master key rotation marker exists" test -f "$ROTATED_MARKER"
-
             CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
             check "crypttab exists" test -f "$CRYPTTAB"
             if [ -f "$CRYPTTAB" ]; then

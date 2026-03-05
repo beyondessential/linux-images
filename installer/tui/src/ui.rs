@@ -544,7 +544,7 @@ impl AppState {
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
             // r[impl installer.tui.confirmation+6]
-            // r[impl installer.encryption.recovery-passphrase+2]
+            // r[impl installer.encryption.recovery-passphrase+3]
             Screen::NetworkResults => {
                 if self.disk_encryption.is_encrypted() && self.recovery_passphrase.is_none() {
                     self.recovery_passphrase =

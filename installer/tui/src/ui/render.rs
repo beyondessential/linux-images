@@ -982,7 +982,7 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         }
     }
 
-    // r[impl installer.encryption.recovery-passphrase+2]
+    // r[impl installer.encryption.recovery-passphrase+3]
     if let Some(ref passphrase) = state.recovery_passphrase {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
@@ -1086,7 +1086,7 @@ fn render_done(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
     ];
 
-    // r[impl installer.encryption.recovery-passphrase+2]
+    // r[impl installer.encryption.recovery-passphrase+3]
     if let Some(ref passphrase) = state.recovery_passphrase {
         lines.push(Line::from(Span::styled(
             "  Recovery Passphrase",

@@ -508,12 +508,17 @@ directly to its corresponding partition device (or to the opened LUKS mapper
 device for the root partition when encryption is enabled), avoiding the need
 to hold the uncompressed image in memory or on a temporary filesystem.
 
-r[installer.write.luks-before-write]
+r[installer.write.luks-before-write+2]
 When disk encryption is not `"none"`, the installer must format the root
-partition with LUKS2 using an empty passphrase and open the LUKS volume
-before writing the root partition image. After writing, the LUKS volume must
-be closed. This is the initial LUKS setup; key rotation and mechanism
-enrollment happen in the subsequent `installer.encryption.*` phase.
+partition with LUKS2 using the recovery passphrase as the initial key and
+open the LUKS volume before writing the root partition image. After writing,
+the LUKS volume must be closed. The recovery passphrase must be generated
+before the write begins (in interactive mode it is generated at confirmation
+time; in automatic mode it is generated before the write phase). Since the
+installer creates the LUKS volume itself, there is no need for a key
+rotation step or an empty-passphrase slot. The same recovery passphrase is
+used to unlock the volume during subsequent post-write steps (expand root,
+randomize UUIDs, rebuild boot config).
 
 r[installer.write.fstab-fixup]
 When disk encryption is not `"none"`, the installer must rewrite `/etc/fstab`
@@ -553,55 +558,51 @@ with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 
 ## Encryption Setup
 
-> r[installer.encryption.overview]
+> r[installer.encryption.overview+2]
 > After writing the image and expanding partitions, and when disk encryption
 > is `"tpm"` or `"keyfile"`, the installer must perform all encryption setup
-> on the target disk. This replaces the first-boot services that were
-> previously included in the metal image. The installer must:
+> on the target disk. The LUKS volume already has the recovery passphrase as
+> its sole key (enrolled during `installer.write.luks-before-write`). The
+> installer must:
 >
-> 1. Rotate the LUKS master key.
-> 2. Enroll the chosen unlock mechanism (TPM or keyfile).
-> 3. Generate and enroll a recovery passphrase.
-> 4. Remove the original empty-passphrase key slot.
-> 5. Configure the installed system (crypttab, initramfs).
+> 1. Enroll the chosen unlock mechanism (TPM or keyfile).
+> 2. Configure the installed system (crypttab, initramfs).
+>
+> No key rotation or empty-slot wipe is needed because the installer created
+> the LUKS volume with fresh key material and the recovery passphrase as the
+> initial key.
 
-> r[installer.encryption.key-rotation]
-> The installer must rotate the master key of the LUKS volume using
-> `cryptsetup reencrypt`, unlocking with the image's empty keyfile. This
-> ensures each installation has unique key material. A marker file
-> (`/etc/luks/rotated`) must be written to the installed system to prevent
-> any legacy re-encryption attempt.
 
-> r[installer.encryption.tpm-enroll]
+
+> r[installer.encryption.tpm-enroll+2]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
-> `systemd-cryptenroll` with `--tpm2-pcrs=1`. PCR 1 covers hardware identity
-> (motherboard model, CPU, RAM model and serials). The installer must update
-> `/etc/crypttab` to use `tpm2-device=auto` with a passphrase timeout
-> fallback.
+> `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
+> recovery passphrase. PCR 1 covers hardware identity (motherboard model,
+> CPU, RAM model and serials). The installer must update `/etc/crypttab` to
+> use `tpm2-device=auto` with a passphrase timeout fallback.
 
-> r[installer.encryption.keyfile-enroll]
+> r[installer.encryption.keyfile-enroll+2]
 > When disk encryption is `"keyfile"`, the installer must generate a random
 > keyfile (4096 bytes from `/dev/urandom`), enroll it via
-> `systemd-cryptenroll`, and install it at `/etc/luks/keyfile` (mode 000) on
-> the installed system. The installer must update `/etc/crypttab` to
-> reference the keyfile with a passphrase timeout fallback, and update the
-> dracut configuration to include the new keyfile in the initramfs.
+> `cryptsetup luksAddKey` unlocking with the recovery passphrase, and
+> install it at `/etc/luks/keyfile` (mode 000) on the installed system. The
+> installer must update `/etc/crypttab` to reference the keyfile with a
+> passphrase timeout fallback, and update the dracut configuration to
+> include the new keyfile in the initramfs.
 
-> r[installer.encryption.recovery-passphrase+2]
-> The installer must generate a human-readable recovery passphrase and enroll
-> it as a LUKS password slot via `cryptsetup luksAddKey`. In interactive
-> mode, the passphrase must be generated at confirmation time (before the
-> destructive write) and displayed on the confirmation screen so the user can
-> record it. A post-write "Recovery Passphrase" screen is shown as a
-> reminder before the "Done" screen; the user must press Enter to
-> acknowledge. The encryption setup phase receives the pre-generated
-> passphrase and enrolls it. In automatic mode, the passphrase is generated
-> during encryption setup and printed to stderr.
+> r[installer.encryption.recovery-passphrase+3]
+> The installer must generate a human-readable recovery passphrase before the
+> write phase begins. This passphrase is used as the initial LUKS key when
+> formatting the root partition (see `installer.write.luks-before-write`),
+> so it is already enrolled as a LUKS password slot — no separate
+> `luksAddKey` step is required. In interactive mode, the passphrase must be
+> generated at confirmation time and displayed on the confirmation screen so
+> the user can record it. A post-write "Recovery Passphrase" screen is shown
+> as a reminder before the "Done" screen; the user must press Enter to
+> acknowledge. In automatic mode, the passphrase is generated before the
+> write phase and printed to stderr after install completes.
 
-> r[installer.encryption.wipe-empty-slot]
-> After enrolling the real unlock mechanism(s) and the recovery passphrase,
-> the installer must wipe the original empty-passphrase key slot so the
-> volume cannot be unlocked without the enrolled credentials.
+
 
 > r[installer.encryption.configure-system]
 > The installer must chroot into the installed system and rebuild the

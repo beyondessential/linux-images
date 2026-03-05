@@ -294,22 +294,22 @@ pub fn decompress_to_device(
     Ok(partition_bytes_written)
 }
 
-fn create_empty_keyfile() -> Result<PathBuf> {
-    let path = PathBuf::from("/tmp/bes-empty-keyfile");
-    fs::write(&path, b"").context("creating empty keyfile")?;
+fn create_passphrase_keyfile(passphrase: &str) -> Result<PathBuf> {
+    let path = PathBuf::from("/tmp/bes-luks-keyfile");
+    fs::write(&path, passphrase.as_bytes()).context("creating passphrase keyfile")?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o400))
         .context("setting keyfile permissions")?;
     Ok(path)
 }
 
-// r[impl installer.write.luks-before-write]
-pub fn format_luks_for_root(root_partition: &Path) -> Result<PathBuf> {
+// r[impl installer.write.luks-before-write+2]
+pub fn format_luks_for_root(root_partition: &Path, passphrase: &str) -> Result<PathBuf> {
     tracing::info!(
-        "formatting LUKS2 on {} with empty passphrase",
+        "formatting LUKS2 on {} with recovery passphrase",
         root_partition.display()
     );
 
-    let keyfile = create_empty_keyfile()?;
+    let keyfile = create_passphrase_keyfile(passphrase)?;
 
     let output = Command::new("cryptsetup")
         .args([
@@ -356,7 +356,7 @@ pub fn format_luks_for_root(root_partition: &Path) -> Result<PathBuf> {
     Ok(PathBuf::from(format!("/dev/mapper/{LUKS_NAME}")))
 }
 
-// r[impl installer.write.luks-before-write]
+// r[impl installer.write.luks-before-write+2]
 pub fn close_luks_root() -> Result<()> {
     tracing::info!("closing LUKS volume {LUKS_NAME}");
     let output = Command::new("cryptsetup")
@@ -371,8 +371,8 @@ pub fn close_luks_root() -> Result<()> {
     Ok(())
 }
 
-fn open_luks_root(root_partition: &Path) -> Result<PathBuf> {
-    let keyfile = create_empty_keyfile()?;
+fn open_luks_root(root_partition: &Path, passphrase: &str) -> Result<PathBuf> {
+    let keyfile = create_passphrase_keyfile(passphrase)?;
 
     tracing::info!(
         "opening LUKS volume on {} as {LUKS_NAME}",
@@ -409,6 +409,7 @@ pub fn write_partitions(
     images_dir: &Path,
     target: &Path,
     disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
     on_progress: &mut dyn FnMut(&WriteProgress),
 ) -> Result<()> {
     let total_bytes = partition_images_total_size(manifest, images_dir).ok();
@@ -432,7 +433,8 @@ pub fn write_partitions(
         );
 
         let write_device = if entry.label == "root" && disk_encryption.is_encrypted() {
-            format_luks_for_root(&part_device).context("formatting LUKS on root partition")?
+            format_luks_for_root(&part_device, passphrase.unwrap_or_default())
+                .context("formatting LUKS on root partition")?
         } else {
             part_device.clone()
         };
@@ -464,14 +466,19 @@ pub fn write_partitions(
 }
 
 // r[impl installer.write.expand-root]
-pub fn expand_root_filesystem(target: &Path, disk_encryption: DiskEncryption) -> Result<()> {
+pub fn expand_root_filesystem(
+    target: &Path,
+    disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
+) -> Result<()> {
     let root_part = partition_path(target, 3)?;
 
     let btrfs_dev = if disk_encryption.is_encrypted() {
-        let mapper_dev = open_luks_root(&root_part)?;
+        let pp = passphrase.unwrap_or_default();
+        let mapper_dev = open_luks_root(&root_part, pp)?;
 
         tracing::info!("resizing LUKS container to fill partition");
-        let keyfile = create_empty_keyfile()?;
+        let keyfile = create_passphrase_keyfile(pp)?;
         let output = Command::new("cryptsetup")
             .args([
                 "resize",
@@ -532,7 +539,11 @@ pub fn expand_root_filesystem(target: &Path, disk_encryption: DiskEncryption) ->
 }
 
 // r[impl installer.write.randomize-uuids]
-pub fn randomize_filesystem_uuids(target: &Path, disk_encryption: DiskEncryption) -> Result<()> {
+pub fn randomize_filesystem_uuids(
+    target: &Path,
+    disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
+) -> Result<()> {
     tracing::info!("randomizing filesystem UUIDs");
 
     let efi_part = partition_path(target, 1)?;
@@ -566,7 +577,7 @@ pub fn randomize_filesystem_uuids(target: &Path, disk_encryption: DiskEncryption
     }
 
     let btrfs_dev = if disk_encryption.is_encrypted() {
-        open_luks_root(&root_part)?
+        open_luks_root(&root_part, passphrase.unwrap_or_default())?
     } else {
         root_part.clone()
     };
@@ -769,7 +780,11 @@ fn remove_grub_probe_wrapper(mount_path: &Path, backup: Option<PathBuf>) {
 }
 
 // r[impl installer.write.rebuild-boot-config]
-pub fn rebuild_boot_config(target: &Path, disk_encryption: DiskEncryption) -> Result<()> {
+pub fn rebuild_boot_config(
+    target: &Path,
+    disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
+) -> Result<()> {
     tracing::info!("rebuilding boot config (initramfs + grub)");
 
     let root_part = partition_path(target, 3)?;
@@ -777,7 +792,7 @@ pub fn rebuild_boot_config(target: &Path, disk_encryption: DiskEncryption) -> Re
     let efi_part = partition_path(target, 1)?;
 
     let luks_opened = if disk_encryption.is_encrypted() {
-        let _ = open_luks_root(&root_part)?;
+        let _ = open_luks_root(&root_part, passphrase.unwrap_or_default())?;
         true
     } else {
         false

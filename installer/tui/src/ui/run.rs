@@ -500,7 +500,7 @@ fn start_install_worker(
     };
     let disk_encryption = state.disk_encryption;
     let firstboot_config = state.firstboot_config();
-    // r[impl installer.encryption.recovery-passphrase+2]
+    // r[impl installer.encryption.recovery-passphrase+3]
     let passphrase = state.recovery_passphrase.clone();
     let tx = tx.clone();
 
@@ -539,7 +539,7 @@ fn run_full_install(
     disk_size: u64,
     disk_encryption: crate::config::DiskEncryption,
     firstboot_config: Option<&crate::config::FirstbootConfig>,
-    pre_generated_passphrase: Option<&str>,
+    recovery_passphrase: Option<&str>,
     copy_install_log: bool,
     log_path: &Path,
     tx: &mpsc::Sender<WorkerMessage>,
@@ -555,6 +555,7 @@ fn run_full_install(
         images_dir,
         target,
         disk_encryption,
+        recovery_passphrase,
         &mut |progress| {
             let _ = tx.send(WorkerMessage::Progress(progress.into()));
         },
@@ -562,14 +563,16 @@ fn run_full_install(
     .context("writing partitions")?;
 
     // Expand root filesystem (~91%)
-    writer::expand_root_filesystem(target, disk_encryption).context("expanding root filesystem")?;
+    writer::expand_root_filesystem(target, disk_encryption, recovery_passphrase)
+        .context("expanding root filesystem")?;
 
     // Randomize UUIDs (~92%)
-    writer::randomize_filesystem_uuids(target, disk_encryption)
+    writer::randomize_filesystem_uuids(target, disk_encryption, recovery_passphrase)
         .context("randomizing filesystem UUIDs")?;
 
     // Rebuild boot config (~94%)
-    writer::rebuild_boot_config(target, disk_encryption).context("rebuilding boot config")?;
+    writer::rebuild_boot_config(target, disk_encryption, recovery_passphrase)
+        .context("rebuilding boot config")?;
 
     // Verify partition table (~95%)
     writer::verify_partition_table(target).context("verifying partition table")?;
@@ -599,17 +602,12 @@ fn run_full_install(
     }
 
     // Encryption setup (~96-100%)
-    let passphrase = if disk_encryption.is_encrypted() {
+    let passphrase = if let Some(pp) = recovery_passphrase {
         let mounted = firstboot::mount_target(target, disk_encryption)?;
-        let result = encryption::run_encryption_setup(
-            target,
-            disk_encryption,
-            mounted.path(),
-            pre_generated_passphrase,
-        );
+        encryption::run_encryption_setup(target, disk_encryption, mounted.path(), pp)
+            .context("encryption setup")?;
         firstboot::unmount_target(mounted)?;
-        let enc_result = result.context("encryption setup")?;
-        Some(enc_result.recovery_passphrase)
+        Some(pp.to_string())
     } else {
         None
     };

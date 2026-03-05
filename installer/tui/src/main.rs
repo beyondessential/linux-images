@@ -352,6 +352,13 @@ fn run_auto(
         .context("reading partition image sizes")?;
     writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
 
+    // r[impl installer.encryption.recovery-passphrase+3]
+    let recovery_passphrase = if disk_encryption.is_encrypted() {
+        Some(encryption::generate_recovery_passphrase())
+    } else {
+        None
+    };
+
     eprintln!();
     eprintln!("writing partitions...");
 
@@ -363,6 +370,7 @@ fn run_auto(
         &images_dir,
         &target.path,
         disk_encryption,
+        recovery_passphrase.as_deref(),
         &mut |progress| {
             if interactive {
                 let pct = progress.fraction().map(|f| f * 100.0).unwrap_or(0.0);
@@ -388,15 +396,28 @@ fn run_auto(
     }
 
     eprintln!("expanding root filesystem...");
-    writer::expand_root_filesystem(&target.path, disk_encryption)
-        .context("expanding root filesystem")?;
+    writer::expand_root_filesystem(
+        &target.path,
+        disk_encryption,
+        recovery_passphrase.as_deref(),
+    )
+    .context("expanding root filesystem")?;
 
     eprintln!("randomizing filesystem UUIDs...");
-    writer::randomize_filesystem_uuids(&target.path, disk_encryption)
-        .context("randomizing filesystem UUIDs")?;
+    writer::randomize_filesystem_uuids(
+        &target.path,
+        disk_encryption,
+        recovery_passphrase.as_deref(),
+    )
+    .context("randomizing filesystem UUIDs")?;
 
     eprintln!("rebuilding boot config (initramfs + grub)...");
-    writer::rebuild_boot_config(&target.path, disk_encryption).context("rebuilding boot config")?;
+    writer::rebuild_boot_config(
+        &target.path,
+        disk_encryption,
+        recovery_passphrase.as_deref(),
+    )
+    .context("rebuilding boot config")?;
 
     writer::verify_partition_table(&target.path).context("verifying partition table")?;
 
@@ -425,20 +446,19 @@ fn run_auto(
         firstboot::unmount_target(mounted)?;
     }
 
-    // r[impl installer.encryption.overview]
-    if disk_encryption.is_encrypted() {
+    // r[impl installer.encryption.overview+2]
+    if let Some(ref passphrase) = recovery_passphrase {
         eprintln!("setting up disk encryption...");
         let mounted = firstboot::mount_target(&target.path, disk_encryption)?;
-        let enc_result =
-            encryption::run_encryption_setup(&target.path, disk_encryption, mounted.path(), None)
-                .context("encryption setup")?;
+        encryption::run_encryption_setup(&target.path, disk_encryption, mounted.path(), passphrase)
+            .context("encryption setup")?;
         firstboot::unmount_target(mounted)?;
 
-        // r[impl installer.encryption.recovery-passphrase+2]
+        // r[impl installer.encryption.recovery-passphrase+3]
         eprintln!();
         eprintln!("=== RECOVERY PASSPHRASE ===");
         eprintln!();
-        eprintln!("  {}", enc_result.recovery_passphrase);
+        eprintln!("  {passphrase}");
         eprintln!();
         eprintln!("Write down this passphrase and store it in a safe place.");
         eprintln!("You will need it if the primary unlock mechanism fails.");
