@@ -60,6 +60,7 @@ pub struct AppState {
     pub password_confirm_input: String,
     pub password_confirming: bool,
     pub password_mismatch: bool,
+    pub password_empty: bool,
     /// Pre-hashed password from config file (takes precedence over plaintext).
     pub config_password_hash: Option<String>,
 
@@ -198,6 +199,7 @@ impl AppState {
             password_confirm_input: String::new(),
             password_confirming: false,
             password_mismatch: false,
+            password_empty: false,
             config_password_hash,
             available_timezones,
             timezone_search: String::new(),
@@ -226,7 +228,7 @@ impl AppState {
     // r[impl installer.tui.hostname+2]
     // r[impl installer.tui.tailscale+3]
     // r[impl installer.tui.ssh-keys+5]
-    // r[impl installer.tui.password+3]
+    // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     /// Build a `FirstbootConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
@@ -472,7 +474,7 @@ impl AppState {
     }
 
     // r[impl installer.tui.tpm-toggle]
-    // r[impl installer.tui.password+3]
+    // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
@@ -639,7 +641,7 @@ impl AppState {
         }
     }
 
-    // r[impl installer.tui.password+3]
+    // r[impl installer.tui.password+4]
     pub fn password_matches(&self) -> bool {
         self.password_input == self.password_confirm_input
     }
@@ -850,7 +852,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tpm-toggle]
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     #[test]
     fn advance_metal_flow() {
         let mut state = make_state();
@@ -876,7 +878,7 @@ mod tests {
     }
 
     // r[verify installer.tui.variant-selection]
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
     fn advance_cloud_skips_tpm() {
@@ -901,7 +903,7 @@ mod tests {
     }
 
     // r[verify installer.tui.tpm-toggle]
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
     fn go_back_through_metal_flow() {
@@ -928,7 +930,7 @@ mod tests {
     }
 
     // r[verify installer.tui.variant-selection]
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     // r[verify installer.tui.timezone]
     #[test]
     fn go_back_cloud_skips_tpm() {
@@ -1140,7 +1142,7 @@ mod tests {
         assert!(state.firstboot_config().is_none());
     }
 
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     #[test]
     fn password_match_logic() {
         let mut state = make_state();
@@ -1154,7 +1156,7 @@ mod tests {
         assert!(!state.password_matches());
     }
 
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     #[test]
     fn has_password_from_input() {
         let mut state = make_state();
@@ -1164,7 +1166,7 @@ mod tests {
         assert!(state.has_password());
     }
 
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     #[test]
     fn has_password_from_config_hash() {
         use crate::disk::TransportType;

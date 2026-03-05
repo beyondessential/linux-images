@@ -21,8 +21,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -72,8 +74,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -123,8 +127,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -172,8 +178,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -222,8 +230,10 @@ backspace
 backspace
 type:d
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -274,8 +284,10 @@ type:ssh-ed25519 AAAA key1
 tab
 type:ssh-rsa BBBB key2
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -324,8 +336,10 @@ enter
 # Hostname: type 'h' (required for metal)
 type:h
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # NetworkResults
 enter

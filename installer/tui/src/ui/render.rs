@@ -559,14 +559,13 @@ fn mask(input: &str) -> String {
     "*".repeat(input.len())
 }
 
-// r[impl installer.tui.password+3]
+// r[impl installer.tui.password+4]
 // r[impl installer.tui.tailscale+3]
 // r[impl installer.tui.ssh-keys+5]
 fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
         Line::from("  Set a password for the 'ubuntu' user."),
-        Line::from("  Leave both fields empty to keep the default password (expired)."),
         Line::from(""),
     ];
 
@@ -622,6 +621,12 @@ fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "  Passwords do not match.",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )));
+    } else if state.password_empty {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  Password is required.",
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )));
     }
@@ -803,7 +808,7 @@ fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 // r[impl installer.tui.confirmation+3]
-// r[impl installer.tui.password+3]
+// r[impl installer.tui.password+4]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);

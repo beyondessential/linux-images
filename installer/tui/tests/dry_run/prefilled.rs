@@ -31,8 +31,10 @@ enter
 enter
 # Hostname
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # Timezone: accept default (UTC)
 enter
@@ -70,7 +72,7 @@ enter
     assert_eq!(plan["firstboot"]["hostname"], "prefilled-host");
     assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 1);
-    assert!(!plan["firstboot"]["password_set"].as_bool().unwrap());
+    assert!(plan["firstboot"]["password_set"].as_bool().unwrap());
     assert_eq!(plan["firstboot"]["timezone"], "UTC");
 }
 
@@ -112,8 +114,10 @@ backspace
 backspace
 type:new-host
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # NetworkResults
 enter
@@ -173,8 +177,10 @@ enter
 enter
 # Hostname
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # Timezone: accept prefilled Europe/London
 enter

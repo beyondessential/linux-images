@@ -329,14 +329,16 @@ SSH Keys sub-screen so the user can review the imported keys.
 If the fetch fails or returns no keys, an inline error is displayed. The
 fetch must time out after 5 seconds. Esc returns to the Login screen.
 
-r[installer.tui.password+3]
+r[installer.tui.password+4]
 Password entry is inline on the Login screen. The user types a password,
 then confirms it by typing it again. Both fields are masked (displayed as
 asterisks). If the two entries do not match, the TUI must display an inline
-error and not advance. If the field is left empty, the image's existing
-default password (`bes`, expired) is kept. When a password is provided via
-the configuration file (`password` or `password-hash`), this screen is
-skipped in prefilled and auto modes. Below the password fields, the Login
+error and not advance. The password must not be empty in interactive mode;
+if the user attempts to advance with both fields empty, the TUI must display
+an inline error ("Password is required") and not advance. When a password is
+provided via the configuration file (`password` or `password-hash`), the
+password fields are pre-satisfied and the screen is skipped in prefilled and
+auto modes. Below the password fields, the Login
 screen shows keybind hints for the sub-screens (`Alt+t`: Tailscale, `Alt+s`:
 SSH keys, `Alt+g`: GitHub import). The Alt modifier prevents the keybinds
 from interfering with password input. A yellow `*` indicator is appended to

@@ -128,8 +128,10 @@ down
 enter
 # Hostname: skip
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # Timezone: search for 'auck', select first match
 type:auck
@@ -182,8 +184,10 @@ down
 enter
 # Hostname: skip
 enter
-# Login: skip password (empty)
+# Login: type password
+type:pw
 enter
+type:pw
 enter
 # Timezone: up twice from UTC(3) -> Europe/London(1), then select
 up

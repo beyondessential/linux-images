@@ -128,7 +128,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.password+3]
+        // r[impl installer.tui.password+4]
         // r[impl installer.tui.tailscale+3]
         // r[impl installer.tui.ssh-keys+5]
         // r[impl installer.tui.ssh-keys.github+4]
@@ -137,6 +137,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 if state.password_confirming {
                     state.password_confirming = false;
                     state.password_mismatch = false;
+                    state.password_empty = false;
                 } else {
                     state.go_back();
                 }
@@ -156,16 +157,18 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 if !state.password_confirming {
                     state.password_confirming = true;
                     state.password_mismatch = false;
+                    state.password_empty = false;
                 } else if state.password_input.is_empty() && state.password_confirm_input.is_empty()
                 {
-                    state.password_confirming = false;
+                    state.password_empty = true;
                     state.password_mismatch = false;
-                    state.advance();
                 } else if state.password_matches() {
                     state.password_mismatch = false;
+                    state.password_empty = false;
                     state.advance();
                 } else {
                     state.password_mismatch = true;
+                    state.password_empty = false;
                 }
             }
             KeyCode::Backspace => {
@@ -176,6 +179,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 }
             }
             KeyCode::Char(c) => {
+                state.password_empty = false;
                 if state.password_confirming {
                     state.password_confirm_input.push(c);
                 } else {
@@ -544,6 +548,18 @@ mod tests {
         }
     }
 
+    /// Generate key events to type password "pw", confirm it, and advance.
+    fn type_password() -> Vec<KeyEvent> {
+        vec![
+            press(KeyCode::Char('p')),
+            press(KeyCode::Char('w')),
+            press(KeyCode::Enter),
+            press(KeyCode::Char('p')),
+            press(KeyCode::Char('w')),
+            press(KeyCode::Enter),
+        ]
+    }
+
     fn make_state() -> AppState {
         let devices = vec![
             BlockDevice {
@@ -582,7 +598,7 @@ mod tests {
     #[test]
     fn scripted_walk_through_metal_flow() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
@@ -600,9 +616,10 @@ mod tests {
             press(KeyCode::Char('s')),
             press(KeyCode::Char('t')),
             press(KeyCode::Enter),
-            // Login: skip password (empty) — Enter moves to confirm, Enter advances
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password "pw" + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: accept default (UTC) -> NetworkResults
             press(KeyCode::Enter),
             // NetworkResults -> Confirmation
@@ -612,7 +629,7 @@ mod tests {
             press(KeyCode::Char('e')),
             press(KeyCode::Char('s')),
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Writing);
@@ -628,7 +645,7 @@ mod tests {
     #[test]
     fn scripted_cloud_skips_tpm() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection
@@ -638,9 +655,10 @@ mod tests {
             press(KeyCode::Enter),
             // Hostname: skip (cloud) -> Login
             press(KeyCode::Enter),
-            // Login: skip password (empty)
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: accept default -> NetworkResults
             press(KeyCode::Enter),
             // NetworkResults -> Confirmation
@@ -650,7 +668,7 @@ mod tests {
             press(KeyCode::Char('e')),
             press(KeyCode::Char('s')),
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Writing);
@@ -750,7 +768,7 @@ mod tests {
     #[test]
     fn scripted_go_back_from_confirmation() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> VariantSelection -> TpmToggle -> Hostname
@@ -760,22 +778,23 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: accept default -> NetworkResults
             press(KeyCode::Enter),
             // NetworkResults -> Confirmation
             press(KeyCode::Enter),
             // Confirmation: go back -> NetworkResults
             press(KeyCode::Esc),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::NetworkResults);
     }
 
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     #[test]
     fn scripted_password_entry_matching() {
         let state = make_state();
@@ -807,7 +826,7 @@ mod tests {
         assert!(!final_state.password_mismatch);
     }
 
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
     #[test]
     fn scripted_password_mismatch_blocks_advance() {
         let state = make_state();
@@ -838,7 +857,31 @@ mod tests {
         assert!(final_state.password_mismatch);
     }
 
-    // r[verify installer.tui.password+3]
+    // r[verify installer.tui.password+4]
+    #[test]
+    fn scripted_empty_password_blocks_advance() {
+        let state = make_state();
+        let events = vec![
+            // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+            // Hostname: type "h" (required for metal) then advance
+            press(KeyCode::Char('h')),
+            press(KeyCode::Enter),
+            // Login: Enter moves to confirm, then Enter again with empty fields
+            press(KeyCode::Enter),
+            press(KeyCode::Enter),
+        ];
+
+        let final_state = run_tui_scripted(state, events);
+        assert_eq!(final_state.screen, Screen::Login);
+        assert!(final_state.password_empty);
+        assert!(final_state.password_confirming);
+    }
+
+    // r[verify installer.tui.password+4]
     #[test]
     fn scripted_password_esc_from_confirm_returns_to_first_field() {
         let state = make_state();
@@ -1061,7 +1104,7 @@ mod tests {
     #[test]
     fn scripted_timezone_accept_default_utc() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1070,12 +1113,13 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: accept default (UTC) -> NetworkResults
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::NetworkResults);
@@ -1086,7 +1130,7 @@ mod tests {
     #[test]
     fn scripted_timezone_navigate_down_and_select() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1095,15 +1139,16 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone list (sorted): America/New_York=0, Europe/London=1,
             // Pacific/Auckland=2, UTC=3. Cursor starts at UTC (index 3).
             // Up once moves to Pacific/Auckland (index 2).
             press(KeyCode::Up),
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::NetworkResults);
@@ -1114,7 +1159,7 @@ mod tests {
     #[test]
     fn scripted_timezone_search_filters_list() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1123,16 +1168,17 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: type "auckland" to filter, then select first match
             press(KeyCode::Char('a')),
             press(KeyCode::Char('u')),
             press(KeyCode::Char('c')),
             press(KeyCode::Char('k')),
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::NetworkResults);
@@ -1143,7 +1189,7 @@ mod tests {
     #[test]
     fn scripted_timezone_search_backspace_widens_filter() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1152,9 +1198,10 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: type "zzz" (matches nothing), then backspace all, then select
             press(KeyCode::Char('z')),
             press(KeyCode::Char('z')),
@@ -1164,7 +1211,7 @@ mod tests {
             press(KeyCode::Backspace),
             // Filter is now empty again — all timezones visible, cursor at 0
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::NetworkResults);
@@ -1176,7 +1223,7 @@ mod tests {
     #[test]
     fn scripted_timezone_esc_goes_back_to_login() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1185,12 +1232,13 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: press Esc to go back
             press(KeyCode::Esc),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Login);
@@ -1200,7 +1248,7 @@ mod tests {
     #[test]
     fn scripted_timezone_down_does_not_go_past_end() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1209,9 +1257,10 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: press Down many times (more than list length), then select
             // List has 4 entries: America/New_York, Europe/London, Pacific/Auckland, UTC
             // Cursor starts at UTC (index 3). Down should not go past 3.
@@ -1221,7 +1270,7 @@ mod tests {
             press(KeyCode::Down),
             press(KeyCode::Down),
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::NetworkResults);
@@ -1233,7 +1282,7 @@ mod tests {
     #[test]
     fn scripted_timezone_up_does_not_go_before_start() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1242,9 +1291,10 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: press Up many times (more than cursor position), then select
             // Cursor starts at UTC (index 3 in sorted list).
             press(KeyCode::Up),
@@ -1254,7 +1304,7 @@ mod tests {
             press(KeyCode::Up),
             press(KeyCode::Up),
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::NetworkResults);
@@ -1265,7 +1315,7 @@ mod tests {
     #[test]
     fn scripted_timezone_search_then_navigate() {
         let state = make_state();
-        let events = vec![
+        let mut events = vec![
             // Welcome -> DiskSelection -> VariantSelection -> TpmToggle -> Hostname
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1274,15 +1324,16 @@ mod tests {
             // Hostname: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
-            // Login: skip password
-            press(KeyCode::Enter),
-            press(KeyCode::Enter),
+            // Login: type password + confirm + advance
+        ];
+        events.extend(type_password());
+        events.extend([
             // Timezone: type "o" — matches America/New_York and Europe/London
             press(KeyCode::Char('o')),
             // Navigate down to second match and select
             press(KeyCode::Down),
             press(KeyCode::Enter),
-        ];
+        ]);
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::NetworkResults);
