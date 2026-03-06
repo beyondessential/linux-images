@@ -189,6 +189,11 @@ bash /tmp/scripts/setup-tailscale.sh
 # r[image.tailscale.ts-up]
 install -m 755 /tmp/files/ts-up /usr/local/bin/ts-up
 
+# r[image.tailscale.firstboot-auth]
+install -m 755 /tmp/files/bes-tailscale-firstboot-auth /usr/local/bin/bes-tailscale-firstboot-auth
+install -m 644 /tmp/files/systemd/bes-tailscale-firstboot-auth.service /etc/systemd/system/bes-tailscale-firstboot-auth.service
+systemctl enable bes-tailscale-firstboot-auth.service
+
 # ============================================================
 # SSH
 # ============================================================
