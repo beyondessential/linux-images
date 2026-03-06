@@ -666,27 +666,6 @@ r[installer.firstboot.unmount]
 After applying configuration, the installer must cleanly unmount all
 filesystems and close any LUKS volumes before prompting for reboot.
 
-## Shared Utilities
-
-r[installer.util.partition-path]
-The installer must derive partition device paths from a parent block device
-path and a 1-based partition number using a single shared helper. NVMe and
-loop devices use a `p` separator (e.g. `/dev/nvme0n1p3`, `/dev/loop0p3`);
-SCSI/SATA disks append the number directly (e.g. `/dev/sda3`). The rule is:
-if the device path ends with an ASCII digit, insert `p` before the partition
-number.
-
-r[installer.util.run-command]
-The installer must run external programs through a single shared helper that
-logs the command, captures combined output, and returns a contextual error
-(including the program name, exit status, and stderr) on failure.
-
-r[installer.util.passphrase-keyfile]
-The installer must create temporary passphrase keyfiles through a single
-shared helper that writes the passphrase bytes to `/tmp/bes-luks-keyfile`
-with mode 0400 and returns the path. Callers are responsible for removing
-the file after use.
-
 ## Container Isolation
 
 > r[installer.container.isolation+3]

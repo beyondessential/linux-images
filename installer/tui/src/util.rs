@@ -12,7 +12,6 @@ use anyhow::{Context, Result, bail};
 /// `/dev/loop0p3`); SCSI/SATA disks append the number directly
 /// (`/dev/sda3`). The rule: if the device path ends with an ASCII digit,
 /// insert `p` before the partition number.
-// r[impl installer.util.partition-path]
 pub fn partition_path(device: &Path, part_num: u32) -> Result<PathBuf> {
     let dev_str = device.to_str().unwrap_or_default();
 
@@ -27,7 +26,6 @@ pub fn partition_path(device: &Path, part_num: u32) -> Result<PathBuf> {
 
 /// Run an external program, log the invocation, capture output, and return a
 /// contextual error on failure.
-// r[impl installer.util.run-command]
 pub fn run_command(program: &str, args: &[&str]) -> Result<()> {
     tracing::debug!("running: {program} {}", args.join(" "));
 
@@ -47,7 +45,6 @@ pub fn run_command(program: &str, args: &[&str]) -> Result<()> {
 
 /// Write a passphrase to `/tmp/bes-luks-keyfile` with mode 0400 and return
 /// the path. The caller is responsible for removing the file after use.
-// r[impl installer.util.passphrase-keyfile]
 pub fn create_passphrase_keyfile(passphrase: &str) -> Result<PathBuf> {
     let path = PathBuf::from("/tmp/bes-luks-keyfile");
     fs::write(&path, passphrase.as_bytes()).context("creating passphrase keyfile")?;
@@ -60,21 +57,21 @@ pub fn create_passphrase_keyfile(passphrase: &str) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
-    // r[verify installer.util.partition-path]
+    // r[verify installer.firstboot.mount+3]
     #[test]
     fn partition_path_scsi_disk() {
         let path = partition_path(Path::new("/dev/sda"), 3).unwrap();
         assert_eq!(path, PathBuf::from("/dev/sda3"));
     }
 
-    // r[verify installer.util.partition-path]
+    // r[verify installer.firstboot.mount+3]
     #[test]
     fn partition_path_nvme() {
         let path = partition_path(Path::new("/dev/nvme0n1"), 3).unwrap();
         assert_eq!(path, PathBuf::from("/dev/nvme0n1p3"));
     }
 
-    // r[verify installer.util.partition-path]
+    // r[verify installer.firstboot.mount+3]
     #[test]
     fn partition_path_loop() {
         let path = partition_path(Path::new("/dev/loop0"), 1).unwrap();
