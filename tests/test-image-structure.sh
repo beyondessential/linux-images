@@ -486,14 +486,18 @@ check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-t
 check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 
-# r[verify image.boot.cloud-drivers]
+# r[verify image.boot.hardware-drivers]
+check "dracut hardware-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
+check "dracut hardware-drivers has nvme" grep -q 'nvme' "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
+check "dracut hardware-drivers has nvme_core" grep -q 'nvme_core' "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
+
+# r[verify image.boot.cloud-drivers+2]
 if [ "$VARIANT" = "cloud" ]; then
-    check "dracut cloud-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
-    check "dracut cloud-drivers has ena" grep -q 'ena' "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
-    check "dracut cloud-drivers has nvme" grep -q 'nvme' "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
-    check "dracut cloud-drivers has xen_blkfront" grep -q 'xen_blkfront' "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
+    check "dracut cloud-drivers config exists" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+    check "dracut cloud-drivers has ena" grep -q 'ena' "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+    check "dracut cloud-drivers has xen_blkfront" grep -q 'xen_blkfront' "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
 else
-    check_not "no cloud-drivers config for metal variant" test -f "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
+    check_not "no cloud-drivers config for metal variant" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
 fi
 
 # r[verify image.boot.grub-timeout]
