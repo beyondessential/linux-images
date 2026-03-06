@@ -357,8 +357,7 @@ pub fn run_tui(
     mut state: AppState,
     manifest: &PartitionManifest,
     images_dir: &Path,
-    copy_install_log: bool,
-    log_path: &Path,
+    install_log: Option<&Path>,
     no_reboot: bool,
 ) -> Result<()> {
     terminal::enable_raw_mode().context("enabling raw mode")?;
@@ -373,8 +372,7 @@ pub fn run_tui(
         &mut state,
         manifest,
         images_dir,
-        copy_install_log,
-        log_path,
+        install_log,
         no_reboot,
     );
 
@@ -389,8 +387,7 @@ fn event_loop(
     state: &mut AppState,
     manifest: &PartitionManifest,
     images_dir: &Path,
-    copy_install_log: bool,
-    log_path: &Path,
+    install_log: Option<&Path>,
     no_reboot: bool,
 ) -> Result<()> {
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
@@ -439,14 +436,7 @@ fn event_loop(
                 break;
             }
             KeyAction::StartWrite => {
-                start_install_worker(
-                    manifest,
-                    images_dir,
-                    copy_install_log,
-                    log_path,
-                    state,
-                    &worker_tx,
-                );
+                spawn_install_worker(state, manifest, images_dir, install_log, &worker_tx);
             }
             // r[impl installer.tui.debug-shell]
             KeyAction::Shell => {
@@ -480,17 +470,16 @@ pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState 
     state
 }
 
-fn start_install_worker(
+fn spawn_install_worker(
+    state: &AppState,
     manifest: &PartitionManifest,
     images_dir: &Path,
-    copy_install_log: bool,
-    log_path: &Path,
-    state: &AppState,
+    install_log: Option<&Path>,
     tx: &mpsc::Sender<WorkerMessage>,
 ) {
     let manifest = manifest.clone();
     let images_dir = images_dir.to_path_buf();
-    let log_path = log_path.to_path_buf();
+    let install_log = install_log.map(|p| p.to_path_buf());
     let (target, disk_size) = match state.selected_disk() {
         Some(d) => (d.path.clone(), d.size_bytes),
         None => {
@@ -505,16 +494,14 @@ fn start_install_worker(
     let tx = tx.clone();
 
     thread::spawn(move || {
+        let disk_writer = writer::DiskWriter::new(&target, disk_encryption, passphrase.as_deref());
         let result = run_full_install(
+            &disk_writer,
             &manifest,
             &images_dir,
-            &target,
             disk_size,
-            disk_encryption,
             firstboot_config.as_ref(),
-            passphrase.as_deref(),
-            copy_install_log,
-            &log_path,
+            install_log.as_deref(),
             &tx,
         );
         match result {
@@ -528,20 +515,13 @@ fn start_install_worker(
     });
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "collecting all state needed for the full install sequence"
-)]
 fn run_full_install(
+    disk_writer: &writer::DiskWriter<'_>,
     manifest: &PartitionManifest,
     images_dir: &Path,
-    target: &Path,
     disk_size: u64,
-    disk_encryption: crate::config::DiskEncryption,
     firstboot_config: Option<&crate::config::FirstbootConfig>,
-    recovery_passphrase: Option<&str>,
-    copy_install_log: bool,
-    log_path: &Path,
+    install_log: Option<&Path>,
     tx: &mpsc::Sender<WorkerMessage>,
 ) -> Result<Option<String>> {
     // r[impl installer.write.disk-size-check+2]
@@ -550,40 +530,43 @@ fn run_full_install(
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
 
     // Write partitions (~90% of progress)
-    writer::write_partitions(
-        manifest,
-        images_dir,
-        target,
-        disk_encryption,
-        recovery_passphrase,
-        &mut |progress| {
+    disk_writer
+        .write_partitions(manifest, images_dir, &mut |progress| {
             let _ = tx.send(WorkerMessage::Progress(progress.into()));
-        },
-    )
-    .context("writing partitions")?;
+        })
+        .context("writing partitions")?;
 
     // Expand root filesystem (~91%)
-    writer::expand_root_filesystem(target, disk_encryption, recovery_passphrase)
+    disk_writer
+        .expand_root_filesystem()
         .context("expanding root filesystem")?;
 
     // Randomize UUIDs (~92%)
-    writer::randomize_filesystem_uuids(target, disk_encryption, recovery_passphrase)
+    disk_writer
+        .randomize_filesystem_uuids()
         .context("randomizing filesystem UUIDs")?;
 
     // Rebuild boot config (~94%)
-    writer::rebuild_boot_config(target, disk_encryption, recovery_passphrase)
+    disk_writer
+        .rebuild_boot_config()
         .context("rebuilding boot config")?;
 
     // Verify partition table (~95%)
-    writer::verify_partition_table(target).context("verifying partition table")?;
+    disk_writer
+        .verify_partition_table()
+        .context("verifying partition table")?;
 
     // Firstboot (~96%)
     {
-        let mounted = firstboot::mount_target(target, disk_encryption, recovery_passphrase)?;
+        let mounted = firstboot::mount_target(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            disk_writer.passphrase,
+        )?;
 
         // r[impl installer.write.fstab-fixup]
         // r[impl installer.write.variant-fixup]
-        if disk_encryption.is_encrypted() {
+        if disk_writer.disk_encryption.is_encrypted() {
             firstboot::fixup_for_metal_variant(&mounted, &firstboot_config.cloned())?;
         }
 
@@ -594,7 +577,7 @@ fn run_full_install(
         }
 
         // r[impl installer.firstboot.copy-install-log]
-        if copy_install_log {
+        if let Some(log_path) = install_log {
             firstboot::copy_install_log(&mounted, log_path);
         }
 
@@ -602,10 +585,19 @@ fn run_full_install(
     }
 
     // Encryption setup (~96-100%)
-    let passphrase = if let Some(pp) = recovery_passphrase {
-        let mounted = firstboot::mount_target(target, disk_encryption, recovery_passphrase)?;
-        encryption::run_encryption_setup(target, disk_encryption, mounted.path(), pp)
-            .context("encryption setup")?;
+    let passphrase = if let Some(pp) = disk_writer.passphrase {
+        let mounted = firstboot::mount_target(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            disk_writer.passphrase,
+        )?;
+        encryption::run_encryption_setup(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            mounted.path(),
+            pp,
+        )
+        .context("encryption setup")?;
         firstboot::unmount_target(mounted)?;
         Some(pp.to_string())
     } else {
