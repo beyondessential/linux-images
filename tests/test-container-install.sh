@@ -693,7 +693,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Filesystem UUID / grub.cfg consistency ---
-        # r[verify installer.write.randomize-uuids]
+        # r[verify installer.write.randomize-uuids+2]
         # r[verify installer.write.rebuild-boot-config]
         # Mount /boot so we can read grub.cfg
         BOOT_MNT="$WORK_DIR/verify-boot"
