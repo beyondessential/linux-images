@@ -89,6 +89,11 @@ contain at least one placeholder, literal portions must consist only of
 fully expanded hostname must not exceed 63 characters. Values are generated
 from a cryptographically secure random source.
 
+r[installer.config.web-password]
+The `web-password` field is an optional string setting the password for
+the web UI (see `r[web.auth.password-source]`). If absent, the installer
+generates a random password at startup.
+
 ## Operating Modes
 
 r[installer.mode.interactive+2]

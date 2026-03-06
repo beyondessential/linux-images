@@ -11,7 +11,9 @@ the installer's main event loop under any circumstances.
 r[web.server.static-assets]
 The server must serve the browser client application (HTML, JavaScript,
 and WebAssembly assets) over plain HTTP. These assets must be available
-on the live ISO filesystem.
+on the live ISO filesystem. Static assets must be served without
+authentication so that the browser can load the client application before
+the user has entered the password.
 
 r[web.server.websocket]
 The server must accept WebSocket upgrade requests. Each connected browser
@@ -24,6 +26,43 @@ The server must start before the TUI enters its event loop and continue
 running until the installer process exits. Errors in the server (failed
 binds, broken client connections) must be logged but must not interrupt
 the installation flow or crash the installer.
+
+## Authentication
+
+r[web.auth.password-source]
+The web UI must be protected by a password. The password may be set via
+the `web-password` field in the configuration file (`bes-install.toml`).
+If the field is absent, the installer must generate a random
+human-readable password at startup.
+
+r[web.auth.generated-password]
+When the password is generated automatically, it must be generated from
+a cryptographically secure random source and be practical to communicate
+verbally (e.g. a short sequence of dictionary words or alphanumeric
+characters).
+
+r[web.auth.tui-visibility]
+The TUI must provide a way for the local user to view the current web UI
+password on demand. This is necessary so that the person at the physical
+terminal can communicate the password to a remote user. The password must
+not be permanently visible -- it must be revealed by an explicit action.
+
+r[web.auth.browser-visibility]
+Once authenticated, the browser client must also provide a way to view
+the current web UI password on demand, using the same reveal mechanism as
+the TUI.
+
+r[web.auth.websocket-gate]
+The server must not send frame data or accept input events over a
+WebSocket connection until the client has successfully authenticated.
+The client must send the password as its first message after the
+WebSocket handshake. If the password is incorrect, the server must
+close the connection with an appropriate error.
+
+r[web.auth.config-field]
+The `web-password` field in the configuration file is a string. It is
+optional. It must follow the same top-level, no-tables convention as
+other configuration fields.
 
 ## Frame Streaming
 

@@ -39,6 +39,8 @@ cell data over WebSocket.
 Server side (installer binary):
 - `tungstenite` -- synchronous WebSocket library (no async runtime needed)
 - `zstd` -- already in the dependency tree, used for frame compression
+- `diceware_wordlists` -- already in the dependency tree, used for
+  generating the web password (same as recovery passphrase generation)
 
 Browser side (separate WASM crate):
 - `beamterm-renderer` -- GPU-accelerated terminal rendering via WebGL2
@@ -148,8 +150,18 @@ Commit this phase independently.
 **Wire format (browser to server):**
 - JSON text WebSocket messages for simplicity (input events are tiny and
   infrequent).
+- Authentication: `{"type":"auth","password":"word-word-word"}`
 - Key events: `{"type":"key","code":"Enter","alt":false,"ctrl":false}`
 - Control requests: `{"type":"take_control"}`
+
+**Authentication handshake:**
+- After the WebSocket connection is established, the client must send an
+  `auth` message as its first message.
+- The server validates the password against the known web password. If
+  correct, the client is admitted and begins receiving frames. If
+  incorrect, the server closes the connection with a close frame
+  containing an error reason.
+- No frames or input events are processed before successful auth.
 
 **Main loop integration:**
 - The main event loop gains an `mpsc::Receiver<InputEvent>` from the web
@@ -192,7 +204,50 @@ The conversion from our wire cell format to beamterm `CellData` follows
 the same logic that ratzilla uses in its WebGL2 backend (`cell_data()` /
 `into_glyph_bits()`).
 
-### Phase 6: Session and Control Management
+### Phase 6: Authentication
+
+**Goal:** Protect the web UI with a password.
+
+**Password source:**
+- If `web-password` is set in `bes-install.toml`, use that value.
+- Otherwise, generate a random password at startup using the same
+  diceware approach as `generate_recovery_passphrase()` but shorter
+  (3-4 words instead of 6) since this password only protects a
+  transient session, not encrypted data.
+
+**Password storage:**
+- The password is stored in the `RunContext` or a shared `WebConfig`
+  struct (behind `Arc<str>` or similar) so the web server threads can
+  read it.
+
+**WebSocket authentication flow:**
+1. Client connects, WebSocket handshake completes.
+2. Server waits for the first text message. If it is not a valid `auth`
+   message, or if the password is wrong, the server sends a close frame
+   and drops the connection.
+3. On successful auth, the client is registered with the
+   `SessionManager` and begins receiving frames.
+
+**TUI visibility:**
+- The web password is part of `AppState` (it's just a `String`, no I/O
+  coupling). The render function can display it.
+- A keybind (e.g. `w` on the welcome screen, or a global keybind shown
+  in the footer) toggles password visibility. When revealed, the
+  password and the server's listen address are shown in a small overlay
+  or dedicated line, so the user at the terminal can read it aloud or
+  copy it.
+- The password is hidden again on the next keypress or after a timeout.
+
+**Browser visibility:**
+- Once authenticated, the browser client has the password (it just
+  entered it). The client stores it locally and provides the same
+  reveal-on-demand mechanism, so the browser user can share it with
+  another person.
+
+Commit this phase independently -- it can be developed alongside or
+immediately after Phase 4.
+
+### Phase 7: Session and Control Management
 
 **Goal:** Support multiple concurrent viewers with single-controller
 semantics.
@@ -269,7 +324,11 @@ given the compression ratio.
   the state changed. Can run headless (no terminal needed).
 - **Phase 5:** The WASM client is tested manually in a browser during
   development. Automated testing deferred (browser automation is heavy).
-- **Phase 6:** Unit tests for `SessionManager` (take control, watcher
+- **Phase 6:** Unit tests for password generation (length, format). 
+  Integration test that verifies: unauthenticated WebSocket is closed,
+  wrong password is rejected, correct password admits the client.
+  Test that config-provided password is used when present.
+- **Phase 7:** Unit tests for `SessionManager` (take control, watcher
   count, disconnect cleanup).
 
 ## Order of Work
@@ -278,4 +337,7 @@ Phases 1-3 are independent refactors that improve the codebase regardless
 of the web UI feature. They can be merged incrementally.
 
 Phase 4 is the core feature. Phase 5 can be developed in parallel once the
-wire protocol is defined. Phase 6 is layered on top.
+wire protocol is defined. Phase 6 (authentication) should be implemented
+alongside or immediately after Phase 4 -- the server should never be
+reachable without authentication, even during development. Phase 7 is
+layered on top.
