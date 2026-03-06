@@ -49,8 +49,8 @@ Before starting, ensure the following are available:
   auth key.
 - VirtualBox (or another full UEFI VM hypervisor) installed.
 - A USB flash drive (8 GB minimum) that can be wiped.
-- A bare-metal UEFI machine for the final hardware test (can be the same
-  workstation if you can boot from USB).
+- A bare-metal UEFI machine for the final hardware test. This cannot be
+  the build workstation -- the installer will wipe the target disk.
 
 MD
 }
@@ -369,11 +369,7 @@ step7
 # r[verify image.tailscale.service-enabled]
 step8() {
     cat << 'MD'
-## Step 8: Bare-Metal Hardware Boot (Optional)
-
-This step is optional but strongly recommended for the first release on
-new hardware or after changes to the boot chain (GRUB, dracut, kernel
-command line).
+## Step 8: Bare-Metal Hardware Boot
 
 1. Write the ISO to a USB drive (if not already done in Step 6).
 2. Boot a real UEFI machine from the USB.
@@ -394,6 +390,51 @@ MD
 }
 step8
 
+# r[verify image.variant.types+2]
+# r[verify image.boot.grub-install]
+# r[verify image.boot.grub-timeout]
+# r[verify image.boot.grub-cmdline]
+# r[verify image.boot.grub-uuids]
+# r[verify image.growth.service]
+# r[verify image.growth.script]
+step9() {
+    cat << 'MD'
+## Step 9: Direct Image Write Boot
+
+This verifies that the disk images boot correctly when written directly to
+a disk, without using the ISO installer.
+
+1. Write the cloud image to a spare disk or VM virtual disk:
+
+   ```
+   zstd -d output/amd64/cloud/*.raw.zst --stdout | sudo dd of=/dev/sdX bs=4M status=progress
+   sync
+   ```
+
+2. Boot from the disk (or attach it to a VM with at least 10 GB total
+   disk size so the growth service has room to expand).
+
+3. Verify:
+   - GRUB menu appears with a 5-second timeout.
+   - The system boots to a login prompt.
+   - Log in as `ubuntu` with password `bes` (will be forced to change it).
+   - `cat /etc/bes/image-variant` shows `cloud`.
+   - `df -h /` shows the root filesystem has been expanded beyond the
+     base image size.
+   - `btrfs subvolume list /` shows `@` and `@postgres`.
+
+4. Repeat with the metal image. The system should boot and pause at a
+   LUKS passphrase prompt (the empty passphrase unlocks it -- just press
+   Enter).
+
+**Acceptance criteria**: both cloud and metal images boot from a raw disk
+write. The growth service expands the root filesystem. The metal image
+prompts for (and accepts) the empty LUKS passphrase.
+
+MD
+}
+step9
+
 checklist() {
     cat << 'MD'
 ## Completion Checklist
@@ -407,7 +448,8 @@ After completing all steps, confirm:
 - [ ] Step 5: ISO boots in VM, installed system is healthy.
 - [ ] Step 6: BESCONF prefilled defaults appear in TUI.
 - [ ] Step 7: Automatic mode installs without interaction.
-- [ ] Step 8: Bare-metal boot works (if performed).
+- [ ] Step 8: Bare-metal hardware boot works.
+- [ ] Step 9: Direct image write boots (cloud and metal).
 MD
 }
 checklist
