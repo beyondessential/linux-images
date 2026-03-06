@@ -95,7 +95,7 @@ pub struct AppState {
     pub ssh_github_rx: Option<mpsc::Receiver<GithubKeysResult>>,
 }
 
-// r[impl installer.tui.progress+2]
+// r[impl installer.tui.progress+3]
 #[derive(Debug, Clone)]
 pub struct ProgressSnapshot {
     pub bytes_written: u64,
@@ -522,7 +522,7 @@ impl AppState {
             Screen::Login => Screen::Timezone,
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
-            // r[impl installer.tui.confirmation+6]
+            // r[impl installer.tui.confirmation+7]
             // r[impl installer.encryption.recovery-passphrase+3]
             Screen::NetworkResults => {
                 if self.disk_encryption.is_encrypted() && self.recovery_passphrase.is_none() {
@@ -531,7 +531,7 @@ impl AppState {
                 }
                 Screen::Confirmation
             }
-            // r[impl installer.tui.progress+2]
+            // r[impl installer.tui.progress+3]
             Screen::Confirmation => Screen::Installing,
             Screen::Installing => return,
             Screen::Done | Screen::Error(_) => return,
@@ -571,7 +571,7 @@ impl AppState {
         "yes"
     }
 
-    // r[impl installer.tui.confirmation+6]
+    // r[impl installer.tui.confirmation+7]
     pub fn is_confirmed(&self) -> bool {
         self.confirm_input
             .trim()
@@ -1085,7 +1085,7 @@ mod tests {
         assert_eq!(state.screen, Screen::LoginGithub);
     }
 
-    // r[verify installer.tui.confirmation+6]
+    // r[verify installer.tui.confirmation+7]
     #[test]
     fn confirmation_requires_explicit_yes() {
         let mut state = make_state();
@@ -1098,7 +1098,7 @@ mod tests {
         assert!(state.is_confirmed());
     }
 
-    // r[verify installer.tui.confirmation+6]
+    // r[verify installer.tui.confirmation+7]
     #[test]
     fn done_and_error_do_not_advance() {
         let mut state = make_state();
@@ -1746,7 +1746,7 @@ mod tests {
         assert_eq!(cfg.unwrap().timezone.as_deref(), Some("Asia/Tokyo"));
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn confirmation_advances_to_installing() {
         let mut state = make_state();
@@ -1756,7 +1756,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Installing);
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn installing_advance_is_noop() {
         let mut state = make_state();
@@ -1765,7 +1765,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Installing);
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn installing_no_go_back() {
         let mut state = make_state();

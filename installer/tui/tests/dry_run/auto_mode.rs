@@ -402,7 +402,7 @@ fn auto_with_minimal_install_config() {
     assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 0);
 }
 
-// r[verify installer.config.ssh-authorized-keys]
+// r[verify installer.config.ssh-authorized-keys+2]
 #[test]
 fn auto_with_only_ssh_keys() {
     let f = Fixture::new();

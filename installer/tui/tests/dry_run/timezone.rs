@@ -1,7 +1,7 @@
 use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
 // r[verify installer.tui.timezone]
-// r[verify installer.firstboot.timezone]
+// r[verify installer.finalise.timezone]
 // r[verify installer.dryrun.schema+5]
 #[test]
 fn auto_timezone_defaults_to_utc() {
@@ -41,7 +41,7 @@ fn auto_timezone_defaults_to_utc() {
 }
 
 // r[verify installer.tui.timezone]
-// r[verify installer.firstboot.timezone]
+// r[verify installer.finalise.timezone]
 // r[verify installer.config.timezone]
 #[test]
 fn auto_timezone_from_config() {

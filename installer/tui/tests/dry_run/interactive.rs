@@ -395,7 +395,7 @@ fn interactive_empty_script_uses_initial_state() {
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.confirmation+6]
+// r[verify installer.tui.confirmation+7]
 #[test]
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();

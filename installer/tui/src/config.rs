@@ -12,8 +12,8 @@ use crate::hostname_template;
 // r[impl installer.config.disk]
 // r[impl installer.config.copy-install-log]
 // r[impl installer.config.hostname]
-// r[impl installer.config.tailscale-authkey]
-// r[impl installer.config.ssh-authorized-keys]
+// r[impl installer.config.tailscale-authkey+2]
+// r[impl installer.config.ssh-authorized-keys+2]
 // r[impl installer.config.password]
 // r[impl installer.config.timezone]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
@@ -381,8 +381,8 @@ mod tests {
     // r[verify installer.config.disk-encryption]
     // r[verify installer.config.disk]
     // r[verify installer.config.hostname]
-    // r[verify installer.config.tailscale-authkey]
-    // r[verify installer.config.ssh-authorized-keys]
+    // r[verify installer.config.tailscale-authkey+2]
+    // r[verify installer.config.ssh-authorized-keys+2]
     // r[verify installer.config.password]
     #[test]
     fn parse_full_config() {
@@ -653,7 +653,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("too long")));
     }
 
-    // r[verify installer.config.ssh-authorized-keys]
+    // r[verify installer.config.ssh-authorized-keys+2]
     #[test]
     fn validate_empty_ssh_key() {
         let config = InstallConfig {
@@ -718,8 +718,8 @@ mod tests {
     }
 
     // r[verify installer.config.hostname]
-    // r[verify installer.config.tailscale-authkey]
-    // r[verify installer.config.ssh-authorized-keys]
+    // r[verify installer.config.tailscale-authkey+2]
+    // r[verify installer.config.ssh-authorized-keys+2]
     #[test]
     fn parse_minimal_hostname() {
         let config = InstallConfig::from_toml(

@@ -54,17 +54,17 @@ from a template pattern (see `installer.config.hostname-template`). These
 three fields are mutually exclusive; if more than one is present the
 installer must report a validation error.
 
-r[installer.config.tailscale-authkey]
+r[installer.config.tailscale-authkey+2]
 The `tailscale-authkey` field is a string containing a Tailscale auth key
 (e.g. `"tskey-auth-xxxxx"`). When set, the installer uses it to
 authenticate the installed system with Tailscale (see
-`installer.firstboot.tailscale-authkey` for the authentication procedure).
+`r[installer.finalise.tailscale-authkey]` for the authentication procedure).
 
-r[installer.config.ssh-authorized-keys]
+r[installer.config.ssh-authorized-keys+2]
 The `ssh-authorized-keys` field is an array of strings, each an OpenSSH
 public key line (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). When
 set, the installer writes these keys into the installed system (see
-`installer.firstboot.ssh-keys`).
+`r[installer.finalise.ssh-keys]`).
 
 r[installer.config.password]
 The `password` field is a string containing a plaintext password for the
@@ -433,10 +433,10 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+6]
+r[installer.tui.confirmation+7]
 After the timezone screen, and after the pre-summary network results screen,
 the TUI must show a summary screen listing: target disk (path, model, size),
-chosen disk encryption mode, and any first-boot configuration. The summary
+chosen disk encryption mode, and any install-time configuration. The summary
 must clearly state that all data on the target disk will be destroyed. The
 user must type an explicit confirmation (not just press Enter). The
 confirmation screen is step 6/6.
@@ -464,13 +464,13 @@ Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
 set), not simply quit the process. On bare-metal hardware, quitting without
 rebooting leaves the machine in an unusable state.
 
-r[installer.tui.progress+2]
+r[installer.tui.progress+3]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
 `Installing` screen from the moment the user confirms until all steps
 complete. Partition image writes (which have byte-level progress) occupy
 approximately 90% of the bar. Each post-write step (filesystem expansion,
-UUID randomization, boot config rebuild, partition verification, first-boot
+UUID randomization, boot config rebuild, partition verification, install-time
 configuration, and encryption setup) occupies a small fixed slice of the
 remaining 10%, advancing the bar when the step completes. After all steps
 finish, the TUI transitions to a completion screen. For encrypted installs,
@@ -610,7 +610,7 @@ with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the
 > write phase begins. This passphrase is used as the initial LUKS key when
-> formatting the root partition (see `installer.write.luks-before-write`),
+> formatting the root partition (see `r[installer.write.luks-before-write]`),
 > so it is already enrolled as a LUKS password slot — no separate
 > `luksAddKey` step is required. In interactive mode, the passphrase must be
 > generated at confirmation time and displayed on the confirmation screen so
@@ -628,13 +628,13 @@ with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 
 ## Install-Time Configuration
 
-r[installer.firstboot.mount+4]
+r[installer.finalise.mount+4]
 After writing the image, the installer must mount the target disk's root
 BTRFS partition (subvol `@`) to apply install-time configuration. For the
 metal variant (disk encryption `"tpm"` or `"keyfile"`), it must unlock the
 LUKS volume using the recovery passphrase.
 
-r[installer.firstboot.hostname]
+r[installer.finalise.hostname]
 If `hostname` is set (including hostnames generated from a template), the
 installer must write it to `/etc/hostname` and add a `127.0.1.1` entry to
 `/etc/hosts` on the installed system. If `hostname-from-dhcp` is true, the
@@ -642,7 +642,7 @@ installer must write an empty `/etc/hostname` (truncate) and remove any
 `127.0.1.1` line from `/etc/hosts`. If neither is set (cloud only), the
 installer must leave `/etc/hostname` as-is.
 
-r[installer.firstboot.tailscale-authkey+2]
+r[installer.finalise.tailscale-authkey+2]
 If `tailscale-authkey` is set and the installer has network connectivity,
 the installer must attempt to authenticate with Tailscale directly by
 chrooting into the mounted target filesystem and running `tailscale up
@@ -651,14 +651,14 @@ authentication attempt (e.g. success, invalid key, network error). If the
 authentication fails, the installer may offer to retry or accept a
 different key. Only if authentication does not succeed does the installer
 fall back to writing the key to `/etc/bes/tailscale-authkey` for first-boot
-authentication via the existing systemd service.
+authentication via the `r[image.tailscale.firstboot-auth]` systemd service.
 
-r[installer.firstboot.ssh-keys]
+r[installer.finalise.ssh-keys]
 If `ssh-authorized-keys` is set, the installer must append each key to
 `/home/ubuntu/.ssh/authorized_keys` with correct ownership and permissions
 (directory 700, file 600, owned by `ubuntu`).
 
-r[installer.firstboot.password]
+r[installer.finalise.password]
 If a password is provided (either plaintext or pre-hashed), the installer
 must update the `ubuntu` user's password in `/etc/shadow` on the installed
 system. When a plaintext password is given, it must be hashed with SHA-512
@@ -666,13 +666,13 @@ crypt (`$6$`). When a pre-hashed password is given, it must be written
 directly. In either case, the password expiry flag must be cleared so that
 the user is not forced to change the password on first login.
 
-r[installer.firstboot.timezone]
+r[installer.finalise.timezone]
 The installer must set the system timezone on the installed system by
 creating a symlink at `/etc/localtime` pointing to the corresponding
 file under `/usr/share/zoneinfo/` and writing the timezone name to
 `/etc/timezone`. The default timezone is `UTC`.
 
-r[installer.firstboot.copy-install-log+2]
+r[installer.finalise.copy-install-log+2]
 After applying install-time configuration and before encryption setup, the
 installer must copy its own log file into the installed system at
 `/var/log/bes-installer.log`. This is enabled by default. When
@@ -682,7 +682,7 @@ the source log file does not exist), the installer must log a warning but
 must not treat it as a fatal error. There is no TUI control for this
 option.
 
-r[installer.firstboot.unmount]
+r[installer.finalise.unmount]
 After applying configuration, the installer must cleanly unmount all
 filesystems and close any LUKS volumes before prompting for reboot.
 

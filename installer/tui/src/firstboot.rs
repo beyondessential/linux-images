@@ -24,7 +24,7 @@ impl MountedTarget {
     }
 }
 
-// r[impl installer.firstboot.mount+4]
+// r[impl installer.finalise.mount+4]
 pub fn mount_target(
     target_device: &Path,
     disk_encryption: DiskEncryption,
@@ -65,7 +65,7 @@ pub fn mount_target(
     })
 }
 
-// r[impl installer.firstboot.unmount]
+// r[impl installer.finalise.unmount]
 pub fn unmount_target(target: MountedTarget) -> Result<()> {
     run_command("umount", &[target.mount_path.to_str().unwrap_or_default()])
         .context("unmounting target root")?;
@@ -105,7 +105,7 @@ pub fn apply_firstboot(target: &MountedTarget, config: &InstallConfig) -> Result
     Ok(())
 }
 
-// r[impl installer.firstboot.timezone]
+// r[impl installer.finalise.timezone]
 pub fn apply_timezone_default(target: &MountedTarget) -> Result<()> {
     apply_timezone(target.path(), "UTC")
 }
@@ -158,7 +158,7 @@ pub fn fixup_for_metal_variant(
     Ok(())
 }
 
-// r[impl installer.firstboot.copy-install-log+2]
+// r[impl installer.finalise.copy-install-log+2]
 pub fn copy_install_log(target: &MountedTarget, log_path: &Path) {
     let dest = target.path().join(INSTALL_LOG_TARGET);
 
@@ -183,7 +183,7 @@ pub fn copy_install_log(target: &MountedTarget, log_path: &Path) {
     }
 }
 
-// r[impl installer.firstboot.timezone]
+// r[impl installer.finalise.timezone]
 fn apply_timezone(root: &Path, timezone: &str) -> Result<()> {
     let zoneinfo_path = format!("/usr/share/zoneinfo/{timezone}");
     let localtime_path = root.join("etc/localtime");
@@ -209,7 +209,7 @@ fn apply_timezone(root: &Path, timezone: &str) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.firstboot.password]
+// r[impl installer.finalise.password]
 fn apply_password(root: &Path, config: &InstallConfig) -> Result<()> {
     let hash = if let Some(ref h) = config.password_hash {
         h.clone()
@@ -278,7 +278,7 @@ fn apply_password(root: &Path, config: &InstallConfig) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.firstboot.hostname]
+// r[impl installer.finalise.hostname]
 fn apply_dhcp_hostname(root: &Path) -> Result<()> {
     let hostname_path = root.join("etc/hostname");
     fs::write(&hostname_path, "")
@@ -304,7 +304,7 @@ fn apply_dhcp_hostname(root: &Path) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.firstboot.hostname]
+// r[impl installer.finalise.hostname]
 fn apply_hostname(root: &Path, hostname: &str) -> Result<()> {
     let path = root.join("etc/hostname");
     fs::write(&path, format!("{hostname}\n"))
@@ -324,7 +324,7 @@ fn apply_hostname(root: &Path, hostname: &str) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.firstboot.tailscale-authkey+2]
+// r[impl installer.finalise.tailscale-authkey+2]
 fn apply_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
     let bes_dir = root.join("etc/bes");
     fs::create_dir_all(&bes_dir).context("creating /etc/bes")?;
@@ -339,7 +339,7 @@ fn apply_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.firstboot.ssh-keys]
+// r[impl installer.finalise.ssh-keys]
 fn apply_ssh_keys(root: &Path, keys: &[String]) -> Result<()> {
     let ssh_dir = root.join("home/ubuntu/.ssh");
     fs::create_dir_all(&ssh_dir).context("creating .ssh directory")?;
@@ -399,7 +399,7 @@ fn resolve_uid_gid_from_passwd(root: &Path, username: &str) -> Result<(u32, u32)
 mod tests {
     use super::*;
 
-    // r[verify installer.firstboot.password]
+    // r[verify installer.finalise.password]
     #[test]
     fn apply_password_plaintext() {
         let dir = tempfile::tempdir().unwrap();
@@ -431,7 +431,7 @@ mod tests {
         assert!(shadow.ends_with('\n'));
     }
 
-    // r[verify installer.firstboot.password]
+    // r[verify installer.finalise.password]
     #[test]
     fn apply_password_hash_direct() {
         let dir = tempfile::tempdir().unwrap();
@@ -455,7 +455,7 @@ mod tests {
         assert_eq!(fields[1], "$6$custom$myhash");
     }
 
-    // r[verify installer.firstboot.password]
+    // r[verify installer.finalise.password]
     #[test]
     fn apply_password_user_not_found_in_shadow() {
         let dir = tempfile::tempdir().unwrap();
@@ -470,7 +470,7 @@ mod tests {
         assert!(apply_password(dir.path(), &config).is_err());
     }
 
-    // r[verify installer.firstboot.password]
+    // r[verify installer.finalise.password]
     #[test]
     fn apply_password_preserves_other_users() {
         let dir = tempfile::tempdir().unwrap();
@@ -495,7 +495,7 @@ mod tests {
         assert!(ubuntu_line.contains("$6$new$newhash"));
     }
 
-    // r[verify installer.firstboot.hostname]
+    // r[verify installer.finalise.hostname]
     #[test]
     fn apply_dhcp_hostname_truncates_etc_hostname() {
         let dir = tempfile::tempdir().unwrap();
@@ -519,7 +519,7 @@ mod tests {
         assert!(hosts.contains("::1 localhost"));
     }
 
-    // r[verify installer.firstboot.hostname]
+    // r[verify installer.finalise.hostname]
     #[test]
     fn apply_dhcp_hostname_no_hosts_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -533,7 +533,7 @@ mod tests {
         assert_eq!(hostname, "");
     }
 
-    // r[verify installer.firstboot.ssh-keys]
+    // r[verify installer.finalise.ssh-keys]
     #[test]
     fn resolve_uid_gid_from_passwd_contents() {
         let dir = tempfile::tempdir().unwrap();
@@ -550,7 +550,7 @@ mod tests {
         assert_eq!(gid, 1000);
     }
 
-    // r[verify installer.firstboot.ssh-keys]
+    // r[verify installer.finalise.ssh-keys]
     #[test]
     fn resolve_uid_gid_user_not_found() {
         let dir = tempfile::tempdir().unwrap();
@@ -561,7 +561,7 @@ mod tests {
         assert!(resolve_uid_gid_from_passwd(dir.path(), "ubuntu").is_err());
     }
 
-    // r[verify installer.firstboot.timezone]
+    // r[verify installer.finalise.timezone]
     #[test]
     fn apply_timezone_creates_symlink_and_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -582,7 +582,7 @@ mod tests {
         assert_eq!(timezone, "America/New_York\n");
     }
 
-    // r[verify installer.firstboot.timezone]
+    // r[verify installer.finalise.timezone]
     #[test]
     fn apply_timezone_replaces_existing_symlink() {
         let dir = tempfile::tempdir().unwrap();
@@ -604,7 +604,7 @@ mod tests {
         assert_eq!(timezone, "Pacific/Auckland\n");
     }
 
-    // r[verify installer.firstboot.timezone]
+    // r[verify installer.finalise.timezone]
     #[test]
     fn apply_timezone_utc_default() {
         let dir = tempfile::tempdir().unwrap();
@@ -620,7 +620,7 @@ mod tests {
         assert_eq!(timezone, "UTC\n");
     }
 
-    // r[verify installer.firstboot.timezone]
+    // r[verify installer.finalise.timezone]
     #[test]
     fn apply_firstboot_sets_timezone_from_config() {
         let dir = tempfile::tempdir().unwrap();
@@ -642,7 +642,7 @@ mod tests {
         assert_eq!(target, PathBuf::from("/usr/share/zoneinfo/Europe/London"));
     }
 
-    // r[verify installer.firstboot.timezone]
+    // r[verify installer.finalise.timezone]
     #[test]
     fn apply_firstboot_defaults_timezone_to_utc() {
         let dir = tempfile::tempdir().unwrap();

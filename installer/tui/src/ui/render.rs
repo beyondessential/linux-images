@@ -839,7 +839,7 @@ fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.confirmation+6]
+// r[impl installer.tui.confirmation+7]
 // r[impl installer.tui.password+4]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -910,7 +910,7 @@ fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, chunks[1]);
 }
 
-// r[impl installer.tui.confirmation+6]
+// r[impl installer.tui.confirmation+7]
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -1029,7 +1029,7 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.progress+2]
+// r[impl installer.tui.progress+3]
 fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(area);
 
@@ -1073,7 +1073,7 @@ fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
-// r[impl installer.tui.progress+2]
+// r[impl installer.tui.progress+3]
 fn render_done(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),

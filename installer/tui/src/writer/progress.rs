@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-// r[impl installer.tui.progress+2]
+// r[impl installer.tui.progress+3]
 pub struct WriteProgress {
     pub bytes_written: u64,
     pub total_bytes: Option<u64>,
@@ -58,7 +58,7 @@ pub(crate) fn format_size(bytes: u64) -> String {
 mod tests {
     use super::*;
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn progress_fraction_with_total() {
         let p = WriteProgress {
@@ -69,7 +69,7 @@ mod tests {
         assert!((p.fraction().unwrap() - 0.5).abs() < f64::EPSILON);
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn progress_fraction_without_total() {
         let p = WriteProgress {
@@ -80,7 +80,7 @@ mod tests {
         assert!(p.fraction().is_none());
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn progress_eta_calculation() {
         let p = WriteProgress {
@@ -92,7 +92,7 @@ mod tests {
         assert!((eta.as_secs_f64() - 10.0).abs() < 0.1);
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn progress_eta_at_zero() {
         let p = WriteProgress {
@@ -103,7 +103,7 @@ mod tests {
         assert!(p.eta().is_none());
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn progress_eta_complete() {
         let p = WriteProgress {
@@ -115,7 +115,7 @@ mod tests {
         assert!(eta.as_secs_f64() < 0.1);
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn progress_throughput() {
         let p = WriteProgress {
@@ -126,7 +126,7 @@ mod tests {
         assert!((p.throughput_mbps() - 10.0).abs() < 0.1);
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn eta_formatting() {
         assert_eq!(format_eta(Duration::from_secs(45)), "45s");

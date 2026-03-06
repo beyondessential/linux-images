@@ -337,7 +337,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         Screen::Installing => {}
 
-        // r[impl installer.tui.progress+2]
+        // r[impl installer.tui.progress+3]
         Screen::Done => {
             if key.code == KeyCode::Enter {
                 return KeyAction::Reboot;
@@ -581,7 +581,7 @@ fn run_full_install(
             firstboot::apply_timezone_default(&mounted)?;
         }
 
-        // r[impl installer.firstboot.copy-install-log+2]
+        // r[impl installer.finalise.copy-install-log+2]
         if let Some(log_path) = install_log {
             firstboot::copy_install_log(&mounted, log_path);
         }

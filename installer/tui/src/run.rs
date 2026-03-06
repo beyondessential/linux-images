@@ -302,11 +302,11 @@ impl RunContext {
             if self.install_config.has_install_config_fields() {
                 firstboot::apply_firstboot(&mounted, &self.install_config)?;
             } else {
-                // r[impl installer.firstboot.timezone]
+                // r[impl installer.finalise.timezone]
                 firstboot::apply_timezone_default(&mounted)?;
             }
 
-            // r[impl installer.firstboot.copy-install-log+2]
+            // r[impl installer.finalise.copy-install-log+2]
             if copy_install_log {
                 firstboot::copy_install_log(&mounted, &self.cli.log);
             }

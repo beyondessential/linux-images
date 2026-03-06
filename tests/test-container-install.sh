@@ -345,7 +345,7 @@ fi
 # ============================================================
 # Phase 5: Verify cleanup
 # ============================================================
-# r[verify installer.firstboot.unmount]
+# r[verify installer.finalise.unmount]
 echo "==> Verifying installer unmounted all filesystems..."
 
 STALE_MOUNTS=$(grep "${LOOP_DEV}" /proc/mounts 2>/dev/null || true)
@@ -466,7 +466,7 @@ if [ -n "$BTRFS_DEV" ]; then
         check "btrfs root mounted successfully" true
 
         # --- Hostname ---
-        # r[verify installer.firstboot.hostname]
+        # r[verify installer.finalise.hostname]
         if [ -n "$SET_HOSTNAME_FROM_DHCP" ]; then
             # DHCP hostname: /etc/hostname must be empty
             if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then
@@ -523,7 +523,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Tailscale authkey ---
-        # r[verify installer.firstboot.tailscale-authkey+2]
+        # r[verify installer.finalise.tailscale-authkey+2]
         if [ -n "$SET_TAILSCALE" ]; then
             TS_KEY_FILE="$VERIFY_MOUNT/etc/bes/tailscale-authkey"
             if [ -f "$TS_KEY_FILE" ]; then
@@ -541,7 +541,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- SSH authorized keys ---
-        # r[verify installer.firstboot.ssh-keys]
+        # r[verify installer.finalise.ssh-keys]
         if [ -n "$SET_SSH_KEYS" ]; then
             AK_FILE="$VERIFY_MOUNT/home/ubuntu/.ssh/authorized_keys"
             if [ -f "$AK_FILE" ]; then
@@ -563,7 +563,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Password ---
-        # r[verify installer.firstboot.password]
+        # r[verify installer.finalise.password]
         if [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ]; then
             SHADOW_FILE="$VERIFY_MOUNT/etc/shadow"
             if [ -f "$SHADOW_FILE" ]; then
@@ -592,7 +592,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Timezone ---
-        # r[verify installer.firstboot.timezone]
+        # r[verify installer.finalise.timezone]
         if [ -n "$SET_TIMEZONE" ]; then
             LOCALTIME_LINK="$VERIFY_MOUNT/etc/localtime"
             if [ -L "$LOCALTIME_LINK" ]; then
@@ -662,7 +662,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Install log ---
-        # r[verify installer.firstboot.copy-install-log+2]
+        # r[verify installer.finalise.copy-install-log+2]
         INSTALL_LOG="$VERIFY_MOUNT/var/log/bes-installer.log"
         if [ "$SET_COPY_INSTALL_LOG" = "false" ]; then
             check "install log absent when copy-install-log=false" \
