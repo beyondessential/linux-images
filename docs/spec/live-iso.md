@@ -52,9 +52,11 @@ boot image is a FAT32 filesystem image containing a GRUB EFI binary at
 the default removable media path (`EFI/BOOT/BOOTX64.EFI` for amd64,
 `EFI/BOOT/BOOTAA64.EFI` for arm64).
 
-r[iso.boot.autostart]
+r[iso.boot.autostart+2]
 On boot, the live environment must automatically launch the TUI installer on
-the primary console.
+tty2. A separate oneshot service must switch the active VT to tty2 before
+the installer starts, so the user sees the installer immediately. The `kbd`
+package must be installed in the live rootfs to provide `/usr/bin/chvt`.
 
 > r[iso.config-partition]
 > The ISO must include an appended FAT32 partition (GPT type `Microsoft basic

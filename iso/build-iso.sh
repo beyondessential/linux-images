@@ -200,6 +200,7 @@ chroot "$MNT_ROOTFS" bash -c "
         dbus \
         udev \
         util-linux \
+        kbd \
         parted \
         gdisk \
         cloud-guest-utils \
@@ -241,7 +242,7 @@ BUILD_DATE=$BUILD_DATE
 ARCH=$ARCH
 BUILDINFO
 
-# r[impl iso.boot.autostart]
+# r[impl iso.boot.autostart+2]
 # Wrapper script: runs the installer with logging to a file (not piped
 # through tee, which would break the TUI's alternate screen mode).
 # If the installer crashes, it leaves the alternate screen and shows
