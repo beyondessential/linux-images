@@ -124,6 +124,8 @@ cleanup() {
         losetup -d "$LOOP_DEV" 2>/dev/null
     fi
 
+    swtpm_stop
+
     if [ -n "$WORK_DIR" ]; then
         rm -rf "$WORK_DIR"
     fi
@@ -262,6 +264,15 @@ done
 # Phase 4: Run installer inside systemd-nspawn
 # ============================================================
 echo "==> Running installer in systemd-nspawn container..."
+
+# r[impl installer.container.swtpm]
+# r[verify installer.container.swtpm]
+# For TPM scenarios, start a software TPM emulator so that
+# systemd-cryptenroll --tpm2-device=auto has a real (emulated) TPM to talk to.
+if [ "$DISK_ENCRYPTION" = "tpm" ]; then
+    echo "==> Starting software TPM (swtpm)..."
+    swtpm_start "$WORK_DIR/swtpm"
+fi
 
 # r[impl installer.container.isolation+3]: build nspawn options and binds
 # from the shared library. The host /dev is never bind-mounted; the

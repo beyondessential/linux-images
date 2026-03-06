@@ -77,6 +77,8 @@ cleanup() {
         losetup -d "$LOOP_DEV" 2>/dev/null
     fi
 
+    swtpm_stop
+
     if [ -n "$WORK_DIR" ]; then
         rm -rf "$WORK_DIR"
     fi

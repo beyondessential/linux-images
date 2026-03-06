@@ -10,6 +10,13 @@
 # single file so that the isolation test validates the same nspawn
 # configuration that the installer tests and interactive trial use.
 
+# ============================================================
+# State: tracked by this library, cleaned up by swtpm_stop.
+# ============================================================
+_SWTPM_PID=""
+_SWTPM_TPM_DEV=""
+_SWTPM_STATE_DIR=""
+
 # Base nspawn options common to every container invocation.
 # Does NOT include --private-network; callers add that separately.
 NSPAWN_BASE_OPTS=(
@@ -21,6 +28,7 @@ NSPAWN_BASE_OPTS=(
     --property=DeviceAllow='block-loop rwm'
     --property=DeviceAllow='block-blkext rwm'
     --property=DeviceAllow='char-misc rwm'
+    --property=DeviceAllow='char-tpm rwm'
     --property=DeviceAllow='block-device-mapper rwm'
 )
 
@@ -89,4 +97,103 @@ nspawn_installer_binds() {
     if [ -n "$log_bind" ]; then
         NSPAWN_BINDS+=("--bind=$log_bind")
     fi
+
+    # If swtpm_start was called, bind the TPM device into the container as
+    # /dev/tpm0 so the installer's tpm_present check (which looks for
+    # /dev/tpm0) succeeds and systemd-cryptenroll finds it via --tpm2-device=auto.
+    # The host device may be /dev/tpm1 or higher when swtpm uses vtpm-proxy.
+    if [ -n "$_SWTPM_TPM_DEV" ]; then
+        NSPAWN_BINDS+=("--bind=$_SWTPM_TPM_DEV:/dev/tpm0")
+    fi
+}
+
+# ============================================================
+# Software TPM helpers
+# ============================================================
+
+# r[impl installer.container.swtpm]
+# Start a software TPM 2.0 emulator via swtpm chardev + vtpm-proxy.
+#
+# Usage:
+#   swtpm_start <state-dir>
+#
+# The state-dir is where swtpm persists its TPM state (NV storage etc.).
+# On success, sets _SWTPM_PID and _SWTPM_TPM_DEV so that
+# nspawn_installer_binds can bind the device and swtpm_stop can clean up.
+#
+# Prerequisites:
+#   - swtpm binary
+#   - tpm_vtpm_proxy kernel module loaded
+swtpm_start() {
+    local state_dir="${1:?swtpm_start: state-dir required}"
+    mkdir -p "$state_dir"
+    _SWTPM_STATE_DIR="$state_dir"
+
+    if ! command -v swtpm &>/dev/null; then
+        echo "ERROR: swtpm not found; install the swtpm package"
+        return 1
+    fi
+
+    if [ ! -e /dev/vtpmx ]; then
+        modprobe tpm_vtpm_proxy 2>/dev/null || true
+    fi
+    if [ ! -e /dev/vtpmx ]; then
+        echo "ERROR: /dev/vtpmx not available; load the tpm_vtpm_proxy kernel module"
+        return 1
+    fi
+
+    # swtpm chardev --vtpm-proxy creates a /dev/tpmN device via the kernel's
+    # vtpm-proxy subsystem. It prints the device path to stdout before
+    # daemonizing.
+    local swtpm_log="$state_dir/swtpm.log"
+    local tpm_info
+    if ! tpm_info=$(swtpm chardev \
+        --tpmstate dir="$state_dir" \
+        --tpm2 \
+        --vtpm-proxy \
+        --daemon \
+        --log file="$swtpm_log",level=5 \
+        2>&1); then
+        echo "ERROR: swtpm failed to start: $tpm_info"
+        return 1
+    fi
+
+    # swtpm prints something like:
+    #   New TPM device: /dev/tpm1 (major/minor = 253/1)
+    _SWTPM_TPM_DEV=$(echo "$tpm_info" | grep -oP '/dev/tpm\d+')
+    if [ -z "$_SWTPM_TPM_DEV" ]; then
+        echo "ERROR: could not determine swtpm device path from output: $tpm_info"
+        return 1
+    fi
+
+    # swtpm daemonizes; find its PID via the device it holds open.
+    _SWTPM_PID=$(fuser "$_SWTPM_TPM_DEV" 2>/dev/null | tr -d '[:space:]') || true
+
+    # Wait briefly for the device node to become usable.
+    local retries=10
+    while [ "$retries" -gt 0 ] && [ ! -c "$_SWTPM_TPM_DEV" ]; do
+        sleep 0.1
+        retries=$((retries - 1))
+    done
+
+    if [ ! -c "$_SWTPM_TPM_DEV" ]; then
+        echo "ERROR: swtpm device $_SWTPM_TPM_DEV did not appear"
+        swtpm_stop
+        return 1
+    fi
+
+    echo "    swtpm: $_SWTPM_TPM_DEV (pid ${_SWTPM_PID:-unknown})"
+}
+
+# Stop the software TPM started by swtpm_start.
+#
+# Safe to call even if swtpm_start was never called (no-op).
+swtpm_stop() {
+    if [ -n "$_SWTPM_PID" ]; then
+        kill "$_SWTPM_PID" 2>/dev/null || true
+        wait "$_SWTPM_PID" 2>/dev/null || true
+        _SWTPM_PID=""
+    fi
+    _SWTPM_TPM_DEV=""
+    _SWTPM_STATE_DIR=""
 }
