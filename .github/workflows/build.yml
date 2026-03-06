@@ -20,21 +20,16 @@ env:
   UBUNTU_PORTS_MIRROR: http://ports.ubuntu.com/ubuntu-ports
 
 jobs:
-  images:
+  images-cloud:
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64] # r[impl ci.output-arch] r[verify ci.output-arch]
-        variant: [metal, cloud]
         include:
           - arch: amd64
             runner: ubuntu-24.04
-            qemu_pkg: qemu-system-x86
-            firmware_pkg: ovmf
           - arch: arm64
             runner: ubuntu-24.04-arm
-            qemu_pkg: qemu-system-arm
-            firmware_pkg: qemu-efi-aarch64
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -47,36 +42,35 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             debootstrap gdisk dosfstools e2fsprogs btrfs-progs \
             cryptsetup parted util-linux rsync shellcheck \
-            ${{ matrix.qemu_pkg }} qemu-utils ${{ matrix.firmware_pkg }} \
-            genisoimage zstd squashfs-tools jq
+            qemu-utils genisoimage zstd squashfs-tools jq
 
       - name: Run shellcheck # r[impl ci.shellcheck] r[verify ci.shellcheck]
         run: just test-shellcheck
 
       - name: Build raw image
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} raw
+        run: just arch=${{ matrix.arch }} variant=cloud raw
         timeout-minutes: 60
 
       - name: Test image structure
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} test-structure
+        run: just arch=${{ matrix.arch }} variant=cloud test-structure
 
       - name: Produce final artifacts
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} build
+        run: just arch=${{ matrix.arch }} variant=cloud build
         timeout-minutes: 30
 
       - name: Verify outputs # r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
-        run: just arch=${{ matrix.arch }} variant=${{ matrix.variant }} verify-outputs
+        run: just arch=${{ matrix.arch }} variant=cloud verify-outputs
 
       - name: List outputs
-        run: ls -lh output/${{ matrix.arch }}/${{ matrix.variant }}/
+        run: ls -lh output/${{ matrix.arch }}/cloud/
 
       - name: Upload raw image (needed by ISO build)
         uses: actions/upload-artifact@v7
         with:
-          name: image-raw-${{ matrix.variant }}-${{ matrix.arch }}
+          name: image-raw-cloud-${{ matrix.arch }}
           path: |
-            output/${{ matrix.arch }}/${{ matrix.variant }}/*.raw.zst
-            output/${{ matrix.arch }}/${{ matrix.variant }}/*.raw.size
+            output/${{ matrix.arch }}/cloud/*.raw.zst
+            output/${{ matrix.arch }}/cloud/*.raw.size
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -84,10 +78,73 @@ jobs:
       - name: Upload converted formats (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-formats-${{ matrix.variant }}-${{ matrix.arch }}
+          name: image-formats-cloud-${{ matrix.arch }}
           path: |
-            output/${{ matrix.arch }}/${{ matrix.variant }}/*.vmdk
-            output/${{ matrix.arch }}/${{ matrix.variant }}/*.qcow2
+            output/${{ matrix.arch }}/cloud/*.vmdk
+            output/${{ matrix.arch }}/cloud/*.qcow2
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  images-metal:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: extractions/setup-just@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap gdisk dosfstools e2fsprogs btrfs-progs \
+            cryptsetup parted util-linux rsync \
+            qemu-utils genisoimage zstd squashfs-tools jq
+
+      - name: Build raw image
+        run: just arch=${{ matrix.arch }} variant=metal raw
+        timeout-minutes: 60
+
+      - name: Test image structure
+        run: just arch=${{ matrix.arch }} variant=metal test-structure
+
+      - name: Produce final artifacts
+        run: just arch=${{ matrix.arch }} variant=metal build
+        timeout-minutes: 30
+
+      - name: Verify outputs # r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
+        run: just arch=${{ matrix.arch }} variant=metal verify-outputs
+
+      - name: List outputs
+        run: ls -lh output/${{ matrix.arch }}/metal/
+
+      - name: Upload raw image (needed by release)
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-raw-metal-${{ matrix.arch }}
+          path: |
+            output/${{ matrix.arch }}/metal/*.raw.zst
+            output/${{ matrix.arch }}/metal/*.raw.size
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+      - name: Upload converted formats (needed by release)
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-formats-metal-${{ matrix.arch }}
+          path: |
+            output/${{ matrix.arch }}/metal/*.vmdk
+            output/${{ matrix.arch }}/metal/*.qcow2
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -154,7 +211,7 @@ jobs:
           compression-level: 0
 
   iso:
-    needs: [images, installer]
+    needs: [images-cloud, installer]
     strategy:
       fail-fast: false
       matrix:
@@ -274,7 +331,7 @@ jobs:
         timeout-minutes: 30
 
   release:
-    needs: [images, iso, container-test]
+    needs: [images-cloud, images-metal, iso, container-test]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:

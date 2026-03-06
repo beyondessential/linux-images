@@ -313,13 +313,19 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.randomize-uuids]
+    // r[impl installer.write.randomize-uuids+2]
     pub fn randomize_filesystem_uuids(&self) -> Result<()> {
-        tracing::info!("randomizing filesystem UUIDs");
+        tracing::info!("randomizing filesystem UUIDs on {}", self.target.display());
 
         let efi_part = partition_path(self.target, 1)?;
         let xboot_part = partition_path(self.target, 2)?;
         let root_part = partition_path(self.target, 3)?;
+
+        // Ensure partition device nodes exist inside the container — they may
+        // have been removed or never created if a previous step didn't trigger
+        // sysfs-based mknod (e.g. in nspawn with private /dev).
+        super::device::ensure_partition_devices(self.target)
+            .context("ensuring partition devices before UUID randomization")?;
 
         match Command::new("mlabel")
             .args(["-n", "-i", efi_part.to_str().unwrap_or_default(), "::"])
@@ -327,7 +333,8 @@ impl<'a> DiskWriter<'a> {
         {
             Ok(efi_result) if !efi_result.status.success() => {
                 let stderr = String::from_utf8_lossy(&efi_result.stderr);
-                tracing::warn!("mlabel failed (non-fatal): {stderr}");
+                let stdout = String::from_utf8_lossy(&efi_result.stdout);
+                tracing::warn!("mlabel failed (non-fatal): stderr={stderr} stdout={stdout}");
             }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -338,13 +345,31 @@ impl<'a> DiskWriter<'a> {
             }
         }
 
+        // tune2fs -U requires a freshly checked filesystem; run e2fsck first.
+        let e2fsck_result = Command::new("e2fsck")
+            .args(["-f", "-y", xboot_part.to_str().unwrap_or_default()])
+            .output()
+            .context("running e2fsck on xboot before UUID randomization")?;
+        if !e2fsck_result.status.success() {
+            let stderr = String::from_utf8_lossy(&e2fsck_result.stderr);
+            let stdout = String::from_utf8_lossy(&e2fsck_result.stdout);
+            tracing::warn!(
+                "e2fsck on xboot exited with {} (non-fatal): stderr={stderr} stdout={stdout}",
+                e2fsck_result.status,
+            );
+        }
+
         let xboot_result = Command::new("tune2fs")
             .args(["-U", "random", xboot_part.to_str().unwrap_or_default()])
             .output()
             .context("running tune2fs to randomize xboot UUID")?;
         if !xboot_result.status.success() {
             let stderr = String::from_utf8_lossy(&xboot_result.stderr);
-            bail!("tune2fs -U random failed on xboot: {stderr}");
+            let stdout = String::from_utf8_lossy(&xboot_result.stdout);
+            bail!(
+                "tune2fs -U random failed on xboot (exit {}): stderr={stderr} stdout={stdout}",
+                xboot_result.status
+            );
         }
 
         let btrfs_dev = if self.disk_encryption.is_encrypted() {
@@ -364,7 +389,11 @@ impl<'a> DiskWriter<'a> {
 
         if !btrfs_result.status.success() {
             let stderr = String::from_utf8_lossy(&btrfs_result.stderr);
-            bail!("btrfstune -u failed on root: {stderr}");
+            let stdout = String::from_utf8_lossy(&btrfs_result.stdout);
+            bail!(
+                "btrfstune -u failed on root (exit {}): stderr={stderr} stdout={stdout}",
+                btrfs_result.status
+            );
         }
 
         tracing::info!("filesystem UUIDs randomized");

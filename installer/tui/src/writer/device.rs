@@ -28,13 +28,14 @@ fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<usize> {
     let sysfs_dir = format!("/sys/class/block/{dev_name}");
     let sysfs_path = Path::new(&sysfs_dir);
     if !sysfs_path.exists() {
-        tracing::debug!("sysfs path {sysfs_dir} does not exist, skipping sysfs method");
+        tracing::warn!("sysfs path {sysfs_dir} does not exist — cannot discover partitions");
         return Ok(0);
     }
 
     let entries =
         fs::read_dir(sysfs_path).with_context(|| format!("reading sysfs directory {sysfs_dir}"))?;
 
+    let mut seen_entries = Vec::new();
     let mut created = 0usize;
     for entry in entries {
         let entry = entry?;
@@ -51,6 +52,8 @@ fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<usize> {
         let majmin = majmin.trim();
         let (major, minor) = parse_major_minor(majmin)?;
 
+        seen_entries.push(format!("{name}({major}:{minor})"));
+
         let dev_path = Path::new("/dev").join(&*name);
         if is_valid_block_device(&dev_path, major, minor) {
             tracing::debug!("/dev/{name} already exists with correct major:minor {major}:{minor}");
@@ -59,6 +62,11 @@ fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<usize> {
 
         created += mknod_block_device(&dev_path, &name, major, minor)?;
     }
+
+    tracing::debug!(
+        "ensure_partition_devices_via_sysfs({dev_name}): saw [{}], created {created}",
+        seen_entries.join(", "),
+    );
 
     Ok(created)
 }
