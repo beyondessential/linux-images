@@ -77,6 +77,31 @@ r[installer.config.timezone]
 The `timezone` field is a string containing an IANA timezone name (e.g.
 `"Pacific/Auckland"`). The default is `"UTC"`.
 
+r[installer.config.recovery-passphrase]
+The `recovery-passphrase` field is an optional string containing a
+pre-determined recovery passphrase to use instead of generating a random
+one. When set and disk encryption is enabled, the installer uses this
+passphrase as the initial LUKS key. The passphrase must be at least 25
+characters long and contain only printable ASCII characters excluding
+whitespace (i.e. characters in the range `!` U+0021 through `~` U+007E).
+If the passphrase is present but does not meet these requirements, the
+installer must refuse to proceed with a validation error (not a warning).
+When not set, the installer generates a random diceware passphrase as
+usual.
+
+r[installer.config.save-recovery-keys]
+The `save-recovery-keys` field is a boolean. When `true` and the BESCONF
+partition is writable, the installer appends the recovery passphrase to a
+file named `recovery-keys.txt` on the BESCONF partition after a successful
+encrypted install. Each line contains the recovery passphrase, a tab
+character, the UUID of the root partition (as reported by `blkid`), a tab
+character, and the machine serial number if available or the literal string
+`unknown`. The machine serial is read from DMI/SMBIOS data:
+`/sys/class/dmi/id/product_serial` is preferred (this is the serial number
+most commonly printed on the outside of the chassis), falling back to
+`/sys/class/dmi/id/board_serial` if the product serial is absent or empty.
+The default is `false`. There is no TUI control for this option.
+
 r[installer.config.hostname-template]
 The `hostname-template` field value is a string containing literal characters
 and placeholder expressions enclosed in `{...}`. Supported placeholders:
@@ -86,6 +111,27 @@ contain at least one placeholder, literal portions must consist only of
 `[a-z0-9-]`, the template must not start or end with a hyphen, and the
 fully expanded hostname must not exceed 63 characters. Values are generated
 from a cryptographically secure random source.
+
+## BESCONF Partition Interaction
+
+r[installer.besconf.writable-detection]
+At startup, after locating the configuration file, the installer must
+detect whether the BESCONF partition at `/run/besconf` is writable. It
+does this by attempting to remount the partition read-write
+(`mount -o remount,rw /run/besconf`). If the remount succeeds, BESCONF is
+considered writable for the duration of the install. If the remount fails
+(e.g. optical media, partition absent, permissions), BESCONF is considered
+read-only and all write operations to it are silently skipped. The
+installer must track this state.
+
+r[installer.besconf.failure-log]
+When the BESCONF partition is writable and the installer encounters a fatal
+error, it must copy its log file to `/run/besconf/installer-failed.log`.
+At installer startup, if a file named `installer-failed.log` already exists
+on a writable BESCONF partition, the installer must rename it to
+`installer-failed.log.old` (clobbering any existing `.old` file). This
+allows diagnosing installation failures on headless machines by removing the
+USB stick and reading the log from another computer.
 
 ## Operating Modes
 
