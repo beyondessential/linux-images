@@ -435,6 +435,132 @@ MD
 }
 step9
 
+# r[verify installer.config.recovery-passphrase]
+# r[verify installer.config.save-recovery-keys]
+# r[verify installer.besconf.writable-detection]
+# r[verify installer.besconf.failure-log]
+step10() {
+    cat << 'MD'
+## Step 10: BESCONF Interaction and Recovery Passphrase
+
+This verifies the BESCONF writable-detection, failure-log rotation,
+`recovery-passphrase` config field, and `save-recovery-keys` config field.
+These features require a real (or realistic) BESCONF partition that the
+installer can remount read-write, so they cannot be fully tested in
+unit tests.
+
+### 10a: Recovery passphrase and save-recovery-keys (auto mode)
+
+1. Mount the BESCONF partition on the USB drive prepared in Step 6:
+
+   ```
+   sudo mount /dev/sdX3 /mnt    # partition label BESCONF
+   ```
+
+2. Write a config that uses a pre-determined recovery passphrase and
+   enables saving recovery keys:
+
+   ```
+   cat | sudo tee /mnt/bes-install.toml << 'EOF'
+   auto = true
+   disk-encryption = "keyfile"
+   disk = "largest"
+   hostname = "recovery-test"
+   password = "testpass"
+   recovery-passphrase = "this-is-a-test-passphrase-that-is-long-enough"
+   save-recovery-keys = true
+   EOF
+   ```
+
+3. Remove any leftover files from previous runs:
+
+   ```
+   sudo rm -f /mnt/recovery-keys.txt /mnt/installer-failed.log /mnt/installer-failed.log.old
+   ```
+
+4. Unmount: `sudo umount /mnt`
+
+5. Boot the target machine from the USB and let the automatic install
+   complete. The installer should display the pre-determined passphrase
+   (`this-is-a-test-passphrase-that-is-long-enough`) on the recovery
+   passphrase screen, not a random diceware passphrase.
+
+6. After reboot, remove the USB and mount the BESCONF partition on
+   your workstation:
+
+   ```
+   sudo mount /dev/sdX3 /mnt
+   cat /mnt/recovery-keys.txt
+   ```
+
+7. Verify the `recovery-keys.txt` file contains one line with three
+   tab-separated fields:
+   - The passphrase (`this-is-a-test-passphrase-that-is-long-enough`).
+   - A UUID (the root partition UUID).
+   - A machine serial number or the literal string `unknown`.
+
+8. Verify the installed system unlocks with the pre-determined
+   passphrase: boot the installed disk and when prompted for the LUKS
+   recovery passphrase (e.g. after removing the keyfile or on a
+   different machine), enter
+   `this-is-a-test-passphrase-that-is-long-enough`.
+
+**Acceptance criteria**: the installer uses the provided passphrase
+instead of generating one, and `recovery-keys.txt` is written to BESCONF
+with the correct format.
+
+### 10b: BESCONF writable detection and failure-log rotation
+
+1. Mount the BESCONF partition and create a fake failure log from a
+   "previous run":
+
+   ```
+   sudo mount /dev/sdX3 /mnt
+   echo "fake previous failure" | sudo tee /mnt/installer-failed.log
+   ```
+
+2. Write a config that will cause the installer to fail (e.g. specify a
+   disk that does not exist):
+
+   ```
+   cat | sudo tee /mnt/bes-install.toml << 'EOF'
+   auto = true
+   disk-encryption = "keyfile"
+   disk = "/dev/sdZZZ"
+   hostname = "fail-test"
+   password = "testpass"
+   EOF
+   ```
+
+3. Unmount: `sudo umount /mnt`
+
+4. Boot the target machine from the USB. The installer should fail
+   because `/dev/sdZZZ` does not exist.
+
+5. Remove the USB, mount BESCONF on your workstation, and verify:
+
+   ```
+   sudo mount /dev/sdX3 /mnt
+   ls -la /mnt/installer-failed.log /mnt/installer-failed.log.old
+   cat /mnt/installer-failed.log.old
+   cat /mnt/installer-failed.log
+   ```
+
+   - `installer-failed.log.old` should contain "fake previous failure"
+     (the file from sub-step 1 was rotated).
+   - `installer-failed.log` should contain the actual installer log from
+     the failed run (look for error messages about the missing disk).
+
+6. Clean up: `sudo umount /mnt`
+
+**Acceptance criteria**: the installer detects BESCONF as writable,
+rotates the existing failure log to `.old`, and writes the new failure
+log on error.
+
+MD
+}
+step10
+
 checklist() {
     cat << 'MD'
 ## Completion Checklist
@@ -450,6 +576,8 @@ After completing all steps, confirm:
 - [ ] Step 7: Automatic mode installs without interaction.
 - [ ] Step 8: Bare-metal hardware boot works.
 - [ ] Step 9: Direct image write boots (cloud and metal).
+- [ ] Step 10a: Recovery passphrase accepted, recovery-keys.txt written.
+- [ ] Step 10b: Failure log rotated and written on BESCONF.
 MD
 }
 checklist
