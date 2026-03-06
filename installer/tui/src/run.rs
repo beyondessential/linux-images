@@ -300,7 +300,7 @@ impl RunContext {
             }
 
             if self.install_config.has_install_config_fields() {
-                firstboot::apply_firstboot(&mounted, &self.install_config)?;
+                firstboot::apply_firstboot(&mounted, &self.install_config, false)?;
             } else {
                 // r[impl installer.finalise.timezone]
                 firstboot::apply_timezone_default(&mounted)?;
