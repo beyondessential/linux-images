@@ -16,6 +16,8 @@ use crate::hostname_template;
 // r[impl installer.config.ssh-authorized-keys+2]
 // r[impl installer.config.password]
 // r[impl installer.config.timezone]
+// r[impl installer.config.recovery-passphrase]
+// r[impl installer.config.save-recovery-keys]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
@@ -50,6 +52,38 @@ pub struct InstallConfig {
     pub password_hash: Option<String>,
 
     pub timezone: Option<String>,
+
+    #[serde(default, rename = "recovery-passphrase")]
+    pub recovery_passphrase: Option<String>,
+
+    #[serde(default, rename = "save-recovery-keys")]
+    pub save_recovery_keys: bool,
+}
+
+const RECOVERY_PASSPHRASE_MIN_LEN: usize = 25;
+
+/// Validate that a recovery passphrase meets requirements: at least 25
+/// characters, only printable ASCII (no whitespace). Returns `Ok(())` or
+/// an error message.
+// r[impl installer.config.recovery-passphrase]
+pub fn validate_recovery_passphrase(passphrase: &str) -> std::result::Result<(), String> {
+    if passphrase.len() < RECOVERY_PASSPHRASE_MIN_LEN {
+        return Err(format!(
+            "recovery passphrase must be at least {RECOVERY_PASSPHRASE_MIN_LEN} characters, got {}",
+            passphrase.len()
+        ));
+    }
+    if let Some(pos) = passphrase.chars().position(|c| {
+        // printable ASCII excluding whitespace: '!' (0x21) through '~' (0x7E)
+        !matches!(c, '!'..='~')
+    }) {
+        let bad = passphrase.chars().nth(pos).unwrap();
+        return Err(format!(
+            "recovery passphrase contains invalid character {bad:?} at position {pos}; \
+             only printable ASCII (no whitespace) is allowed"
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -282,6 +316,16 @@ impl InstallConfig {
         }
     }
 
+    /// Hard validation: returns `Err` for problems that must prevent the
+    /// install from proceeding.
+    pub fn validate_hard(&self) -> Result<()> {
+        // r[impl installer.config.recovery-passphrase]
+        if let Some(ref pp) = self.recovery_passphrase {
+            validate_recovery_passphrase(pp).map_err(|e| anyhow::anyhow!("config error: {e}"))?;
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Vec<String> {
         let mut issues = Vec::new();
 
@@ -414,6 +458,8 @@ mod tests {
         );
         assert_eq!(config.password.as_deref(), Some("changeme"));
         assert_eq!(config.password_hash, None);
+        assert_eq!(config.recovery_passphrase, None);
+        assert!(!config.save_recovery_keys);
     }
 
     // r[verify installer.config.disk-encryption]
@@ -675,6 +721,7 @@ mod tests {
             tailscale_authkey: Some("tskey-auth-xxxxx".into()),
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA... admin@example.com".into()],
             password: Some("changeme".into()),
+            recovery_passphrase: None,
             ..Default::default()
         };
         let issues = config.validate();
@@ -945,5 +992,110 @@ mod tests {
         assert!(DiskEncryption::Tpm.is_encrypted());
         assert!(DiskEncryption::Keyfile.is_encrypted());
         assert!(!DiskEncryption::None.is_encrypted());
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn parse_recovery_passphrase() {
+        let config = InstallConfig::from_toml(
+            r#"
+            recovery-passphrase = "MyS3cure!Passphrase#12345"
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.recovery_passphrase.as_deref(),
+            Some("MyS3cure!Passphrase#12345")
+        );
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn validate_recovery_passphrase_too_short() {
+        let pp = "short!";
+        let result = validate_recovery_passphrase(pp);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("at least 25 characters"));
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn validate_recovery_passphrase_with_whitespace() {
+        let pp = "this has spaces and is long enough!!";
+        let result = validate_recovery_passphrase(pp);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid character"));
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn validate_recovery_passphrase_with_non_ascii() {
+        let pp = "abcdefghijklmnopqrstuvwx\u{00e9}";
+        let result = validate_recovery_passphrase(pp);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid character"));
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn validate_recovery_passphrase_valid() {
+        let pp = "Correct-Horse-Battery-Staple!1";
+        let result = validate_recovery_passphrase(pp);
+        assert!(result.is_ok());
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn validate_recovery_passphrase_exactly_25_chars() {
+        let pp = "abcdefghij!@#$%^&*()12345";
+        assert_eq!(pp.len(), 25);
+        let result = validate_recovery_passphrase(pp);
+        assert!(result.is_ok());
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn validate_hard_rejects_bad_passphrase() {
+        let config = InstallConfig {
+            recovery_passphrase: Some("tooshort".into()),
+            ..Default::default()
+        };
+        assert!(config.validate_hard().is_err());
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn validate_hard_accepts_good_passphrase() {
+        let config = InstallConfig {
+            recovery_passphrase: Some("Correct-Horse-Battery-Staple!1".into()),
+            ..Default::default()
+        };
+        assert!(config.validate_hard().is_ok());
+    }
+
+    // r[verify installer.config.recovery-passphrase]
+    #[test]
+    fn validate_hard_accepts_no_passphrase() {
+        let config = InstallConfig::default();
+        assert!(config.validate_hard().is_ok());
+    }
+
+    // r[verify installer.config.save-recovery-keys]
+    #[test]
+    fn parse_save_recovery_keys() {
+        let config = InstallConfig::from_toml(
+            r#"
+            save-recovery-keys = true
+        "#,
+        )
+        .unwrap();
+        assert!(config.save_recovery_keys);
+    }
+
+    // r[verify installer.config.save-recovery-keys]
+    #[test]
+    fn save_recovery_keys_defaults_false() {
+        let config = InstallConfig::from_toml("").unwrap();
+        assert!(!config.save_recovery_keys);
     }
 }

@@ -11,6 +11,7 @@ use crossterm::{cursor, execute};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
+use crate::besconf::{self, BesconfState};
 use crate::config::validate_hostname;
 use crate::encryption;
 use crate::firstboot;
@@ -359,6 +360,7 @@ pub fn run_tui(
     images_dir: &Path,
     install_log: Option<&Path>,
     no_reboot: bool,
+    besconf: &BesconfState,
 ) -> Result<()> {
     terminal::enable_raw_mode().context("enabling raw mode")?;
     let mut stdout = io::stdout();
@@ -374,6 +376,7 @@ pub fn run_tui(
         images_dir,
         install_log,
         no_reboot,
+        besconf,
     );
 
     terminal::disable_raw_mode().ok();
@@ -389,6 +392,7 @@ fn event_loop(
     images_dir: &Path,
     install_log: Option<&Path>,
     no_reboot: bool,
+    besconf: &BesconfState,
 ) -> Result<()> {
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
 
@@ -436,7 +440,14 @@ fn event_loop(
                 break;
             }
             KeyAction::StartWrite => {
-                spawn_install_worker(state, manifest, images_dir, install_log, &worker_tx);
+                spawn_install_worker(
+                    state,
+                    manifest,
+                    images_dir,
+                    install_log,
+                    &worker_tx,
+                    besconf,
+                );
             }
             // r[impl installer.tui.debug-shell]
             KeyAction::Shell => {
@@ -476,6 +487,7 @@ fn spawn_install_worker(
     images_dir: &Path,
     install_log: Option<&Path>,
     tx: &mpsc::Sender<WorkerMessage>,
+    besconf: &BesconfState,
 ) {
     let manifest = manifest.clone();
     let images_dir = images_dir.to_path_buf();
@@ -492,6 +504,7 @@ fn spawn_install_worker(
     // r[impl installer.encryption.recovery-passphrase+3]
     let passphrase = state.recovery_passphrase.clone();
     let tx = tx.clone();
+    let besconf = besconf.clone();
 
     thread::spawn(move || {
         let disk_writer = writer::DiskWriter::new(&target, disk_encryption, passphrase.as_deref());
@@ -503,6 +516,7 @@ fn spawn_install_worker(
             install_config.as_ref(),
             install_log.as_deref(),
             &tx,
+            &besconf,
         );
         match result {
             Ok(enrolled_passphrase) => {
@@ -515,6 +529,10 @@ fn spawn_install_worker(
     });
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "install pipeline threading context through"
+)]
 fn run_full_install(
     disk_writer: &writer::DiskWriter<'_>,
     manifest: &PartitionManifest,
@@ -523,6 +541,7 @@ fn run_full_install(
     install_config: Option<&crate::config::InstallConfig>,
     install_log: Option<&Path>,
     tx: &mpsc::Sender<WorkerMessage>,
+    besconf: &BesconfState,
 ) -> Result<Option<String>> {
     // r[impl installer.write.disk-size-check+2]
     let total_image_size = writer::partition_images_total_size(manifest, images_dir)
@@ -604,6 +623,15 @@ fn run_full_install(
         )
         .context("encryption setup")?;
         firstboot::unmount_target(mounted)?;
+
+        // r[impl installer.config.save-recovery-keys]
+        if besconf.save_recovery_keys() {
+            let root_part = crate::util::partition_path(disk_writer.target, 3)?;
+            if let Err(e) = besconf::append_recovery_key(besconf, pp, &root_part) {
+                tracing::warn!("failed to save recovery key to BESCONF: {e}");
+            }
+        }
+
         Some(pp.to_string())
     } else {
         None
