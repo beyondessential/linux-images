@@ -122,6 +122,18 @@ Commit this phase independently.
 
 **Goal:** Embed an HTTP + WebSocket server in the installer.
 
+**Server enable/disable:**
+The server is only started when all of the following are true:
+- The installer is running in interactive or prefilled mode (not `auto`).
+- The `--dry-run` flag is not set.
+- The `web` config field is not explicitly set to `false`.
+
+The check happens in `RunContext::run_interactive()` before the event
+loop starts. When disabled, no `TcpListener` is bound, no threads are
+spawned, and the installer behaves exactly as it did before the web UI
+feature existed. The `web-password` config field is also ignored when
+the server is disabled.
+
 **Server architecture:**
 1. A `TcpListener` bound to `0.0.0.0:8080` runs in a dedicated thread.
 2. On each connection, read the first bytes to determine request type:

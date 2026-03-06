@@ -4,9 +4,24 @@
 
 r[web.server.embedded]
 The installer must embed an HTTP and WebSocket server that starts
-automatically alongside the TUI. The server must listen on a fixed TCP
-port and accept connections from any interface. The server must not block
-the installer's main event loop under any circumstances.
+automatically alongside the TUI, unless disabled by
+`r[web.server.disabled]`. The server must listen on a fixed TCP port and
+accept connections from any interface. The server must not block the
+installer's main event loop under any circumstances.
+
+> r[web.server.disabled]
+> The web server must not start when any of the following conditions are
+> true:
+> 
+> - The `web` configuration field is set to `false`
+>   (see `r[installer.config.web]`).
+> - The installer is running in automatic mode (`auto = true`).
+> - The installer is running in dry-run mode (`--dry-run`).
+> 
+> When the web server is disabled, the installer must behave identically
+> to how it behaved before the web UI feature was added: only the TUI (or
+> automatic/dry-run output) is active. No TCP port is bound and no
+> background threads are spawned for the web server.
 
 r[web.server.static-assets]
 The server must serve the browser client application (HTML, JavaScript,
