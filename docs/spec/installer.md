@@ -114,6 +114,47 @@ contain at least one placeholder, literal portions must consist only of
 fully expanded hostname must not exceed 63 characters. Values are generated
 from a cryptographically secure random source.
 
+> r[installer.config.network-mode]
+> The `network-mode` field is a string selecting the network configuration
+> for the installed target system. Valid values are `"dhcp"` (default),
+> `"static"`, `"ipv6-slaac"`, or `"offline"`. When set to `"static"`, the
+> `network-ip`, `network-gateway`, and optionally `network-interface`,
+> `network-dns`, and `network-domain` fields supply the static configuration.
+> The "Copy current config" option exists only in the TUI (where a live ISO
+> environment is available to copy from); it is not a valid config file value.
+
+> r[installer.config.network-static]
+> When `network-mode` is `"static"`, the following fields configure the
+> target's static IP:
+>
+> - `network-interface`: a string naming the interface (e.g. `"enp0s3"`).
+>   Optional; if omitted the installer matches all Ethernet interfaces
+>   (`en*`).
+> - `network-ip`: a string in CIDR notation (e.g. `"192.168.1.10/24"`).
+>   Required when `network-mode` is `"static"`.
+> - `network-gateway`: a string (e.g. `"192.168.1.1"`). Required when
+>   `network-mode` is `"static"`.
+> - `network-dns`: a comma-separated string of DNS server addresses
+>   (e.g. `"8.8.8.8, 1.1.1.1"`). Optional.
+> - `network-domain`: a string specifying the DNS search domain
+>   (e.g. `"example.com"`). Optional.
+>
+> If `network-mode` is `"static"` and `network-ip` or `network-gateway` is
+> missing, the installer must report a validation error.
+
+> r[installer.config.iso-network-mode]
+> The `iso-network-mode` field is a string selecting the network
+> configuration for the live ISO environment. Valid values are `"dhcp"`
+> (default), `"static"`, `"ipv6-slaac"`, or `"offline"`. When set to
+> `"static"`, the `iso-network-ip`, `iso-network-gateway`, and optionally
+> `iso-network-interface`, `iso-network-dns`, and `iso-network-domain`
+> fields supply the static configuration. The field names and validation
+> rules mirror those of `network-*` but with the `iso-` prefix.
+>
+> In automatic mode, if `iso-network-mode` is `"static"`, the ISO network
+> is configured before the TUI starts so that network checks and Tailscale
+> authentication can use the static address.
+
 ## BESCONF Partition Interaction
 
 r[installer.besconf.writable-detection]
@@ -280,44 +321,142 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome+3]
+r[installer.tui.welcome+4]
 The TUI must open with a welcome screen that displays a description of what
 the image is for, contact information, and instructions on how to proceed.
-The user presses Enter to proceed to the disk selection screen. The welcome
-screen also offers a `n` keybind to open a dedicated network check screen.
+The user presses Enter to proceed to the network configuration screen.
 
-> r[installer.tui.network-check+4]
-> The TUI must perform network connectivity checks in the background,
-> starting automatically when the welcome screen is first shown. The checks
-> run against the following endpoints in parallel:
+> r[installer.tui.network-config+12]
+> After the welcome screen, the TUI must present a "Network Configuration"
+> screen. This screen configures networking for both the live ISO environment
+> and the installation target. It uses an accordion layout with two panes:
 >
-> - `https://ghcr.io/` — expects HTTP 200
-> - `https://meta.tamanu.app/` — expects HTTP 200
-> - `https://tools.ops.tamanu.io/` — any HTTP response (even 403) is a pass
-> - `https://clients.ops.tamanu.io/` — any HTTP response is a pass
-> - `https://servers.ops.tamanu.io/` — any HTTP response is a pass
-> - `https://github.com/` — any HTTP response is a pass
-> - An NTP server (`pool.ntp.org`) over UDP port 123 — a UDP socket connect succeeds
+> 1. **Live ISO (current)** -- the top pane, open by default.
+> 2. **Installation Target** -- the bottom pane, initially collapsed.
+>
+> ### Navigation
+>
+> `Tab` moves focus forward through the fields in the active pane. When
+> focus is on the last field of the active pane, `Tab` switches the
+> accordion to the other pane (expanding it, collapsing the current one) and
+> focuses its first field. `Shift+Tab` moves focus backward; when focus is
+> on the first field, it switches to the other pane and focuses its last
+> field. `Enter` from the target pane advances to the disk selection screen.
+> `Esc` returns to the welcome screen. `Alt+c` opens the network check
+> screen (see `r[installer.tui.network-check]`).
+>
+> ### ISO pane
+>
+> The ISO pane contains:
+>
+> 1. An explanatory line: "Configure networking for the current live system."
+> 2. A connectivity status indicator, updated live (e.g. "Connected (DHCP on
+>    enp0s3, 192.168.1.42/24)", "No connectivity", or "Configuring...").
+> 3. A radio selector for the network mode:
+>    - DHCP (default)
+>    - Static IP
+>    - IPv6 SLAAC only
+>    - Offline
+> 4. When "Static IP" is selected, additional fields appear:
+>    - **Interface**: a dropdown of detected physical interfaces (excluding
+>      `lo`, `docker*`, `veth*`, `br-*`, `tailscale*`). Interfaces are
+>      detected via `ip -j link show`.
+>    - **IP address**: a text input accepting CIDR notation (e.g.
+>      `192.168.1.10/24`). If the user moves focus away from this field
+>      without a `/xx` suffix, `/24` is appended automatically.
+>    - **Gateway**: a text input (e.g. `192.168.1.1`).
+>    - **DNS** (optional): a text input for comma-separated nameservers
+>      (e.g. `8.8.8.8, 1.1.1.1`).
+>    - **Search domain** (optional): a text input (e.g. `example.com`).
+>
+> When the network mode or any static field changes, the live network is
+> reconfigured after a 500 ms debounce. Reconfiguration writes a netplan
+> YAML to `/etc/netplan/90-installer.yaml` and runs `netplan apply`. During
+> apply the status shows "Configuring...". After apply, connectivity is
+> re-probed and the network check results (if previously run) are
+> invalidated and restarted.
+>
+> When mode is "DHCP", any installer-written netplan file is removed and
+> `netplan apply` is run to revert to the base DHCP configuration.
+>
+> When mode is "IPv6 SLAAC only", the installer-written netplan sets
+> `dhcp4: false`, `dhcp6: false`, `accept-ra: true` on the selected
+> interface.
+>
+> When mode is "Offline", all managed interfaces are deconfigured by
+> removing the installer-written netplan and the base DHCP netplan and
+> running `netplan apply`.
+>
+> ### Target pane
+>
+> The target pane contains:
+>
+> 1. An explanatory line: "Configure networking for the installed system."
+> 2. A radio selector:
+>    - Copy current config (default when no `network-mode` in config file)
+>    - DHCP
+>    - Static IP
+>    - IPv6 SLAAC only
+>    - Offline
+> 3. When "Static IP" is selected, the same fields as the ISO pane (with
+>    independent values).
+> 4. When "Copy current config" is selected, a summary of what will be
+>    copied is shown.
+>
+> The "Copy current config" option is only shown when the config file does
+> not set `network-mode`. When the config file specifies a concrete
+> `network-mode`, that mode is pre-selected and "Copy current config" is
+> not offered (since the config file has expressed a specific intent).
+>
+> ### Default selection logic
+>
+> The ISO pane defaults to "DHCP". The target pane defaults to "Copy current
+> config". If the ISO pane is changed to "Offline" and the target pane has
+> not been manually changed by the user, the target default switches to
+> "DHCP" (since copying an offline config is rarely desired).
+>
+> ### Offline target warning
+>
+> If "Offline" is selected for the target, pressing `Enter` to advance
+> triggers a confirmation dialog:
+>
+> > The target system will have no network configuration.
+> > It will not be reachable after reboot unless configured manually.
+> >
+> > Are you sure? (y/n)
+>
+> Pressing `y` advances. Pressing `n` or `Esc` returns to the target pane.
+
+> r[installer.tui.network-check+5]
+> The TUI must perform network connectivity checks in the background,
+> starting automatically when the network configuration screen is first
+> shown. The checks run against the following endpoints in parallel:
+>
+> - `https://ghcr.io/` -- expects HTTP 200
+> - `https://meta.tamanu.app/` -- expects HTTP 200
+> - `https://tools.ops.tamanu.io/` -- any HTTP response (even 403) is a pass
+> - `https://clients.ops.tamanu.io/` -- any HTTP response is a pass
+> - `https://servers.ops.tamanu.io/` -- any HTTP response is a pass
+> - `https://github.com/` -- any HTTP response is a pass
+> - An NTP server (`pool.ntp.org`) over UDP port 123 -- a UDP socket connect succeeds
 >
 > Each check has a 5-second timeout. Results are displayed as a list with a
 > pass/fail indicator next to each endpoint. Failures are not blocking.
 >
 > The network check results are presented in two places:
 >
-> 1. **Dedicated network check screen** — accessible from the welcome screen
->    via the `n` keybind. This screen first checks whether any network
->    interface has connectivity. If there is no network at all, a message is
->    shown to the user. Otherwise the individual endpoint check results are
->    displayed live as they complete, followed by the output of
->    `tailscale netcheck`. The user can press `r` to re-run all checks, and
->    `Esc` to return to the welcome screen.
+> 1. **Dedicated network check screen** -- accessible from the network
+>    configuration screen via the `Alt+c` keybind. The individual endpoint
+>    check results are displayed live as they complete, followed by the
+>    output of `tailscale netcheck`. The user can press `r` to re-run all
+>    checks, and `Esc` to return to the network configuration screen.
 >
-> 2. **Pre-summary network results screen** — shown between the timezone
+> 2. **Pre-summary network results screen** -- shown between the timezone
 >    screen and the confirmation screen. This screen displays the results of
->    the background checks (which were started on the welcome screen and have
->    likely completed by now). If the checks have not yet finished, the
->    screen shows progress. The user can press `r` to re-run all checks, and
->    `Enter` to proceed to the confirmation screen.
+>    the background checks (which were started on the network configuration
+>    screen and have likely completed by now). If the checks have not yet
+>    finished, the screen shows progress. The user can press `r` to re-run
+>    all checks, and `Enter` to proceed to the confirmation screen.
 >
 > Both screens are skipped entirely in automatic mode.
 >
@@ -330,20 +469,24 @@ screen also offers a `n` keybind to open a dedicated network check screen.
 > "All passed" or "N/M passed" when done for connectivity, and "OK" or
 > "Failed" when done for tailscale netcheck. There is no separate summary
 > line outside the panes.
+>
+> When the ISO network configuration changes (mode or field edit after
+> debounce), the connectivity checks and tailscale netcheck are restarted
+> automatically.
 
-r[installer.tui.tailscale-netcheck+2]
+r[installer.tui.tailscale-netcheck+3]
 The TUI must run `tailscale netcheck` in the background (the `tailscale`
 binary must be available on the live ISO). The check starts automatically
-alongside the network connectivity checks when the welcome screen is first
-shown. If the `tailscale` binary is not found or the command fails, the
-result stores an appropriate error message. The tailscale netcheck output is
-displayed on both the dedicated network check screen and the pre-summary
-network results screen, below the endpoint check results.
+alongside the network connectivity checks when the network configuration
+screen is first shown. If the `tailscale` binary is not found or the command
+fails, the result stores an appropriate error message. The tailscale netcheck
+output is displayed on both the dedicated network check screen and the
+pre-summary network results screen, below the endpoint check results.
 
-r[installer.tui.disk-detection+3]
-After the welcome screen (or automatically in automatic mode), the TUI must
-detect available block devices and display their device path, size, model
-name, and transport type (SSD, HDD, NVMe, USB, etc.).
+r[installer.tui.disk-detection+4]
+After the network configuration screen (or automatically in automatic mode),
+the TUI must detect available block devices and display their device path,
+size, model name, and transport type (SSD, HDD, NVMe, USB, etc.).
 
 > r[installer.tui.disk-encryption+2]
 > After the disk selection screen, the TUI must present a "Disk Encryption"
@@ -481,13 +624,16 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+7]
+r[installer.tui.confirmation+8]
 After the timezone screen, and after the pre-summary network results screen,
 the TUI must show a summary screen listing: target disk (path, model, size),
-chosen disk encryption mode, and any install-time configuration. The summary
-must clearly state that all data on the target disk will be destroyed. The
-user must type an explicit confirmation (not just press Enter). The
-confirmation screen is step 6/6.
+chosen disk encryption mode, target network configuration, and any
+install-time configuration. The network configuration must be displayed as a
+one-line summary (e.g. "DHCP (all Ethernet interfaces)", "Static IP:
+192.168.1.10/24 via 192.168.1.1 on enp0s3", "IPv6 SLAAC only", or "Offline
+(no network configuration)"). The summary must clearly state that all data
+on the target disk will be destroyed. The user must type an explicit
+confirmation (not just press Enter). The confirmation screen is step 6/6.
 
 When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
 screen must also generate and display the recovery passphrase. This gives
@@ -736,6 +882,27 @@ must be skipped. If the copy fails (e.g. the target filesystem is full or
 the source log file does not exist), the installer must log a warning but
 must not treat it as a fatal error. There is no TUI control for this
 option.
+
+> r[installer.finalise.network+3]
+> After applying other install-time configuration, the installer must write
+> the target network configuration to the installed system as a netplan YAML
+> file with mode 0600:
+>
+> - **DHCP** (including "Copy current" when the ISO is configured for DHCP):
+>   the existing `01-all-en-dhcp.yaml` (shipped in the base image) is left
+>   as-is. No additional file is written.
+> - **Static IP**: the installer writes
+>   `/etc/netplan/01-installer-static.yaml` with the user's interface, IP
+>   (CIDR), gateway, and optional DNS/search-domain settings, and removes
+>   the base `01-all-en-dhcp.yaml`.
+> - **IPv6 SLAAC only**: the installer writes
+>   `/etc/netplan/01-installer-ipv6-slaac.yaml` with `dhcp4: false`,
+>   `dhcp6: false`, `accept-ra: true` on the selected interface, and removes
+>   the base `01-all-en-dhcp.yaml`.
+> - **Offline**: the installer removes `01-all-en-dhcp.yaml` and writes no
+>   replacement.
+> - **Copy current (non-DHCP)**: the effective ISO config is resolved first
+>   and then the corresponding rule above applies.
 
 r[installer.finalise.unmount]
 After applying configuration, the installer must cleanly unmount all
