@@ -57,21 +57,21 @@ pub fn create_passphrase_keyfile(passphrase: &str) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
-    // r[verify installer.firstboot.mount+3]
+    // r[verify installer.firstboot.mount+4]
     #[test]
     fn partition_path_scsi_disk() {
         let path = partition_path(Path::new("/dev/sda"), 3).unwrap();
         assert_eq!(path, PathBuf::from("/dev/sda3"));
     }
 
-    // r[verify installer.firstboot.mount+3]
+    // r[verify installer.firstboot.mount+4]
     #[test]
     fn partition_path_nvme() {
         let path = partition_path(Path::new("/dev/nvme0n1"), 3).unwrap();
         assert_eq!(path, PathBuf::from("/dev/nvme0n1p3"));
     }
 
-    // r[verify installer.firstboot.mount+3]
+    // r[verify installer.firstboot.mount+4]
     #[test]
     fn partition_path_loop() {
         let path = partition_path(Path::new("/dev/loop0"), 1).unwrap();

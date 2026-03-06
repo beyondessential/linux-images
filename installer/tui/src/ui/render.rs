@@ -946,14 +946,14 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         ]),
     ];
 
-    if let Some(fb) = state.firstboot_config() {
-        if let Some(ref h) = fb.hostname {
+    if let Some(cfg) = state.install_config_fields() {
+        if let Some(ref h) = cfg.hostname {
             lines.push(Line::from(vec![
                 Span::raw("  Hostname:     "),
                 Span::styled(h.to_string(), Style::default().add_modifier(Modifier::BOLD)),
             ]));
         }
-        if fb.tailscale_authkey.is_some() {
+        if cfg.tailscale_authkey.is_some() {
             lines.push(Line::from(vec![
                 Span::raw("  Tailscale:    "),
                 Span::styled(
@@ -962,16 +962,16 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
                 ),
             ]));
         }
-        if !fb.ssh_authorized_keys.is_empty() {
+        if !cfg.ssh_authorized_keys.is_empty() {
             lines.push(Line::from(vec![
                 Span::raw("  SSH keys:     "),
                 Span::styled(
-                    format!("{} key(s)", fb.ssh_authorized_keys.len()),
+                    format!("{} key(s)", cfg.ssh_authorized_keys.len()),
                     Style::default().add_modifier(Modifier::BOLD),
                 ),
             ]));
         }
-        if fb.password.is_some() || fb.password_hash.is_some() {
+        if cfg.password.is_some() || cfg.password_hash.is_some() {
             lines.push(Line::from(vec![
                 Span::raw("  Password:     "),
                 Span::styled(
@@ -1154,7 +1154,7 @@ mod tests {
     use ratatui::backend::TestBackend;
 
     use super::*;
-    use crate::config::DiskEncryption;
+    use crate::config::{DiskEncryption, InstallConfig};
     use crate::disk::TransportType;
 
     fn make_test_state() -> AppState {
@@ -1169,7 +1169,7 @@ mod tests {
             devices,
             DiskEncryption::None,
             false,
-            None,
+            &InstallConfig::default(),
             None,
             None,
             String::new(),

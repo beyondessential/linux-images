@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use sha_crypt::{Sha512Params, sha512_simple};
 
-use crate::config::{DiskEncryption, FirstbootConfig};
+use crate::config::{DiskEncryption, InstallConfig};
 use crate::util::{partition_path, run_command};
 use crate::writer;
 
@@ -24,7 +24,7 @@ impl MountedTarget {
     }
 }
 
-// r[impl installer.firstboot.mount+3]
+// r[impl installer.firstboot.mount+4]
 pub fn mount_target(
     target_device: &Path,
     disk_encryption: DiskEncryption,
@@ -78,7 +78,7 @@ pub fn unmount_target(target: MountedTarget) -> Result<()> {
     Ok(())
 }
 
-pub fn apply_firstboot(target: &MountedTarget, config: &FirstbootConfig) -> Result<()> {
+pub fn apply_firstboot(target: &MountedTarget, config: &InstallConfig) -> Result<()> {
     let root = target.path();
 
     if config.hostname_from_dhcp {
@@ -114,7 +114,7 @@ pub fn apply_timezone_default(target: &MountedTarget) -> Result<()> {
 // r[impl installer.write.variant-fixup]
 pub fn fixup_for_metal_variant(
     target: &MountedTarget,
-    firstboot_config: &Option<FirstbootConfig>,
+    install_config: &InstallConfig,
 ) -> Result<()> {
     let root = target.path();
 
@@ -139,9 +139,7 @@ pub fn fixup_for_metal_variant(
     tracing::info!("set image-variant to metal");
 
     // Truncate /etc/hostname if no explicit hostname is configured
-    let has_hostname = firstboot_config.as_ref().is_some_and(|fb| {
-        fb.hostname.is_some() || fb.hostname_from_dhcp || fb.hostname_template.is_some()
-    });
+    let has_hostname = install_config.has_hostname_config();
     if !has_hostname {
         let hostname_path = root.join("etc/hostname");
         fs::write(&hostname_path, "").context("truncating /etc/hostname for metal")?;
@@ -160,7 +158,7 @@ pub fn fixup_for_metal_variant(
     Ok(())
 }
 
-// r[impl installer.firstboot.copy-install-log]
+// r[impl installer.firstboot.copy-install-log+2]
 pub fn copy_install_log(target: &MountedTarget, log_path: &Path) {
     let dest = target.path().join(INSTALL_LOG_TARGET);
 
@@ -212,7 +210,7 @@ fn apply_timezone(root: &Path, timezone: &str) -> Result<()> {
 }
 
 // r[impl installer.firstboot.password]
-fn apply_password(root: &Path, config: &FirstbootConfig) -> Result<()> {
+fn apply_password(root: &Path, config: &InstallConfig) -> Result<()> {
     let hash = if let Some(ref h) = config.password_hash {
         h.clone()
     } else if let Some(ref plaintext) = config.password {
@@ -326,7 +324,7 @@ fn apply_hostname(root: &Path, hostname: &str) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.firstboot.tailscale-authkey]
+// r[impl installer.firstboot.tailscale-authkey+2]
 fn apply_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
     let bes_dir = root.join("etc/bes");
     fs::create_dir_all(&bes_dir).context("creating /etc/bes")?;
@@ -413,7 +411,7 @@ mod tests {
         )
         .unwrap();
 
-        let config = FirstbootConfig {
+        let config = InstallConfig {
             password: Some("newsecret".into()),
             ..Default::default()
         };
@@ -445,7 +443,7 @@ mod tests {
         )
         .unwrap();
 
-        let config = FirstbootConfig {
+        let config = InstallConfig {
             password_hash: Some("$6$custom$myhash".into()),
             ..Default::default()
         };
@@ -465,7 +463,7 @@ mod tests {
         fs::create_dir_all(&etc).unwrap();
         fs::write(etc.join("shadow"), "root:!:19900:0:99999:7:::\n").unwrap();
 
-        let config = FirstbootConfig {
+        let config = InstallConfig {
             password: Some("test".into()),
             ..Default::default()
         };
@@ -484,7 +482,7 @@ mod tests {
         )
         .unwrap();
 
-        let config = FirstbootConfig {
+        let config = InstallConfig {
             password_hash: Some("$6$new$newhash".into()),
             ..Default::default()
         };
@@ -631,7 +629,7 @@ mod tests {
         // apply_firstboot needs /etc/shadow for password but we skip password
         // by not setting it. We just need etc to exist.
 
-        let config = FirstbootConfig {
+        let config = InstallConfig {
             timezone: Some("Europe/London".into()),
             ..Default::default()
         };
@@ -651,7 +649,7 @@ mod tests {
         let etc = dir.path().join("etc");
         fs::create_dir_all(&etc).unwrap();
 
-        let config = FirstbootConfig::default();
+        let config = InstallConfig::default();
         let tz = config.timezone.as_deref().unwrap_or("UTC");
         apply_timezone(dir.path(), tz).unwrap();
 

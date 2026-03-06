@@ -130,7 +130,7 @@ impl RunContext {
         }
     }
 
-    // r[impl installer.mode.auto+3]
+    // r[impl installer.mode.auto+4]
     fn run_auto(self) -> Result<()> {
         let disk_encryption = self
             .install_config
@@ -145,11 +145,7 @@ impl RunContext {
 
         let copy_install_log = self.install_config.copy_install_log.unwrap_or(true);
 
-        let hostname_from_template = self
-            .install_config
-            .firstboot
-            .as_ref()
-            .is_some_and(|fb| fb.hostname_template.is_some());
+        let hostname_from_template = self.install_config.hostname_template.is_some();
 
         let target = disk::resolve_disk(disk_selector, &self.devices, self.boot_device.as_ref())?;
         let manifest_result = if self.cli.dry_run {
@@ -161,12 +157,7 @@ impl RunContext {
             .as_ref()
             .map(|(_, dir)| dir.join("partitions.json"));
 
-        let effective_timezone = self
-            .install_config
-            .firstboot
-            .as_ref()
-            .and_then(|fb| fb.timezone.as_deref())
-            .unwrap_or("UTC");
+        let effective_timezone = self.install_config.timezone.as_deref().unwrap_or("UTC");
 
         // r[impl installer.dryrun]
         if self.cli.dry_run {
@@ -178,8 +169,8 @@ impl RunContext {
                     .timezone(effective_timezone)
                     .copy_install_log(copy_install_log)
                     .config_warnings(self.config_warnings);
-            if let Some(ref fb) = self.install_config.firstboot {
-                builder = builder.firstboot(fb);
+            if self.install_config.has_install_config_fields() {
+                builder = builder.install_config(&self.install_config);
             }
             if let Some(path) = manifest_path {
                 builder = builder.manifest_path(path);
@@ -204,26 +195,27 @@ impl RunContext {
         );
         eprintln!("  tpm:        {}", self.tpm_present);
 
-        if let Some(ref fb) = self.install_config.firstboot {
-            if fb.hostname_from_dhcp {
-                eprintln!("  hostname:   (from DHCP)");
-            } else if let Some(ref h) = fb.hostname {
-                eprintln!("  hostname:   {h}");
-            }
-            if let Some(ref tz) = fb.timezone {
-                eprintln!("  timezone:   {tz}");
-            } else {
-                eprintln!("  timezone:   UTC");
-            }
-            if fb.tailscale_authkey.is_some() {
-                eprintln!("  tailscale:  auth key provided");
-            }
-            if !fb.ssh_authorized_keys.is_empty() {
-                eprintln!("  ssh keys:   {}", fb.ssh_authorized_keys.len());
-            }
-            if fb.has_password() {
-                eprintln!("  password:   custom password set");
-            }
+        if self.install_config.hostname_from_dhcp {
+            eprintln!("  hostname:   (from DHCP)");
+        } else if let Some(ref h) = self.install_config.hostname {
+            eprintln!("  hostname:   {h}");
+        }
+        if let Some(ref tz) = self.install_config.timezone {
+            eprintln!("  timezone:   {tz}");
+        } else {
+            eprintln!("  timezone:   UTC");
+        }
+        if self.install_config.tailscale_authkey.is_some() {
+            eprintln!("  tailscale:  auth key provided");
+        }
+        if !self.install_config.ssh_authorized_keys.is_empty() {
+            eprintln!(
+                "  ssh keys:   {}",
+                self.install_config.ssh_authorized_keys.len()
+            );
+        }
+        if self.install_config.has_password() {
+            eprintln!("  password:   custom password set");
         }
 
         // r[impl installer.write.disk-size-check+2]
@@ -304,17 +296,17 @@ impl RunContext {
             // r[impl installer.write.fstab-fixup]
             // r[impl installer.write.variant-fixup]
             if disk_encryption.is_encrypted() {
-                firstboot::fixup_for_metal_variant(&mounted, &self.install_config.firstboot)?;
+                firstboot::fixup_for_metal_variant(&mounted, &self.install_config)?;
             }
 
-            if let Some(ref fb) = self.install_config.firstboot {
-                firstboot::apply_firstboot(&mounted, fb)?;
+            if self.install_config.has_install_config_fields() {
+                firstboot::apply_firstboot(&mounted, &self.install_config)?;
             } else {
                 // r[impl installer.firstboot.timezone]
                 firstboot::apply_timezone_default(&mounted)?;
             }
 
-            // r[impl installer.firstboot.copy-install-log]
+            // r[impl installer.firstboot.copy-install-log+2]
             if copy_install_log {
                 firstboot::copy_install_log(&mounted, &self.cli.log);
             }
@@ -392,17 +384,13 @@ impl RunContext {
 
         let build_info = read_build_info();
 
-        let hostname_from_template = self
-            .install_config
-            .firstboot
-            .as_ref()
-            .is_some_and(|fb| fb.hostname_template.is_some());
+        let hostname_from_template = self.install_config.hostname_template.is_some();
 
         let state = ui::AppState::new(
             self.devices,
             disk_encryption,
             self.tpm_present,
-            self.install_config.firstboot,
+            &self.install_config,
             self.boot_device,
             default_disk_index,
             build_info,
@@ -461,16 +449,13 @@ impl RunContext {
 }
 
 fn resolve_hostname_template(cfg: &mut config::InstallConfig) -> Result<()> {
-    let Some(ref mut fb) = cfg.firstboot else {
-        return Ok(());
-    };
-    let Some(ref tmpl) = fb.hostname_template.clone() else {
+    let Some(ref tmpl) = cfg.hostname_template.clone() else {
         return Ok(());
     };
     let resolved = hostname_template::parse_and_resolve(tmpl)
         .with_context(|| format!("resolving hostname template '{tmpl}'"))?;
     tracing::info!("resolved hostname template '{tmpl}' to '{resolved}'");
-    fb.hostname = Some(resolved);
+    cfg.hostname = Some(resolved);
     Ok(())
 }
 
@@ -504,7 +489,7 @@ fn plan_from_tui_state(
     config_warnings: &[String],
 ) -> plan::InstallPlan {
     let disk = state.selected_disk();
-    let firstboot = state.firstboot_config();
+    let install_cfg = state.install_config_fields();
     let mut builder = plan::InstallPlan::builder(mode, state.disk_encryption)
         .tpm_present(state.tpm_present)
         .hostname_from_template(state.hostname_from_template || hostname_from_template)
@@ -514,8 +499,8 @@ fn plan_from_tui_state(
     if let Some(dev) = disk {
         builder = builder.disk(dev);
     }
-    if let Some(ref fb) = firstboot {
-        builder = builder.firstboot(fb);
+    if let Some(ref cfg) = install_cfg {
+        builder = builder.install_config(cfg);
     }
     if let Some(path) = manifest_path {
         builder = builder.manifest_path(path.clone());

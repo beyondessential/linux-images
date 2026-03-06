@@ -488,7 +488,7 @@ fn spawn_install_worker(
         }
     };
     let disk_encryption = state.disk_encryption;
-    let firstboot_config = state.firstboot_config();
+    let install_config = state.install_config_fields();
     // r[impl installer.encryption.recovery-passphrase+3]
     let passphrase = state.recovery_passphrase.clone();
     let tx = tx.clone();
@@ -500,7 +500,7 @@ fn spawn_install_worker(
             &manifest,
             &images_dir,
             disk_size,
-            firstboot_config.as_ref(),
+            install_config.as_ref(),
             install_log.as_deref(),
             &tx,
         );
@@ -520,7 +520,7 @@ fn run_full_install(
     manifest: &PartitionManifest,
     images_dir: &Path,
     disk_size: u64,
-    firstboot_config: Option<&crate::config::FirstbootConfig>,
+    install_config: Option<&crate::config::InstallConfig>,
     install_log: Option<&Path>,
     tx: &mpsc::Sender<WorkerMessage>,
 ) -> Result<Option<String>> {
@@ -567,16 +567,21 @@ fn run_full_install(
         // r[impl installer.write.fstab-fixup]
         // r[impl installer.write.variant-fixup]
         if disk_writer.disk_encryption.is_encrypted() {
-            firstboot::fixup_for_metal_variant(&mounted, &firstboot_config.cloned())?;
+            if let Some(cfg) = install_config {
+                firstboot::fixup_for_metal_variant(&mounted, cfg)?;
+            } else {
+                let default_cfg = crate::config::InstallConfig::default();
+                firstboot::fixup_for_metal_variant(&mounted, &default_cfg)?;
+            }
         }
 
-        if let Some(fb) = firstboot_config {
-            firstboot::apply_firstboot(&mounted, fb)?;
+        if let Some(cfg) = install_config {
+            firstboot::apply_firstboot(&mounted, cfg)?;
         } else {
             firstboot::apply_timezone_default(&mounted)?;
         }
 
-        // r[impl installer.firstboot.copy-install-log]
+        // r[impl installer.firstboot.copy-install-log+2]
         if let Some(log_path) = install_log {
             firstboot::copy_install_log(&mounted, log_path);
         }
@@ -643,7 +648,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     use super::*;
-    use crate::config::{DiskEncryption, FirstbootConfig};
+    use crate::config::{DiskEncryption, InstallConfig};
     use crate::disk::{BlockDevice, TransportType};
 
     fn press(code: KeyCode) -> KeyEvent {
@@ -697,7 +702,7 @@ mod tests {
             devices,
             DiskEncryption::Tpm,
             false,
-            None,
+            &InstallConfig::default(),
             None,
             None,
             String::new(),
@@ -830,7 +835,7 @@ mod tests {
     // r[verify installer.dryrun.script.headless]
     #[test]
     fn scripted_prefilled_hostname_with_backspace() {
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             hostname: Some("old-host".into()),
             ..Default::default()
         };
@@ -845,7 +850,7 @@ mod tests {
             devices,
             DiskEncryption::None,
             false,
-            Some(fb),
+            &cfg,
             None,
             None,
             String::new(),

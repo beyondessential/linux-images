@@ -297,7 +297,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.schema+4]
     #[test]
     fn resolve_largest_ssd() {
         let devices = vec![
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/nvme0n1"));
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.schema+4]
     #[test]
     fn resolve_largest() {
         let devices = vec![
@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/sda"));
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.schema+4]
     #[test]
     fn resolve_smallest() {
         let devices = vec![
@@ -334,7 +334,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/sdb"));
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.schema+4]
     #[test]
     fn resolve_by_path() {
         let devices = vec![
@@ -346,7 +346,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/sdb"));
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.schema+4]
     #[test]
     fn resolve_by_path_not_found() {
         let devices = vec![make_device(
@@ -371,7 +371,7 @@ mod tests {
         assert_eq!(result.path, PathBuf::from("/dev/sdb"));
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.schema+4]
     #[test]
     fn resolve_largest_ssd_no_ssds() {
         let devices = vec![make_device(
