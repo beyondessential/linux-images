@@ -15,6 +15,7 @@
 # ============================================================
 _SWTPM_PID=""
 _SWTPM_TPM_DEV=""
+_SWTPM_TPMRM_DEV=""
 _SWTPM_STATE_DIR=""
 
 # Base nspawn options common to every container invocation.
@@ -98,12 +99,17 @@ nspawn_installer_binds() {
         NSPAWN_BINDS+=("--bind=$log_bind")
     fi
 
-    # If swtpm_start was called, bind the TPM device into the container as
-    # /dev/tpm0 so the installer's tpm_present check (which looks for
-    # /dev/tpm0) succeeds and systemd-cryptenroll finds it via --tpm2-device=auto.
-    # The host device may be /dev/tpm1 or higher when swtpm uses vtpm-proxy.
+    # If swtpm_start was called, bind both the raw TPM device and the
+    # resource manager device into the container as /dev/tpm0 and
+    # /dev/tpmrm0. systemd-cryptenroll --tpm2-device=auto uses the resource
+    # manager (/dev/tpmrmN), while the installer's tpm_present check looks
+    # for /dev/tpm0. The host devices may be /dev/tpm1 + /dev/tpmrm1 (or
+    # higher) when swtpm uses vtpm-proxy.
     if [ -n "$_SWTPM_TPM_DEV" ]; then
         NSPAWN_BINDS+=("--bind=$_SWTPM_TPM_DEV:/dev/tpm0")
+    fi
+    if [ -n "$_SWTPM_TPMRM_DEV" ]; then
+        NSPAWN_BINDS+=("--bind=$_SWTPM_TPMRM_DEV:/dev/tpmrm0")
     fi
 }
 
@@ -118,8 +124,9 @@ nspawn_installer_binds() {
 #   swtpm_start <state-dir>
 #
 # The state-dir is where swtpm persists its TPM state (NV storage etc.).
-# On success, sets _SWTPM_PID and _SWTPM_TPM_DEV so that
-# nspawn_installer_binds can bind the device and swtpm_stop can clean up.
+# On success, sets _SWTPM_PID, _SWTPM_TPM_DEV, and _SWTPM_TPMRM_DEV so
+# that nspawn_installer_binds can bind the devices and swtpm_stop can
+# clean up.
 #
 # Prerequisites:
 #   - swtpm binary
@@ -144,7 +151,8 @@ swtpm_start() {
 
     # swtpm chardev --vtpm-proxy creates a /dev/tpmN device via the kernel's
     # vtpm-proxy subsystem. It prints the device path to stdout before
-    # daemonizing.
+    # daemonizing. The kernel also creates a corresponding /dev/tpmrmN
+    # resource manager device.
     local swtpm_log="$state_dir/swtpm.log"
     local tpm_info
     if ! tpm_info=$(swtpm chardev \
@@ -166,12 +174,20 @@ swtpm_start() {
         return 1
     fi
 
+    # Derive the resource manager device path: /dev/tpmN -> /dev/tpmrmN
+    local tpm_num
+    tpm_num=$(echo "$_SWTPM_TPM_DEV" | grep -oP '\d+$')
+    _SWTPM_TPMRM_DEV="/dev/tpmrm${tpm_num}"
+
     # swtpm daemonizes; find its PID via the device it holds open.
     _SWTPM_PID=$(fuser "$_SWTPM_TPM_DEV" 2>/dev/null | tr -d '[:space:]') || true
 
-    # Wait briefly for the device node to become usable.
-    local retries=10
-    while [ "$retries" -gt 0 ] && [ ! -c "$_SWTPM_TPM_DEV" ]; do
+    # Wait briefly for both device nodes to become usable.
+    local retries=20
+    while [ "$retries" -gt 0 ]; do
+        if [ -c "$_SWTPM_TPM_DEV" ] && [ -c "$_SWTPM_TPMRM_DEV" ]; then
+            break
+        fi
         sleep 0.1
         retries=$((retries - 1))
     done
@@ -182,7 +198,13 @@ swtpm_start() {
         return 1
     fi
 
-    echo "    swtpm: $_SWTPM_TPM_DEV (pid ${_SWTPM_PID:-unknown})"
+    if [ ! -c "$_SWTPM_TPMRM_DEV" ]; then
+        echo "ERROR: swtpm resource manager device $_SWTPM_TPMRM_DEV did not appear"
+        swtpm_stop
+        return 1
+    fi
+
+    echo "    swtpm: $_SWTPM_TPM_DEV + $_SWTPM_TPMRM_DEV (pid ${_SWTPM_PID:-unknown})"
 }
 
 # Stop the software TPM started by swtpm_start.
@@ -195,5 +217,6 @@ swtpm_stop() {
         _SWTPM_PID=""
     fi
     _SWTPM_TPM_DEV=""
+    _SWTPM_TPMRM_DEV=""
     _SWTPM_STATE_DIR=""
 }
