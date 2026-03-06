@@ -12,7 +12,7 @@ use crate::hostname_template;
 // r[impl installer.config.disk]
 // r[impl installer.config.copy-install-log]
 // r[impl installer.config.hostname]
-// r[impl installer.config.tailscale-authkey+2]
+// r[impl installer.config.tailscale-authkey+3]
 // r[impl installer.config.ssh-authorized-keys+2]
 // r[impl installer.config.password]
 // r[impl installer.config.timezone]
@@ -425,7 +425,7 @@ mod tests {
     // r[verify installer.config.disk-encryption]
     // r[verify installer.config.disk]
     // r[verify installer.config.hostname]
-    // r[verify installer.config.tailscale-authkey+2]
+    // r[verify installer.config.tailscale-authkey+3]
     // r[verify installer.config.ssh-authorized-keys+2]
     // r[verify installer.config.password]
     #[test]
@@ -765,7 +765,7 @@ mod tests {
     }
 
     // r[verify installer.config.hostname]
-    // r[verify installer.config.tailscale-authkey+2]
+    // r[verify installer.config.tailscale-authkey+3]
     // r[verify installer.config.ssh-authorized-keys+2]
     #[test]
     fn parse_minimal_hostname() {

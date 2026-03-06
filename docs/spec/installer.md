@@ -54,11 +54,13 @@ from a template pattern (see `installer.config.hostname-template`). These
 three fields are mutually exclusive; if more than one is present the
 installer must report a validation error.
 
-r[installer.config.tailscale-authkey+2]
+r[installer.config.tailscale-authkey+3]
 The `tailscale-authkey` field is a string containing a Tailscale auth key
 (e.g. `"tskey-auth-xxxxx"`). When set, the installer uses it to
 authenticate the installed system with Tailscale (see
-`r[installer.finalise.tailscale-authkey]` for the authentication procedure).
+`r[installer.finalise.tailscale-auth]` and
+`r[installer.finalise.tailscale-firstboot]` for the authentication
+procedure).
 
 r[installer.config.ssh-authorized-keys+2]
 The `ssh-authorized-keys` field is an array of strings, each an OpenSSH
@@ -688,16 +690,23 @@ installer must write an empty `/etc/hostname` (truncate) and remove any
 `127.0.1.1` line from `/etc/hosts`. If neither is set (cloud only), the
 installer must leave `/etc/hostname` as-is.
 
-r[installer.finalise.tailscale-authkey+2]
-If `tailscale-authkey` is set and the installer has network connectivity,
-the installer must attempt to authenticate with Tailscale directly by
-chrooting into the mounted target filesystem and running `tailscale up
---auth-key=<key> --ssh`. The installer must display feedback about the
-authentication attempt (e.g. success, invalid key, network error). If the
-authentication fails, the installer may offer to retry or accept a
-different key. Only if authentication does not succeed does the installer
-fall back to writing the key to `/etc/bes/tailscale-authkey` for first-boot
-authentication via the `r[image.tailscale.firstboot-auth]` systemd service.
+r[installer.finalise.tailscale-auth]
+If `tailscale-authkey` is set and the installer knows that tailscale
+netcheck passed (i.e. `r[installer.tui.tailscale-netcheck]` completed
+successfully), the installer must attempt to authenticate with Tailscale
+directly by chrooting into the mounted target filesystem and running
+`tailscale up --auth-key=<key> --ssh`. The installer must log the outcome
+of the authentication attempt (success, invalid key, network error). If
+the attempt succeeds, the installer must not write the key file and the
+firstboot service will be skipped automatically (since its
+`ConditionPathExists` will not be satisfied).
+
+r[installer.finalise.tailscale-firstboot]
+If `tailscale-authkey` is set and `r[installer.finalise.tailscale-auth]`
+either did not run (netcheck did not pass or was not performed) or did not
+succeed, the installer must write the auth key to
+`/etc/bes/tailscale-authkey` (mode 0600) for first-boot authentication via
+the `r[image.tailscale.firstboot-auth]` systemd service.
 
 r[installer.finalise.ssh-keys]
 If `ssh-authorized-keys` is set, the installer must append each key to

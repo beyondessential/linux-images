@@ -18,6 +18,9 @@ specs (
                     // we have some tests that legitimately include impls
                     tests/*.sh
 
+                    // manual testing procedure generator (tracey can't parse .md)
+                    scripts/gen-manual-testing.sh
+
                     // tracey doesn't yet support YAML or justfile
                     // so those don't do anything, but let's still include them
                     justfile
