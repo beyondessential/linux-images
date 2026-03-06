@@ -528,10 +528,6 @@ fn start_install_worker(
     });
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "collecting all state needed for the full install sequence"
-)]
 fn run_full_install(
     manifest: &PartitionManifest,
     images_dir: &Path,
@@ -549,33 +545,34 @@ fn run_full_install(
         .context("reading partition image sizes")?;
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
 
+    let disk_writer = writer::DiskWriter::new(target, disk_encryption, recovery_passphrase);
+
     // Write partitions (~90% of progress)
-    writer::write_partitions(
-        manifest,
-        images_dir,
-        target,
-        disk_encryption,
-        recovery_passphrase,
-        &mut |progress| {
+    disk_writer
+        .write_partitions(manifest, images_dir, &mut |progress| {
             let _ = tx.send(WorkerMessage::Progress(progress.into()));
-        },
-    )
-    .context("writing partitions")?;
+        })
+        .context("writing partitions")?;
 
     // Expand root filesystem (~91%)
-    writer::expand_root_filesystem(target, disk_encryption, recovery_passphrase)
+    disk_writer
+        .expand_root_filesystem()
         .context("expanding root filesystem")?;
 
     // Randomize UUIDs (~92%)
-    writer::randomize_filesystem_uuids(target, disk_encryption, recovery_passphrase)
+    disk_writer
+        .randomize_filesystem_uuids()
         .context("randomizing filesystem UUIDs")?;
 
     // Rebuild boot config (~94%)
-    writer::rebuild_boot_config(target, disk_encryption, recovery_passphrase)
+    disk_writer
+        .rebuild_boot_config()
         .context("rebuilding boot config")?;
 
     // Verify partition table (~95%)
-    writer::verify_partition_table(target).context("verifying partition table")?;
+    disk_writer
+        .verify_partition_table()
+        .context("verifying partition table")?;
 
     // Firstboot (~96%)
     {

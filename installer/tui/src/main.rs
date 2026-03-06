@@ -359,19 +359,20 @@ fn run_auto(
         None
     };
 
+    let disk_writer = writer::DiskWriter::new(
+        &target.path,
+        disk_encryption,
+        recovery_passphrase.as_deref(),
+    );
+
     eprintln!();
     eprintln!("writing partitions...");
 
     // r[impl installer.mode.auto.progress]
     let interactive = std::io::stderr().is_terminal();
     let write_start = Instant::now();
-    writer::write_partitions(
-        &manifest,
-        &images_dir,
-        &target.path,
-        disk_encryption,
-        recovery_passphrase.as_deref(),
-        &mut |progress| {
+    disk_writer
+        .write_partitions(&manifest, &images_dir, &mut |progress| {
             if interactive {
                 let pct = progress.fraction().map(|f| f * 100.0).unwrap_or(0.0);
                 let mbps = progress.throughput_mbps();
@@ -381,9 +382,8 @@ fn run_auto(
                     .unwrap_or_else(|| "...".into());
                 eprint!("\r  {pct:5.1}% | {mbps:.1} MiB/s | ETA: {eta}    ");
             }
-        },
-    )
-    .context("writing partitions")?;
+        })
+        .context("writing partitions")?;
 
     // r[impl installer.mode.auto.progress]
     if interactive {
@@ -396,30 +396,23 @@ fn run_auto(
     }
 
     eprintln!("expanding root filesystem...");
-    writer::expand_root_filesystem(
-        &target.path,
-        disk_encryption,
-        recovery_passphrase.as_deref(),
-    )
-    .context("expanding root filesystem")?;
+    disk_writer
+        .expand_root_filesystem()
+        .context("expanding root filesystem")?;
 
     eprintln!("randomizing filesystem UUIDs...");
-    writer::randomize_filesystem_uuids(
-        &target.path,
-        disk_encryption,
-        recovery_passphrase.as_deref(),
-    )
-    .context("randomizing filesystem UUIDs")?;
+    disk_writer
+        .randomize_filesystem_uuids()
+        .context("randomizing filesystem UUIDs")?;
 
     eprintln!("rebuilding boot config (initramfs + grub)...");
-    writer::rebuild_boot_config(
-        &target.path,
-        disk_encryption,
-        recovery_passphrase.as_deref(),
-    )
-    .context("rebuilding boot config")?;
+    disk_writer
+        .rebuild_boot_config()
+        .context("rebuilding boot config")?;
 
-    writer::verify_partition_table(&target.path).context("verifying partition table")?;
+    disk_writer
+        .verify_partition_table()
+        .context("verifying partition table")?;
 
     {
         eprintln!("applying first-boot configuration...");
