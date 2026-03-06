@@ -36,11 +36,8 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         Screen::LoginGithub => render_login_github(frame, chunks[1], state),
         Screen::Timezone => render_timezone(frame, chunks[1], state),
         Screen::Confirmation => render_confirmation(frame, chunks[1], state),
-        Screen::Writing => render_writing(frame, chunks[1], state),
-        Screen::FirstbootApply => render_firstboot(frame, chunks[1]),
-        Screen::EncryptionSetup => render_encryption_setup(frame, chunks[1]),
-        Screen::RecoveryPassphrase => render_recovery_passphrase(frame, chunks[1], state),
-        Screen::Done => render_done(frame, chunks[1]),
+        Screen::Installing => render_installing(frame, chunks[1], state),
+        Screen::Done => render_done(frame, chunks[1], state),
         Screen::Error(msg) => render_error(frame, chunks[1], msg),
     }
 
@@ -62,10 +59,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Timezone => "5/6 Timezone",
         Screen::NetworkResults => "Network Results",
         Screen::Confirmation => "6/6 Confirm",
-        Screen::Writing => "Writing Image",
-        Screen::FirstbootApply => "Applying Configuration",
-        Screen::EncryptionSetup => "Encryption Setup",
-        Screen::RecoveryPassphrase => "Recovery Passphrase",
+        Screen::Installing => "Installing",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
     };
@@ -323,11 +317,8 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
                 .into()
         }
         Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit".into(),
-        Screen::Writing => "Please wait...".into(),
-        Screen::FirstbootApply => "Please wait...".into(),
-        Screen::EncryptionSetup => "Please wait...".into(),
-        Screen::RecoveryPassphrase => "Press Enter to acknowledge".into(),
-        Screen::Done => "Press any key to reboot".into(),
+        Screen::Installing => "Please wait...".into(),
+        Screen::Done => "Press Enter to reboot".into(),
         Screen::Error(_) => "Press any key to reboot".into(),
     };
     let paragraph = Paragraph::new(hints);
@@ -848,7 +839,7 @@ fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.confirmation+5]
+// r[impl installer.tui.confirmation+6]
 // r[impl installer.tui.password+4]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -919,7 +910,7 @@ fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, chunks[1]);
 }
 
-// r[impl installer.tui.confirmation+5]
+// r[impl installer.tui.confirmation+6]
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -991,7 +982,7 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         }
     }
 
-    // r[impl installer.encryption.recovery-passphrase+2]
+    // r[impl installer.encryption.recovery-passphrase+3]
     if let Some(ref passphrase) = state.recovery_passphrase {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
@@ -1038,8 +1029,8 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.progress]
-fn render_writing(frame: &mut Frame, area: Rect, state: &AppState) {
+// r[impl installer.tui.progress+2]
+fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(area);
 
     if let Some(ref progress) = state.write_progress {
@@ -1064,7 +1055,7 @@ fn render_writing(frame: &mut Frame, area: Rect, state: &AppState) {
 
         let info_lines = vec![
             Line::from(""),
-            Line::from("  Writing image to disk..."),
+            Line::from("  Installing to disk..."),
             Line::from(""),
             Line::from(format!("  {label}")),
         ];
@@ -1077,77 +1068,14 @@ fn render_writing(frame: &mut Frame, area: Rect, state: &AppState) {
             .ratio(fraction);
         frame.render_widget(gauge, chunks[1]);
     } else {
-        let paragraph = Paragraph::new("  Preparing to write...");
+        let paragraph = Paragraph::new("  Preparing to install...");
         frame.render_widget(paragraph, area);
     }
 }
 
-fn render_firstboot(frame: &mut Frame, area: Rect) {
-    let lines = vec![
-        Line::from(""),
-        Line::from("  Applying first-boot configuration..."),
-        Line::from(""),
-        Line::from("  Mounting target filesystem and writing settings."),
-    ];
-    let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, area);
-}
-
-// r[impl installer.encryption.overview]
-fn render_encryption_setup(frame: &mut Frame, area: Rect) {
-    let lines = vec![
-        Line::from(""),
-        Line::from("  Setting up disk encryption..."),
-        Line::from(""),
-        Line::from("  Rotating master key, enrolling unlock mechanism, and generating"),
-        Line::from("  recovery passphrase. This may take a few minutes."),
-    ];
-    let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, area);
-}
-
-// r[impl installer.encryption.recovery-passphrase+2]
-fn render_recovery_passphrase(frame: &mut Frame, area: Rect, state: &AppState) {
-    let passphrase = state
-        .recovery_passphrase
-        .as_deref()
-        .unwrap_or("(unavailable)");
-
-    let lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "  Recovery Passphrase",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from("  Write down this recovery passphrase and store it in a safe place."),
-        Line::from("  You will need it if the primary unlock mechanism fails (e.g. hardware"),
-        Line::from("  change, lost boot partition)."),
-        Line::from(""),
-        Line::from(Span::styled(
-            format!("    {passphrase}"),
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from("  Press Enter to acknowledge and continue."),
-    ];
-
-    let block = Block::default()
-        .title(" Recovery Passphrase ")
-        .borders(Borders::ALL);
-
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
-}
-
-fn render_done(frame: &mut Frame, area: Rect) {
-    let lines = vec![
+// r[impl installer.tui.progress+2]
+fn render_done(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
             "  Installation complete!",
@@ -1156,9 +1084,38 @@ fn render_done(frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  Remove the installation media and press any key to reboot."),
     ];
-    let paragraph = Paragraph::new(lines);
+
+    // r[impl installer.encryption.recovery-passphrase+3]
+    if let Some(ref passphrase) = state.recovery_passphrase {
+        lines.push(Line::from(Span::styled(
+            "  Recovery Passphrase",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(
+            "  Write down this recovery passphrase and store it in a safe place.",
+        ));
+        lines.push(Line::from(
+            "  You will need it if the primary unlock mechanism fails.",
+        ));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("    {passphrase}"),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(
+        "  Remove the installation media and press Enter to reboot.",
+    ));
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
@@ -1389,39 +1346,11 @@ mod tests {
 
     // r[verify installer.tui.ascii-rendering]
     #[test]
-    fn writing_screen_ascii_only() {
+    fn installing_screen_ascii_only() {
         let mut state = make_test_state();
-        state.screen = Screen::Writing;
+        state.screen = Screen::Installing;
         let terminal = render_screen(&state);
-        assert_buffer_ascii(&terminal, "Writing");
-    }
-
-    // r[verify installer.tui.ascii-rendering]
-    #[test]
-    fn firstboot_apply_screen_ascii_only() {
-        let mut state = make_test_state();
-        state.screen = Screen::FirstbootApply;
-        let terminal = render_screen(&state);
-        assert_buffer_ascii(&terminal, "FirstbootApply");
-    }
-
-    // r[verify installer.tui.ascii-rendering]
-    #[test]
-    fn encryption_setup_screen_ascii_only() {
-        let mut state = make_test_state();
-        state.screen = Screen::EncryptionSetup;
-        let terminal = render_screen(&state);
-        assert_buffer_ascii(&terminal, "EncryptionSetup");
-    }
-
-    // r[verify installer.tui.ascii-rendering]
-    #[test]
-    fn recovery_passphrase_screen_ascii_only() {
-        let mut state = make_test_state();
-        state.screen = Screen::RecoveryPassphrase;
-        state.recovery_passphrase = Some("test-recovery-phrase".into());
-        let terminal = render_screen(&state);
-        assert_buffer_ascii(&terminal, "RecoveryPassphrase");
+        assert_buffer_ascii(&terminal, "Installing");
     }
 
     // r[verify installer.tui.ascii-rendering]
@@ -1431,6 +1360,16 @@ mod tests {
         state.screen = Screen::Done;
         let terminal = render_screen(&state);
         assert_buffer_ascii(&terminal, "Done");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    #[test]
+    fn done_screen_with_recovery_passphrase_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::Done;
+        state.recovery_passphrase = Some("test-recovery-phrase".into());
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "Done(with recovery passphrase)");
     }
 
     // r[verify installer.tui.ascii-rendering]

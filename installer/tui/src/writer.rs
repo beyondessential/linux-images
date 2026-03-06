@@ -1,13 +1,19 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
-use std::path::Path;
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 
-// r[impl installer.tui.progress]
+use crate::config::DiskEncryption;
+
+const LUKS_NAME: &str = "bes-target-root";
+const MOUNT_BASE: &str = "/mnt/target";
+
+// r[impl installer.tui.progress+2]
 pub struct WriteProgress {
     pub bytes_written: u64,
     pub total_bytes: Option<u64>,
@@ -51,8 +57,30 @@ pub fn format_eta(d: std::time::Duration) -> String {
     }
 }
 
-// r[impl installer.write.source]
-pub fn find_image_path(variant: &str, arch: &str) -> Result<std::path::PathBuf> {
+// r[impl installer.write.source+2]
+#[derive(Debug, Clone, Deserialize)]
+pub struct PartitionManifest {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "read only in tests; kept for manifest schema completeness"
+        )
+    )]
+    pub arch: String,
+    pub partitions: Vec<PartitionEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PartitionEntry {
+    pub label: String,
+    pub type_uuid: String,
+    pub size_mib: u64,
+    pub image: String,
+}
+
+// r[impl installer.write.source+2]
+pub fn find_partition_manifest() -> Result<(PartitionManifest, PathBuf)> {
     let search_dirs = [
         "/run/live/medium/images",
         "/run/live/medium",
@@ -60,32 +88,25 @@ pub fn find_image_path(variant: &str, arch: &str) -> Result<std::path::PathBuf> 
         "/cdrom",
     ];
 
-    let pattern = format!("{variant}-{arch}");
-
     for dir in &search_dirs {
         let dir_path = Path::new(dir);
         if !dir_path.is_dir() {
             continue;
         }
-        let entries =
-            std::fs::read_dir(dir_path).with_context(|| format!("reading directory {dir}"))?;
-        for entry in entries {
-            let entry = entry?;
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name.contains(&pattern) && name.ends_with(".raw.zst") {
-                return Ok(entry.path());
-            }
+        let manifest_path = dir_path.join("partitions.json");
+        if manifest_path.is_file() {
+            let contents = fs::read_to_string(&manifest_path)
+                .with_context(|| format!("reading {}", manifest_path.display()))?;
+            let manifest: PartitionManifest = serde_json::from_str(&contents)
+                .with_context(|| format!("parsing {}", manifest_path.display()))?;
+            return Ok((manifest, dir_path.to_path_buf()));
         }
     }
 
-    bail!("no .raw.zst image found for variant={variant} arch={arch}");
+    bail!("no partitions.json found in search directories");
 }
 
-// r[impl installer.write.disk-size-check]
-/// Read the uncompressed image size from the `.size` sidecar file that the
-/// build pipeline writes alongside the `.raw.zst`. The sidecar contains the
-/// byte count as a decimal ASCII string (output of `stat --format='%s'`).
+// r[impl installer.write.disk-size-check+2]
 pub fn image_uncompressed_size(source: &Path) -> Result<u64> {
     let name = source
         .to_str()
@@ -106,8 +127,19 @@ pub fn image_uncompressed_size(source: &Path) -> Result<u64> {
     })
 }
 
-// r[impl installer.write.disk-size-check]
-/// Verify that the target disk is large enough for the uncompressed image.
+// r[impl installer.write.disk-size-check+2]
+pub fn partition_images_total_size(manifest: &PartitionManifest, images_dir: &Path) -> Result<u64> {
+    let mut total: u64 = 0;
+    for entry in &manifest.partitions {
+        let img_path = images_dir.join(&entry.image);
+        let size = image_uncompressed_size(&img_path)
+            .with_context(|| format!("reading size for {}", entry.image))?;
+        total += size;
+    }
+    Ok(total)
+}
+
+// r[impl installer.write.disk-size-check+2]
 pub fn check_disk_size(image_size: u64, disk_size: u64) -> Result<()> {
     if disk_size < image_size {
         bail!(
@@ -119,8 +151,7 @@ pub fn check_disk_size(image_size: u64, disk_size: u64) -> Result<()> {
     Ok(())
 }
 
-/// Wipe all existing filesystem, RAID, and partition-table signatures from a disk.
-// r[impl installer.write.partitions]
+// r[impl installer.write.partitions+2]
 pub fn wipe_disk(target: &Path) -> Result<()> {
     tracing::info!("wiping existing signatures on {}", target.display());
 
@@ -146,8 +177,6 @@ pub fn wipe_disk(target: &Path) -> Result<()> {
         tracing::warn!("sgdisk --zap-all failed (non-fatal): {stderr}");
     }
 
-    // Zero out the first and last 1 MiB to destroy any remaining MBR, GPT backup,
-    // or LUKS headers that wipefs/sgdisk may have missed.
     if let Ok(mut f) = OpenOptions::new().write(true).open(target) {
         let zeros = vec![0u8; 1024 * 1024];
         let _ = f.write_all(&zeros);
@@ -168,18 +197,54 @@ pub fn wipe_disk(target: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Stream-decompress a `.raw.zst` file directly to a block device, calling `on_progress`
-/// periodically with current write progress.
-// r[impl installer.write.decompress-stream]
-pub fn write_image(
+// r[impl installer.write.partitions+2]
+pub fn create_partition_table(target: &Path, manifest: &PartitionManifest) -> Result<()> {
+    tracing::info!(
+        "creating GPT with {} partitions on {}",
+        manifest.partitions.len(),
+        target.display()
+    );
+
+    let target_str = target.to_str().unwrap_or_default();
+
+    let mut args: Vec<String> = vec!["--clear".to_string()];
+
+    for (i, entry) in manifest.partitions.iter().enumerate() {
+        let part_num = i + 1;
+        let size_spec = if entry.size_mib == 0 {
+            format!("-n{part_num}:0:0")
+        } else {
+            format!("-n{part_num}:0:+{}M", entry.size_mib)
+        };
+        args.push(size_spec);
+        args.push(format!("-t{part_num}:{}", entry.type_uuid));
+        args.push(format!("-c{part_num}:{}", entry.label));
+    }
+
+    args.push(target_str.to_string());
+
+    let output = Command::new("sgdisk")
+        .args(&args)
+        .output()
+        .context("running sgdisk to create partition table")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("sgdisk failed: {stderr}");
+    }
+
+    tracing::info!("partition table created on {}", target.display());
+    Ok(())
+}
+
+// r[impl installer.write.decompress-stream+2]
+pub fn decompress_to_device(
     source: &Path,
     target: &Path,
+    bytes_offset: u64,
+    total_bytes: Option<u64>,
     on_progress: &mut dyn FnMut(&WriteProgress),
-) -> Result<()> {
-    wipe_disk(target).context("wiping target disk before writing")?;
-
-    let total_bytes = image_uncompressed_size(source).ok();
-
+) -> Result<u64> {
     let input =
         File::open(source).with_context(|| format!("opening source image {}", source.display()))?;
 
@@ -190,8 +255,8 @@ pub fn write_image(
         .open(target)
         .with_context(|| format!("opening target device {}", target.display()))?;
 
-    let mut buf = vec![0u8; 4 * 1024 * 1024]; // 4 MiB buffer
-    let mut bytes_written: u64 = 0;
+    let mut buf = vec![0u8; 4 * 1024 * 1024];
+    let mut partition_bytes_written: u64 = 0;
     let start = Instant::now();
 
     loop {
@@ -202,113 +267,673 @@ pub fn write_image(
         output
             .write_all(&buf[..n])
             .context("writing to target device")?;
-        bytes_written += n as u64;
+        partition_bytes_written += n as u64;
 
         on_progress(&WriteProgress {
-            bytes_written,
+            bytes_written: bytes_offset + partition_bytes_written,
             total_bytes,
             elapsed: start.elapsed(),
         });
     }
 
     output.flush().context("flushing target device")?;
-
-    // Sync to ensure all data is physically written
     sync_device(&output)?;
-
-    // Final progress callback with actual total
-    on_progress(&WriteProgress {
-        bytes_written,
-        total_bytes: Some(bytes_written),
-        elapsed: start.elapsed(),
-    });
 
     tracing::info!(
         "wrote {} to {} in {:.1}s ({:.1} MiB/s)",
-        format_size(bytes_written),
+        format_size(partition_bytes_written),
         target.display(),
         start.elapsed().as_secs_f64(),
-        (bytes_written as f64) / (1024.0 * 1024.0) / start.elapsed().as_secs_f64(),
+        if start.elapsed().as_secs_f64() > 0.0 {
+            (partition_bytes_written as f64) / (1024.0 * 1024.0) / start.elapsed().as_secs_f64()
+        } else {
+            0.0
+        },
     );
 
-    Ok(())
+    Ok(partition_bytes_written)
 }
 
-fn sync_device(file: &File) -> Result<()> {
-    file.sync_all().context("syncing target device")?;
-    Ok(())
+fn create_passphrase_keyfile(passphrase: &str) -> Result<PathBuf> {
+    let path = PathBuf::from("/tmp/bes-luks-keyfile");
+    fs::write(&path, passphrase.as_bytes()).context("creating passphrase keyfile")?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o400))
+        .context("setting keyfile permissions")?;
+    Ok(path)
 }
 
-fn format_size(bytes: u64) -> String {
-    const GIB: u64 = 1024 * 1024 * 1024;
-    const MIB: u64 = 1024 * 1024;
-    if bytes >= GIB {
-        format!("{:.2} GiB", bytes as f64 / GIB as f64)
-    } else {
-        format!("{:.1} MiB", bytes as f64 / MIB as f64)
-    }
-}
+// r[impl installer.write.luks-before-write+2]
+pub fn format_luks_for_root(root_partition: &Path, passphrase: &str) -> Result<PathBuf> {
+    tracing::info!(
+        "formatting LUKS2 on {} with recovery passphrase",
+        root_partition.display()
+    );
 
-// r[impl installer.write.partitions]
-/// Expand the GPT and root partition to fill the target disk.
-///
-/// After writing a fixed-size image to a larger disk, the GPT secondary header
-/// is stranded in the middle and partition 3 (root) only covers the original
-/// image size. This function:
-///   1. Moves the GPT secondary header to the end of the disk.
-///   2. Grows partition 3 to fill all remaining space.
-///   3. Re-reads the partition table so the kernel picks up changes.
-///
-/// Filesystem-level resize (BTRFS, LUKS) is left to the boot-time
-/// grow-root-filesystem service.
-pub fn expand_partitions(target: &Path) -> Result<()> {
-    let target_str = target.to_str().unwrap_or_default();
+    let keyfile = create_passphrase_keyfile(passphrase)?;
 
-    tracing::info!("moving GPT secondary header on {}", target.display());
-    let sgdisk_status = Command::new("sgdisk")
-        .arg("--move-second-header")
-        .arg(target)
+    let output = Command::new("cryptsetup")
+        .args([
+            "luksFormat",
+            "--type",
+            "luks2",
+            "--key-file",
+            keyfile.to_str().unwrap_or_default(),
+            root_partition.to_str().unwrap_or_default(),
+        ])
         .output()
-        .context("running sgdisk --move-second-header")?;
-    if !sgdisk_status.status.success() {
-        let stderr = String::from_utf8_lossy(&sgdisk_status.stderr);
-        bail!("sgdisk --move-second-header failed: {stderr}");
-    }
+        .context("running cryptsetup luksFormat")?;
 
-    reread_partition_table(target)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("cryptsetup luksFormat failed: {stderr}");
+    }
 
     tracing::info!(
-        "growing root partition (partition 3) on {}",
-        target.display()
+        "opening LUKS volume on {} as {LUKS_NAME}",
+        root_partition.display()
     );
-    let growpart_status = Command::new("growpart")
-        .args(["--free-percent=1", target_str, "3"])
+
+    let output = Command::new("cryptsetup")
+        .args([
+            "open",
+            "--type",
+            "luks2",
+            "--key-file",
+            keyfile.to_str().unwrap_or_default(),
+            root_partition.to_str().unwrap_or_default(),
+            LUKS_NAME,
+        ])
         .output()
-        .context("running growpart")?;
-    match growpart_status.status.code() {
-        Some(0) => {
-            tracing::info!("root partition grown successfully");
-        }
-        Some(1) => {
-            tracing::info!("root partition already fills disk, no change needed");
-        }
-        _ => {
-            let stderr = String::from_utf8_lossy(&growpart_status.stderr);
-            bail!("growpart failed: {stderr}");
-        }
+        .context("running cryptsetup open")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("cryptsetup open failed: {stderr}");
     }
 
-    reread_partition_table(target)?;
+    let _ = fs::remove_file(&keyfile);
 
-    tracing::info!("partition expansion complete on {}", target.display());
+    Ok(PathBuf::from(format!("/dev/mapper/{LUKS_NAME}")))
+}
+
+// r[impl installer.write.luks-before-write+2]
+pub fn close_luks_root() -> Result<()> {
+    tracing::info!("closing LUKS volume {LUKS_NAME}");
+    let output = Command::new("cryptsetup")
+        .args(["close", LUKS_NAME])
+        .output()
+        .context("running cryptsetup close")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("cryptsetup close failed: {stderr}");
+    }
     Ok(())
 }
 
-// r[impl installer.write.partitions]
+fn open_luks_root(root_partition: &Path, passphrase: &str) -> Result<PathBuf> {
+    let keyfile = create_passphrase_keyfile(passphrase)?;
+
+    tracing::info!(
+        "opening LUKS volume on {} as {LUKS_NAME}",
+        root_partition.display()
+    );
+
+    let output = Command::new("cryptsetup")
+        .args([
+            "open",
+            "--type",
+            "luks2",
+            "--key-file",
+            keyfile.to_str().unwrap_or_default(),
+            root_partition.to_str().unwrap_or_default(),
+            LUKS_NAME,
+        ])
+        .output()
+        .context("running cryptsetup open")?;
+
+    let _ = fs::remove_file(&keyfile);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("cryptsetup open failed: {stderr}");
+    }
+
+    Ok(PathBuf::from(format!("/dev/mapper/{LUKS_NAME}")))
+}
+
+// r[impl installer.write.partitions+2]
+// r[impl installer.write.decompress-stream+2]
+pub fn write_partitions(
+    manifest: &PartitionManifest,
+    images_dir: &Path,
+    target: &Path,
+    disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
+    on_progress: &mut dyn FnMut(&WriteProgress),
+) -> Result<()> {
+    let total_bytes = partition_images_total_size(manifest, images_dir).ok();
+
+    wipe_disk(target).context("wiping target disk before writing")?;
+    create_partition_table(target, manifest).context("creating partition table")?;
+    reread_partition_table(target).context("re-reading partition table after creation")?;
+
+    let mut bytes_offset: u64 = 0;
+
+    for (i, entry) in manifest.partitions.iter().enumerate() {
+        let part_num = (i + 1) as u32;
+        let part_device = partition_path(target, part_num)?;
+        let img_path = images_dir.join(&entry.image);
+
+        tracing::info!(
+            "writing {} -> {} (partition {})",
+            entry.image,
+            part_device.display(),
+            part_num,
+        );
+
+        let write_device = if entry.label == "root" && disk_encryption.is_encrypted() {
+            format_luks_for_root(&part_device, passphrase.unwrap_or_default())
+                .context("formatting LUKS on root partition")?
+        } else {
+            part_device.clone()
+        };
+
+        let written = decompress_to_device(
+            &img_path,
+            &write_device,
+            bytes_offset,
+            total_bytes,
+            on_progress,
+        )
+        .with_context(|| format!("writing partition {}", entry.label))?;
+
+        bytes_offset += written;
+
+        if entry.label == "root" && disk_encryption.is_encrypted() {
+            close_luks_root().context("closing LUKS after writing root")?;
+        }
+    }
+
+    on_progress(&WriteProgress {
+        bytes_written: bytes_offset,
+        total_bytes: Some(bytes_offset),
+        elapsed: std::time::Duration::ZERO,
+    });
+
+    tracing::info!("all partitions written to {}", target.display());
+    Ok(())
+}
+
+// r[impl installer.write.expand-root]
+pub fn expand_root_filesystem(
+    target: &Path,
+    disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
+) -> Result<()> {
+    let root_part = partition_path(target, 3)?;
+
+    let btrfs_dev = if disk_encryption.is_encrypted() {
+        let pp = passphrase.unwrap_or_default();
+        let mapper_dev = open_luks_root(&root_part, pp)?;
+
+        tracing::info!("resizing LUKS container to fill partition");
+        let keyfile = create_passphrase_keyfile(pp)?;
+        let output = Command::new("cryptsetup")
+            .args([
+                "resize",
+                "--key-file",
+                keyfile.to_str().unwrap_or_default(),
+                LUKS_NAME,
+            ])
+            .output()
+            .context("running cryptsetup resize")?;
+        let _ = fs::remove_file(&keyfile);
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("cryptsetup resize failed: {stderr}");
+        }
+
+        mapper_dev
+    } else {
+        root_part.clone()
+    };
+
+    let mount_path = PathBuf::from(MOUNT_BASE);
+    fs::create_dir_all(&mount_path).context("creating mount point")?;
+
+    run_command(
+        "mount",
+        &[
+            "-t",
+            "btrfs",
+            "-o",
+            "subvol=@",
+            btrfs_dev.to_str().unwrap_or_default(),
+            mount_path.to_str().unwrap_or_default(),
+        ],
+    )
+    .context("mounting btrfs for resize")?;
+
+    tracing::info!("resizing btrfs filesystem to fill partition");
+    let resize_result = run_command(
+        "btrfs",
+        &[
+            "filesystem",
+            "resize",
+            "max",
+            mount_path.to_str().unwrap_or_default(),
+        ],
+    );
+
+    let _ = run_command("umount", &[mount_path.to_str().unwrap_or_default()]);
+
+    if disk_encryption.is_encrypted() {
+        let _ = close_luks_root();
+    }
+
+    resize_result.context("resizing btrfs filesystem")?;
+
+    tracing::info!("root filesystem expanded");
+    Ok(())
+}
+
+// r[impl installer.write.randomize-uuids]
+pub fn randomize_filesystem_uuids(
+    target: &Path,
+    disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
+) -> Result<()> {
+    tracing::info!("randomizing filesystem UUIDs");
+
+    let efi_part = partition_path(target, 1)?;
+    let xboot_part = partition_path(target, 2)?;
+    let root_part = partition_path(target, 3)?;
+
+    match Command::new("mlabel")
+        .args(["-n", "-i", efi_part.to_str().unwrap_or_default(), "::"])
+        .output()
+    {
+        Ok(efi_result) if !efi_result.status.success() => {
+            let stderr = String::from_utf8_lossy(&efi_result.stderr);
+            tracing::warn!("mlabel failed (non-fatal): {stderr}");
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::warn!("mlabel not found (non-fatal): EFI serial not randomized");
+        }
+        Err(e) => {
+            tracing::warn!("mlabel failed (non-fatal): {e}");
+        }
+    }
+
+    let xboot_result = Command::new("tune2fs")
+        .args(["-U", "random", xboot_part.to_str().unwrap_or_default()])
+        .output()
+        .context("running tune2fs to randomize xboot UUID")?;
+    if !xboot_result.status.success() {
+        let stderr = String::from_utf8_lossy(&xboot_result.stderr);
+        bail!("tune2fs -U random failed on xboot: {stderr}");
+    }
+
+    let btrfs_dev = if disk_encryption.is_encrypted() {
+        open_luks_root(&root_part, passphrase.unwrap_or_default())?
+    } else {
+        root_part.clone()
+    };
+
+    let btrfs_result = Command::new("btrfstune")
+        .args(["-f", "-u", btrfs_dev.to_str().unwrap_or_default()])
+        .output()
+        .context("running btrfstune to randomize root UUID")?;
+
+    if disk_encryption.is_encrypted() {
+        let _ = close_luks_root();
+    }
+
+    if !btrfs_result.status.success() {
+        let stderr = String::from_utf8_lossy(&btrfs_result.stderr);
+        bail!("btrfstune -u failed on root: {stderr}");
+    }
+
+    tracing::info!("filesystem UUIDs randomized");
+    Ok(())
+}
+
+fn blkid_value(device: &Path, tag: &str) -> Result<String> {
+    let output = Command::new("blkid")
+        .args([
+            "-s",
+            tag,
+            "-o",
+            "value",
+            device.to_str().unwrap_or_default(),
+        ])
+        .output()
+        .with_context(|| format!("running blkid on {}", device.display()))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("blkid failed on {}: {stderr}", device.display());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Install a temporary wrapper script that replaces `grub-probe` inside the
+/// chroot so that `update-grub` (which calls `grub-mkconfig`, which calls
+/// `grub-probe`) can resolve the root and boot devices.
+///
+/// In a chroot environment, `/proc/self/mountinfo` still reflects the host
+/// mount namespace, so `grub-probe --target=device /` fails with "cannot
+/// find a device for /". The wrapper intercepts the queries that
+/// `grub-mkconfig` makes and returns the correct values.
+///
+/// Returns the path to the backup of the real grub-probe (if any) so the
+/// caller can restore it.
+fn install_grub_probe_wrapper(
+    mount_path: &Path,
+    root_dev: &Path,
+    root_uuid: &str,
+    xboot_dev: &Path,
+    xboot_uuid: &str,
+    efi_dev: &Path,
+) -> Result<Option<PathBuf>> {
+    let probe_path = mount_path.join("usr/sbin/grub-probe");
+    let backup_path = mount_path.join("usr/sbin/grub-probe.real");
+
+    let backup = if probe_path.exists() {
+        fs::rename(&probe_path, &backup_path).context("backing up grub-probe")?;
+        Some(backup_path.clone())
+    } else {
+        None
+    };
+
+    let root_dev_str = root_dev.to_str().unwrap_or_default();
+    let xboot_dev_str = xboot_dev.to_str().unwrap_or_default();
+    let efi_dev_str = efi_dev.to_str().unwrap_or_default();
+
+    let wrapper = format!(
+        r##"#!/bin/sh
+# Temporary grub-probe wrapper installed by bes-installer.
+# Handles the queries that grub-mkconfig needs to generate grub.cfg.
+# Falls back to the real grub-probe for anything else.
+
+REAL_PROBE="/usr/sbin/grub-probe.real"
+
+# Parse arguments: we need to handle:
+#   grub-probe --target=device /
+#   grub-probe --target=device /boot
+#   grub-probe --device DEVICE --target=fs_uuid
+#   grub-probe --device DEVICE --target=fs
+#   grub-probe --device DEVICE --target=partuuid
+#   grub-probe --target=fs /
+#   grub-probe --target=abstraction /
+
+TARGET=""
+DEVICE=""
+PROBE_PATH=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --target=*) TARGET="${{1#--target=}}" ;;
+        --target) shift; TARGET="$1" ;;
+        --device) shift; DEVICE="$1" ;;
+        --device=*) DEVICE="${{1#--device=}}" ;;
+        -*) ;;
+        *) PROBE_PATH="$1" ;;
+    esac
+    shift
+done
+
+# Path-based queries (grub-probe --target=X /path)
+if [ -n "$PROBE_PATH" ]; then
+    case "$PROBE_PATH" in
+        /|/.)
+            case "$TARGET" in
+                device) echo "{root_dev_str}"; exit 0 ;;
+                fs_uuid) echo "{root_uuid}"; exit 0 ;;
+                fs) echo "btrfs"; exit 0 ;;
+                abstraction) echo ""; exit 0 ;;
+                partuuid) ;; # fall through to real probe
+                *) ;;
+            esac
+            ;;
+        /boot|/boot/)
+            case "$TARGET" in
+                device) echo "{xboot_dev_str}"; exit 0 ;;
+                fs_uuid) echo "{xboot_uuid}"; exit 0 ;;
+                fs) echo "ext2"; exit 0 ;;
+                abstraction) echo ""; exit 0 ;;
+                *) ;;
+            esac
+            ;;
+        /boot/efi|/boot/efi/)
+            case "$TARGET" in
+                device) echo "{efi_dev_str}"; exit 0 ;;
+                fs) echo "fat"; exit 0 ;;
+                *) ;;
+            esac
+            ;;
+    esac
+fi
+
+# Device-based queries (grub-probe --device DEV --target=X)
+if [ -n "$DEVICE" ]; then
+    case "$DEVICE" in
+        {root_dev_str})
+            case "$TARGET" in
+                fs_uuid) echo "{root_uuid}"; exit 0 ;;
+                fs) echo "btrfs"; exit 0 ;;
+                abstraction) echo ""; exit 0 ;;
+                *) ;;
+            esac
+            ;;
+        {xboot_dev_str})
+            case "$TARGET" in
+                fs_uuid) echo "{xboot_uuid}"; exit 0 ;;
+                fs) echo "ext2"; exit 0 ;;
+                *) ;;
+            esac
+            ;;
+        {efi_dev_str})
+            case "$TARGET" in
+                fs) echo "fat"; exit 0 ;;
+                *) ;;
+            esac
+            ;;
+    esac
+fi
+
+# Fall back to real grub-probe if available
+if [ -x "$REAL_PROBE" ]; then
+    exec "$REAL_PROBE" "$@"
+fi
+
+echo "grub-probe wrapper: unhandled query target=$TARGET device=$DEVICE path=$PROBE_PATH" >&2
+exit 1
+"##,
+        root_dev_str = root_dev_str,
+        root_uuid = root_uuid,
+        xboot_dev_str = xboot_dev_str,
+        xboot_uuid = xboot_uuid,
+        efi_dev_str = efi_dev_str,
+    );
+
+    fs::write(&probe_path, wrapper).context("writing grub-probe wrapper")?;
+    fs::set_permissions(&probe_path, fs::Permissions::from_mode(0o755))
+        .context("setting grub-probe wrapper permissions")?;
+
+    tracing::info!("installed grub-probe wrapper in chroot");
+    Ok(backup)
+}
+
+fn remove_grub_probe_wrapper(mount_path: &Path, backup: Option<PathBuf>) {
+    let probe_path = mount_path.join("usr/sbin/grub-probe");
+    if let Some(backup_path) = backup {
+        if let Err(e) = fs::rename(&backup_path, &probe_path) {
+            tracing::warn!("failed to restore grub-probe from backup: {e}");
+        } else {
+            tracing::info!("restored original grub-probe");
+        }
+    } else {
+        let _ = fs::remove_file(&probe_path);
+    }
+}
+
+// r[impl installer.write.rebuild-boot-config]
+pub fn rebuild_boot_config(
+    target: &Path,
+    disk_encryption: DiskEncryption,
+    passphrase: Option<&str>,
+) -> Result<()> {
+    tracing::info!("rebuilding boot config (initramfs + grub)");
+
+    let root_part = partition_path(target, 3)?;
+    let xboot_part = partition_path(target, 2)?;
+    let efi_part = partition_path(target, 1)?;
+
+    let luks_opened = if disk_encryption.is_encrypted() {
+        let _ = open_luks_root(&root_part, passphrase.unwrap_or_default())?;
+        true
+    } else {
+        false
+    };
+
+    let btrfs_dev = if luks_opened {
+        PathBuf::from(format!("/dev/mapper/{LUKS_NAME}"))
+    } else {
+        root_part.clone()
+    };
+
+    // Read filesystem UUIDs before mounting (needed for the grub-probe wrapper)
+    let root_uuid = blkid_value(&btrfs_dev, "UUID").context("reading root filesystem UUID")?;
+    let xboot_uuid = blkid_value(&xboot_part, "UUID").context("reading xboot filesystem UUID")?;
+
+    let mount_path = PathBuf::from(MOUNT_BASE);
+    fs::create_dir_all(&mount_path).context("creating mount point")?;
+
+    run_command(
+        "mount",
+        &[
+            "-t",
+            "btrfs",
+            "-o",
+            "subvol=@,compress=zstd:6",
+            btrfs_dev.to_str().unwrap_or_default(),
+            mount_path.to_str().unwrap_or_default(),
+        ],
+    )
+    .context("mounting btrfs root for boot config rebuild")?;
+
+    let xboot_mount = mount_path.join("boot");
+    fs::create_dir_all(&xboot_mount).ok();
+    let mount_xboot_result = run_command(
+        "mount",
+        &[
+            xboot_part.to_str().unwrap_or_default(),
+            xboot_mount.to_str().unwrap_or_default(),
+        ],
+    );
+    let xboot_mounted = mount_xboot_result.is_ok();
+
+    let efi_mount = mount_path.join("boot/efi");
+    fs::create_dir_all(&efi_mount).ok();
+    let mount_efi_result = run_command(
+        "mount",
+        &[
+            efi_part.to_str().unwrap_or_default(),
+            efi_mount.to_str().unwrap_or_default(),
+        ],
+    );
+    let efi_mounted = mount_efi_result.is_ok();
+
+    let proc_path = mount_path.join("proc");
+    let sys_path = mount_path.join("sys");
+    let dev_path = mount_path.join("dev");
+
+    let _ = run_command(
+        "mount",
+        &["--bind", "/proc", proc_path.to_str().unwrap_or_default()],
+    );
+    let _ = run_command(
+        "mount",
+        &["--bind", "/sys", sys_path.to_str().unwrap_or_default()],
+    );
+    let _ = run_command(
+        "mount",
+        &["--bind", "/dev", dev_path.to_str().unwrap_or_default()],
+    );
+
+    let mount_str = mount_path.to_str().unwrap_or_default();
+
+    let modules_dir = mount_path.join("lib/modules");
+    let kernel_version = if modules_dir.exists() {
+        let mut versions: Vec<String> = fs::read_dir(&modules_dir)
+            .context("reading /lib/modules in target")?
+            .filter_map(|entry| {
+                entry.ok().and_then(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if e.path().is_dir() { Some(name) } else { None }
+                })
+            })
+            .collect();
+        versions.sort();
+        versions.pop()
+    } else {
+        None
+    };
+
+    let dracut_result = if let Some(ref kver) = kernel_version {
+        tracing::info!("rebuilding initramfs for kernel {kver}");
+        run_command("chroot", &[mount_str, "dracut", "--force", "--kver", kver])
+    } else {
+        tracing::warn!("no kernel version found in target, running dracut without --kver");
+        run_command(
+            "chroot",
+            &[mount_str, "dracut", "--force", "--regenerate-all"],
+        )
+    };
+
+    // Install a grub-probe wrapper so update-grub can resolve devices from
+    // within the chroot (where /proc/self/mountinfo reflects the host, not
+    // the chroot's mount layout).
+    let grub_probe_backup = install_grub_probe_wrapper(
+        &mount_path,
+        &btrfs_dev,
+        &root_uuid,
+        &xboot_part,
+        &xboot_uuid,
+        &efi_part,
+    )
+    .context("installing grub-probe wrapper")?;
+
+    let grub_result = run_command("chroot", &[mount_str, "update-grub"]);
+
+    remove_grub_probe_wrapper(&mount_path, grub_probe_backup);
+
+    let _ = run_command("umount", &[dev_path.to_str().unwrap_or_default()]);
+    let _ = run_command("umount", &[sys_path.to_str().unwrap_or_default()]);
+    let _ = run_command("umount", &[proc_path.to_str().unwrap_or_default()]);
+    if efi_mounted {
+        let _ = run_command("umount", &[efi_mount.to_str().unwrap_or_default()]);
+    }
+    if xboot_mounted {
+        let _ = run_command("umount", &[xboot_mount.to_str().unwrap_or_default()]);
+    }
+    let _ = run_command("umount", &[mount_path.to_str().unwrap_or_default()]);
+
+    if luks_opened {
+        let _ = close_luks_root();
+    }
+
+    dracut_result.context("rebuilding initramfs with dracut in chroot")?;
+    grub_result.context("running update-grub in chroot")?;
+
+    tracing::info!("boot config rebuilt successfully");
+    Ok(())
+}
+
+// r[impl installer.write.partitions+2]
 pub fn verify_partition_table(target: &Path) -> Result<()> {
-    // Use sfdisk --json to read the GPT directly from the block device.
-    // Unlike lsblk, this doesn't require the kernel to have created
-    // partition device nodes, which makes it work inside containers.
     let output = Command::new("sfdisk")
         .args(["--json", target.to_str().unwrap_or_default()])
         .output()
@@ -353,7 +978,6 @@ pub fn verify_partition_table(target: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Re-read the partition table on the target device so the kernel picks up changes.
 pub fn reread_partition_table(target: &Path) -> Result<()> {
     let output = Command::new("partprobe")
         .arg(target)
@@ -379,17 +1003,6 @@ pub fn reread_partition_table(target: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Ensure partition device nodes exist in `/dev` for the given disk.
-///
-/// Inside containers (e.g. systemd-nspawn), `partprobe` tells the kernel to
-/// re-read the partition table and the kernel creates device nodes on the
-/// *host's* devtmpfs, but the container has its own private `/dev` where
-/// those nodes never appear. The container's `/sys` may also not expose
-/// partition sub-entries.
-///
-/// This function reads sysfs (`/sys/class/block/<disk>/<partition>/dev`)
-/// to discover partition sub-devices and their major:minor numbers, then
-/// creates or recreates any `/dev` nodes that are missing or stale.
 // r[impl installer.container.partition-devices+2]
 pub fn ensure_partition_devices(target: &Path) -> Result<()> {
     let dev_name = target
@@ -407,8 +1020,6 @@ pub fn ensure_partition_devices(target: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Try to create missing partition device nodes using sysfs entries.
-/// Returns the number of nodes created.
 fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<usize> {
     let sysfs_dir = format!("/sys/class/block/{dev_name}");
     let sysfs_path = Path::new(&sysfs_dir);
@@ -461,10 +1072,6 @@ fn parse_major_minor(majmin: &str) -> Result<(u32, u32)> {
     Ok((major, minor))
 }
 
-/// Check whether `path` exists, is a block device, and has the expected major:minor.
-///
-/// Uses `MetadataExt::rdev()` to extract the device number and the libc
-/// `major`/`minor` macros to split it, avoiding a subprocess.
 fn is_valid_block_device(path: &Path, expected_major: u32, expected_minor: u32) -> bool {
     let meta = match fs::metadata(path) {
         Ok(m) => m,
@@ -491,10 +1098,6 @@ fn is_valid_block_device(path: &Path, expected_major: u32, expected_minor: u32) 
     false
 }
 
-/// Create a block device node. Returns 1 on success, 0 on failure (logged as warning).
-///
-/// If `dev_path` already exists but is not a valid block device with the right
-/// major:minor, it is removed first so mknod can recreate it.
 fn mknod_block_device(dev_path: &Path, name: &str, major: u32, minor: u32) -> Result<usize> {
     if dev_path.exists() {
         tracing::info!("removing stale /dev/{name} before recreating");
@@ -522,11 +1125,55 @@ fn mknod_block_device(dev_path: &Path, name: &str, major: u32, minor: u32) -> Re
     Ok(1)
 }
 
+pub fn partition_path(device: &Path, part_num: u32) -> Result<PathBuf> {
+    let dev_str = device.to_str().unwrap_or_default();
+
+    let path = if dev_str.ends_with(|c: char| c.is_ascii_digit()) {
+        PathBuf::from(format!("{dev_str}p{part_num}"))
+    } else {
+        PathBuf::from(format!("{dev_str}{part_num}"))
+    };
+
+    Ok(path)
+}
+
+fn sync_device(file: &File) -> Result<()> {
+    file.sync_all().context("syncing target device")?;
+    Ok(())
+}
+
+fn format_size(bytes: u64) -> String {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    const MIB: u64 = 1024 * 1024;
+    if bytes >= GIB {
+        format!("{:.2} GiB", bytes as f64 / GIB as f64)
+    } else {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    }
+}
+
+fn run_command(program: &str, args: &[&str]) -> Result<()> {
+    tracing::debug!("running: {program} {}", args.join(" "));
+
+    let output = Command::new(program)
+        .args(args)
+        .output()
+        .with_context(|| format!("spawning {program}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::error!("{program} failed (exit {}): {stderr}", output.status);
+        bail!("{program} failed (exit {}): {stderr}", output.status);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_fraction_with_total() {
         let p = WriteProgress {
@@ -537,7 +1184,7 @@ mod tests {
         assert!((p.fraction().unwrap() - 0.5).abs() < f64::EPSILON);
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_fraction_without_total() {
         let p = WriteProgress {
@@ -548,7 +1195,7 @@ mod tests {
         assert!(p.fraction().is_none());
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_eta_calculation() {
         let p = WriteProgress {
@@ -560,7 +1207,7 @@ mod tests {
         assert!((eta.as_secs_f64() - 10.0).abs() < 0.1);
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_eta_at_zero() {
         let p = WriteProgress {
@@ -571,7 +1218,7 @@ mod tests {
         assert!(p.eta().is_none());
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_eta_complete() {
         let p = WriteProgress {
@@ -583,7 +1230,7 @@ mod tests {
         assert!(eta.as_secs_f64() < 0.1);
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn progress_throughput() {
         let p = WriteProgress {
@@ -594,7 +1241,7 @@ mod tests {
         assert!((p.throughput_mbps() - 10.0).abs() < 0.1);
     }
 
-    // r[verify installer.tui.progress]
+    // r[verify installer.tui.progress+2]
     #[test]
     fn eta_formatting() {
         assert_eq!(format_eta(std::time::Duration::from_secs(45)), "45s");
@@ -602,7 +1249,7 @@ mod tests {
         assert_eq!(format_eta(std::time::Duration::from_secs(3661)), "61m01s");
     }
 
-    // r[verify installer.write.decompress-stream]
+    // r[verify installer.write.decompress-stream+2]
     #[test]
     fn size_formatting() {
         assert_eq!(format_size(0), "0.0 MiB");
@@ -611,19 +1258,19 @@ mod tests {
         assert_eq!(format_size(8 * 1024 * 1024 * 1024), "8.00 GiB");
     }
 
-    // r[verify installer.write.disk-size-check]
+    // r[verify installer.write.disk-size-check+2]
     #[test]
     fn check_disk_size_ok_when_equal() {
         assert!(check_disk_size(5 * 1024 * 1024 * 1024, 5 * 1024 * 1024 * 1024).is_ok());
     }
 
-    // r[verify installer.write.disk-size-check]
+    // r[verify installer.write.disk-size-check+2]
     #[test]
     fn check_disk_size_ok_when_larger() {
         assert!(check_disk_size(5 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024).is_ok());
     }
 
-    // r[verify installer.write.disk-size-check]
+    // r[verify installer.write.disk-size-check+2]
     #[test]
     fn check_disk_size_fails_when_too_small() {
         let result = check_disk_size(5 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024);
@@ -634,7 +1281,7 @@ mod tests {
         assert!(msg.contains("4.00 GiB"), "expected disk size in: {msg}");
     }
 
-    // r[verify installer.write.disk-size-check]
+    // r[verify installer.write.disk-size-check+2]
     #[test]
     fn image_uncompressed_size_reads_sidecar() {
         let dir = tempfile::tempdir().unwrap();
@@ -648,7 +1295,7 @@ mod tests {
         assert_eq!(size, 5_368_709_120);
     }
 
-    // r[verify installer.write.disk-size-check]
+    // r[verify installer.write.disk-size-check+2]
     #[test]
     fn image_uncompressed_size_trims_whitespace() {
         let dir = tempfile::tempdir().unwrap();
@@ -661,7 +1308,7 @@ mod tests {
         assert_eq!(image_uncompressed_size(&zst_path).unwrap(), 1024);
     }
 
-    // r[verify installer.write.disk-size-check]
+    // r[verify installer.write.disk-size-check+2]
     #[test]
     fn image_uncompressed_size_fails_without_sidecar() {
         let dir = tempfile::tempdir().unwrap();
@@ -671,7 +1318,7 @@ mod tests {
         assert!(image_uncompressed_size(&zst_path).is_err());
     }
 
-    // r[verify installer.write.disk-size-check]
+    // r[verify installer.write.disk-size-check+2]
     #[test]
     fn image_uncompressed_size_fails_on_non_numeric() {
         let dir = tempfile::tempdir().unwrap();
@@ -684,13 +1331,128 @@ mod tests {
         assert!(image_uncompressed_size(&zst_path).is_err());
     }
 
-    // r[verify installer.write.disk-size-check]
+    // r[verify installer.write.disk-size-check+2]
     #[test]
     fn image_uncompressed_size_fails_without_zst_extension() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("image.raw");
 
         assert!(image_uncompressed_size(&path).is_err());
+    }
+
+    // r[verify installer.write.disk-size-check+2]
+    #[test]
+    fn partition_images_total_size_sums_correctly() {
+        let dir = tempfile::tempdir().unwrap();
+
+        for (name, size_val) in [
+            ("efi.img.zst", "536870912"),
+            ("xboot.img.zst", "1073741824"),
+            ("root.img.zst", "3758096384"),
+        ] {
+            std::fs::write(dir.path().join(name), b"data").unwrap();
+            let size_name = name.replace(".zst", ".size");
+            std::fs::write(dir.path().join(size_name), size_val).unwrap();
+        }
+
+        let manifest = PartitionManifest {
+            arch: "amd64".into(),
+            partitions: vec![
+                PartitionEntry {
+                    label: "efi".into(),
+                    type_uuid: "C12A7328-F81F-11D2-BA4B-00A0C93EC93B".into(),
+                    size_mib: 512,
+                    image: "efi.img.zst".into(),
+                },
+                PartitionEntry {
+                    label: "xboot".into(),
+                    type_uuid: "BC13C2FF-59E6-4262-A352-B275FD6F7172".into(),
+                    size_mib: 1024,
+                    image: "xboot.img.zst".into(),
+                },
+                PartitionEntry {
+                    label: "root".into(),
+                    type_uuid: "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709".into(),
+                    size_mib: 0,
+                    image: "root.img.zst".into(),
+                },
+            ],
+        };
+
+        let total = partition_images_total_size(&manifest, dir.path()).unwrap();
+        assert_eq!(total, 536870912 + 1073741824 + 3758096384);
+    }
+
+    // r[verify installer.write.source+2]
+    #[test]
+    fn parse_partition_manifest_valid() {
+        let json = r#"{
+            "arch": "amd64",
+            "partitions": [
+                {
+                    "label": "efi",
+                    "type_uuid": "C12A7328-F81F-11D2-BA4B-00A0C93EC93B",
+                    "size_mib": 512,
+                    "image": "efi.img.zst"
+                },
+                {
+                    "label": "xboot",
+                    "type_uuid": "BC13C2FF-59E6-4262-A352-B275FD6F7172",
+                    "size_mib": 1024,
+                    "image": "xboot.img.zst"
+                },
+                {
+                    "label": "root",
+                    "type_uuid": "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709",
+                    "size_mib": 0,
+                    "image": "root.img.zst"
+                }
+            ]
+        }"#;
+
+        let manifest: PartitionManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest.arch, "amd64");
+        assert_eq!(manifest.partitions.len(), 3);
+        assert_eq!(manifest.partitions[0].label, "efi");
+        assert_eq!(manifest.partitions[0].size_mib, 512);
+        assert_eq!(manifest.partitions[1].label, "xboot");
+        assert_eq!(manifest.partitions[1].size_mib, 1024);
+        assert_eq!(manifest.partitions[2].label, "root");
+        assert_eq!(manifest.partitions[2].size_mib, 0);
+    }
+
+    // r[verify installer.write.source+2]
+    #[test]
+    fn parse_partition_manifest_missing_fields() {
+        let json = r#"{ "arch": "amd64" }"#;
+        assert!(serde_json::from_str::<PartitionManifest>(json).is_err());
+    }
+
+    // r[verify installer.write.source+2]
+    #[test]
+    fn parse_partition_manifest_bad_json() {
+        assert!(serde_json::from_str::<PartitionManifest>("not json").is_err());
+    }
+
+    // r[verify installer.write.partitions+2]
+    #[test]
+    fn partition_path_scsi_disk() {
+        let path = partition_path(Path::new("/dev/sda"), 3).unwrap();
+        assert_eq!(path, PathBuf::from("/dev/sda3"));
+    }
+
+    // r[verify installer.write.partitions+2]
+    #[test]
+    fn partition_path_nvme() {
+        let path = partition_path(Path::new("/dev/nvme0n1"), 3).unwrap();
+        assert_eq!(path, PathBuf::from("/dev/nvme0n1p3"));
+    }
+
+    // r[verify installer.write.partitions+2]
+    #[test]
+    fn partition_path_loop() {
+        let path = partition_path(Path::new("/dev/loop0"), 1).unwrap();
+        assert_eq!(path, PathBuf::from("/dev/loop0p1"));
     }
 
     // r[verify installer.container.partition-devices+2]
@@ -752,5 +1514,37 @@ mod tests {
     fn ensure_partition_devices_via_sysfs_nonexistent_dir() {
         let count = ensure_partition_devices_via_sysfs("nonexistent_device_xyzzy_test").unwrap();
         assert_eq!(count, 0);
+    }
+
+    // r[verify installer.write.partitions+2]
+    #[test]
+    fn create_partition_table_builds_correct_sgdisk_args() {
+        let manifest = PartitionManifest {
+            arch: "amd64".into(),
+            partitions: vec![
+                PartitionEntry {
+                    label: "efi".into(),
+                    type_uuid: "C12A7328-F81F-11D2-BA4B-00A0C93EC93B".into(),
+                    size_mib: 512,
+                    image: "efi.img.zst".into(),
+                },
+                PartitionEntry {
+                    label: "xboot".into(),
+                    type_uuid: "BC13C2FF-59E6-4262-A352-B275FD6F7172".into(),
+                    size_mib: 1024,
+                    image: "xboot.img.zst".into(),
+                },
+                PartitionEntry {
+                    label: "root".into(),
+                    type_uuid: "4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709".into(),
+                    size_mib: 0,
+                    image: "root.img.zst".into(),
+                },
+            ],
+        };
+
+        assert_eq!(manifest.partitions.len(), 3);
+        assert_eq!(manifest.partitions[0].size_mib, 512);
+        assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 }

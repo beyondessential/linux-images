@@ -1,7 +1,7 @@
 [
   {
-    "name": "metal-full-tpm",
-    "disk-encryption": "tpm",
+    "name": "metal-full-keyfile",
+    "disk-encryption": "keyfile",
     "hostname": "test-metal-full",
     "tailscale": "tskey-auth-container-test-key-1234567890",
     "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
@@ -60,12 +60,30 @@
   },
   {
     "name": "metal-timezone-custom",
-    "disk-encryption": "tpm",
+    "disk-encryption": "keyfile",
     "hostname": "test-metal-tz",
     "timezone": "Europe/London"
   },
   {
     "name": "cloud-timezone-default",
     "disk-encryption": "none"
+  },
+  {
+    "name": "cloud-no-install-log",
+    "disk-encryption": "none",
+    "hostname": "test-cloud-nolog",
+    "copy-install-log": false
+  },
+  {
+    "name": "cloud-with-network",
+    "disk-encryption": "none",
+    "hostname": "test-cloud-net",
+    "private-network": false
+  },
+  {
+    "name": "metal-tpm-swtpm",
+    "disk-encryption": "tpm",
+    "hostname": "test-metal-tpm",
+    "password": "testpass123"
   }
 ]

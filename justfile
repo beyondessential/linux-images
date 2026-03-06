@@ -6,7 +6,7 @@ arch := "amd64"
 variant := "metal"
 qemu_memory := "4096"
 qemu_cores := "2"
-container_test_variant := ""
+container_test_filter := ""
 try_disk_size := "10G"
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
@@ -124,20 +124,23 @@ iso: _validate-arch installer-build
   #!/usr/bin/env bash
   set -euo pipefail
 
-  # Verify we have images for both variants
-  METAL_IMAGE="$(find "{{output_arch_dir}}" -name '*-metal-*.raw.zst' | head -1)"
-  CLOUD_IMAGE="$(find "{{output_arch_dir}}" -name '*-cloud-*.raw.zst' | head -1)"
+  # Verify we have the cloud image (partition images are extracted from it).
+  # Prefer .raw.zst but accept uncompressed .raw too.
+  CLOUD_IMAGE="$(find "{{output_arch_dir}}" -path '*/cloud/*' -name '*.raw.zst' | head -1)"
+  if [ -z "$CLOUD_IMAGE" ]; then
+    CLOUD_IMAGE="$(find "{{output_arch_dir}}" -path '*/cloud/*' -name '*.raw' | head -1)"
+  fi
 
-  if [ -z "$METAL_IMAGE" ] || [ -z "$CLOUD_IMAGE" ]; then
-    echo "ERROR: need both metal and cloud .raw.zst images under {{output_arch_dir}}"
-    echo "Run 'just arch={{arch}} variant=metal build' and 'just arch={{arch}} variant=cloud build' first."
+  if [ -z "$CLOUD_IMAGE" ]; then
+    echo "ERROR: need a cloud .raw or .raw.zst image under {{output_arch_dir}}"
+    echo "Run 'just arch={{arch}} variant=cloud raw' first."
     exit 1
   fi
 
   sudo ARCH="{{arch}}" \
        OUTPUT="{{output_iso}}" \
        INSTALLER_BIN="{{installer_bin}}" \
-       IMAGE_DIR="{{output_arch_dir}}" \
+       CLOUD_IMAGE="$CLOUD_IMAGE" \
        UBUNTU_SUITE="{{ubuntu_suite}}" \
        UBUNTU_MIRROR="{{ubuntu_mirror}}" \
        iso/build-iso.sh
@@ -585,9 +588,9 @@ test-e2e: _validate-variant _validate-arch
   fi
   sudo tests/test-e2e-install.sh "$ISO" "{{variant}}" "{{arch}}"
 
-# Run container-based install test suite: extract ISO rootfs, write to loopback
-# device inside systemd-nspawn, verify results across multiple scenarios.
-# Much faster than QEMU E2E tests.
+# Run container-based installer integration tests.
+# Override filter: just container_test_filter=metal-tpm-swtpm test-container-install
+# Accepts: "metal", "cloud", a scenario name, or a substring.
 test-container-install: _validate-arch
   #!/usr/bin/env bash
   set -euo pipefail
@@ -601,7 +604,7 @@ test-container-install: _validate-arch
     echo "ERROR: systemd-nspawn required (install systemd-container)"
     exit 1
   fi
-  sudo tests/test-container-install-all.sh "$ISO" "{{arch}}" "{{container_test_variant}}"
+  sudo tests/test-container-install-all.sh "$ISO" "{{arch}}" "{{container_test_filter}}"
 
 # Run container isolation test: verify that no host block devices are
 # visible inside a systemd-nspawn container. Does not run the installer.

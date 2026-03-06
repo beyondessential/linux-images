@@ -15,6 +15,9 @@
 #           Must run as root.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/nspawn-opts.sh"
+
 ISO="${1:?Usage: $0 <iso> <arch> [disk-size] [installer-bin]}"
 ARCH="${2:?Usage: $0 <iso> <arch> [disk-size] [installer-bin]}"
 TARGET_DISK_SIZE="${3:-10G}"
@@ -57,9 +60,24 @@ cleanup() {
     local exit_code=$?
     set +e
 
+    # Unmount any stale mounts the installer left on the target device or
+    # its LUKS mapper before closing LUKS / detaching the loop.
+    if [ -n "$LOOP_DEV" ]; then
+        grep "$LOOP_DEV\|bes-target-root" /proc/mounts 2>/dev/null \
+            | awk '{print $2}' | sort -r | while read -r mp; do
+            umount "$mp" 2>/dev/null
+        done
+    fi
+
+    if [ -e /dev/mapper/bes-target-root ]; then
+        cryptsetup close bes-target-root 2>/dev/null
+    fi
+
     if [ -n "$LOOP_DEV" ]; then
         losetup -d "$LOOP_DEV" 2>/dev/null
     fi
+
+    swtpm_stop
 
     if [ -n "$WORK_DIR" ]; then
         rm -rf "$WORK_DIR"
@@ -116,12 +134,16 @@ xorriso -osirrox on -indev "$ISO" \
     -extract /images "$IMAGES_DIR" \
     2>/dev/null
 
-IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.raw.zst' | wc -l)
-if [ "$IMAGE_COUNT" -eq 0 ]; then
-    echo "ERROR: no .raw.zst images found in ISO /images/"
+if [ ! -f "$IMAGES_DIR/partitions.json" ]; then
+    echo "ERROR: partitions.json not found in ISO /images/"
     exit 1
 fi
-echo "    Extracted $IMAGE_COUNT disk image(s)"
+PART_IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.img.zst' | wc -l)
+if [ "$PART_IMAGE_COUNT" -eq 0 ]; then
+    echo "ERROR: no .img.zst partition images found in ISO /images/"
+    exit 1
+fi
+echo "    Extracted partitions.json + $PART_IMAGE_COUNT partition image(s)"
 echo ""
 
 # ============================================================
@@ -192,38 +214,39 @@ echo "    Rootfs ready"
 echo ""
 
 # ============================================================
-# Phase 5: Launch interactive installer
+# Phase 5: Start software TPM if available
+# ============================================================
+# Try to start swtpm so that TPM encryption works end-to-end in the
+# interactive trial. If swtpm or the tpm_vtpm_proxy kernel module is
+# not available, fall back to --fake-tpm (the TUI will still default to
+# TPM encryption, but enrollment will fail at the end).
+INSTALLER_TPM_ARGS=(--fake-tpm)
+if swtpm_start "$WORK_DIR/swtpm" 2>/dev/null; then
+    echo "==> Software TPM started — TPM encryption will work end-to-end."
+else
+    echo "==> Software TPM not available (missing swtpm or tpm_vtpm_proxy module)."
+    echo "    TPM enrollment will fail if selected."
+fi
+echo ""
+
+# ============================================================
+# Phase 6: Launch interactive installer
 # ============================================================
 echo "==> Launching interactive installer in container..."
 echo "    (The installer TUI will take over the terminal.)"
 echo ""
 
-# nspawn uses --pipe so that the TUI's crossterm can drive the inherited
-# terminal fd directly. --private-network is omitted so tailscale netcheck
-# works.
+# r[impl installer.container.isolation+3]: use the shared nspawn
+# configuration. --private-network is omitted so tailscale netcheck works.
 #
 # The container gets nspawn's own private /dev (no host devices exposed).
 # After partprobe, partition device nodes only appear on the host's devtmpfs,
 # not inside the container. The installer handles this by reading
-# /sys/class/block/ and creating missing device nodes via mknod.
-NSPAWN_OPTS=(
-    --register=no
-    --quiet
-    --pipe
-    --capability=CAP_SYS_ADMIN
-    --system-call-filter=mount
-    --property=DeviceAllow='block-loop rwm'
-    --property=DeviceAllow='block-blkext rwm'
-    --property=DeviceAllow='char-misc rwm'
-    --property=DeviceAllow='block-device-mapper rwm'
-)
-
-NSPAWN_BINDS=(
-    "--bind=$LOOP_DEV"
-    "--bind=$WORK_DIR/log:/log"
-    "--bind-ro=$IMAGES_DIR:/run/live/medium/images"
-    "--bind-ro=$DEVICES_JSON:/tmp/devices.json"
-)
+# /sys/class/block/ and creating missing device nodes via mknod
+# (see r[installer.container.partition-devices+2]).
+nspawn_opts
+nspawn_installer_binds "$LOOP_DEV" "$IMAGES_DIR" "$DEVICES_JSON" \
+    "" "$WORK_DIR/log:/log"
 
 set +e
 systemd-nspawn \
@@ -232,7 +255,7 @@ systemd-nspawn \
     "${NSPAWN_BINDS[@]}" \
     /usr/local/bin/bes-installer \
         --fake-devices /tmp/devices.json \
-        --fake-tpm \
+        "${INSTALLER_TPM_ARGS[@]}" \
         --no-reboot \
         --log /log/installer.log
 RC=$?

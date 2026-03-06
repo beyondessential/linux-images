@@ -31,6 +31,10 @@
 > # Strategies: "largest-ssd", "largest", "smallest"
 > disk = "largest-ssd"
 >
+> # Copy the installer log into the installed system at /var/log/bes-installer.log.
+> # Default: true. Set to false to disable. No TUI control for this option.
+> copy-install-log = true
+>
 > [firstboot]
 > hostname = "server-01"
 > # Use DHCP-provided hostname instead of a static one.
@@ -135,7 +139,7 @@ r[installer.dryrun.output]
 The `--dry-run-output <path>` flag specifies the path for the JSON install
 plan. If omitted, the plan is written to stdout.
 
-> r[installer.dryrun.schema+3]
+> r[installer.dryrun.schema+4]
 > The install plan JSON has the following structure:
 >
 > ```json
@@ -158,7 +162,8 @@ plan. If omitted, the plan is written to stdout.
 >     "password_set": true,
 >     "timezone": "UTC"
 >   },
->   "image_path": "/run/live/medium/images/metal-amd64.raw.zst",
+>   "manifest_path": "/run/live/medium/images/partitions.json",
+>   "copy_install_log": true,
 >   "config_warnings": []
 > }
 > ```
@@ -413,7 +418,7 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+5]
+r[installer.tui.confirmation+6]
 After the timezone screen, and after the pre-summary network results screen,
 the TUI must show a summary screen listing: target disk (path, model, size),
 chosen disk encryption mode, and any first-boot configuration. The summary
@@ -425,8 +430,9 @@ When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
 screen must also generate and display the recovery passphrase. This gives
 the user an opportunity to write it down **before** the destructive write
 begins. The same passphrase is later enrolled into the LUKS volume during
-encryption setup. The post-write "Recovery Passphrase" screen remains as a
-final reminder.
+encryption setup. The completion screen displays the recovery passphrase
+again as a final reminder; the user must press Enter to acknowledge before
+the system reboots.
 
 r[installer.tui.ascii-rendering]
 All text rendered by the TUI must use only printable ASCII characters. In
@@ -443,9 +449,18 @@ Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
 set), not simply quit the process. On bare-metal hardware, quitting without
 rebooting leaves the machine in an unusable state.
 
-r[installer.tui.progress]
-During image writing, the TUI must display a progress bar showing bytes
-written and estimated time remaining.
+r[installer.tui.progress+2]
+The TUI must display a single progress bar that covers the entire
+installation, not just the image write. The progress bar is shown on one
+`Installing` screen from the moment the user confirms until all steps
+complete. Partition image writes (which have byte-level progress) occupy
+approximately 90% of the bar. Each post-write step (filesystem expansion,
+UUID randomization, boot config rebuild, partition verification, first-boot
+configuration, and encryption setup) occupies a small fixed slice of the
+remaining 10%, advancing the bar when the step completes. After all steps
+finish, the TUI transitions to a completion screen. For encrypted installs,
+the completion screen also displays the recovery passphrase (replacing the
+separate recovery passphrase screen).
 
 r[installer.tui.debug-shell]
 Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
@@ -466,78 +481,128 @@ no SCSI/ATA-specific ioctls.
 
 ## Image Writing
 
-r[installer.write.partitions]
-Before writing an image, the installer must wipe all existing filesystem,
-RAID, and partition-table signatures from the target disk.
-After writing the image, the installer must verify the partition table, and expand the disk and root partition to fit.
+r[installer.write.partitions+2]
+Before writing partition images, the installer must wipe all existing
+filesystem, RAID, and partition-table signatures from the target disk. It
+must then create the GPT table and all three partitions (EFI, xboot, root)
+using the geometry from `partitions.json`. After writing all partition
+images, the installer must verify the partition table.
 
-r[installer.write.source]
-Compressed disk images (`.raw.zst`) must be stored on the ISO filesystem. The
-installer must select the correct image for the running CPU architecture and
-chosen variant.
+r[installer.write.source+2]
+The installer must read `partitions.json` from the ISO filesystem to locate
+the partition images and their layout metadata. There is one set of partition
+images per architecture, not per variant. The installer must search the
+standard ISO mount paths (`/run/live/medium/images`, `/cdrom/images`, etc.)
+for the manifest file.
 
-r[installer.write.disk-size-check]
-Before writing, the installer must read the uncompressed image size from the
-zstd frame header and verify that the target disk is at least that large. If
-the disk is too small, the installer must refuse to write and report the
-image size and disk size in the error message.
+r[installer.write.disk-size-check+2]
+Before writing, the installer must read the uncompressed size of each
+partition image from its `.size` sidecar file and verify that the target disk
+is at least as large as the sum of all partition sizes (plus GPT overhead).
+If the disk is too small, the installer must refuse to write and report the
+required size and disk size in the error message.
 
-r[installer.write.decompress-stream]
-The installer must stream-decompress the zstd image directly to the target
-block device, avoiding the need to hold the uncompressed image in memory or
-on a temporary filesystem.
+r[installer.write.decompress-stream+2]
+The installer must stream-decompress each zstd-compressed partition image
+directly to its corresponding partition device (or to the opened LUKS mapper
+device for the root partition when encryption is enabled), avoiding the need
+to hold the uncompressed image in memory or on a temporary filesystem.
+
+r[installer.write.luks-before-write+2]
+When disk encryption is not `"none"`, the installer must format the root
+partition with LUKS2 using the recovery passphrase as the initial key and
+open the LUKS volume before writing the root partition image. After writing,
+the LUKS volume must be closed. The recovery passphrase must be generated
+before the write begins (in interactive mode it is generated at confirmation
+time; in automatic mode it is generated before the write phase). Since the
+installer creates the LUKS volume itself, there is no need for a key
+rotation step or an empty-passphrase slot. The same recovery passphrase is
+used to unlock the volume during subsequent post-write steps (expand root,
+randomize UUIDs, rebuild boot config).
+
+r[installer.write.fstab-fixup]
+When disk encryption is not `"none"`, the installer must rewrite `/etc/fstab`
+on the installed system to reference `/dev/mapper/root` instead of
+`/dev/disk/by-partlabel/root` for the root and postgresql mount entries.
+
+r[installer.write.variant-fixup]
+The installer must write the correct variant name to `/etc/bes/image-variant`
+on the installed system: `metal` when disk encryption is not `"none"`, `cloud`
+when disk encryption is `"none"`.
+
+r[installer.write.expand-root]
+After writing the root partition image, the installer must expand the root
+filesystem to fill the partition. When disk encryption is enabled, the
+installer must first open the LUKS volume and run `cryptsetup resize` to
+expand it to fill the partition, then run `btrfs filesystem resize max` on
+the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is
+needed. This ensures the installed system has a fully expanded filesystem
+without depending on a boot-time growth service.
+
+r[installer.write.randomize-uuids]
+After expanding the root filesystem, the installer must randomize the
+filesystem UUID of each partition to ensure every installation has unique
+identifiers. For the ext4 extended boot partition, it must run
+`tune2fs -U random`. For the BTRFS root partition (or the LUKS volume on
+top of it), it must run `btrfstune -u` while the filesystem is unmounted.
+For the FAT32 EFI partition, it must randomize the volume serial number
+with `mlabel -n`. All filesystems must be unmounted during UUID changes.
+
+r[installer.write.rebuild-boot-config]
+After randomizing filesystem UUIDs, the installer must unconditionally
+rebuild the initramfs and GRUB configuration in a chroot of the installed
+system, regardless of encryption mode. This is required because the GRUB
+config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
+have been rotated. The installer must run `dracut --force` and `update-grub`
+with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 
 ## Encryption Setup
 
-> r[installer.encryption.overview]
+> r[installer.encryption.overview+2]
 > After writing the image and expanding partitions, and when disk encryption
 > is `"tpm"` or `"keyfile"`, the installer must perform all encryption setup
-> on the target disk. This replaces the first-boot services that were
-> previously included in the metal image. The installer must:
+> on the target disk. The LUKS volume already has the recovery passphrase as
+> its sole key (enrolled during `installer.write.luks-before-write`). The
+> installer must:
 >
-> 1. Rotate the LUKS master key.
-> 2. Enroll the chosen unlock mechanism (TPM or keyfile).
-> 3. Generate and enroll a recovery passphrase.
-> 4. Remove the original empty-passphrase key slot.
-> 5. Configure the installed system (crypttab, initramfs).
+> 1. Enroll the chosen unlock mechanism (TPM or keyfile).
+> 2. Configure the installed system (crypttab, initramfs).
+>
+> No key rotation or empty-slot wipe is needed because the installer created
+> the LUKS volume with fresh key material and the recovery passphrase as the
+> initial key.
 
-> r[installer.encryption.key-rotation]
-> The installer must rotate the master key of the LUKS volume using
-> `cryptsetup reencrypt`, unlocking with the image's empty keyfile. This
-> ensures each installation has unique key material. A marker file
-> (`/etc/luks/rotated`) must be written to the installed system to prevent
-> any legacy re-encryption attempt.
 
-> r[installer.encryption.tpm-enroll]
+
+> r[installer.encryption.tpm-enroll+2]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
-> `systemd-cryptenroll` with `--tpm2-pcrs=1`. PCR 1 covers hardware identity
-> (motherboard model, CPU, RAM model and serials). The installer must update
-> `/etc/crypttab` to use `tpm2-device=auto` with a passphrase timeout
-> fallback.
+> `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
+> recovery passphrase. PCR 1 covers hardware identity (motherboard model,
+> CPU, RAM model and serials). The installer must update `/etc/crypttab` to
+> use `tpm2-device=auto` with a passphrase timeout fallback.
 
-> r[installer.encryption.keyfile-enroll]
+> r[installer.encryption.keyfile-enroll+2]
 > When disk encryption is `"keyfile"`, the installer must generate a random
 > keyfile (4096 bytes from `/dev/urandom`), enroll it via
-> `systemd-cryptenroll`, and install it at `/etc/luks/keyfile` (mode 000) on
-> the installed system. The installer must update `/etc/crypttab` to
-> reference the keyfile with a passphrase timeout fallback, and update the
-> dracut configuration to include the new keyfile in the initramfs.
+> `cryptsetup luksAddKey` unlocking with the recovery passphrase, and
+> install it at `/etc/luks/keyfile` (mode 000) on the installed system. The
+> installer must update `/etc/crypttab` to reference the keyfile with a
+> passphrase timeout fallback, and update the dracut configuration to
+> include the new keyfile in the initramfs.
 
-> r[installer.encryption.recovery-passphrase+2]
-> The installer must generate a human-readable recovery passphrase and enroll
-> it as a LUKS password slot via `cryptsetup luksAddKey`. In interactive
-> mode, the passphrase must be generated at confirmation time (before the
-> destructive write) and displayed on the confirmation screen so the user can
-> record it. A post-write "Recovery Passphrase" screen is shown as a
-> reminder before the "Done" screen; the user must press Enter to
-> acknowledge. The encryption setup phase receives the pre-generated
-> passphrase and enrolls it. In automatic mode, the passphrase is generated
-> during encryption setup and printed to stderr.
+> r[installer.encryption.recovery-passphrase+3]
+> The installer must generate a human-readable recovery passphrase before the
+> write phase begins. This passphrase is used as the initial LUKS key when
+> formatting the root partition (see `installer.write.luks-before-write`),
+> so it is already enrolled as a LUKS password slot — no separate
+> `luksAddKey` step is required. In interactive mode, the passphrase must be
+> generated at confirmation time and displayed on the confirmation screen so
+> the user can record it. A post-write "Recovery Passphrase" screen is shown
+> as a reminder before the "Done" screen; the user must press Enter to
+> acknowledge. In automatic mode, the passphrase is generated before the
+> write phase and printed to stderr after install completes.
 
-> r[installer.encryption.wipe-empty-slot]
-> After enrolling the real unlock mechanism(s) and the recovery passphrase,
-> the installer must wipe the original empty-passphrase key slot so the
-> volume cannot be unlocked without the enrolled credentials.
+
 
 > r[installer.encryption.configure-system]
 > The installer must chroot into the installed system and rebuild the
@@ -546,11 +611,11 @@ on a temporary filesystem.
 
 ## First-Boot Configuration
 
-r[installer.firstboot.mount+2]
+r[installer.firstboot.mount+3]
 After writing the image, the installer must mount the target disk's root
 BTRFS partition (subvol `@`) to apply first-boot configuration. For the
 metal variant (disk encryption `"tpm"` or `"keyfile"`), it must unlock the
-LUKS volume using the empty keyfile first.
+LUKS volume using the recovery passphrase.
 
 r[installer.firstboot.hostname]
 If `hostname` is set (including hostnames generated from a template), the
@@ -585,13 +650,23 @@ creating a symlink at `/etc/localtime` pointing to the corresponding
 file under `/usr/share/zoneinfo/` and writing the timezone name to
 `/etc/timezone`. The default timezone is `UTC`.
 
+r[installer.firstboot.copy-install-log]
+After applying first-boot configuration and before encryption setup, the
+installer must copy its own log file into the installed system at
+`/var/log/bes-installer.log`. This is enabled by default. When
+`copy-install-log` is set to `false` in the configuration file, the copy
+must be skipped. If the copy fails (e.g. the target filesystem is full or
+the source log file does not exist), the installer must log a warning but
+must not treat it as a fatal error. There is no TUI control for this
+option.
+
 r[installer.firstboot.unmount]
 After applying configuration, the installer must cleanly unmount all
 filesystems and close any LUKS volumes before prompting for reboot.
 
 ## Container Isolation
 
-> r[installer.container.isolation+2]
+> r[installer.container.isolation+3]
 > When the installer is run inside a container (e.g. `systemd-nspawn`) for
 > integration testing, it must never have access to the host's real block
 > devices. Safety is enforced by three layers:
@@ -599,10 +674,19 @@ filesystems and close any LUKS volumes before prompting for reboot.
 > 1. `systemd-nspawn` provides its own `/dev`; host block devices are not
 >    present unless explicitly bound in. Only the loop device itself is
 >    bound — partition device nodes are **not** bound from the host.
+>    The host `/dev` must **never** be bind-mounted into the container.
 > 2. The installer is invoked with `--fake-devices`, which bypasses `lsblk`
 >    discovery entirely and presents only the loop device.
-> 3. The container runs with `--private-network` to prevent any network
->    side-effects.
+> 3. The container runs with `--private-network` by default to prevent any
+>    network side-effects. Individual test scenarios may opt out of
+>    `--private-network` (e.g. to exercise network-dependent code paths);
+>    at least one scenario must run **with** `--private-network` to serve
+>    as the enforcement mechanism for `r[iso.offline]`.
+>
+> The `systemd-nspawn` options and bind-mount configuration used by all
+> container scripts (interactive trial, integration tests, isolation test)
+> must be defined in a single shared file so that the isolation test
+> validates the same container configuration that the installer tests use.
 >
 > A test must verify this property by launching a container without running
 > the installer and confirming that no host block devices (e.g. `/dev/sda`,
@@ -620,6 +704,18 @@ missing or have a stale major:minor (verified via `MetadataExt::rdev()`).
 The installer must not attempt to derive partition major:minor numbers from
 the parent device — the kernel assigns them dynamically (e.g. loop device
 partitions use major 259 with unrelated minors, not `parent_minor + N`).
+
+r[installer.container.swtpm]
+Container-based integration tests that exercise TPM disk encryption must use
+`swtpm` (software TPM 2.0 emulator) in `chardev` mode with `--vtpm-proxy`
+to create a `/dev/tpmN` device on the host. The test harness starts the
+`swtpm` process before launching the container and binds the resulting
+`/dev/tpmN` device into the container so that `systemd-cryptenroll
+--tpm2-device=auto` works against the emulated TPM. The `tpm_vtpm_proxy`
+kernel module must be loaded on the host. The `swtpm` process is stopped
+and the device cleaned up when the test scenario finishes. The shared
+nspawn helpers must support an optional TPM device bind-mount so that only
+TPM scenarios pay the setup cost.
 
 r[installer.container.error-logging]
 Fatal errors that propagate to the installer's top-level must be logged via

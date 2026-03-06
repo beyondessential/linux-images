@@ -48,7 +48,7 @@ if [ ! -f "$ISO" ]; then
     exit 1
 fi
 
-for cmd in xorriso sgdisk blkid file losetup; do
+for cmd in xorriso sgdisk blkid file losetup jq; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: required command not found: $cmd"
         exit 1
@@ -206,39 +206,88 @@ if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
     check "grub.cfg contains boot=live" grep -q "boot=live" "$ISO_MNT/boot/grub/grub.cfg"
 fi
 
-# r[verify iso.contents]
-IMAGE_COUNT="$(find "$ISO_MNT/images" -name '*.raw.zst' 2>/dev/null | wc -l)"
-if [ "$IMAGE_COUNT" -ge 1 ]; then
-    pass "at least one .raw.zst image in /images/ (found $IMAGE_COUNT)"
-else
-    fail "at least one .raw.zst image in /images/ (found $IMAGE_COUNT)"
-fi
+# r[verify iso.contents+2]
+check "partitions.json exists" test -f "$ISO_MNT/images/partitions.json"
 
-# r[verify installer.write.source]
-METAL_IMAGE="$(find "$ISO_MNT/images" -maxdepth 1 -name "*-metal-${ARCH}-*.raw.zst" 2>/dev/null | head -1)"
-CLOUD_IMAGE="$(find "$ISO_MNT/images" -maxdepth 1 -name "*-cloud-${ARCH}-*.raw.zst" 2>/dev/null | head -1)"
-if [ -n "$METAL_IMAGE" ]; then
-    pass "metal .raw.zst image for $ARCH exists on ISO"
-else
-    fail "metal .raw.zst image for $ARCH exists on ISO"
-fi
-if [ -n "$CLOUD_IMAGE" ]; then
-    pass "cloud .raw.zst image for $ARCH exists on ISO"
-else
-    fail "cloud .raw.zst image for $ARCH exists on ISO"
-fi
-
-# r[verify installer.write.disk-size-check]
-for img in "$ISO_MNT"/images/*.raw.zst; do
-    [ -f "$img" ] || continue
-    SIZE_FILE="${img%.zst}.size"
-    BASENAME="$(basename "$SIZE_FILE")"
-    if [ -f "$SIZE_FILE" ]; then
-        pass ".size sidecar exists for $(basename "$img")"
+# Verify partitions.json is valid JSON with expected structure
+if [ -f "$ISO_MNT/images/partitions.json" ]; then
+    if jq empty "$ISO_MNT/images/partitions.json" 2>/dev/null; then
+        pass "partitions.json is valid JSON"
     else
-        fail ".size sidecar exists for $(basename "$img")"
+        fail "partitions.json is valid JSON"
+    fi
+
+    MANIFEST_ARCH="$(jq -r '.arch' "$ISO_MNT/images/partitions.json" 2>/dev/null)"
+    if [ "$MANIFEST_ARCH" = "$ARCH" ]; then
+        pass "partitions.json arch matches expected ($ARCH)"
+    else
+        fail "partitions.json arch matches expected ($ARCH, got: $MANIFEST_ARCH)"
+    fi
+
+    PART_COUNT="$(jq '.partitions | length' "$ISO_MNT/images/partitions.json" 2>/dev/null)"
+    if [ "$PART_COUNT" -eq 3 ]; then
+        pass "partitions.json has 3 partitions"
+    else
+        fail "partitions.json has 3 partitions (got: $PART_COUNT)"
+    fi
+
+    # Verify each partition entry has the required fields
+    for field in label type_uuid size_mib image; do
+        MISSING_FIELD="$(jq -r ".partitions[] | select(.${field} == null) | .label // \"unknown\"" "$ISO_MNT/images/partitions.json" 2>/dev/null)"
+        if [ -z "$MISSING_FIELD" ]; then
+            pass "all partitions have '$field' field"
+        else
+            fail "all partitions have '$field' field (missing in: $MISSING_FIELD)"
+        fi
+    done
+
+    # Verify expected partition labels
+    for label in efi xboot root; do
+        FOUND_LABEL="$(jq -r ".partitions[] | select(.label == \"$label\") | .label" "$ISO_MNT/images/partitions.json" 2>/dev/null)"
+        if [ "$FOUND_LABEL" = "$label" ]; then
+            pass "partitions.json contains '$label' partition"
+        else
+            fail "partitions.json contains '$label' partition"
+        fi
+    done
+fi
+
+# r[verify iso.contents+2]
+# Verify partition image files and their .size sidecars
+for name in efi xboot root; do
+    check "${name}.img.zst exists" test -f "$ISO_MNT/images/${name}.img.zst"
+
+    # Verify it's actually zstd-compressed
+    if [ -f "$ISO_MNT/images/${name}.img.zst" ]; then
+        IMG_TYPE="$(file -b "$ISO_MNT/images/${name}.img.zst")"
+        if echo "$IMG_TYPE" | grep -qi "zstandard"; then
+            pass "${name}.img.zst is valid zstd"
+        else
+            fail "${name}.img.zst is valid zstd (got: $IMG_TYPE)"
+        fi
+    fi
+
+    # r[verify installer.write.disk-size-check+2]
+    if [ -f "$ISO_MNT/images/${name}.img.size" ]; then
+        pass ".size sidecar exists for ${name}.img.zst"
+        SIZE_VALUE="$(cat "$ISO_MNT/images/${name}.img.size")"
+        if [ "$SIZE_VALUE" -gt 0 ] 2>/dev/null; then
+            pass "${name}.img.size contains a positive number ($SIZE_VALUE)"
+        else
+            fail "${name}.img.size contains a positive number (got: $SIZE_VALUE)"
+        fi
+    else
+        fail ".size sidecar exists for ${name}.img.zst"
     fi
 done
+
+# Verify no whole-disk .raw.zst images are present (old format)
+OLD_IMAGE_COUNT="$(find "$ISO_MNT/images" -maxdepth 1 -name '*.raw.zst' 2>/dev/null | wc -l)"
+if [ "$OLD_IMAGE_COUNT" -eq 0 ]; then
+    pass "no old whole-disk .raw.zst images in /images/"
+else
+    fail "no old whole-disk .raw.zst images in /images/ (found $OLD_IMAGE_COUNT)"
+fi
 
 # r[verify iso.boot.uefi]
 check "/boot/efi.img exists" test -f "$ISO_MNT/boot/efi.img"
@@ -253,7 +302,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     mount -o loop,ro "$ISO_MNT/live/filesystem.squashfs" "$SQFS_MNT"
     SQFS_MOUNTED=1
 
-    # r[verify iso.contents]
+    # r[verify iso.contents+2]
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
 
     # r[verify iso.boot.autostart]

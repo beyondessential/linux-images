@@ -27,6 +27,8 @@ struct LuksFixture {
     luks_part: PathBuf,
     /// A mount point for the BTRFS filesystem inside LUKS
     mount_path: PathBuf,
+    /// The recovery passphrase used as the initial LUKS key
+    recovery_passphrase: String,
     /// Whether the LUKS volume is currently open
     luks_open: bool,
     /// Whether the filesystem is currently mounted
@@ -36,11 +38,12 @@ struct LuksFixture {
 impl LuksFixture {
     const LUKS_NAME: &str = "bes-test-luks";
     const IMAGE_SIZE_MB: u64 = 256;
+    const TEST_PASSPHRASE: &str = "alpha-bravo-charlie-delta-echo-foxtrot";
 
     /// Create a sparse file, attach a loop device, partition it (3 partitions
     /// like the real image: EFI, xboot, root), format partition 3 as LUKS2
-    /// with an empty passphrase in slot 0, then create a BTRFS filesystem
-    /// inside.
+    /// with a recovery passphrase as the initial key, then create a BTRFS
+    /// filesystem inside.
     fn setup() -> Self {
         let work_dir = tempfile::tempdir().expect("creating work dir");
         let mount_path = work_dir.path().join("mnt");
@@ -101,14 +104,16 @@ impl LuksFixture {
             luks_part.display()
         );
 
-        // Format as LUKS2 with empty passphrase in slot 0 (matches image/build.sh)
-        let empty_keyfile = work_dir.path().join("empty-keyfile");
-        fs::write(&empty_keyfile, b"").expect("writing empty keyfile");
-        fs::set_permissions(&empty_keyfile, fs::Permissions::from_mode(0o400))
+        // Format as LUKS2 with recovery passphrase as the initial key
+        // (matches what format_luks_for_root does)
+        let passphrase_keyfile = work_dir.path().join("passphrase-keyfile");
+        fs::write(&passphrase_keyfile, Self::TEST_PASSPHRASE.as_bytes())
+            .expect("writing passphrase keyfile");
+        fs::set_permissions(&passphrase_keyfile, fs::Permissions::from_mode(0o400))
             .expect("setting keyfile permissions");
 
         let part_str = luks_part.to_str().unwrap();
-        let kf_str = empty_keyfile.to_str().unwrap();
+        let kf_str = passphrase_keyfile.to_str().unwrap();
         run(
             "cryptsetup",
             &[
@@ -154,13 +159,14 @@ impl LuksFixture {
         fs::set_permissions(&installed_keyfile, fs::Permissions::from_mode(0o000))
             .expect("setting installed keyfile permissions");
 
-        // Create etc/crypttab (matches image)
+        // Create etc/crypttab (placeholder, will be overwritten by enrollment)
         let etc = mount_path.join("etc");
         fs::write(
             etc.join("crypttab"),
-            "# <name> <device>                    <keyfile>                 <options>\n\
-             root     /dev/disk/by-partlabel/root /etc/luks/empty-keyfile  force,luks,discard,headless=true,try-empty-password=true\n",
-        ).expect("writing crypttab");
+            "# <name> <device>                    <keyfile>  <options>\n\
+             root     /dev/disk/by-partlabel/root none       luks,discard\n",
+        )
+        .expect("writing crypttab");
 
         // Create dracut conf dir
         let dracut_dir = etc.join("dracut.conf.d");
@@ -175,6 +181,7 @@ impl LuksFixture {
             loop_dev,
             luks_part,
             mount_path,
+            recovery_passphrase: Self::TEST_PASSPHRASE.to_string(),
             luks_open: false,
             mounted: false,
         }
@@ -184,15 +191,21 @@ impl LuksFixture {
         self.luks_part.to_str().unwrap()
     }
 
-    fn empty_keyfile_path(&self) -> PathBuf {
-        self.work_dir.path().join("empty-keyfile")
+    fn passphrase_keyfile_path(&self) -> PathBuf {
+        let path = self.work_dir.path().join("passphrase-keyfile");
+        if !path.exists() {
+            fs::write(&path, self.recovery_passphrase.as_bytes())
+                .expect("writing passphrase keyfile");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o400)).ok();
+        }
+        path
     }
 
     fn open_luks(&mut self) {
         if self.luks_open {
             return;
         }
-        let kf = self.empty_keyfile_path();
+        let kf = self.passphrase_keyfile_path();
         self.open_luks_with_keyfile(kf.to_str().unwrap());
     }
 
@@ -424,64 +437,7 @@ fn partition_path(loop_dev: &str, part_num: u32) -> PathBuf {
 // Tests
 // ---------------------------------------------------------------------------
 
-// r[verify installer.encryption.key-rotation]
-#[test]
-fn key_rotation_changes_master_key() {
-    let mut fix = LuksFixture::setup();
-
-    // Record the header before rotation
-    let dump_before = fix.luks_dump();
-
-    // Mount to provide the mount path for the rotated marker
-    fix.mount_btrfs();
-    let mount_path = fix.mount_path.clone();
-
-    let kf = fix.empty_keyfile_path();
-    let kf_str = kf.to_str().unwrap();
-
-    // Run reencrypt (this is what rotate_master_key does)
-    run(
-        "cryptsetup",
-        &[
-            "reencrypt",
-            fix.luks_part_str(),
-            "--key-file",
-            kf_str,
-            "--batch-mode",
-        ],
-    );
-
-    // Write the marker file
-    let marker_path = mount_path.join("etc/luks/rotated");
-    fs::create_dir_all(marker_path.parent().unwrap()).ok();
-    fs::write(&marker_path, "rotated by test\n").expect("writing marker");
-
-    assert!(marker_path.exists(), "rotated marker should exist");
-
-    let dump_after = fix.luks_dump();
-
-    // The LUKS UUID should remain the same (same volume), but the header
-    // will have changed (new master key salt at minimum).
-    // We can't easily compare the actual master key without --dump-volume-key
-    // (which requires the passphrase), but we can verify the reencrypt
-    // succeeded by confirming the volume is still openable.
-    fix.unmount();
-    fix.close_luks();
-
-    assert!(
-        fix.try_open_with_keyfile(b"", "post-rotate"),
-        "LUKS volume should still be openable with empty keyfile after rotation"
-    );
-
-    // Sanity: the dumps should differ (at least timestamps change)
-    // This is a weak assertion, but confirms reencrypt did something.
-    assert_ne!(
-        dump_before, dump_after,
-        "luksDump output should differ after reencrypt"
-    );
-}
-
-// r[verify installer.encryption.keyfile-enroll]
+// r[verify installer.encryption.keyfile-enroll+2]
 #[test]
 fn keyfile_enrollment_adds_working_slot() {
     let mut fix = LuksFixture::setup();
@@ -497,9 +453,9 @@ fn keyfile_enrollment_adds_working_slot() {
     fs::write(&new_kf_path, &keyfile_data).expect("writing new keyfile");
     fs::set_permissions(&new_kf_path, fs::Permissions::from_mode(0o400)).ok();
 
-    let empty_kf = fix.empty_keyfile_path();
+    let pp_kf = fix.passphrase_keyfile_path();
 
-    // Enroll the new keyfile (same as enroll_keyfile does)
+    // Enroll the new keyfile, unlocking with the recovery passphrase
     run(
         "cryptsetup",
         &[
@@ -507,7 +463,7 @@ fn keyfile_enrollment_adds_working_slot() {
             fix.luks_part_str(),
             new_kf_path.to_str().unwrap(),
             "--key-file",
-            empty_kf.to_str().unwrap(),
+            pp_kf.to_str().unwrap(),
             "--batch-mode",
         ],
     );
@@ -518,10 +474,10 @@ fn keyfile_enrollment_adds_working_slot() {
         "new keyfile should be able to unlock the volume"
     );
 
-    // Both the empty keyfile and the new keyfile should work
+    // Both the recovery passphrase and the new keyfile should work
     assert!(
-        fix.try_open_with_keyfile(b"", "empty-still-works"),
-        "empty keyfile should still work after adding new key"
+        fix.try_open_with_passphrase(&fix.recovery_passphrase),
+        "recovery passphrase should still work after adding new key"
     );
 
     // Mount and verify we can write the keyfile and config files
@@ -554,7 +510,7 @@ fn keyfile_enrollment_adds_working_slot() {
     assert!(final_crypttab.contains("/etc/luks/keyfile"));
 }
 
-// r[verify installer.encryption.tpm-enroll]
+// r[verify installer.encryption.tpm-enroll+2]
 #[test]
 fn tpm_enrollment_updates_crypttab() {
     // We can't actually enroll a TPM without hardware, but we can verify
@@ -585,91 +541,23 @@ fn tpm_enrollment_updates_crypttab() {
     );
 }
 
-// r[verify installer.encryption.recovery-passphrase+2]
+// r[verify installer.encryption.recovery-passphrase+3]
 #[test]
-fn recovery_passphrase_enrollment_creates_working_slot() {
+fn recovery_passphrase_is_initial_luks_key() {
     let fix = LuksFixture::setup();
 
-    let passphrase = "alpha-bravo-charlie-delta-echo-foxtrot";
-
-    let empty_kf = fix.empty_keyfile_path();
-    let passphrase_file = fix.work_dir.path().join("passphrase");
-    // Write without trailing newline (matches what the installer does)
-    fs::write(&passphrase_file, passphrase).expect("writing passphrase file");
-    fs::set_permissions(&passphrase_file, fs::Permissions::from_mode(0o400)).ok();
-
-    // Enroll the passphrase (same as enroll_recovery_passphrase does)
-    run(
-        "cryptsetup",
-        &[
-            "luksAddKey",
-            fix.luks_part_str(),
-            passphrase_file.to_str().unwrap(),
-            "--key-file",
-            empty_kf.to_str().unwrap(),
-            "--batch-mode",
-        ],
-    );
-
-    // Verify the passphrase can unlock the volume
+    // The recovery passphrase should already be the initial key — no
+    // separate enrollment step needed.
     assert!(
-        fix.try_open_with_passphrase(passphrase),
-        "recovery passphrase should unlock the volume"
+        fix.try_open_with_passphrase(&fix.recovery_passphrase),
+        "recovery passphrase should unlock the volume as the initial key"
     );
 
-    // The empty keyfile should still work too
-    assert!(
-        fix.try_open_with_keyfile(b"", "empty-still-works"),
-        "empty keyfile should still work after adding passphrase"
-    );
-}
-
-// r[verify installer.encryption.wipe-empty-slot]
-#[test]
-fn wipe_empty_slot_removes_slot_zero() {
-    let fix = LuksFixture::setup();
-
-    // First, add an alternative key so we don't lock ourselves out
-    let alt_keyfile = fix.work_dir.path().join("alt-key");
-    fs::write(&alt_keyfile, b"alternate-key-material").unwrap();
-    fs::set_permissions(&alt_keyfile, fs::Permissions::from_mode(0o400)).ok();
-
-    let empty_kf = fix.empty_keyfile_path();
-    run(
-        "cryptsetup",
-        &[
-            "luksAddKey",
-            fix.luks_part_str(),
-            alt_keyfile.to_str().unwrap(),
-            "--key-file",
-            empty_kf.to_str().unwrap(),
-            "--batch-mode",
-        ],
-    );
-
-    assert!(fix.is_slot_active(0), "slot 0 should be active before wipe");
-
-    // Wipe slot 0 (same as wipe_empty_passphrase_slot does)
-    run(
-        "cryptsetup",
-        &["luksKillSlot", fix.luks_part_str(), "0", "--batch-mode"],
-    );
-
-    assert!(
-        !fix.is_slot_active(0),
-        "slot 0 should be inactive after wipe"
-    );
-
-    // Empty keyfile should no longer work
-    assert!(
-        !fix.try_open_with_keyfile(b"", "empty-post-wipe"),
-        "empty keyfile should NOT unlock the volume after slot 0 is wiped"
-    );
-
-    // But the alternative key should still work
-    assert!(
-        fix.try_open_with_keyfile(b"alternate-key-material", "alt-post-wipe"),
-        "alternative key should still unlock the volume"
+    // There should be exactly one slot (the passphrase)
+    assert_eq!(
+        fix.active_keyslot_count(),
+        1,
+        "should have exactly one keyslot (the recovery passphrase)"
     );
 }
 
@@ -727,44 +615,20 @@ fn configure_system_writes_expected_files() {
     );
 }
 
-// r[verify installer.encryption.key-rotation]
-// r[verify installer.encryption.keyfile-enroll]
-// r[verify installer.encryption.recovery-passphrase+2]
-// r[verify installer.encryption.wipe-empty-slot]
+// r[verify installer.encryption.keyfile-enroll+2]
+// r[verify installer.encryption.recovery-passphrase+3]
 #[test]
 fn full_keyfile_encryption_flow() {
     let mut fix = LuksFixture::setup();
 
-    // Verify initial state: slot 0 active, empty keyfile works
+    // Verify initial state: slot 0 active, recovery passphrase works
     assert!(fix.is_slot_active(0));
-    assert!(fix.try_open_with_keyfile(b"", "initial"));
+    assert!(fix.try_open_with_passphrase(&fix.recovery_passphrase));
 
     eprintln!("--- luksDump: initial ---");
     eprintln!("{}", fix.luks_dump());
 
-    // --- Step 1: Rotate master key ---
-    let kf = fix.empty_keyfile_path();
-    run(
-        "cryptsetup",
-        &[
-            "reencrypt",
-            fix.luks_part_str(),
-            "--key-file",
-            kf.to_str().unwrap(),
-            "--batch-mode",
-        ],
-    );
-
-    eprintln!("--- luksDump: after reencrypt ---");
-    eprintln!("{}", fix.luks_dump());
-
-    // Empty keyfile should still work after rotation
-    assert!(
-        fix.try_open_with_keyfile(b"", "post-rotate"),
-        "empty keyfile should still work after reencrypt"
-    );
-
-    // --- Step 2: Enroll keyfile ---
+    // --- Step 1: Enroll keyfile (unlocking with recovery passphrase) ---
     let keyfile_data: Vec<u8> = {
         let mut buf = vec![0u8; 4096];
         let mut f = fs::File::open("/dev/urandom").expect("opening urandom");
@@ -776,6 +640,7 @@ fn full_keyfile_encryption_flow() {
     fs::write(&new_kf_path, &keyfile_data).expect("writing keyfile");
     fs::set_permissions(&new_kf_path, fs::Permissions::from_mode(0o400)).ok();
 
+    let pp_kf = fix.passphrase_keyfile_path();
     run(
         "cryptsetup",
         &[
@@ -783,7 +648,7 @@ fn full_keyfile_encryption_flow() {
             fix.luks_part_str(),
             new_kf_path.to_str().unwrap(),
             "--key-file",
-            kf.to_str().unwrap(),
+            pp_kf.to_str().unwrap(),
             "--batch-mode",
         ],
     );
@@ -796,84 +661,22 @@ fn full_keyfile_encryption_flow() {
         "new keyfile should unlock the volume"
     );
 
-    // --- Step 3: Enroll recovery passphrase ---
-    let passphrase = "correct-horse-battery-staple-extra-word";
-    let pp_path = fix.work_dir.path().join("passphrase");
-    fs::write(&pp_path, passphrase).unwrap();
-    fs::set_permissions(&pp_path, fs::Permissions::from_mode(0o400)).ok();
-
-    run(
-        "cryptsetup",
-        &[
-            "luksAddKey",
-            fix.luks_part_str(),
-            pp_path.to_str().unwrap(),
-            "--key-file",
-            kf.to_str().unwrap(),
-            "--batch-mode",
-        ],
-    );
-
-    eprintln!("--- luksDump: after passphrase enrollment ---");
-    eprintln!("{}", fix.luks_dump());
-
+    // Recovery passphrase should still work
     assert!(
-        fix.try_open_with_passphrase(passphrase),
-        "recovery passphrase should unlock the volume"
+        fix.try_open_with_passphrase(&fix.recovery_passphrase),
+        "recovery passphrase should still work after keyfile enrollment"
     );
 
-    // --- Step 4: Wipe the slot that holds the empty keyfile ---
-    // After reencrypt the original slot 0 is removed and a new slot
-    // is created (typically slot 1), so we probe for the actual slot.
-    let empty_slot = fix
-        .find_slot_for_keyfile(b"")
-        .expect("should find the slot for the empty keyfile before wiping it");
-    eprintln!("empty keyfile is in slot {empty_slot}");
-
-    let slots_before = fix.active_keyslot_count();
-
-    run(
-        "cryptsetup",
-        &[
-            "luksKillSlot",
-            fix.luks_part_str(),
-            &empty_slot.to_string(),
-            "--batch-mode",
-        ],
-    );
-
-    eprintln!("--- luksDump: after wipe ---");
-    eprintln!("{}", fix.luks_dump());
-
-    let slots_after = fix.active_keyslot_count();
+    // Should now have 2 slots: passphrase + keyfile
     assert_eq!(
-        slots_after,
-        slots_before - 1,
-        "should have one fewer slot after wipe"
-    );
-    assert!(
-        !fix.is_slot_active(empty_slot),
-        "slot {empty_slot} should be gone"
-    );
-    assert!(
-        !fix.try_open_with_keyfile(b"", "empty-post-wipe"),
-        "empty keyfile should no longer work"
+        fix.active_keyslot_count(),
+        2,
+        "should have two keyslots (passphrase + keyfile)"
     );
 
-    // The real keyfile and passphrase should still work
-    assert!(
-        fix.try_open_with_keyfile(&keyfile_data, "keyfile-post-wipe"),
-        "enrolled keyfile should still work after wiping slot 0"
-    );
-    assert!(
-        fix.try_open_with_passphrase(passphrase),
-        "recovery passphrase should still work after wiping slot 0"
-    );
-
-    // --- Step 5: Verify file layout ---
-    // The empty keyfile slot has been wiped, so we open with the enrolled keyfile.
+    // --- Step 2: Verify file layout ---
     fix.open_luks_with_key_data(&keyfile_data);
-    fix.mounted = false; // ensure mount_btrfs runs
+    fix.mounted = false;
     let mapper = format!("/dev/mapper/{}", LuksFixture::LUKS_NAME);
     run(
         "mount",
@@ -885,11 +688,7 @@ fn full_keyfile_encryption_flow() {
     fs::write(&installed_kf, &keyfile_data).unwrap();
     fs::set_permissions(&installed_kf, fs::Permissions::from_mode(0o000)).ok();
 
-    let marker = fix.mount_path.join("etc/luks/rotated");
-    fs::write(&marker, "rotated by test\n").unwrap();
-
     assert!(installed_kf.exists());
-    assert!(marker.exists());
     assert_eq!(
         fs::metadata(&installed_kf).unwrap().permissions().mode() & 0o777,
         0

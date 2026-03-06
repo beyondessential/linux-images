@@ -1,3 +1,7 @@
+# BES Linux Images & ISO installer
+
+[![asciicast](./docs/demo.gif)](https://asciinema.org/a/ZlN92tFyAEpc7cun)
+
 ## Which image to use
 
 - On AWS: use the AMI

@@ -15,18 +15,15 @@ use crate::config::validate_hostname;
 use crate::encryption;
 use crate::firstboot;
 use crate::writer;
+use crate::writer::PartitionManifest;
 
 use super::render::render;
 use super::{AppState, ProgressSnapshot, Screen};
 
 enum WorkerMessage {
     Progress(ProgressSnapshot),
-    WriteDone,
-    WriteError(String),
-    FirstbootDone,
-    FirstbootError(String),
-    EncryptionDone(String),
-    EncryptionError(String),
+    InstallDone(Option<String>),
+    InstallError(String),
 }
 
 /// Result of processing a single key event against the current TUI state.
@@ -338,17 +335,13 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        Screen::Writing | Screen::FirstbootApply | Screen::EncryptionSetup => {}
+        Screen::Installing => {}
 
-        // r[impl installer.encryption.recovery-passphrase+2]
-        Screen::RecoveryPassphrase => {
-            if key.code == KeyCode::Enter {
-                state.advance();
-            }
-        }
-
+        // r[impl installer.tui.progress+2]
         Screen::Done => {
-            return KeyAction::Reboot;
+            if key.code == KeyCode::Enter {
+                return KeyAction::Reboot;
+            }
         }
 
         // r[impl installer.tui.error-reboot]
@@ -360,7 +353,14 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     KeyAction::Continue
 }
 
-pub fn run_tui(mut state: AppState, image_path: &Path, no_reboot: bool) -> Result<()> {
+pub fn run_tui(
+    mut state: AppState,
+    manifest: &PartitionManifest,
+    images_dir: &Path,
+    copy_install_log: bool,
+    log_path: &Path,
+    no_reboot: bool,
+) -> Result<()> {
     terminal::enable_raw_mode().context("enabling raw mode")?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
@@ -368,7 +368,15 @@ pub fn run_tui(mut state: AppState, image_path: &Path, no_reboot: bool) -> Resul
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let result = event_loop(&mut terminal, &mut state, image_path, no_reboot);
+    let result = event_loop(
+        &mut terminal,
+        &mut state,
+        manifest,
+        images_dir,
+        copy_install_log,
+        log_path,
+        no_reboot,
+    );
 
     terminal::disable_raw_mode().ok();
     execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show).ok();
@@ -379,7 +387,10 @@ pub fn run_tui(mut state: AppState, image_path: &Path, no_reboot: bool) -> Resul
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     state: &mut AppState,
-    image_path: &Path,
+    manifest: &PartitionManifest,
+    images_dir: &Path,
+    copy_install_log: bool,
+    log_path: &Path,
     no_reboot: bool,
 ) -> Result<()> {
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
@@ -397,31 +408,13 @@ fn event_loop(
                 WorkerMessage::Progress(snap) => {
                     state.write_progress = Some(snap);
                 }
-                WorkerMessage::WriteDone => {
-                    state.screen = Screen::FirstbootApply;
-                    terminal.draw(|f| render(f, state))?;
-                    start_firstboot_worker(state, &worker_tx);
-                }
-                WorkerMessage::WriteError(e) => {
-                    state.screen = Screen::Error(e);
-                }
-                WorkerMessage::FirstbootDone => {
-                    if state.disk_encryption.is_encrypted() {
-                        state.screen = Screen::EncryptionSetup;
-                        terminal.draw(|f| render(f, state))?;
-                        start_encryption_worker(state, &worker_tx);
-                    } else {
-                        state.screen = Screen::Done;
+                WorkerMessage::InstallDone(passphrase) => {
+                    if let Some(p) = passphrase {
+                        state.recovery_passphrase = Some(p);
                     }
+                    state.screen = Screen::Done;
                 }
-                WorkerMessage::FirstbootError(e) => {
-                    state.screen = Screen::Error(e);
-                }
-                WorkerMessage::EncryptionDone(passphrase) => {
-                    state.recovery_passphrase = Some(passphrase);
-                    state.screen = Screen::RecoveryPassphrase;
-                }
-                WorkerMessage::EncryptionError(e) => {
+                WorkerMessage::InstallError(e) => {
                     state.screen = Screen::Error(e);
                 }
             }
@@ -446,7 +439,14 @@ fn event_loop(
                 break;
             }
             KeyAction::StartWrite => {
-                start_write_worker(image_path, state, &worker_tx);
+                start_install_worker(
+                    manifest,
+                    images_dir,
+                    copy_install_log,
+                    log_path,
+                    state,
+                    &worker_tx,
+                );
             }
             // r[impl installer.tui.debug-shell]
             KeyAction::Shell => {
@@ -480,138 +480,139 @@ pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState 
     state
 }
 
-fn start_write_worker(image_path: &Path, state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
-    let source = image_path.to_path_buf();
+fn start_install_worker(
+    manifest: &PartitionManifest,
+    images_dir: &Path,
+    copy_install_log: bool,
+    log_path: &Path,
+    state: &AppState,
+    tx: &mpsc::Sender<WorkerMessage>,
+) {
+    let manifest = manifest.clone();
+    let images_dir = images_dir.to_path_buf();
+    let log_path = log_path.to_path_buf();
     let (target, disk_size) = match state.selected_disk() {
         Some(d) => (d.path.clone(), d.size_bytes),
         None => {
-            let _ = tx.send(WorkerMessage::WriteError("no disk selected".into()));
-            return;
-        }
-    };
-    let tx = tx.clone();
-
-    thread::spawn(move || {
-        // r[impl installer.write.disk-size-check]
-        if let Err(e) = writer::image_uncompressed_size(&source)
-            .and_then(|image_size| writer::check_disk_size(image_size, disk_size))
-        {
-            let _ = tx.send(WorkerMessage::WriteError(format!("{e:#}")));
-            return;
-        }
-
-        let result = writer::write_image(&source, &target, &mut |progress| {
-            let _ = tx.send(WorkerMessage::Progress(progress.into()));
-        });
-
-        match result {
-            Ok(()) => {
-                if let Err(e) = writer::reread_partition_table(&target) {
-                    tracing::warn!("partition table re-read failed: {e}");
-                }
-                if let Err(e) = writer::verify_partition_table(&target) {
-                    tracing::warn!("partition table verification failed: {e}");
-                }
-                if let Err(e) = writer::expand_partitions(&target) {
-                    tracing::warn!("partition expansion failed: {e}");
-                }
-                let _ = tx.send(WorkerMessage::WriteDone);
-            }
-            Err(e) => {
-                let _ = tx.send(WorkerMessage::WriteError(format!("{e:#}")));
-            }
-        }
-    });
-}
-
-fn start_firstboot_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
-    let target_disk = match state.selected_disk() {
-        Some(d) => d.path.clone(),
-        None => {
-            let _ = tx.send(WorkerMessage::FirstbootError("no disk selected".into()));
+            let _ = tx.send(WorkerMessage::InstallError("no disk selected".into()));
             return;
         }
     };
     let disk_encryption = state.disk_encryption;
     let firstboot_config = state.firstboot_config();
-    let tx = tx.clone();
-
-    thread::spawn(move || {
-        let result = run_firstboot(&target_disk, disk_encryption, firstboot_config.as_ref());
-        match result {
-            Ok(()) => {
-                let _ = tx.send(WorkerMessage::FirstbootDone);
-            }
-            Err(e) => {
-                let _ = tx.send(WorkerMessage::FirstbootError(format!("{e:#}")));
-            }
-        }
-    });
-}
-
-fn run_firstboot(
-    target_disk: &Path,
-    disk_encryption: crate::config::DiskEncryption,
-    config: Option<&crate::config::FirstbootConfig>,
-) -> Result<()> {
-    if config.is_none() {
-        return Ok(());
-    }
-
-    let mounted = firstboot::mount_target(target_disk, disk_encryption)?;
-
-    if let Some(fb) = config {
-        firstboot::apply_firstboot(&mounted, fb)?;
-    }
-
-    firstboot::unmount_target(mounted)?;
-    Ok(())
-}
-
-fn start_encryption_worker(state: &AppState, tx: &mpsc::Sender<WorkerMessage>) {
-    let target_disk = match state.selected_disk() {
-        Some(d) => d.path.clone(),
-        None => {
-            let _ = tx.send(WorkerMessage::EncryptionError("no disk selected".into()));
-            return;
-        }
-    };
-    let disk_encryption = state.disk_encryption;
-    // r[impl installer.encryption.recovery-passphrase+2]
+    // r[impl installer.encryption.recovery-passphrase+3]
     let passphrase = state.recovery_passphrase.clone();
     let tx = tx.clone();
 
     thread::spawn(move || {
-        let result = run_encryption(&target_disk, disk_encryption, passphrase.as_deref());
+        let result = run_full_install(
+            &manifest,
+            &images_dir,
+            &target,
+            disk_size,
+            disk_encryption,
+            firstboot_config.as_ref(),
+            passphrase.as_deref(),
+            copy_install_log,
+            &log_path,
+            &tx,
+        );
         match result {
             Ok(enrolled_passphrase) => {
-                let _ = tx.send(WorkerMessage::EncryptionDone(enrolled_passphrase));
+                let _ = tx.send(WorkerMessage::InstallDone(enrolled_passphrase));
             }
             Err(e) => {
-                let _ = tx.send(WorkerMessage::EncryptionError(format!("{e:#}")));
+                let _ = tx.send(WorkerMessage::InstallError(format!("{e:#}")));
             }
         }
     });
 }
 
-fn run_encryption(
-    target_disk: &Path,
+#[expect(
+    clippy::too_many_arguments,
+    reason = "collecting all state needed for the full install sequence"
+)]
+fn run_full_install(
+    manifest: &PartitionManifest,
+    images_dir: &Path,
+    target: &Path,
+    disk_size: u64,
     disk_encryption: crate::config::DiskEncryption,
-    pre_generated_passphrase: Option<&str>,
-) -> Result<String> {
-    let mounted = firstboot::mount_target(target_disk, disk_encryption)?;
+    firstboot_config: Option<&crate::config::FirstbootConfig>,
+    recovery_passphrase: Option<&str>,
+    copy_install_log: bool,
+    log_path: &Path,
+    tx: &mpsc::Sender<WorkerMessage>,
+) -> Result<Option<String>> {
+    // r[impl installer.write.disk-size-check+2]
+    let total_image_size = writer::partition_images_total_size(manifest, images_dir)
+        .context("reading partition image sizes")?;
+    writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
 
-    let result = encryption::run_encryption_setup(
-        target_disk,
+    // Write partitions (~90% of progress)
+    writer::write_partitions(
+        manifest,
+        images_dir,
+        target,
         disk_encryption,
-        mounted.path(),
-        pre_generated_passphrase,
-    );
+        recovery_passphrase,
+        &mut |progress| {
+            let _ = tx.send(WorkerMessage::Progress(progress.into()));
+        },
+    )
+    .context("writing partitions")?;
 
-    firstboot::unmount_target(mounted)?;
+    // Expand root filesystem (~91%)
+    writer::expand_root_filesystem(target, disk_encryption, recovery_passphrase)
+        .context("expanding root filesystem")?;
 
-    let enc_result = result?;
-    Ok(enc_result.recovery_passphrase)
+    // Randomize UUIDs (~92%)
+    writer::randomize_filesystem_uuids(target, disk_encryption, recovery_passphrase)
+        .context("randomizing filesystem UUIDs")?;
+
+    // Rebuild boot config (~94%)
+    writer::rebuild_boot_config(target, disk_encryption, recovery_passphrase)
+        .context("rebuilding boot config")?;
+
+    // Verify partition table (~95%)
+    writer::verify_partition_table(target).context("verifying partition table")?;
+
+    // Firstboot (~96%)
+    {
+        let mounted = firstboot::mount_target(target, disk_encryption, recovery_passphrase)?;
+
+        // r[impl installer.write.fstab-fixup]
+        // r[impl installer.write.variant-fixup]
+        if disk_encryption.is_encrypted() {
+            firstboot::fixup_for_metal_variant(&mounted, &firstboot_config.cloned())?;
+        }
+
+        if let Some(fb) = firstboot_config {
+            firstboot::apply_firstboot(&mounted, fb)?;
+        } else {
+            firstboot::apply_timezone_default(&mounted)?;
+        }
+
+        // r[impl installer.firstboot.copy-install-log]
+        if copy_install_log {
+            firstboot::copy_install_log(&mounted, log_path);
+        }
+
+        firstboot::unmount_target(mounted)?;
+    }
+
+    // Encryption setup (~96-100%)
+    let passphrase = if let Some(pp) = recovery_passphrase {
+        let mounted = firstboot::mount_target(target, disk_encryption, recovery_passphrase)?;
+        encryption::run_encryption_setup(target, disk_encryption, mounted.path(), pp)
+            .context("encryption setup")?;
+        firstboot::unmount_target(mounted)?;
+        Some(pp.to_string())
+    } else {
+        None
+    };
+
+    Ok(passphrase)
 }
 
 /// Leave the alternate screen, disable raw mode, spawn an interactive shell,
@@ -754,7 +755,7 @@ mod tests {
         ]);
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Writing);
+        assert_eq!(final_state.screen, Screen::Installing);
         assert_eq!(final_state.disk_encryption, DiskEncryption::Tpm);
         assert_eq!(final_state.hostname_input, "myhost");
         assert_eq!(final_state.selected_disk_index, 0);
@@ -795,7 +796,7 @@ mod tests {
         ]);
 
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::Writing);
+        assert_eq!(final_state.screen, Screen::Installing);
         assert_eq!(final_state.disk_encryption, DiskEncryption::None);
     }
 
