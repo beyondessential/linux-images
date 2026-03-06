@@ -322,6 +322,13 @@ check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
 check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/systemd/resolve/stub-resolv.conf" ]
 
+# r[verify image.base.network]
+check "netplan config exists" test -f "$MNT/etc/netplan/01-all-en-dhcp.yaml"
+NETPLAN_MODE="$(stat -c%a "$MNT/etc/netplan/01-all-en-dhcp.yaml" 2>/dev/null || true)"
+check "netplan config has mode 600" [ "$NETPLAN_MODE" = "600" ]
+check "netplan config matches en*" grep -q 'name:.*"en\*"' "$MNT/etc/netplan/01-all-en-dhcp.yaml"
+check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$MNT/etc/netplan/01-all-en-dhcp.yaml"
+
 # r[verify image.boot.dracut]
 check "kernel exists in /boot" ls "$MNT"/boot/vmlinuz-* >/dev/null 2>&1
 check "initramfs exists in /boot" ls "$MNT"/boot/initrd.img-* >/dev/null 2>&1
@@ -479,6 +486,16 @@ check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-t
 check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 
+# r[verify image.boot.cloud-drivers]
+if [ "$VARIANT" = "cloud" ]; then
+    check "dracut cloud-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
+    check "dracut cloud-drivers has ena" grep -q 'ena' "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
+    check "dracut cloud-drivers has nvme" grep -q 'nvme' "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
+    check "dracut cloud-drivers has xen_blkfront" grep -q 'xen_blkfront' "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
+else
+    check_not "no cloud-drivers config for metal variant" test -f "$MNT/etc/dracut.conf.d/03-cloud-drivers.conf"
+fi
+
 # r[verify image.boot.grub-timeout]
 check "GRUB timeout is 5" grep -q '^GRUB_TIMEOUT=5' "$MNT/etc/default/grub"
 check "GRUB timeout style is menu" grep -q '^GRUB_TIMEOUT_STYLE=menu' "$MNT/etc/default/grub"
@@ -486,6 +503,13 @@ check "GRUB recordfail timeout is 5" grep -q '^GRUB_RECORDFAIL_TIMEOUT=5' "$MNT/
 
 # r[verify image.boot.grub-cmdline]
 check "GRUB cmdline has noresume" grep -q 'noresume' "$MNT/etc/default/grub"
+
+# r[verify image.boot.cloud-console]
+if [ "$VARIANT" = "cloud" ]; then
+    check "GRUB cmdline has serial console for cloud" grep -q 'console=ttyS0,115200n8' "$MNT/etc/default/grub"
+else
+    check_not "GRUB cmdline has no serial console for metal" grep -q 'console=ttyS0' "$MNT/etc/default/grub"
+fi
 
 # r[verify image.credentials.ubuntu-user]
 check "ubuntu user exists in passwd" grep -q '^ubuntu:' "$MNT/etc/passwd"
