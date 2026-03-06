@@ -67,24 +67,82 @@ impl FirstbootInfo {
     }
 }
 
-impl InstallPlan {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "constructor collecting all plan fields"
-    )]
-    pub fn new(
-        mode: &OperatingMode,
-        disk_encryption: DiskEncryption,
-        disk: Option<&BlockDevice>,
-        tpm_present: bool,
-        firstboot: Option<&FirstbootConfig>,
-        hostname_from_template: bool,
-        timezone: &str,
-        manifest_path: Option<PathBuf>,
-        copy_install_log: bool,
-        config_warnings: Vec<String>,
-    ) -> Self {
-        let mode_str = match mode {
+/// Builder for [`InstallPlan`].
+///
+/// Only `mode` and `disk_encryption` are required. Everything else has a
+/// sensible default (`false`, `None`, `"UTC"`, `true` for copy_install_log,
+/// empty warnings).
+pub struct InstallPlanBuilder<'a> {
+    mode: &'a OperatingMode,
+    disk_encryption: DiskEncryption,
+    disk: Option<&'a BlockDevice>,
+    tpm_present: bool,
+    firstboot: Option<&'a FirstbootConfig>,
+    hostname_from_template: bool,
+    timezone: &'a str,
+    manifest_path: Option<PathBuf>,
+    copy_install_log: bool,
+    config_warnings: Vec<String>,
+}
+
+impl<'a> InstallPlanBuilder<'a> {
+    pub fn new(mode: &'a OperatingMode, disk_encryption: DiskEncryption) -> Self {
+        Self {
+            mode,
+            disk_encryption,
+            disk: None,
+            tpm_present: false,
+            firstboot: None,
+            hostname_from_template: false,
+            timezone: "UTC",
+            manifest_path: None,
+            copy_install_log: true,
+            config_warnings: Vec::new(),
+        }
+    }
+
+    pub fn disk(mut self, disk: &'a BlockDevice) -> Self {
+        self.disk = Some(disk);
+        self
+    }
+
+    pub fn tpm_present(mut self, present: bool) -> Self {
+        self.tpm_present = present;
+        self
+    }
+
+    pub fn firstboot(mut self, fb: &'a FirstbootConfig) -> Self {
+        self.firstboot = Some(fb);
+        self
+    }
+
+    pub fn hostname_from_template(mut self, from_template: bool) -> Self {
+        self.hostname_from_template = from_template;
+        self
+    }
+
+    pub fn timezone(mut self, tz: &'a str) -> Self {
+        self.timezone = tz;
+        self
+    }
+
+    pub fn manifest_path(mut self, path: PathBuf) -> Self {
+        self.manifest_path = Some(path);
+        self
+    }
+
+    pub fn copy_install_log(mut self, copy: bool) -> Self {
+        self.copy_install_log = copy;
+        self
+    }
+
+    pub fn config_warnings(mut self, warnings: Vec<String>) -> Self {
+        self.config_warnings = warnings;
+        self
+    }
+
+    pub fn build(self) -> InstallPlan {
+        let mode_str = match self.mode {
             OperatingMode::Interactive => "interactive",
             OperatingMode::Prefilled => "prefilled",
             OperatingMode::Auto => "auto",
@@ -93,16 +151,26 @@ impl InstallPlan {
 
         InstallPlan {
             mode: mode_str.to_string(),
-            disk_encryption: disk_encryption.to_string(),
-            variant: disk_encryption.variant().to_string(),
-            disk: disk.map(DiskInfo::from),
-            tpm_present,
-            firstboot: firstboot
-                .map(|fb| FirstbootInfo::from_config(fb, hostname_from_template, timezone)),
-            manifest_path,
-            copy_install_log,
-            config_warnings,
+            disk_encryption: self.disk_encryption.to_string(),
+            variant: self.disk_encryption.variant().to_string(),
+            disk: self.disk.map(DiskInfo::from),
+            tpm_present: self.tpm_present,
+            firstboot: self.firstboot.map(|fb| {
+                FirstbootInfo::from_config(fb, self.hostname_from_template, self.timezone)
+            }),
+            manifest_path: self.manifest_path,
+            copy_install_log: self.copy_install_log,
+            config_warnings: self.config_warnings,
         }
+    }
+}
+
+impl InstallPlan {
+    pub fn builder<'a>(
+        mode: &'a OperatingMode,
+        disk_encryption: DiskEncryption,
+    ) -> InstallPlanBuilder<'a> {
+        InstallPlanBuilder::new(mode, disk_encryption)
     }
 
     pub fn write_to_path(&self, path: &PathBuf) -> anyhow::Result<()> {
@@ -151,18 +219,13 @@ mod tests {
     fn plan_serializes_full() {
         let dev = sample_device();
         let fb = sample_firstboot();
-        let plan = InstallPlan::new(
-            &OperatingMode::Auto,
-            DiskEncryption::Tpm,
-            Some(&dev),
-            true,
-            Some(&fb),
-            false,
-            "America/New_York",
-            Some(PathBuf::from("/run/live/medium/images/partitions.json")),
-            true,
-            vec![],
-        );
+        let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::Tpm)
+            .disk(&dev)
+            .tpm_present(true)
+            .firstboot(&fb)
+            .timezone("America/New_York")
+            .manifest_path(PathBuf::from("/run/live/medium/images/partitions.json"))
+            .build();
 
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["mode"], "auto");
@@ -194,18 +257,9 @@ mod tests {
     // r[verify installer.dryrun.schema+4]
     #[test]
     fn plan_serializes_minimal() {
-        let plan = InstallPlan::new(
-            &OperatingMode::Interactive,
-            DiskEncryption::None,
-            None,
-            false,
-            None,
-            false,
-            "UTC",
-            None,
-            true,
-            vec!["some warning".into()],
-        );
+        let plan = InstallPlan::builder(&OperatingMode::Interactive, DiskEncryption::None)
+            .config_warnings(vec!["some warning".into()])
+            .build();
 
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["mode"], "interactive");
@@ -222,18 +276,7 @@ mod tests {
     // r[verify installer.dryrun.schema+4]
     #[test]
     fn plan_keyfile_derives_metal_variant() {
-        let plan = InstallPlan::new(
-            &OperatingMode::Auto,
-            DiskEncryption::Keyfile,
-            None,
-            false,
-            None,
-            false,
-            "UTC",
-            None,
-            true,
-            vec![],
-        );
+        let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::Keyfile).build();
 
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["disk_encryption"], "keyfile");
@@ -244,18 +287,9 @@ mod tests {
     // r[verify installer.dryrun.schema+4]
     #[test]
     fn plan_copy_install_log_false() {
-        let plan = InstallPlan::new(
-            &OperatingMode::Auto,
-            DiskEncryption::None,
-            None,
-            false,
-            None,
-            false,
-            "UTC",
-            None,
-            false,
-            vec![],
-        );
+        let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::None)
+            .copy_install_log(false)
+            .build();
 
         let json = serde_json::to_value(&plan).unwrap();
         assert!(!json["copy_install_log"].as_bool().unwrap());
@@ -341,18 +375,10 @@ mod tests {
         ];
 
         for (mode, expected_str) in cases {
-            let plan = InstallPlan::new(
-                &mode,
-                DiskEncryption::Tpm,
-                Some(&dev),
-                true,
-                None,
-                false,
-                "UTC",
-                None,
-                true,
-                vec![],
-            );
+            let plan = InstallPlan::builder(&mode, DiskEncryption::Tpm)
+                .disk(&dev)
+                .tpm_present(true)
+                .build();
             assert_eq!(plan.mode, expected_str);
         }
     }
@@ -363,18 +389,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("plan.json");
 
-        let plan = InstallPlan::new(
-            &OperatingMode::Auto,
-            DiskEncryption::Tpm,
-            None,
-            true,
-            None,
-            false,
-            "UTC",
-            None,
-            true,
-            vec![],
-        );
+        let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::Tpm)
+            .tpm_present(true)
+            .build();
         plan.write_to_path(&path).unwrap();
 
         let contents = std::fs::read_to_string(&path).unwrap();

@@ -170,18 +170,21 @@ impl RunContext {
 
         // r[impl installer.dryrun]
         if self.cli.dry_run {
-            let plan = plan::InstallPlan::new(
-                &config::OperatingMode::Auto,
-                disk_encryption,
-                Some(target),
-                self.tpm_present,
-                self.install_config.firstboot.as_ref(),
-                hostname_from_template,
-                effective_timezone,
-                manifest_path,
-                copy_install_log,
-                self.config_warnings,
-            );
+            let mut builder =
+                plan::InstallPlan::builder(&config::OperatingMode::Auto, disk_encryption)
+                    .disk(target)
+                    .tpm_present(self.tpm_present)
+                    .hostname_from_template(hostname_from_template)
+                    .timezone(effective_timezone)
+                    .copy_install_log(copy_install_log)
+                    .config_warnings(self.config_warnings);
+            if let Some(ref fb) = self.install_config.firstboot {
+                builder = builder.firstboot(fb);
+            }
+            if let Some(path) = manifest_path {
+                builder = builder.manifest_path(path);
+            }
+            let plan = builder.build();
             return emit_plan(&plan, &self.cli);
         }
 
@@ -502,18 +505,22 @@ fn plan_from_tui_state(
 ) -> plan::InstallPlan {
     let disk = state.selected_disk();
     let firstboot = state.firstboot_config();
-    plan::InstallPlan::new(
-        mode,
-        state.disk_encryption,
-        disk,
-        state.tpm_present,
-        firstboot.as_ref(),
-        state.hostname_from_template || hostname_from_template,
-        state.effective_timezone(),
-        manifest_path.clone(),
-        copy_install_log,
-        config_warnings.to_vec(),
-    )
+    let mut builder = plan::InstallPlan::builder(mode, state.disk_encryption)
+        .tpm_present(state.tpm_present)
+        .hostname_from_template(state.hostname_from_template || hostname_from_template)
+        .timezone(state.effective_timezone())
+        .copy_install_log(copy_install_log)
+        .config_warnings(config_warnings.to_vec());
+    if let Some(dev) = disk {
+        builder = builder.disk(dev);
+    }
+    if let Some(ref fb) = firstboot {
+        builder = builder.firstboot(fb);
+    }
+    if let Some(path) = manifest_path {
+        builder = builder.manifest_path(path.clone());
+    }
+    builder.build()
 }
 
 // r[impl installer.dryrun.output]
