@@ -486,16 +486,39 @@ check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-t
 check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 
-# r[verify image.boot.hardware-drivers]
+# r[verify image.boot.hardware-drivers+2]
 check "dracut hardware-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
-check "dracut hardware-drivers has nvme" grep -q 'nvme' "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
-check "dracut hardware-drivers has nvme_core" grep -q 'nvme_core' "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
+HWDRV="$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
+check "dracut hardware-drivers has nvme" grep -wq 'nvme' "$HWDRV"
+check "dracut hardware-drivers has nvme_core" grep -wq 'nvme_core' "$HWDRV"
+check "dracut hardware-drivers has ahci" grep -wq 'ahci' "$HWDRV"
+check "dracut hardware-drivers has megaraid_sas" grep -wq 'megaraid_sas' "$HWDRV"
+check "dracut hardware-drivers has mpt3sas" grep -wq 'mpt3sas' "$HWDRV"
+check "dracut hardware-drivers has virtio_blk" grep -wq 'virtio_blk' "$HWDRV"
+check "dracut hardware-drivers has virtio_scsi" grep -wq 'virtio_scsi' "$HWDRV"
+check "dracut hardware-drivers has virtio_net" grep -wq 'virtio_net' "$HWDRV"
+check "dracut hardware-drivers has virtio_pci" grep -wq 'virtio_pci' "$HWDRV"
+check "dracut hardware-drivers has e1000e" grep -wq 'e1000e' "$HWDRV"
+check "dracut hardware-drivers has igb" grep -wq 'igb' "$HWDRV"
+check "dracut hardware-drivers has ixgbe" grep -wq 'ixgbe' "$HWDRV"
+check "dracut hardware-drivers has i40e" grep -wq 'i40e' "$HWDRV"
+check "dracut hardware-drivers has ice" grep -wq 'ice' "$HWDRV"
+check "dracut hardware-drivers has bnxt_en" grep -wq 'bnxt_en' "$HWDRV"
+check "dracut hardware-drivers has tg3" grep -wq 'tg3' "$HWDRV"
+check "dracut hardware-drivers has mlx5_core" grep -wq 'mlx5_core' "$HWDRV"
+check "dracut hardware-drivers has usb_storage" grep -wq 'usb_storage' "$HWDRV"
+check "dracut hardware-drivers has uas" grep -wq 'uas' "$HWDRV"
+check "dracut hardware-drivers has hv_storvsc" grep -wq 'hv_storvsc' "$HWDRV"
+check "dracut hardware-drivers has hv_netvsc" grep -wq 'hv_netvsc' "$HWDRV"
+check "dracut hardware-drivers has hv_vmbus" grep -wq 'hv_vmbus' "$HWDRV"
 
-# r[verify image.boot.cloud-drivers+2]
+# r[verify image.boot.cloud-drivers+4]
 if [ "$VARIANT" = "cloud" ]; then
     check "dracut cloud-drivers config exists" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
-    check "dracut cloud-drivers has ena" grep -q 'ena' "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
-    check "dracut cloud-drivers has xen_blkfront" grep -q 'xen_blkfront' "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+    CLOUDDRV="$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+    check "dracut cloud-drivers has ena" grep -wq 'ena' "$CLOUDDRV"
+    check "dracut cloud-drivers has xen_blkfront" grep -wq 'xen_blkfront' "$CLOUDDRV"
+    check "dracut cloud-drivers has gve" grep -wq 'gve' "$CLOUDDRV"
 else
     check_not "no cloud-drivers config for metal variant" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
 fi

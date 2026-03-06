@@ -98,11 +98,11 @@ apt-get install -y -q dracut  # this removes initramfs-tools
 install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
     /etc/dracut.conf.d/01-fix-hostonly-noble.conf
 
-# r[image.boot.hardware-drivers]
+# r[image.boot.hardware-drivers+2]
 install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
     /etc/dracut.conf.d/03-hardware-drivers.conf
 
-# r[image.boot.cloud-drivers+2]
+# r[image.boot.cloud-drivers+4]
 if [ "$VARIANT" = "cloud" ]; then
     install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
         /etc/dracut.conf.d/04-cloud-drivers.conf
