@@ -1,7 +1,7 @@
 [
   {
-    "name": "metal-full-tpm",
-    "disk-encryption": "tpm",
+    "name": "metal-full-keyfile",
+    "disk-encryption": "keyfile",
     "hostname": "test-metal-full",
     "tailscale": "tskey-auth-container-test-key-1234567890",
     "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
@@ -60,7 +60,7 @@
   },
   {
     "name": "metal-timezone-custom",
-    "disk-encryption": "tpm",
+    "disk-encryption": "keyfile",
     "hostname": "test-metal-tz",
     "timezone": "Europe/London"
   },
