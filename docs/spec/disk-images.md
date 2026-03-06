@@ -109,18 +109,29 @@ r[image.boot.dracut]
 The initramfs must be generated using dracut, not initramfs-tools. Dracut must
 be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 
-r[image.boot.hardware-drivers]
-Both variants must include a dracut configuration at
-`/etc/dracut.conf.d/03-hardware-drivers.conf` that force-includes the `nvme`
-and `nvme_core` kernel modules into the initramfs. This is necessary because
-`hostonly` mode only includes drivers for hardware detected at image-build
-time, and images are built on loop devices without NVMe hardware.
+> r[image.boot.hardware-drivers+2]
+> Both variants must include a dracut configuration at
+> `/etc/dracut.conf.d/03-hardware-drivers.conf` that force-includes kernel
+> modules into the initramfs for hardware not present at image-build time.
+> The following module categories must be included:
+>
+> - **NVMe:** `nvme`, `nvme_core`
+> - **SATA/AHCI:** `ahci`
+> - **RAID controllers:** `megaraid_sas`, `mpt3sas`
+> - **Virtio (KVM/Proxmox/GCP/OpenStack):** `virtio_blk`, `virtio_scsi`,
+>   `virtio_net`, `virtio_pci`
+> - **Intel Ethernet:** `e1000e`, `igb`, `ixgbe`, `i40e`, `ice`
+> - **Broadcom Ethernet:** `bnxt_en`, `tg3`
+> - **Mellanox/NVIDIA Ethernet:** `mlx5_core`
+> - **USB storage:** `usb_storage`, `uas`
+> - **Hyper-V:** `hv_storvsc`, `hv_netvsc`, `hv_vmbus`
 
-r[image.boot.cloud-drivers+2]
-The cloud variant must include a dracut configuration at
-`/etc/dracut.conf.d/04-cloud-drivers.conf` that force-includes the `ena` and
-`xen_blkfront` kernel modules into the initramfs. These are cloud-specific
-network and block device drivers not present on the build host.
+> r[image.boot.cloud-drivers+3]
+> The cloud variant must include a dracut configuration at
+> `/etc/dracut.conf.d/04-cloud-drivers.conf` that force-includes
+> cloud-specific kernel modules into the initramfs:
+>
+> - **AWS:** `ena`, `xen_blkfront`
 
 r[image.boot.grub-install]
 GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
