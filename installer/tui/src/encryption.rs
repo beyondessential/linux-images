@@ -1,15 +1,12 @@
-use std::{
-    fs,
-    io::Read,
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+use std::{fs, io::Read, path::Path};
 
 use anyhow::{Context, Result, bail};
 use rand::{distr::slice::Choose, prelude::*};
 
 use crate::config::DiskEncryption;
+use crate::util::{create_passphrase_keyfile, partition_path, run_command};
 
 const KEYFILE_PATH: &str = "/etc/luks/keyfile";
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
@@ -49,14 +46,6 @@ pub fn run_encryption_setup(
     configure_installed_system(disk_encryption, mount_path)?;
 
     Ok(())
-}
-
-fn create_passphrase_keyfile(passphrase: &str) -> Result<PathBuf> {
-    let path = PathBuf::from("/tmp/bes-luks-keyfile");
-    fs::write(&path, passphrase.as_bytes()).context("creating passphrase keyfile")?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o400))
-        .context("setting keyfile permissions")?;
-    Ok(path)
 }
 
 fn enroll_unlock_mechanism(
@@ -269,37 +258,6 @@ fn configure_installed_system(disk_encryption: DiskEncryption, mount_path: &Path
     Ok(())
 }
 
-fn partition_path(device: &Path, part_num: u32) -> Result<PathBuf> {
-    let dev_str = device.to_str().unwrap_or_default();
-
-    // NVMe and loop devices use "p" separator: /dev/nvme0n1p3, /dev/loop0p3
-    // SCSI/SATA disks use no separator: /dev/sda3
-    let path = if dev_str.ends_with(|c: char| c.is_ascii_digit()) {
-        PathBuf::from(format!("{dev_str}p{part_num}"))
-    } else {
-        PathBuf::from(format!("{dev_str}{part_num}"))
-    };
-
-    Ok(path)
-}
-
-fn run_command(program: &str, args: &[&str]) -> Result<()> {
-    tracing::debug!("running: {program} {}", args.join(" "));
-
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .with_context(|| format!("spawning {program}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        tracing::error!("{program} failed (exit {}): {stderr}", output.status);
-        bail!("{program} failed (exit {}): {stderr}", output.status);
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,24 +291,6 @@ mod tests {
         // Technically could collide, but with 6 words from a large dictionary
         // the probability is vanishingly small.
         assert_ne!(p1, p2, "two consecutive passphrases should differ");
-    }
-
-    #[test]
-    fn partition_path_scsi_disk() {
-        let path = partition_path(Path::new("/dev/sda"), 3).unwrap();
-        assert_eq!(path, PathBuf::from("/dev/sda3"));
-    }
-
-    #[test]
-    fn partition_path_nvme() {
-        let path = partition_path(Path::new("/dev/nvme0n1"), 3).unwrap();
-        assert_eq!(path, PathBuf::from("/dev/nvme0n1p3"));
-    }
-
-    #[test]
-    fn partition_path_loop() {
-        let path = partition_path(Path::new("/dev/loop0"), 3).unwrap();
-        assert_eq!(path, PathBuf::from("/dev/loop0p3"));
     }
 
     #[test]

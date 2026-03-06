@@ -1,19 +1,12 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
-pub(crate) const LUKS_NAME: &str = "bes-target-root";
+pub(crate) use crate::util::create_passphrase_keyfile;
 
-pub(crate) fn create_passphrase_keyfile(passphrase: &str) -> Result<PathBuf> {
-    let path = PathBuf::from("/tmp/bes-luks-keyfile");
-    fs::write(&path, passphrase.as_bytes()).context("creating passphrase keyfile")?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o400))
-        .context("setting keyfile permissions")?;
-    Ok(path)
-}
+pub(crate) const LUKS_NAME: &str = "bes-target-root";
 
 // r[impl installer.write.luks-before-write+2]
 pub fn format_luks_for_root(root_partition: &Path, passphrase: &str) -> Result<PathBuf> {

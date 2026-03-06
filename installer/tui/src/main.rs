@@ -18,6 +18,7 @@ mod run;
 mod script;
 mod timezone;
 mod ui;
+mod util;
 mod writer;
 
 const DEFAULT_LOG_PATH: &str = "/var/log/bes-installer.log";
