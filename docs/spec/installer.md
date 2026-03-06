@@ -705,6 +705,18 @@ The installer must not attempt to derive partition major:minor numbers from
 the parent device — the kernel assigns them dynamically (e.g. loop device
 partitions use major 259 with unrelated minors, not `parent_minor + N`).
 
+r[installer.container.swtpm]
+Container-based integration tests that exercise TPM disk encryption must use
+`swtpm` (software TPM 2.0 emulator) in `chardev` mode with `--vtpm-proxy`
+to create a `/dev/tpmN` device on the host. The test harness starts the
+`swtpm` process before launching the container and binds the resulting
+`/dev/tpmN` device into the container so that `systemd-cryptenroll
+--tpm2-device=auto` works against the emulated TPM. The `tpm_vtpm_proxy`
+kernel module must be loaded on the host. The `swtpm` process is stopped
+and the device cleaned up when the test scenario finishes. The shared
+nspawn helpers must support an optional TPM device bind-mount so that only
+TPM scenarios pay the setup cost.
+
 r[installer.container.error-logging]
 Fatal errors that propagate to the installer's top-level must be logged via
 the tracing/log file **in addition to** being printed to stderr, so that
