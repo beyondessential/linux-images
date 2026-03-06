@@ -332,6 +332,48 @@ else
     check "EFI bootloader exists (BOOTAA64.EFI)" test -f "$MNT/boot/efi/EFI/BOOT/BOOTAA64.EFI"
 fi
 
+# r[verify image.boot.grub-uuids]
+if [ -f "$MNT/boot/grub/grub.cfg" ]; then
+    GRUB_CFG="$MNT/boot/grub/grub.cfg"
+
+    ACTUAL_ROOT_UUID="$(blkid -o value -s UUID "$BTRFS_DEV" 2>/dev/null || true)"
+    if [ -n "$ACTUAL_ROOT_UUID" ]; then
+        check "grub.cfg references actual root UUID ($ACTUAL_ROOT_UUID)" \
+            grep -q "$ACTUAL_ROOT_UUID" "$GRUB_CFG"
+    else
+        fail "grub.cfg root UUID check (could not read root filesystem UUID)"
+    fi
+
+    ACTUAL_BOOT_UUID="$(blkid -o value -s UUID "$BOOT_PART" 2>/dev/null || true)"
+    if [ -n "$ACTUAL_BOOT_UUID" ]; then
+        check "grub.cfg references actual boot UUID ($ACTUAL_BOOT_UUID)" \
+            grep -q "$ACTUAL_BOOT_UUID" "$GRUB_CFG"
+    else
+        fail "grub.cfg boot UUID check (could not read boot filesystem UUID)"
+    fi
+
+    # Verify every search --fs-uuid in grub.cfg points to a real filesystem
+    GRUB_SEARCH_UUIDS="$(grep -oP '(?<=search\s--no-floppy\s--fs-uuid\s--set=root\s)\S+' "$GRUB_CFG" 2>/dev/null | sort -u || true)"
+    if [ -n "$GRUB_SEARCH_UUIDS" ]; then
+        while IFS= read -r search_uuid; do
+            if [ "$search_uuid" = "$ACTUAL_ROOT_UUID" ] || [ "$search_uuid" = "$ACTUAL_BOOT_UUID" ]; then
+                pass "grub.cfg search UUID $search_uuid matches a real filesystem"
+            else
+                fail "grub.cfg search UUID $search_uuid matches a real filesystem"
+            fi
+        done <<< "$GRUB_SEARCH_UUIDS"
+    fi
+
+    # Verify every root=UUID= kernel param points to the actual root
+    GRUB_ROOT_PARAMS="$(grep -oP '(?<=root=UUID=)\S+' "$GRUB_CFG" 2>/dev/null | sort -u || true)"
+    if [ -n "$GRUB_ROOT_PARAMS" ]; then
+        while IFS= read -r root_param_uuid; do
+            check "grub.cfg root=UUID=$root_param_uuid matches root filesystem" \
+                [ "$root_param_uuid" = "$ACTUAL_ROOT_UUID" ]
+        done <<< "$GRUB_ROOT_PARAMS"
+    fi
+fi
+
 # r[verify image.credentials.ssh-keys-only]
 check "SSH no-password config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
 check "SSH no-password config correct" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
