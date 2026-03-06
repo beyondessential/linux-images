@@ -270,7 +270,7 @@ echo "Kernel version: $KVER"
 echo "Generating initramfs with dracut..."
 dracut --force --kver "$KVER"
 
-# r[image.boot.grub-install]
+# r[image.boot.grub-install] r[image.boot.grub-uuids]
 echo "Installing GRUB (target=$GRUB_TARGET)..."
 rm -rf /boot/grub
 mkdir -p /boot/grub

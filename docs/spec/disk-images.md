@@ -112,6 +112,13 @@ GRUB must be configured with `GRUB_TIMEOUT=5`,
 r[image.boot.grub-cmdline]
 The GRUB kernel command line must include `noresume`.
 
+r[image.boot.grub-uuids]
+The generated `grub.cfg` must reference filesystem UUIDs that match the
+actual on-disk filesystems. Specifically, every `search --no-floppy --fs-uuid
+--set=root` directive and every `root=UUID=` kernel parameter in `grub.cfg`
+must correspond to a UUID present on one of the image's partitions or
+volumes. A mismatch means the system will fail to boot.
+
 ## Firewall
 
 r[image.firewall.policy]
