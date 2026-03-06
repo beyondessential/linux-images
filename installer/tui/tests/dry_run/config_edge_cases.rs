@@ -13,7 +13,6 @@ fn fake_devices_removable_field_optional() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-host"
     "#,
     );
@@ -54,7 +53,6 @@ fn fake_devices_transport_aliases_accepted() {
         disk-encryption = "tpm"
         disk = "largest"
 
-        [firstboot]
         hostname = "test-host"
     "#,
     );
@@ -78,7 +76,7 @@ fn fake_devices_transport_aliases_accepted() {
     assert_eq!(plan["disk"]["path"], "/dev/sda");
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.schema+4]
 #[test]
 fn empty_config_file_treated_as_prefilled() {
     let f = Fixture::new();

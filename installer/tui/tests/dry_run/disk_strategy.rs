@@ -1,6 +1,6 @@
 use super::common::{Fixture, THREE_MIXED_DEVICES, installer};
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.schema+4]
 #[test]
 fn strategy_largest_ssd_picks_biggest_nvme() {
     let f = Fixture::new();
@@ -11,7 +11,6 @@ fn strategy_largest_ssd_picks_biggest_nvme() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-host"
     "#,
     );
@@ -36,7 +35,7 @@ fn strategy_largest_ssd_picks_biggest_nvme() {
     assert_eq!(plan["disk"]["model"], "Big NVMe");
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.schema+4]
 #[test]
 fn strategy_largest_picks_biggest_overall() {
     let f = Fixture::new();
@@ -47,7 +46,6 @@ fn strategy_largest_picks_biggest_overall() {
         disk-encryption = "tpm"
         disk = "largest"
 
-        [firstboot]
         hostname = "test-host"
     "#,
     );
@@ -72,7 +70,7 @@ fn strategy_largest_picks_biggest_overall() {
     assert_eq!(plan["disk"]["size_bytes"], 2000000000000u64);
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.schema+4]
 #[test]
 fn strategy_smallest_picks_smallest_overall() {
     let f = Fixture::new();
@@ -83,7 +81,6 @@ fn strategy_smallest_picks_smallest_overall() {
         disk-encryption = "tpm"
         disk = "smallest"
 
-        [firstboot]
         hostname = "test-host"
     "#,
     );
@@ -108,7 +105,7 @@ fn strategy_smallest_picks_smallest_overall() {
     assert_eq!(plan["disk"]["size_bytes"], 500000000000u64);
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.schema+4]
 #[test]
 fn strategy_disk_path_selects_exact_device() {
     let f = Fixture::new();

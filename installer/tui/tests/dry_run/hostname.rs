@@ -2,8 +2,8 @@ use serde_json::Value;
 
 use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
-// r[verify installer.config.schema+3]
-// r[verify installer.dryrun.schema+4]
+// r[verify installer.config.schema+4]
+// r[verify installer.dryrun.schema+5]
 #[test]
 fn auto_metal_hostname_from_dhcp() {
     let f = Fixture::new();
@@ -14,7 +14,6 @@ fn auto_metal_hostname_from_dhcp() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname-from-dhcp = true
     "#,
     );
@@ -38,18 +37,18 @@ fn auto_metal_hostname_from_dhcp() {
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "tpm");
     assert_eq!(
-        plan["firstboot"]["hostname"], "dhcp",
+        plan["install_config"]["hostname"], "dhcp",
         "hostname should be the sentinel string 'dhcp'"
     );
     assert!(
-        !plan["firstboot"]["hostname_from_template"]
+        !plan["install_config"]["hostname_from_template"]
             .as_bool()
             .unwrap()
     );
 }
 
 // r[verify installer.config.hostname-template]
-// r[verify installer.dryrun.schema+4]
+// r[verify installer.dryrun.schema+5]
 #[test]
 fn auto_metal_hostname_template() {
     let f = Fixture::new();
@@ -60,7 +59,6 @@ fn auto_metal_hostname_template() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname-template = "test-{hex:6}"
     "#,
     );
@@ -84,7 +82,7 @@ fn auto_metal_hostname_template() {
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "tpm");
 
-    let hostname = plan["firstboot"]["hostname"].as_str().unwrap();
+    let hostname = plan["install_config"]["hostname"].as_str().unwrap();
     assert!(
         hostname.starts_with("test-"),
         "resolved hostname should start with 'test-', got: {hostname}"
@@ -100,7 +98,7 @@ fn auto_metal_hostname_template() {
         "hex portion should be valid hex, got: {hex_part}"
     );
     assert!(
-        plan["firstboot"]["hostname_from_template"]
+        plan["install_config"]["hostname_from_template"]
             .as_bool()
             .unwrap(),
         "hostname_from_template should be true"
@@ -118,7 +116,6 @@ fn auto_metal_hostname_template_num() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname-template = "node-{num:4}"
     "#,
     );
@@ -139,7 +136,7 @@ fn auto_metal_hostname_template_num() {
         .success();
 
     let plan = f.read_plan();
-    let hostname = plan["firstboot"]["hostname"].as_str().unwrap();
+    let hostname = plan["install_config"]["hostname"].as_str().unwrap();
     assert!(
         hostname.starts_with("node-"),
         "resolved hostname should start with 'node-', got: {hostname}"
@@ -152,7 +149,7 @@ fn auto_metal_hostname_template_num() {
     );
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.schema+4]
 #[test]
 fn auto_hostname_and_dhcp_mutually_exclusive() {
     let f = Fixture::new();
@@ -163,7 +160,6 @@ fn auto_hostname_and_dhcp_mutually_exclusive() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "server-01"
         hostname-from-dhcp = true
     "#,
@@ -194,7 +190,7 @@ fn auto_hostname_and_dhcp_mutually_exclusive() {
     );
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.schema+4]
 #[test]
 fn auto_hostname_and_template_mutually_exclusive() {
     let f = Fixture::new();
@@ -205,7 +201,6 @@ fn auto_hostname_and_template_mutually_exclusive() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "server-01"
         hostname-template = "srv-{hex:6}"
     "#,
@@ -236,7 +231,7 @@ fn auto_hostname_and_template_mutually_exclusive() {
     );
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.schema+4]
 #[test]
 fn auto_dhcp_on_cloud_emits_warning() {
     let f = Fixture::new();
@@ -247,7 +242,6 @@ fn auto_dhcp_on_cloud_emits_warning() {
         disk-encryption = "none"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname-from-dhcp = true
     "#,
     );
@@ -289,7 +283,6 @@ fn auto_invalid_hostname_template_emits_warning() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname-template = "no-placeholder"
     "#,
     );
@@ -356,7 +349,7 @@ enter
 
     let plan = f.read_plan();
     assert_eq!(
-        plan["firstboot"]["hostname"], "dhcp",
+        plan["install_config"]["hostname"], "dhcp",
         "hostname should be sentinel 'dhcp' when DHCP toggle is active"
     );
 }
@@ -372,7 +365,6 @@ fn auto_metal_hostname_template_two_runs_differ() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname-template = "uniq-{hex:8}"
     "#,
     );
@@ -413,8 +405,8 @@ fn auto_metal_hostname_template_two_runs_differ() {
     let p1: Value = serde_json::from_str(&std::fs::read_to_string(&plan1_path).unwrap()).unwrap();
     let p2: Value = serde_json::from_str(&std::fs::read_to_string(&plan2_path).unwrap()).unwrap();
 
-    let h1 = p1["firstboot"]["hostname"].as_str().unwrap();
-    let h2 = p2["firstboot"]["hostname"].as_str().unwrap();
+    let h1 = p1["install_config"]["hostname"].as_str().unwrap();
+    let h2 = p2["install_config"]["hostname"].as_str().unwrap();
 
     assert_ne!(
         h1, h2,

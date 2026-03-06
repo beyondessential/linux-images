@@ -11,7 +11,6 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
         disk-encryption = "tpm"
         disk = "/dev/nvme0n1"
 
-        [firstboot]
         hostname = "prefilled-host"
         tailscale-authkey = "tskey-auth-123"
         ssh-authorized-keys = ["ssh-ed25519 AAAA key1"]
@@ -70,11 +69,15 @@ enter
     assert_eq!(plan["disk_encryption"], "tpm");
     assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
-    assert_eq!(plan["firstboot"]["hostname"], "prefilled-host");
-    assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
-    assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 1);
-    assert!(plan["firstboot"]["password_set"].as_bool().unwrap());
-    assert_eq!(plan["firstboot"]["timezone"], "UTC");
+    assert_eq!(plan["install_config"]["hostname"], "prefilled-host");
+    assert!(
+        plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 1);
+    assert!(plan["install_config"]["password_set"].as_bool().unwrap());
+    assert_eq!(plan["install_config"]["timezone"], "UTC");
 }
 
 // r[verify installer.mode.prefilled]
@@ -88,7 +91,6 @@ fn prefilled_overriding_values_via_tui() {
         disk-encryption = "tpm"
         disk = "/dev/nvme0n1"
 
-        [firstboot]
         hostname = "old-host"
     "#,
     );
@@ -153,7 +155,7 @@ enter
     assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["variant"], "cloud");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
-    assert_eq!(plan["firstboot"]["hostname"], "new-host");
+    assert_eq!(plan["install_config"]["hostname"], "new-host");
 }
 
 // r[verify installer.tui.timezone]
@@ -167,7 +169,6 @@ fn prefilled_timezone_from_config() {
         disk-encryption = "none"
         disk = "/dev/nvme0n1"
 
-        [firstboot]
         timezone = "Europe/London"
     "#,
     );
@@ -216,5 +217,5 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["timezone"], "Europe/London");
+    assert_eq!(plan["install_config"]["timezone"], "Europe/London");
 }
