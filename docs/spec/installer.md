@@ -481,21 +481,21 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+7]
-After the timezone screen, and after the pre-summary network results screen,
-the TUI must show a summary screen listing: target disk (path, model, size),
-chosen disk encryption mode, and any install-time configuration. The summary
-must clearly state that all data on the target disk will be destroyed. The
-user must type an explicit confirmation (not just press Enter). The
-confirmation screen is step 6/6.
-
-When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
-screen must also generate and display the recovery passphrase. This gives
-the user an opportunity to write it down **before** the destructive write
-begins. The same passphrase is later enrolled into the LUKS volume during
-encryption setup. The completion screen displays the recovery passphrase
-again as a final reminder; the user must press Enter to acknowledge before
-the system reboots.
+> r[installer.tui.confirmation+7]
+> After the timezone screen, and after the pre-summary network results screen,
+> the TUI must show a summary screen listing: target disk (path, model, size),
+> chosen disk encryption mode, and any install-time configuration. The summary
+> must clearly state that all data on the target disk will be destroyed. The
+> user must type an explicit confirmation (not just press Enter). The
+> confirmation screen is step 6/6.
+> 
+> When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
+> screen must also generate and display the recovery passphrase. This gives
+> the user an opportunity to write it down **before** the destructive write
+> begins. The same passphrase is later enrolled into the LUKS volume during
+> encryption setup. The completion screen displays the recovery passphrase
+> again as a final reminder; the user must press Enter to acknowledge before
+> the system reboots.
 
 r[installer.tui.ascii-rendering]
 All text rendered by the TUI must use only printable ASCII characters. In
