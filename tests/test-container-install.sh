@@ -200,35 +200,31 @@ CONFIG_TOML="$WORK_DIR/bes-install.toml"
         echo "copy-install-log = false"
     fi
 
-    if [ -n "$SET_HOSTNAME" ] || [ -n "$SET_HOSTNAME_FROM_DHCP" ] || [ -n "$SET_HOSTNAME_TEMPLATE" ] || [ -n "$SET_TAILSCALE" ] || [ -n "$SET_SSH_KEYS" ] || [ -n "$SET_PASSWORD" ] || [ -n "$SET_PASSWORD_HASH" ] || [ -n "$SET_TIMEZONE" ]; then
-        echo ""
-        echo "[firstboot]"
-        if [ -n "$SET_HOSTNAME" ]; then
-            echo "hostname = \"$SET_HOSTNAME\""
-        fi
-        if [ -n "$SET_HOSTNAME_FROM_DHCP" ]; then
-            echo "hostname-from-dhcp = true"
-        fi
-        if [ -n "$SET_HOSTNAME_TEMPLATE" ]; then
-            echo "hostname-template = \"$SET_HOSTNAME_TEMPLATE\""
-        fi
-        if [ -n "$SET_TAILSCALE" ]; then
-            echo "tailscale-authkey = \"$SET_TAILSCALE\""
-        fi
-        if [ -n "$SET_SSH_KEYS" ]; then
-            echo "ssh-authorized-keys = ["
-            echo "  \"$SET_SSH_KEYS\","
-            echo "]"
-        fi
-        if [ -n "$SET_PASSWORD" ]; then
-            echo "password = \"$SET_PASSWORD\""
-        fi
-        if [ -n "$SET_PASSWORD_HASH" ]; then
-            echo "password-hash = \"$SET_PASSWORD_HASH\""
-        fi
-        if [ -n "$SET_TIMEZONE" ]; then
-            echo "timezone = \"$SET_TIMEZONE\""
-        fi
+    if [ -n "$SET_HOSTNAME" ]; then
+        echo "hostname = \"$SET_HOSTNAME\""
+    fi
+    if [ -n "$SET_HOSTNAME_FROM_DHCP" ]; then
+        echo "hostname-from-dhcp = true"
+    fi
+    if [ -n "$SET_HOSTNAME_TEMPLATE" ]; then
+        echo "hostname-template = \"$SET_HOSTNAME_TEMPLATE\""
+    fi
+    if [ -n "$SET_TAILSCALE" ]; then
+        echo "tailscale-authkey = \"$SET_TAILSCALE\""
+    fi
+    if [ -n "$SET_SSH_KEYS" ]; then
+        echo "ssh-authorized-keys = ["
+        echo "  \"$SET_SSH_KEYS\","
+        echo "]"
+    fi
+    if [ -n "$SET_PASSWORD" ]; then
+        echo "password = \"$SET_PASSWORD\""
+    fi
+    if [ -n "$SET_PASSWORD_HASH" ]; then
+        echo "password-hash = \"$SET_PASSWORD_HASH\""
+    fi
+    if [ -n "$SET_TIMEZONE" ]; then
+        echo "timezone = \"$SET_TIMEZONE\""
     fi
 } > "$CONFIG_TOML"
 
@@ -527,7 +523,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Tailscale authkey ---
-        # r[verify installer.firstboot.tailscale-authkey]
+        # r[verify installer.firstboot.tailscale-authkey+2]
         if [ -n "$SET_TAILSCALE" ]; then
             TS_KEY_FILE="$VERIFY_MOUNT/etc/bes/tailscale-authkey"
             if [ -f "$TS_KEY_FILE" ]; then
@@ -666,7 +662,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Install log ---
-        # r[verify installer.firstboot.copy-install-log]
+        # r[verify installer.firstboot.copy-install-log+2]
         INSTALL_LOG="$VERIFY_MOUNT/var/log/bes-installer.log"
         if [ "$SET_COPY_INSTALL_LOG" = "false" ]; then
             check "install log absent when copy-install-log=false" \
