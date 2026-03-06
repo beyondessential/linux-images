@@ -491,6 +491,7 @@ fn spawn_install_worker(
     let install_config = state.install_config_fields();
     // r[impl installer.encryption.recovery-passphrase+3]
     let passphrase = state.recovery_passphrase.clone();
+    let tailscale_netcheck_ok = state.netcheck_result.as_ref().is_some_and(|r| r.success);
     let tx = tx.clone();
 
     thread::spawn(move || {
@@ -502,6 +503,7 @@ fn spawn_install_worker(
             disk_size,
             install_config.as_ref(),
             install_log.as_deref(),
+            tailscale_netcheck_ok,
             &tx,
         );
         match result {
@@ -515,6 +517,10 @@ fn spawn_install_worker(
     });
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "install orchestration needs all these pieces"
+)]
 fn run_full_install(
     disk_writer: &writer::DiskWriter<'_>,
     manifest: &PartitionManifest,
@@ -522,6 +528,7 @@ fn run_full_install(
     disk_size: u64,
     install_config: Option<&crate::config::InstallConfig>,
     install_log: Option<&Path>,
+    tailscale_netcheck_ok: bool,
     tx: &mpsc::Sender<WorkerMessage>,
 ) -> Result<Option<String>> {
     // r[impl installer.write.disk-size-check+2]
@@ -576,7 +583,7 @@ fn run_full_install(
         }
 
         if let Some(cfg) = install_config {
-            firstboot::apply_firstboot(&mounted, cfg)?;
+            firstboot::apply_firstboot(&mounted, cfg, tailscale_netcheck_ok)?;
         } else {
             firstboot::apply_timezone_default(&mounted)?;
         }

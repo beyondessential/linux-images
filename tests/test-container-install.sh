@@ -523,7 +523,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Tailscale authkey ---
-        # r[verify installer.finalise.tailscale-authkey+2]
+        # r[verify installer.finalise.tailscale-firstboot]
         if [ -n "$SET_TAILSCALE" ]; then
             TS_KEY_FILE="$VERIFY_MOUNT/etc/bes/tailscale-authkey"
             if [ -f "$TS_KEY_FILE" ]; then

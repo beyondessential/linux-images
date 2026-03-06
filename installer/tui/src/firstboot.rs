@@ -1,6 +1,7 @@
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, chown};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use sha_crypt::{Sha512Params, sha512_simple};
@@ -78,7 +79,11 @@ pub fn unmount_target(target: MountedTarget) -> Result<()> {
     Ok(())
 }
 
-pub fn apply_firstboot(target: &MountedTarget, config: &InstallConfig) -> Result<()> {
+pub fn apply_firstboot(
+    target: &MountedTarget,
+    config: &InstallConfig,
+    tailscale_netcheck_ok: bool,
+) -> Result<()> {
     let root = target.path();
 
     if config.hostname_from_dhcp {
@@ -88,7 +93,26 @@ pub fn apply_firstboot(target: &MountedTarget, config: &InstallConfig) -> Result
     }
 
     if let Some(ref authkey) = config.tailscale_authkey {
-        apply_tailscale_authkey(root, authkey)?;
+        // r[impl installer.finalise.tailscale-auth]
+        let authed = if tailscale_netcheck_ok {
+            match attempt_tailscale_auth(root, authkey) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!(
+                        "tailscale auth failed, falling back to firstboot keyfile: {e:#}"
+                    );
+                    false
+                }
+            }
+        } else {
+            tracing::info!("tailscale netcheck did not pass, skipping install-time auth");
+            false
+        };
+
+        // r[impl installer.finalise.tailscale-firstboot]
+        if !authed {
+            write_tailscale_authkey(root, authkey)?;
+        }
     }
 
     if !config.ssh_authorized_keys.is_empty() {
@@ -324,8 +348,79 @@ fn apply_hostname(root: &Path, hostname: &str) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.finalise.tailscale-authkey+2]
-fn apply_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
+// r[impl installer.finalise.tailscale-auth]
+fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
+    let mount_str = root.to_str().context("mount path is not valid UTF-8")?;
+
+    let proc_path = root.join("proc");
+    let sys_path = root.join("sys");
+    let dev_path = root.join("dev");
+    let run_path = root.join("run");
+    let resolv_path = root.join("etc/resolv.conf");
+
+    run_command(
+        "mount",
+        &["--bind", "/proc", proc_path.to_str().unwrap_or_default()],
+    )
+    .context("bind-mounting /proc for tailscale auth")?;
+    run_command(
+        "mount",
+        &["--bind", "/sys", sys_path.to_str().unwrap_or_default()],
+    )
+    .context("bind-mounting /sys for tailscale auth")?;
+    run_command(
+        "mount",
+        &["--bind", "/dev", dev_path.to_str().unwrap_or_default()],
+    )
+    .context("bind-mounting /dev for tailscale auth")?;
+    run_command(
+        "mount",
+        &["--bind", "/run", run_path.to_str().unwrap_or_default()],
+    )
+    .context("bind-mounting /run for tailscale auth")?;
+
+    // Ensure DNS resolution works inside the chroot: copy the host's
+    // resolv.conf into the target so tailscale can resolve DNS.
+    // If the target has a symlink (e.g. to systemd-resolved), remove it
+    // first so we can write a plain file.
+    let host_resolv = Path::new("/etc/resolv.conf");
+    let copied_resolv = if host_resolv.exists() {
+        if fs::symlink_metadata(&resolv_path).is_ok_and(|m| m.is_symlink()) {
+            let _ = fs::remove_file(&resolv_path);
+        }
+        fs::copy(host_resolv, &resolv_path).is_ok()
+    } else {
+        false
+    };
+
+    tracing::info!("attempting tailscale auth via chroot into {mount_str}");
+
+    let output = Command::new("chroot")
+        .args([mount_str, "tailscale", "up", "--auth-key", authkey, "--ssh"])
+        .output()
+        .context("spawning chroot tailscale up")?;
+
+    // Clean up bind mounts (best-effort, reverse order)
+    if copied_resolv {
+        let _ = fs::remove_file(&resolv_path);
+    }
+    let _ = run_command("umount", &[run_path.to_str().unwrap_or_default()]);
+    let _ = run_command("umount", &[dev_path.to_str().unwrap_or_default()]);
+    let _ = run_command("umount", &[sys_path.to_str().unwrap_or_default()]);
+    let _ = run_command("umount", &[proc_path.to_str().unwrap_or_default()]);
+
+    if output.status.success() {
+        tracing::info!("tailscale auth succeeded via chroot");
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::error!("tailscale up failed (exit {}): {stderr}", output.status);
+        bail!("tailscale up failed (exit {}): {stderr}", output.status);
+    }
+}
+
+// r[impl installer.finalise.tailscale-firstboot]
+fn write_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
     let bes_dir = root.join("etc/bes");
     fs::create_dir_all(&bes_dir).context("creating /etc/bes")?;
 
@@ -335,7 +430,7 @@ fn apply_tailscale_authkey(root: &Path, authkey: &str) -> Result<()> {
     fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
         .context("setting tailscale-authkey permissions")?;
 
-    tracing::info!("wrote tailscale authkey");
+    tracing::info!("wrote tailscale authkey for firstboot");
     Ok(())
 }
 
@@ -531,6 +626,25 @@ mod tests {
 
         let hostname = fs::read_to_string(etc.join("hostname")).unwrap();
         assert_eq!(hostname, "");
+    }
+
+    // r[verify installer.finalise.tailscale-firstboot]
+    #[test]
+    fn write_tailscale_authkey_creates_file_with_correct_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc");
+        fs::create_dir_all(&etc).unwrap();
+
+        write_tailscale_authkey(dir.path(), "tskey-auth-test123").unwrap();
+
+        let key_path = dir.path().join("etc/bes/tailscale-authkey");
+        assert!(key_path.exists());
+
+        let contents = fs::read_to_string(&key_path).unwrap();
+        assert_eq!(contents, "tskey-auth-test123\n");
+
+        let perms = fs::metadata(&key_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(perms, 0o600);
     }
 
     // r[verify installer.finalise.ssh-keys]
