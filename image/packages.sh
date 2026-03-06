@@ -17,6 +17,7 @@ PACKAGES=(
     parted
 
     # Networking
+    netplan.io
     openssh-server
     curl
     wget

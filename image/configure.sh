@@ -98,6 +98,12 @@ apt-get install -y -q dracut  # this removes initramfs-tools
 install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
     /etc/dracut.conf.d/01-fix-hostonly-noble.conf
 
+# r[image.boot.cloud-drivers]
+if [ "$VARIANT" = "cloud" ]; then
+    install -m 644 /tmp/files/dracut/03-cloud-drivers.conf \
+        /etc/dracut.conf.d/03-cloud-drivers.conf
+fi
+
 # ============================================================
 # Variant identification
 # ============================================================
@@ -120,13 +126,22 @@ GRUB_CMDLINE_LINUX_DEFAULT="noresume"
 GRUB_CMDLINE_LINUX=""
 GRUB_RECORDFAIL_TIMEOUT=5
 GRUBEOF
+fi
+
+# r[image.boot.cloud-console]
+if [ "$VARIANT" = "cloud" ]; then
+    GRUB_CMDLINE="noresume console=ttyS0,115200n8"
 else
+    GRUB_CMDLINE="noresume"
+fi
+
+if [ -f /etc/default/grub ]; then
     # r[image.boot.grub-timeout]
     sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=5/' /etc/default/grub
     sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub
 
-    # r[image.boot.grub-cmdline]
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="noresume"/' /etc/default/grub
+    # r[image.boot.grub-cmdline] r[image.boot.cloud-console]
+    sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_CMDLINE}\"/" /etc/default/grub
 
     # r[image.boot.grub-timeout] (recordfail)
     if ! grep -q '^GRUB_RECORDFAIL_TIMEOUT=' /etc/default/grub; then
@@ -193,6 +208,13 @@ install -m 755 /tmp/files/ts-up /usr/local/bin/ts-up
 install -m 755 /tmp/files/bes-tailscale-firstboot-auth /usr/local/bin/bes-tailscale-firstboot-auth
 install -m 644 /tmp/files/systemd/bes-tailscale-firstboot-auth.service /etc/systemd/system/bes-tailscale-firstboot-auth.service
 systemctl enable bes-tailscale-firstboot-auth.service
+
+# ============================================================
+# Network
+# ============================================================
+# r[image.base.network]
+mkdir -p /etc/netplan
+install -m 600 /tmp/files/netplan/01-all-en-dhcp.yaml /etc/netplan/01-all-en-dhcp.yaml
 
 # ============================================================
 # SSH
