@@ -108,6 +108,10 @@ if [ "$VARIANT" = "cloud" ]; then
         /etc/dracut.conf.d/04-cloud-drivers.conf
 fi
 
+if [ "$VARIANT" = "metal" ]; then
+    apt-get install -y -q --no-install-recommends linux-firmware
+fi
+
 # ============================================================
 # Variant identification
 # ============================================================
