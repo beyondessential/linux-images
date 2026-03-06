@@ -423,13 +423,11 @@ a disk, without using the ISO installer.
      base image size.
    - `btrfs subvolume list /` shows `@` and `@postgres`.
 
-4. Repeat with the metal image. The system should boot and pause at a
-   LUKS passphrase prompt (the empty passphrase unlocks it -- just press
-   Enter).
+4. Repeat with the metal image.
 
 **Acceptance criteria**: both cloud and metal images boot from a raw disk
 write. The growth service expands the root filesystem. The metal image
-prompts for (and accepts) the empty LUKS passphrase.
+boots without prompting for a passphrase.
 
 MD
 }
