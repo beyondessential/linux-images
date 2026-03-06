@@ -74,6 +74,13 @@ unique machine ID on each first boot.
 r[image.base.resolver]
 systemd-resolved must be enabled and configured as the system DNS resolver.
 
+r[image.base.network]
+A netplan configuration must be installed at
+`/etc/netplan/01-all-en-dhcp.yaml` that matches all Ethernet interfaces
+(`en*`) and enables DHCPv4. This ensures that both metal and cloud images
+obtain an IP address on first boot regardless of whether cloud-init or any
+other datasource is present.
+
 ## Packages
 
 r[image.packages.bes-tools]
@@ -102,6 +109,13 @@ r[image.boot.dracut]
 The initramfs must be generated using dracut, not initramfs-tools. Dracut must
 be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 
+r[image.boot.cloud-drivers]
+The cloud variant must include a dracut configuration at
+`/etc/dracut.conf.d/03-cloud-drivers.conf` that force-includes the `ena`,
+`nvme`, `nvme_core`, and `xen_blkfront` kernel modules into the initramfs.
+This is necessary because `hostonly` mode only includes drivers for hardware
+detected at image-build time, which does not include cloud-specific devices.
+
 r[image.boot.grub-install]
 GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
 
@@ -111,6 +125,11 @@ GRUB must be configured with `GRUB_TIMEOUT=5`,
 
 r[image.boot.grub-cmdline]
 The GRUB kernel command line must include `noresume`.
+
+r[image.boot.cloud-console]
+The cloud variant must append `console=ttyS0,115200n8` to the GRUB kernel
+command line so that boot output is visible on the EC2 serial console (and
+equivalent serial consoles on other cloud providers).
 
 r[image.boot.grub-uuids]
 The generated `grub.cfg` must reference filesystem UUIDs that match the
