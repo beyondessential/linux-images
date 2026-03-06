@@ -60,7 +60,7 @@ fn auto_full_config_produces_correct_plan() {
 }
 
 // r[verify installer.dryrun.schema+5]
-// r[verify installer.config.schema+4]
+// r[verify installer.config.disk]
 #[test]
 fn auto_disk_path_resolves_correctly() {
     let f = Fixture::new();
@@ -97,7 +97,7 @@ fn auto_disk_path_resolves_correctly() {
 }
 
 // r[verify installer.dryrun.schema+5]
-// r[verify installer.config.schema+4]
+// r[verify installer.config.disk-encryption]
 #[test]
 fn auto_keyfile_encryption_produces_metal_variant() {
     let f = Fixture::new();
@@ -204,7 +204,7 @@ fn auto_none_encryption_no_install_config() {
     assert!(!plan["tpm_present"].as_bool().unwrap());
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.hostname]
 #[test]
 fn auto_bad_hostname_emits_warning() {
     let f = Fixture::new();
@@ -362,7 +362,7 @@ fn auto_incomplete_missing_both_falls_back() {
     assert_eq!(plan["mode"], "auto-incomplete");
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.hostname]
 #[test]
 fn auto_with_minimal_install_config() {
     let f = Fixture::new();
@@ -402,7 +402,7 @@ fn auto_with_minimal_install_config() {
     assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 0);
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.ssh-authorized-keys]
 #[test]
 fn auto_with_only_ssh_keys() {
     let f = Fixture::new();

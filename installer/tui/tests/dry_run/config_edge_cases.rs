@@ -76,7 +76,7 @@ fn fake_devices_transport_aliases_accepted() {
     assert_eq!(plan["disk"]["path"], "/dev/sda");
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.format]
 #[test]
 fn empty_config_file_treated_as_prefilled() {
     let f = Fixture::new();

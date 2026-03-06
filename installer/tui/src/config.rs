@@ -6,7 +6,16 @@ use serde::Deserialize;
 
 use crate::hostname_template;
 
-// r[impl installer.config.schema+4]
+// r[impl installer.config.format]
+// r[impl installer.config.auto]
+// r[impl installer.config.disk-encryption]
+// r[impl installer.config.disk]
+// r[impl installer.config.copy-install-log]
+// r[impl installer.config.hostname]
+// r[impl installer.config.tailscale-authkey]
+// r[impl installer.config.ssh-authorized-keys]
+// r[impl installer.config.password]
+// r[impl installer.config.timezone]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
@@ -360,14 +369,21 @@ pub fn find_config_file() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.format]
     #[test]
     fn parse_empty_config() {
         let config = InstallConfig::from_toml("").unwrap();
         assert_eq!(config, InstallConfig::default());
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.format]
+    // r[verify installer.config.auto]
+    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk]
+    // r[verify installer.config.hostname]
+    // r[verify installer.config.tailscale-authkey]
+    // r[verify installer.config.ssh-authorized-keys]
+    // r[verify installer.config.password]
     #[test]
     fn parse_full_config() {
         let toml = r#"
@@ -400,7 +416,7 @@ mod tests {
         assert_eq!(config.password_hash, None);
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn parse_disk_encryption_variants() {
         let tpm = InstallConfig::from_toml(r#"disk-encryption = "tpm""#).unwrap();
@@ -413,14 +429,14 @@ mod tests {
         assert_eq!(none.disk_encryption, Some(DiskEncryption::None));
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn parse_invalid_disk_encryption_rejected() {
         let result = InstallConfig::from_toml(r#"disk-encryption = "bad""#);
         assert!(result.is_err());
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk]
     #[test]
     fn parse_disk_path() {
         let config = InstallConfig::from_toml(r#"disk = "/dev/nvme0n1""#).unwrap();
@@ -430,7 +446,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk]
     #[test]
     fn parse_disk_strategies() {
         for (input, expected) in [
@@ -443,7 +459,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.format]
     #[test]
     fn parse_unknown_field_rejected() {
         let result = InstallConfig::from_toml(r#"bogus = true"#);
@@ -611,7 +627,7 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.hostname]
     #[test]
     fn validate_bad_hostname() {
         let config = InstallConfig {
@@ -626,7 +642,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.hostname]
     #[test]
     fn validate_long_hostname() {
         let config = InstallConfig {
@@ -637,7 +653,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("too long")));
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.ssh-authorized-keys]
     #[test]
     fn validate_empty_ssh_key() {
         let config = InstallConfig {
@@ -648,7 +664,7 @@ mod tests {
         assert!(issues.iter().any(|i| i.contains("empty")));
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.format]
     #[test]
     fn validate_good_config_has_no_issues() {
         let config = InstallConfig {
@@ -665,7 +681,7 @@ mod tests {
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn disk_encryption_display() {
         assert_eq!(DiskEncryption::Tpm.to_string(), "tpm");
@@ -673,7 +689,7 @@ mod tests {
         assert_eq!(DiskEncryption::None.to_string(), "none");
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn disk_encryption_variant_derivation() {
         assert_eq!(DiskEncryption::Tpm.variant(), Variant::Metal);
@@ -681,14 +697,14 @@ mod tests {
         assert_eq!(DiskEncryption::None.variant(), Variant::Cloud);
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn variant_display() {
         assert_eq!(Variant::Metal.to_string(), "metal");
         assert_eq!(Variant::Cloud.to_string(), "cloud");
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk]
     #[test]
     fn disk_selector_display() {
         assert_eq!(
@@ -701,7 +717,9 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.hostname]
+    // r[verify installer.config.tailscale-authkey]
+    // r[verify installer.config.ssh-authorized-keys]
     #[test]
     fn parse_minimal_hostname() {
         let config = InstallConfig::from_toml(
@@ -752,7 +770,7 @@ mod tests {
         assert!(InstallConfig::load_from_file(&path).is_err());
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.password]
     #[test]
     fn parse_password_hash() {
         let config = InstallConfig::from_toml(
@@ -768,7 +786,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.password]
     #[test]
     fn validate_password_and_hash_mutually_exclusive() {
         let config = InstallConfig {
@@ -921,7 +939,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+4]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn disk_encryption_is_encrypted() {
         assert!(DiskEncryption::Tpm.is_encrypted());

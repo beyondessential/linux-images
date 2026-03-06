@@ -242,6 +242,7 @@ fn dry_run_no_config_is_interactive() {
 }
 
 // r[verify installer.dryrun]
+// r[verify installer.config.copy-install-log]
 #[test]
 fn dry_run_manifest_path_is_null_when_no_images() {
     let f = Fixture::new();
@@ -282,7 +283,7 @@ fn dry_run_manifest_path_is_null_when_no_images() {
     );
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.format]
 #[test]
 fn multiple_validation_warnings_collected() {
     let f = Fixture::new();

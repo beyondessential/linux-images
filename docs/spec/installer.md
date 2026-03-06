@@ -13,53 +13,69 @@
 >    mounted by `live-boot`).
 > 3. `/boot/efi/bes-install.toml` (fallback for manual placement).
 
-> r[installer.config.schema+4]
-> The configuration file has the following schema:
->
-> ```toml
-> # Run fully automatically without prompts.
-> # Requires at minimum: disk-encryption and disk.
-> auto = true
->
-> # Disk encryption mode: "tpm", "keyfile", or "none".
-> # "tpm" — LUKS + TPM PCR 1 (requires a TPM; default when TPM present)
-> # "keyfile" — LUKS + keyfile on boot partition (default when no TPM)
-> # "none" — no encryption (cloud image)
-> disk-encryption = "tpm"
->
-> # Target disk: a device path or a strategy.
-> # Strategies: "largest-ssd", "largest", "smallest"
-> disk = "largest-ssd"
->
-> # Copy the installer log into the installed system at /var/log/bes-installer.log.
-> # Default: true. Set to false to disable. No TUI control for this option.
-> copy-install-log = true
->
-> hostname = "server-01"
-> # Use DHCP-provided hostname instead of a static one.
-> # Mutually exclusive with hostname and hostname-template.
-> hostname-from-dhcp = true
-> # Generate a hostname from a template pattern.
-> # Mutually exclusive with hostname and hostname-from-dhcp.
-> hostname-template = "tamanu-{hex:6}"
-> tailscale-authkey = "tskey-auth-xxxxx"
-> ssh-authorized-keys = [
->   "ssh-ed25519 AAAA... admin@example.com",
-> ]
-> # Plaintext password for the ubuntu user (mutually exclusive with password-hash).
-> password = "changeme"
-> # Pre-hashed password for the ubuntu user (crypt(3) format, e.g. from mkpasswd).
-> # Mutually exclusive with password.
-> password-hash = "$6$rounds=4096$..."
-> # IANA timezone (e.g. "America/New_York"). Defaults to "UTC".
-> timezone = "Pacific/Auckland"
-> ```
->
-> All fields are optional. `password` and `password-hash` are mutually
-> exclusive; if both are present the installer must report a validation
-> error. The three hostname fields -- `hostname`, `hostname-from-dhcp`, and
-> `hostname-template` -- are mutually exclusive; if more than one is present
-> the installer must report a validation error.
+r[installer.config.format]
+The configuration file is in TOML format. All fields are top-level
+(no tables or sections) and all fields are optional. The installer must
+reject unknown fields with a parse error. The file configures both the
+installation process (disk selection, encryption, automation) and the
+install-time system setup (hostname, credentials, services).
+
+r[installer.config.auto]
+The `auto` field is a boolean. When `true`, the installer runs fully
+automatically without interactive prompts. Automatic mode requires at
+minimum `disk-encryption` and `disk` to be set; if they are missing the
+installer must report a validation error.
+
+r[installer.config.disk-encryption]
+The `disk-encryption` field is a string selecting the disk encryption
+mode. Valid values are `"tpm"` (LUKS + TPM PCR 1; requires a TPM and is
+the default when a TPM is present), `"keyfile"` (LUKS + keyfile on the
+boot partition; default when no TPM is present), or `"none"` (no
+encryption, producing a cloud image).
+
+r[installer.config.disk]
+The `disk` field is a string selecting the target disk. It may be a
+device path (e.g. `"/dev/sda"`) or a strategy name. Valid strategies are
+`"largest-ssd"` (the largest SSD/NVMe device), `"largest"` (the largest
+device regardless of transport), and `"smallest"` (the smallest device).
+
+r[installer.config.copy-install-log]
+The `copy-install-log` field is a boolean controlling whether the
+installer copies its log into the installed system at
+`/var/log/bes-installer.log`. The default is `true`. There is no TUI
+control for this option.
+
+r[installer.config.hostname]
+The `hostname` field is a string setting a static hostname for the
+installed system (e.g. `"server-01"`). The `hostname-from-dhcp` field is
+a boolean; when `true`, the installed system obtains its hostname from
+DHCP. The `hostname-template` field is a string that generates a hostname
+from a template pattern (see `installer.config.hostname-template`). These
+three fields are mutually exclusive; if more than one is present the
+installer must report a validation error.
+
+r[installer.config.tailscale-authkey]
+The `tailscale-authkey` field is a string containing a Tailscale auth key
+(e.g. `"tskey-auth-xxxxx"`). When set, the installer uses it to
+authenticate the installed system with Tailscale (see
+`installer.firstboot.tailscale-authkey` for the authentication procedure).
+
+r[installer.config.ssh-authorized-keys]
+The `ssh-authorized-keys` field is an array of strings, each an OpenSSH
+public key line (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). When
+set, the installer writes these keys into the installed system (see
+`installer.firstboot.ssh-keys`).
+
+r[installer.config.password]
+The `password` field is a string containing a plaintext password for the
+`ubuntu` user. The `password-hash` field is a string containing a
+pre-hashed password in crypt(3) format (e.g. `"$6$rounds=4096$..."`).
+These two fields are mutually exclusive; if both are present the installer
+must report a validation error.
+
+r[installer.config.timezone]
+The `timezone` field is a string containing an IANA timezone name (e.g.
+`"Pacific/Auckland"`). The default is `"UTC"`.
 
 r[installer.config.hostname-template]
 The `hostname-template` field value is a string containing literal characters

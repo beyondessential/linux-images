@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.hostname]
 // r[verify installer.dryrun.schema+5]
 #[test]
 fn auto_metal_hostname_from_dhcp() {
@@ -149,7 +149,7 @@ fn auto_metal_hostname_template_num() {
     );
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.hostname]
 #[test]
 fn auto_hostname_and_dhcp_mutually_exclusive() {
     let f = Fixture::new();
@@ -190,7 +190,7 @@ fn auto_hostname_and_dhcp_mutually_exclusive() {
     );
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.hostname]
 #[test]
 fn auto_hostname_and_template_mutually_exclusive() {
     let f = Fixture::new();
@@ -231,7 +231,7 @@ fn auto_hostname_and_template_mutually_exclusive() {
     );
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.hostname]
 #[test]
 fn auto_dhcp_on_cloud_emits_warning() {
     let f = Fixture::new();

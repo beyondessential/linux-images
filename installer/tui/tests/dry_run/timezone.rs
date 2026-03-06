@@ -42,7 +42,7 @@ fn auto_timezone_defaults_to_utc() {
 
 // r[verify installer.tui.timezone]
 // r[verify installer.firstboot.timezone]
-// r[verify installer.config.schema+4]
+// r[verify installer.config.timezone]
 #[test]
 fn auto_timezone_from_config() {
     let f = Fixture::new();

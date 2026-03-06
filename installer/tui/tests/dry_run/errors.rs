@@ -56,7 +56,7 @@ fn error_invalid_devices_json() {
         .stderr(predicates::str::contains("fake devices"));
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.format]
 #[test]
 fn error_invalid_config_toml() {
     let f = Fixture::new();
@@ -78,7 +78,7 @@ fn error_invalid_config_toml() {
         .stderr(predicates::str::contains("parsing config"));
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.format]
 #[test]
 fn error_unknown_config_field() {
     let f = Fixture::new();
@@ -100,7 +100,7 @@ fn error_unknown_config_field() {
         .stderr(predicates::str::contains("parsing config"));
 }
 
-// r[verify installer.config.schema+4]
+// r[verify installer.config.format]
 #[test]
 fn error_invalid_variant_in_config() {
     let f = Fixture::new();
