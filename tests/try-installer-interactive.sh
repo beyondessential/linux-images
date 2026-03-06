@@ -214,7 +214,23 @@ echo "    Rootfs ready"
 echo ""
 
 # ============================================================
-# Phase 5: Launch interactive installer
+# Phase 5: Start software TPM if available
+# ============================================================
+# Try to start swtpm so that TPM encryption works end-to-end in the
+# interactive trial. If swtpm or the tpm_vtpm_proxy kernel module is
+# not available, fall back to --fake-tpm (the TUI will still default to
+# TPM encryption, but enrollment will fail at the end).
+INSTALLER_TPM_ARGS=(--fake-tpm)
+if swtpm_start "$WORK_DIR/swtpm" 2>/dev/null; then
+    echo "==> Software TPM started — TPM encryption will work end-to-end."
+else
+    echo "==> Software TPM not available (missing swtpm or tpm_vtpm_proxy module)."
+    echo "    TPM enrollment will fail if selected."
+fi
+echo ""
+
+# ============================================================
+# Phase 6: Launch interactive installer
 # ============================================================
 echo "==> Launching interactive installer in container..."
 echo "    (The installer TUI will take over the terminal.)"
@@ -239,7 +255,7 @@ systemd-nspawn \
     "${NSPAWN_BINDS[@]}" \
     /usr/local/bin/bes-installer \
         --fake-devices /tmp/devices.json \
-        --fake-tpm \
+        "${INSTALLER_TPM_ARGS[@]}" \
         --no-reboot \
         --log /log/installer.log
 RC=$?
