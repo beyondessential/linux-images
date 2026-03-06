@@ -6,13 +6,12 @@ use anyhow::{Context, Result, bail};
 use sha_crypt::{Sha512Params, sha512_simple};
 
 use crate::config::{DiskEncryption, FirstbootConfig};
-use crate::util::{create_passphrase_keyfile, partition_path, run_command};
+use crate::util::{partition_path, run_command};
 use crate::writer;
 
 const INSTALL_LOG_TARGET: &str = "var/log/bes-installer.log";
 
 const MOUNT_BASE: &str = "/mnt/target";
-const LUKS_NAME: &str = "bes-target-root";
 
 pub struct MountedTarget {
     mount_path: PathBuf,
@@ -39,7 +38,7 @@ pub fn mount_target(
 
     let luks_active = disk_encryption.is_encrypted();
     let btrfs_dev = if luks_active {
-        open_luks(&root_part, passphrase.unwrap_or_default())?
+        writer::open_luks_root(&root_part, passphrase.unwrap_or_default())?
     } else {
         root_part
     };
@@ -72,7 +71,7 @@ pub fn unmount_target(target: MountedTarget) -> Result<()> {
         .context("unmounting target root")?;
 
     if target.luks_active {
-        close_luks()?;
+        writer::close_luks_root()?;
     }
 
     let _ = fs::remove_dir(&target.mount_path);
@@ -396,32 +395,6 @@ fn resolve_uid_gid_from_passwd(root: &Path, username: &str) -> Result<(u32, u32)
     }
 
     bail!("user '{username}' not found in target /etc/passwd");
-}
-
-fn open_luks(partition: &Path, passphrase: &str) -> Result<PathBuf> {
-    tracing::info!("opening LUKS on {}", partition.display());
-
-    let keyfile = create_passphrase_keyfile(passphrase)?;
-
-    run_command(
-        "cryptsetup",
-        &[
-            "open",
-            partition.to_str().unwrap_or_default(),
-            LUKS_NAME,
-            "--key-file",
-            keyfile.to_str().unwrap_or_default(),
-        ],
-    )
-    .context("opening LUKS volume on target")?;
-
-    let _ = fs::remove_file(&keyfile);
-
-    Ok(PathBuf::from(format!("/dev/mapper/{LUKS_NAME}")))
-}
-
-fn close_luks() -> Result<()> {
-    run_command("cryptsetup", &["close", LUKS_NAME]).context("closing LUKS volume")
 }
 
 #[cfg(test)]
