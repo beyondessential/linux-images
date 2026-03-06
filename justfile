@@ -6,7 +6,7 @@ arch := "amd64"
 variant := "metal"
 qemu_memory := "4096"
 qemu_cores := "2"
-container_test_variant := ""
+container_test_filter := ""
 try_disk_size := "10G"
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
@@ -588,9 +588,9 @@ test-e2e: _validate-variant _validate-arch
   fi
   sudo tests/test-e2e-install.sh "$ISO" "{{variant}}" "{{arch}}"
 
-# Run container-based install test suite: extract ISO rootfs, write to loopback
-# device inside systemd-nspawn, verify results across multiple scenarios.
-# Much faster than QEMU E2E tests.
+# Run container-based installer integration tests.
+# Override filter: just container_test_filter=metal-tpm-swtpm test-container-install
+# Accepts: "metal", "cloud", a scenario name, or a substring.
 test-container-install: _validate-arch
   #!/usr/bin/env bash
   set -euo pipefail
@@ -604,7 +604,7 @@ test-container-install: _validate-arch
     echo "ERROR: systemd-nspawn required (install systemd-container)"
     exit 1
   fi
-  sudo tests/test-container-install-all.sh "$ISO" "{{arch}}" "{{container_test_variant}}"
+  sudo tests/test-container-install-all.sh "$ISO" "{{arch}}" "{{container_test_filter}}"
 
 # Run container isolation test: verify that no host block devices are
 # visible inside a systemd-nspawn container. Does not run the installer.
