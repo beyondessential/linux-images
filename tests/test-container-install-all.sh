@@ -3,10 +3,13 @@
 # Driver for container-based installer integration tests.
 # Extracts the ISO once, then runs multiple scenarios against it.
 #
-# Usage: test-container-install-all.sh <iso> <arch> [variant-filter]
+# Usage: test-container-install-all.sh <iso> <arch> [filter]
 #   arch: amd64 | arm64
-#   variant-filter: "metal", "cloud", or omit to run all
-#     (filters by derived variant: tpm/keyfile -> metal, none -> cloud)
+#   filter: one of the following (omit to run all scenarios):
+#     "metal"              — run only metal-variant scenarios (tpm/keyfile)
+#     "cloud"              — run only cloud-variant scenarios (none)
+#     "<scenario-name>"    — run a single scenario by exact name
+#     "<substring>"        — run all scenarios whose name contains the string
 #
 # Each scenario runs test-container-install.sh with different environment
 # variables controlling disk-encryption, hostname, tailscale, and SSH keys.
@@ -17,9 +20,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ISO="${1:?Usage: $0 <iso> <arch> [variant-filter]}"
-ARCH="${2:?Usage: $0 <iso> <arch> [variant-filter]}"
-VARIANT_FILTER="${3:-}"
+ISO="${1:?Usage: $0 <iso> <arch> [filter]}"
+ARCH="${2:?Usage: $0 <iso> <arch> [filter]}"
+FILTER="${3:-}"
 
 if [ ! -f "$ISO" ]; then
     echo "ERROR: ISO not found: $ISO"
@@ -123,10 +126,10 @@ fi
 # Helper: read a string field from a scenario JSON object, defaulting to "".
 jq_str() { echo "$1" | jq -r "$2 // empty"; }
 
-# Apply variant filter if specified.
-# Variant is derived from disk-encryption: tpm/keyfile -> metal, none -> cloud.
-if [ -n "$VARIANT_FILTER" ]; then
-    case "$VARIANT_FILTER" in
+# Apply filter if specified. Accepts variant names ("metal"/"cloud"),
+# an exact scenario name, or a substring match.
+if [ -n "$FILTER" ]; then
+    case "$FILTER" in
         metal)
             SCENARIOS_FILTERED=$(jq -c '[.[] | select(."disk-encryption" == "tpm" or ."disk-encryption" == "keyfile")]' "$SCENARIOS_JSON")
             ;;
@@ -134,8 +137,15 @@ if [ -n "$VARIANT_FILTER" ]; then
             SCENARIOS_FILTERED=$(jq -c '[.[] | select(."disk-encryption" == "none")]' "$SCENARIOS_JSON")
             ;;
         *)
-            echo "ERROR: variant-filter must be 'metal' or 'cloud' (got: $VARIANT_FILTER)"
-            exit 1
+            # Try exact name match first, then substring match.
+            SCENARIOS_FILTERED=$(jq -c --arg f "$FILTER" '[.[] | select(.name == $f)]' "$SCENARIOS_JSON")
+            if [ "$(echo "$SCENARIOS_FILTERED" | jq 'length')" -eq 0 ]; then
+                SCENARIOS_FILTERED=$(jq -c --arg f "$FILTER" '[.[] | select(.name | contains($f))]' "$SCENARIOS_JSON")
+            fi
+            if [ "$(echo "$SCENARIOS_FILTERED" | jq 'length')" -eq 0 ]; then
+                echo "ERROR: no scenarios match filter '$FILTER'"
+                exit 1
+            fi
             ;;
     esac
 else
@@ -151,7 +161,7 @@ FAILED=0
 FAILED_NAMES=()
 
 echo "=============================="
-echo "Running $TOTAL scenarios${VARIANT_FILTER:+ (variant=$VARIANT_FILTER)}"
+echo "Running $TOTAL scenario(s)${FILTER:+ (filter=$FILTER)}"
 echo "=============================="
 echo ""
 
