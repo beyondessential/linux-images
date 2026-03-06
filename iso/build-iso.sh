@@ -191,6 +191,7 @@ chroot "$MNT_ROOTFS" bash -c "
 
     apt-get install -y -q --no-install-recommends \
         linux-generic \
+        linux-firmware \
         initramfs-tools \
         live-boot \
         live-boot-initramfs-tools \
