@@ -2,6 +2,7 @@
 PACKAGES=(
     # Kernel and boot
     linux-generic
+    linux-firmware
     grub-efi
     dracut-core
 
