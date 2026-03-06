@@ -270,7 +270,7 @@ jobs:
         timeout-minutes: 5
 
       - name: Run container install test (cloud only, metal needs kernel keyring for LUKS)
-        run: just arch=${{ matrix.arch }} container_test_variant=cloud test-container-install
+        run: just arch=${{ matrix.arch }} container_test_filter=cloud test-container-install
         timeout-minutes: 30
 
   release:
