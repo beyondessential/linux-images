@@ -512,6 +512,14 @@ Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
 set), not simply quit the process. On bare-metal hardware, quitting without
 rebooting leaves the machine in an unusable state.
 
+r[installer.tui.reboot-feedback]
+When a reboot is triggered (from the Done screen or the Error screen), the
+TUI must immediately leave the alternate screen, print a visible
+"Rebooting..." message to stdout, and switch back to tty1 (via `chvt 1`) so
+the user can see systemd shutdown output. Only then must it call `reboot`.
+This prevents the appearance of the installer being stuck between the
+keypress and the screen blanking.
+
 r[installer.tui.progress+3]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one

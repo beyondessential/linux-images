@@ -433,9 +433,10 @@ fn event_loop(
             KeyAction::Continue => {}
             KeyAction::Quit => break,
             // r[impl installer.no-reboot]
+            // r[impl installer.tui.reboot-feedback]
             KeyAction::Reboot => {
                 if !no_reboot {
-                    reboot();
+                    reboot(terminal);
                 }
                 break;
             }
@@ -667,8 +668,19 @@ fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     Ok(())
 }
 
-fn reboot() {
+// r[impl installer.tui.reboot-feedback]
+fn reboot(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
     tracing::info!("rebooting system");
+
+    // Leave the TUI so the user sees plain text feedback immediately.
+    terminal::disable_raw_mode().ok();
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show).ok();
+
+    println!("Rebooting...");
+
+    // Switch back to tty1 so systemd shutdown output is visible.
+    let _ = std::process::Command::new("chvt").arg("1").status();
+
     let _ = std::process::Command::new("reboot").status();
 }
 
@@ -1868,5 +1880,36 @@ mod tests {
         let final_state = run_tui_scripted(state, events);
         // run_tui_scripted breaks on KeyAction::Reboot, preserving the Error screen
         assert!(matches!(final_state.screen, Screen::Error(_)));
+    }
+
+    // r[verify installer.tui.reboot-feedback]
+    #[test]
+    fn done_screen_enter_triggers_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Done;
+
+        let action = handle_key(press(KeyCode::Enter), &mut state);
+        assert!(
+            matches!(action, KeyAction::Reboot),
+            "expected Reboot for Enter on Done screen, got {:?}",
+            action,
+        );
+    }
+
+    // r[verify installer.tui.reboot-feedback]
+    #[test]
+    fn done_screen_non_enter_does_not_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Done;
+
+        for code in [KeyCode::Char('a'), KeyCode::Esc, KeyCode::Backspace] {
+            let action = handle_key(press(code), &mut state);
+            assert!(
+                matches!(action, KeyAction::Continue),
+                "expected Continue for {:?} on Done screen, got {:?}",
+                code,
+                action,
+            );
+        }
     }
 }
