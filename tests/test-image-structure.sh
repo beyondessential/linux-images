@@ -290,6 +290,8 @@ check "/etc/bes/image-variant exists" test -f "$MNT/etc/bes/image-variant"
 
 # r[verify image.tailscale.ts-up]
 check "/usr/local/bin/ts-up exists" test -x "$MNT/usr/local/bin/ts-up"
+# r[verify image.tailscale.firstboot-auth]
+check "/usr/local/bin/bes-tailscale-firstboot-auth exists" test -x "$MNT/usr/local/bin/bes-tailscale-firstboot-auth"
 
 # r[verify image.growth.script]
 check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/grow-root-filesystem"
@@ -524,6 +526,8 @@ check_service_enabled "ufw.service"                   "ufw is enabled"
 
 # r[verify image.tailscale.service-enabled]
 check_service_enabled "tailscaled.service"            "tailscaled is enabled"
+# r[verify image.tailscale.firstboot-auth]
+check_service_enabled "bes-tailscale-firstboot-auth.service" "bes-tailscale-firstboot-auth is enabled"
 
 # r[verify image.snapper.timers]
 check_service_enabled "snapper-timeline.timer"        "snapper-timeline.timer is enabled"

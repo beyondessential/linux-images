@@ -1,0 +1,46 @@
+#!/bin/bash
+# r[image.tailscale.firstboot-auth]
+#
+# Authenticate to Tailscale using an auth key left by the installer at
+# /etc/bes/tailscale-authkey. On success, delete the key file and
+# restrict the SSH UFW rule to LAN ranges and the tailscale0 interface
+# (the same firewall tightening that ts-up performs).
+#
+# This script is invoked by bes-tailscale-firstboot-auth.service, which
+# has ConditionPathExists=/etc/bes/tailscale-authkey so it only runs
+# when the key file is present.
+set -euo pipefail
+
+KEY_FILE="/etc/bes/tailscale-authkey"
+
+AUTH_KEY="$(head -n1 "$KEY_FILE" | tr -d '[:space:]')"
+if [ -z "$AUTH_KEY" ]; then
+    echo "ERROR: $KEY_FILE is empty or contains only whitespace" >&2
+    exit 1
+fi
+
+echo "Authenticating to Tailscale..."
+if ! tailscale up --auth-key="$AUTH_KEY" --ssh; then
+    echo "ERROR: tailscale up failed" >&2
+    exit 1
+fi
+
+echo "Tailscale authenticated successfully."
+
+# Delete the key file now that it has been consumed.
+rm -f "$KEY_FILE"
+
+# Restrict SSH to LAN and Tailscale (same logic as ts-up).
+echo "Restricting SSH access to LAN and Tailscale..."
+
+ufw delete allow 22/tcp 2>/dev/null || true
+
+ufw allow from 10.0.0.0/8 to any port 22 proto tcp comment 'SSH from LAN'
+ufw allow from 172.16.0.0/12 to any port 22 proto tcp comment 'SSH from LAN'
+ufw allow from 192.168.0.0/16 to any port 22 proto tcp comment 'SSH from LAN'
+ufw allow from fc00::/7 to any port 22 proto tcp comment 'SSH from LAN (IPv6)'
+ufw allow in on tailscale0 to any port 22 proto tcp comment 'SSH from Tailscale'
+
+ufw reload
+
+echo "SSH access restricted to LAN and Tailscale networks."

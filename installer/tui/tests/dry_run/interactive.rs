@@ -65,10 +65,14 @@ enter
     assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
-    assert_eq!(plan["firstboot"]["hostname"], "my-server");
-    assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
-    assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 1);
-    assert_eq!(plan["firstboot"]["timezone"], "UTC");
+    assert_eq!(plan["install_config"]["hostname"], "my-server");
+    assert!(
+        plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 1);
+    assert_eq!(plan["install_config"]["timezone"], "UTC");
 }
 
 // r[verify installer.mode.interactive+2]
@@ -131,7 +135,7 @@ enter
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 #[test]
-fn interactive_firstboot_fields_captured() {
+fn interactive_install_config_fields_captured() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let script = f.write_script(
@@ -192,10 +196,14 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["hostname"], "my-host");
-    assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
-    assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
-    assert_eq!(plan["firstboot"]["timezone"], "UTC");
+    assert_eq!(plan["install_config"]["hostname"], "my-host");
+    assert!(
+        plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 2);
+    assert_eq!(plan["install_config"]["timezone"], "UTC");
 }
 
 // r[verify installer.tui.hostname+5]
@@ -203,11 +211,11 @@ enter
 // r[verify installer.tui.ssh-keys+5]
 // r[verify installer.tui.password+4]
 #[test]
-fn interactive_empty_firstboot_is_null() {
+fn interactive_empty_install_config_is_null() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     // Use none encryption — select network-assigned (the default for none) to
-    // skip hostname entirely. Password is the only required firstboot field
+    // skip hostname entirely. Password is the only required install config field
     // in interactive mode.
     let script = f.write_script(
         "\
@@ -253,20 +261,22 @@ enter
         .success();
 
     let plan = f.read_plan();
-    // Password is always set in interactive mode, so firstboot is not null
-    assert!(!plan["firstboot"].is_null());
-    assert!(plan["firstboot"]["password_set"].as_bool().unwrap());
+    // Password is always set in interactive mode, so install_config is not null
+    assert!(!plan["install_config"].is_null());
+    assert!(plan["install_config"]["password_set"].as_bool().unwrap());
     // Hostname is "dhcp" sentinel when network-assigned is selected
     assert_eq!(
-        plan["firstboot"]["hostname"], "dhcp",
+        plan["install_config"]["hostname"], "dhcp",
         "hostname should be dhcp sentinel when network-assigned is selected"
     );
     assert!(
-        !plan["firstboot"]["tailscale_authkey"].as_bool().unwrap(),
+        !plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap(),
         "tailscale should be false when skipped"
     );
     assert_eq!(
-        plan["firstboot"]["ssh_authorized_keys_count"], 0,
+        plan["install_config"]["ssh_authorized_keys_count"], 0,
         "ssh keys should be empty when skipped"
     );
 }
@@ -385,7 +395,7 @@ fn interactive_empty_script_uses_initial_state() {
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.confirmation+6]
+// r[verify installer.tui.confirmation+7]
 #[test]
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();
@@ -456,5 +466,9 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
+    assert!(
+        plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap()
+    );
 }

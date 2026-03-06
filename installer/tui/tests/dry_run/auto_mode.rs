@@ -4,8 +4,8 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 
 // r[verify installer.dryrun]
 // r[verify installer.dryrun.output]
-// r[verify installer.dryrun.schema+4]
-// r[verify installer.mode.auto+3]
+// r[verify installer.dryrun.schema+5]
+// r[verify installer.mode.auto+4]
 #[test]
 fn auto_full_config_produces_correct_plan() {
     let f = Fixture::new();
@@ -16,7 +16,6 @@ fn auto_full_config_produces_correct_plan() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "server-01"
         tailscale-authkey = "tskey-auth-xxxxx"
         ssh-authorized-keys = [
@@ -50,14 +49,18 @@ fn auto_full_config_produces_correct_plan() {
     assert_eq!(plan["disk"]["size_bytes"], 1000204886016u64);
     assert_eq!(plan["disk"]["transport"], "NVMe");
     assert!(!plan["tpm_present"].as_bool().unwrap());
-    assert_eq!(plan["firstboot"]["hostname"], "server-01");
-    assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
-    assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
+    assert_eq!(plan["install_config"]["hostname"], "server-01");
+    assert!(
+        plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 2);
     assert!(plan["config_warnings"].as_array().unwrap().is_empty());
 }
 
-// r[verify installer.dryrun.schema+4]
-// r[verify installer.config.schema+3]
+// r[verify installer.dryrun.schema+5]
+// r[verify installer.config.disk]
 #[test]
 fn auto_disk_path_resolves_correctly() {
     let f = Fixture::new();
@@ -93,8 +96,8 @@ fn auto_disk_path_resolves_correctly() {
     assert_eq!(plan["disk"]["model"], "WD Blue");
 }
 
-// r[verify installer.dryrun.schema+4]
-// r[verify installer.config.schema+3]
+// r[verify installer.dryrun.schema+5]
+// r[verify installer.config.disk-encryption]
 #[test]
 fn auto_keyfile_encryption_produces_metal_variant() {
     let f = Fixture::new();
@@ -105,7 +108,6 @@ fn auto_keyfile_encryption_produces_metal_variant() {
         disk-encryption = "keyfile"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-keyfile"
     "#,
     );
@@ -130,7 +132,7 @@ fn auto_keyfile_encryption_produces_metal_variant() {
     assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.dryrun.schema+4]
+// r[verify installer.dryrun.schema+5]
 // r[verify installer.dryrun.fake-tpm]
 #[test]
 fn auto_fake_tpm_reflected_in_plan() {
@@ -142,7 +144,6 @@ fn auto_fake_tpm_reflected_in_plan() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-tpm"
     "#,
     );
@@ -168,9 +169,9 @@ fn auto_fake_tpm_reflected_in_plan() {
     assert_eq!(plan["disk_encryption"], "tpm");
 }
 
-// r[verify installer.dryrun.schema+4]
+// r[verify installer.dryrun.schema+5]
 #[test]
-fn auto_none_encryption_no_firstboot() {
+fn auto_none_encryption_no_install_config() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -199,11 +200,11 @@ fn auto_none_encryption_no_firstboot() {
     let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["variant"], "cloud");
-    assert!(plan["firstboot"].is_null());
+    assert!(plan["install_config"].is_null());
     assert!(!plan["tpm_present"].as_bool().unwrap());
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.hostname]
 #[test]
 fn auto_bad_hostname_emits_warning() {
     let f = Fixture::new();
@@ -214,7 +215,6 @@ fn auto_bad_hostname_emits_warning() {
         disk-encryption = "none"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "-invalid-"
     "#,
     );
@@ -362,9 +362,9 @@ fn auto_incomplete_missing_both_falls_back() {
     assert_eq!(plan["mode"], "auto-incomplete");
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.hostname]
 #[test]
-fn auto_with_minimal_firstboot() {
+fn auto_with_minimal_install_config() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -373,7 +373,6 @@ fn auto_with_minimal_firstboot() {
         disk-encryption = "none"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "just-a-hostname"
     "#,
     );
@@ -394,12 +393,16 @@ fn auto_with_minimal_firstboot() {
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["hostname"], "just-a-hostname");
-    assert!(!plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
-    assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 0);
+    assert_eq!(plan["install_config"]["hostname"], "just-a-hostname");
+    assert!(
+        !plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 0);
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.ssh-authorized-keys+2]
 #[test]
 fn auto_with_only_ssh_keys() {
     let f = Fixture::new();
@@ -410,7 +413,6 @@ fn auto_with_only_ssh_keys() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-host"
         ssh-authorized-keys = [
             "ssh-ed25519 AAAA k1",
@@ -436,7 +438,11 @@ fn auto_with_only_ssh_keys() {
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["hostname"], "test-host");
-    assert!(!plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
-    assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 3);
+    assert_eq!(plan["install_config"]["hostname"], "test-host");
+    assert!(
+        !plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 3);
 }

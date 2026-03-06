@@ -368,7 +368,7 @@ test-shellcheck:
   set -euo pipefail
   echo "Running shellcheck..."
   find image/ tests/ scripts/ iso/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=error
-  shellcheck --severity=error image/files/grow-root-filesystem image/files/ts-up
+  shellcheck --severity=error image/files/grow-root-filesystem image/files/ts-up image/files/bes-tailscale-firstboot-auth
   echo "All scripts passed shellcheck."
 
 # Verify image structure by loopback-mounting (requires sudo)

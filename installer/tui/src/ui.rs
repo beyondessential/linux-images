@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::config::{DiskEncryption, FirstbootConfig};
+use crate::config::{DiskEncryption, InstallConfig};
 use crate::disk::BlockDevice;
 use crate::net::{self, CheckPhase, CheckResult, GithubKeysResult, NetcheckResult};
 
@@ -95,7 +95,7 @@ pub struct AppState {
     pub ssh_github_rx: Option<mpsc::Receiver<GithubKeysResult>>,
 }
 
-// r[impl installer.tui.progress+2]
+// r[impl installer.tui.progress+3]
 #[derive(Debug, Clone)]
 pub struct ProgressSnapshot {
     pub bytes_written: u64,
@@ -124,7 +124,7 @@ impl AppState {
         devices: Vec<BlockDevice>,
         disk_encryption: DiskEncryption,
         tpm_present: bool,
-        firstboot: Option<FirstbootConfig>,
+        install_config: &InstallConfig,
         boot_device: Option<PathBuf>,
         default_disk_index: Option<usize>,
         build_info: String,
@@ -133,57 +133,35 @@ impl AppState {
         let endpoints = net::default_endpoints();
         let net_check_total = net::total_check_count(&endpoints);
         let variant = disk_encryption.variant();
-        let (
-            hostname_input,
-            hostname_from_dhcp,
-            hostname_from_template,
-            tailscale_input,
-            ssh_keys,
-            config_password_hash,
-            timezone_from_config,
-        ) = match firstboot {
-            Some(ref fb) => {
-                let keys: Vec<String> = fb
-                    .ssh_authorized_keys
-                    .iter()
-                    .filter(|k| !k.trim().is_empty())
-                    .cloned()
-                    .collect();
-                let keys = if keys.is_empty() {
-                    vec![String::new()]
-                } else {
-                    keys
-                };
-                let has_static_hostname =
-                    fb.hostname.as_ref().is_some_and(|h| !h.trim().is_empty())
-                        || fb.hostname_template.is_some();
-                let dhcp = if has_static_hostname {
-                    false
-                } else if fb.hostname_from_dhcp {
-                    true
-                } else {
-                    variant == crate::config::Variant::Cloud
-                };
-                (
-                    fb.hostname.clone().unwrap_or_default(),
-                    dhcp,
-                    fb.hostname_template.is_some(),
-                    fb.tailscale_authkey.clone().unwrap_or_default(),
-                    keys,
-                    fb.password_hash.clone(),
-                    fb.timezone.clone(),
-                )
-            }
-            None => (
-                String::new(),
-                variant == crate::config::Variant::Cloud,
-                false,
-                String::new(),
-                vec![String::new()],
-                None,
-                None,
-            ),
+
+        let keys: Vec<String> = install_config
+            .ssh_authorized_keys
+            .iter()
+            .filter(|k| !k.trim().is_empty())
+            .cloned()
+            .collect();
+        let ssh_keys = if keys.is_empty() {
+            vec![String::new()]
+        } else {
+            keys
         };
+        let has_static_hostname = install_config
+            .hostname
+            .as_ref()
+            .is_some_and(|h| !h.trim().is_empty())
+            || install_config.hostname_template.is_some();
+        let hostname_from_dhcp = if has_static_hostname {
+            false
+        } else if install_config.hostname_from_dhcp {
+            true
+        } else {
+            variant == crate::config::Variant::Cloud
+        };
+        let hostname_input = install_config.hostname.clone().unwrap_or_default();
+        let hostname_from_template = install_config.hostname_template.is_some();
+        let tailscale_input = install_config.tailscale_authkey.clone().unwrap_or_default();
+        let config_password_hash = install_config.password_hash.clone();
+        let timezone_from_config = install_config.timezone.clone();
 
         let timezone_selected = timezone_from_config.unwrap_or_else(|| "UTC".to_string());
         let timezone_filtered: Vec<usize> = (0..available_timezones.len()).collect();
@@ -246,9 +224,9 @@ impl AppState {
     // r[impl installer.tui.ssh-keys+5]
     // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
-    /// Build a `FirstbootConfig` from the current interactive input fields.
+    /// Build an `InstallConfig` from the current interactive input fields.
     /// Returns `None` if all fields are empty (nothing to configure).
-    pub fn firstboot_config(&self) -> Option<FirstbootConfig> {
+    pub fn install_config_fields(&self) -> Option<InstallConfig> {
         let hostname = if self.hostname_required() && !self.hostname_input.trim().is_empty() {
             Some(self.hostname_input.trim().to_string())
         } else {
@@ -293,7 +271,7 @@ impl AppState {
             return None;
         }
 
-        Some(FirstbootConfig {
+        Some(InstallConfig {
             hostname,
             hostname_from_dhcp: self.hostname_from_dhcp,
             hostname_template: None,
@@ -302,6 +280,7 @@ impl AppState {
             password,
             password_hash,
             timezone,
+            ..Default::default()
         })
     }
 
@@ -543,7 +522,7 @@ impl AppState {
             Screen::Login => Screen::Timezone,
             Screen::LoginTailscale | Screen::LoginSshKeys | Screen::LoginGithub => return,
             Screen::Timezone => Screen::NetworkResults,
-            // r[impl installer.tui.confirmation+6]
+            // r[impl installer.tui.confirmation+7]
             // r[impl installer.encryption.recovery-passphrase+3]
             Screen::NetworkResults => {
                 if self.disk_encryption.is_encrypted() && self.recovery_passphrase.is_none() {
@@ -552,7 +531,7 @@ impl AppState {
                 }
                 Screen::Confirmation
             }
-            // r[impl installer.tui.progress+2]
+            // r[impl installer.tui.progress+3]
             Screen::Confirmation => Screen::Installing,
             Screen::Installing => return,
             Screen::Done | Screen::Error(_) => return,
@@ -592,7 +571,7 @@ impl AppState {
         "yes"
     }
 
-    // r[impl installer.tui.confirmation+6]
+    // r[impl installer.tui.confirmation+7]
     pub fn is_confirmed(&self) -> bool {
         self.confirm_input
             .trim()
@@ -795,7 +774,7 @@ mod tests {
             devices,
             default_encryption,
             tpm_present,
-            None,
+            &InstallConfig::default(),
             None,
             None,
             String::new(),
@@ -1106,7 +1085,7 @@ mod tests {
         assert_eq!(state.screen, Screen::LoginGithub);
     }
 
-    // r[verify installer.tui.confirmation+6]
+    // r[verify installer.tui.confirmation+7]
     #[test]
     fn confirmation_requires_explicit_yes() {
         let mut state = make_state();
@@ -1119,7 +1098,7 @@ mod tests {
         assert!(state.is_confirmed());
     }
 
-    // r[verify installer.tui.confirmation+6]
+    // r[verify installer.tui.confirmation+7]
     #[test]
     fn done_and_error_do_not_advance() {
         let mut state = make_state();
@@ -1143,15 +1122,15 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             hostname: Some("myhost".into()),
             ..Default::default()
         };
         let state = AppState::new(
             devices,
-            DiskEncryption::None,
-            false,
-            Some(fb),
+            DiskEncryption::Tpm,
+            true,
+            &cfg,
             None,
             None,
             String::new(),
@@ -1179,7 +1158,7 @@ mod tests {
             devices,
             DiskEncryption::None,
             false,
-            None,
+            &InstallConfig::default(),
             None,
             None,
             String::new(),
@@ -1199,15 +1178,15 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             hostname: Some("myhost".into()),
             ..Default::default()
         };
         let state = AppState::new(
             devices,
-            DiskEncryption::None,
-            false,
-            Some(fb),
+            DiskEncryption::Tpm,
+            true,
+            &cfg,
             None,
             None,
             String::new(),
@@ -1229,15 +1208,15 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             tailscale_authkey: Some("tskey-auth-xxx".into()),
             ..Default::default()
         };
         let state = AppState::new(
             devices,
-            DiskEncryption::None,
-            false,
-            Some(fb),
+            DiskEncryption::Tpm,
+            true,
+            &cfg,
             None,
             None,
             String::new(),
@@ -1257,15 +1236,15 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
             ..Default::default()
         };
         let state = AppState::new(
             devices,
-            DiskEncryption::None,
-            false,
-            Some(fb),
+            DiskEncryption::Tpm,
+            true,
+            &cfg,
             None,
             None,
             String::new(),
@@ -1279,45 +1258,45 @@ mod tests {
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn firstboot_config_from_inputs() {
+    fn install_config_from_inputs() {
         let mut state = make_state();
-        assert!(state.firstboot_config().is_none());
+        assert!(state.install_config_fields().is_none());
 
         state.hostname_input = "server-01".into();
-        let fb = state.firstboot_config().unwrap();
-        assert_eq!(fb.hostname.as_deref(), Some("server-01"));
-        assert!(fb.tailscale_authkey.is_none());
-        assert!(fb.ssh_authorized_keys.is_empty());
-        assert!(fb.password.is_none());
-        assert!(fb.password_hash.is_none());
+        let cfg = state.install_config_fields().unwrap();
+        assert_eq!(cfg.hostname.as_deref(), Some("server-01"));
+        assert!(cfg.tailscale_authkey.is_none());
+        assert!(cfg.ssh_authorized_keys.is_empty());
+        assert!(cfg.password.is_none());
+        assert!(cfg.password_hash.is_none());
     }
 
     // r[verify installer.tui.tailscale+3]
     // r[verify installer.tui.ssh-keys+5]
     #[test]
-    fn firstboot_config_all_fields() {
+    fn install_config_all_fields() {
         let mut state = make_state();
         state.hostname_input = "host".into();
         state.tailscale_input = "tskey-auth-123".into();
         state.ssh_keys = vec!["ssh-ed25519 AAAA".into(), "ssh-rsa BBBB".into()];
         state.password_input = "s3cret".into();
 
-        let fb = state.firstboot_config().unwrap();
-        assert_eq!(fb.hostname.as_deref(), Some("host"));
-        assert_eq!(fb.tailscale_authkey.as_deref(), Some("tskey-auth-123"));
-        assert_eq!(fb.ssh_authorized_keys.len(), 2);
-        assert_eq!(fb.password.as_deref(), Some("s3cret"));
-        assert!(fb.password_hash.is_none());
+        let cfg = state.install_config_fields().unwrap();
+        assert_eq!(cfg.hostname.as_deref(), Some("host"));
+        assert_eq!(cfg.tailscale_authkey.as_deref(), Some("tskey-auth-123"));
+        assert_eq!(cfg.ssh_authorized_keys.len(), 2);
+        assert_eq!(cfg.password.as_deref(), Some("s3cret"));
+        assert!(cfg.password_hash.is_none());
     }
 
     // r[verify installer.tui.hostname+5]
     #[test]
-    fn firstboot_config_empty_strings_are_none() {
+    fn install_config_empty_strings_are_none() {
         let mut state = make_state();
         state.hostname_input = "   ".into();
         state.tailscale_input = "  ".into();
         state.ssh_keys = vec![String::new(), "  ".into()];
-        assert!(state.firstboot_config().is_none());
+        assert!(state.install_config_fields().is_none());
     }
 
     // r[verify installer.tui.password+4]
@@ -1355,25 +1334,25 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             password_hash: Some("$6$rounds=4096$salt$hash".into()),
             ..Default::default()
         };
         let state = AppState::new(
             devices,
-            DiskEncryption::None,
-            false,
-            Some(fb),
+            DiskEncryption::Tpm,
+            true,
+            &cfg,
             None,
             None,
             String::new(),
             test_timezones(),
         );
         assert!(state.has_password());
-        let fb = state.firstboot_config().unwrap();
-        assert!(fb.password.is_none());
+        let cfg = state.install_config_fields().unwrap();
+        assert!(cfg.password.is_none());
         assert_eq!(
-            fb.password_hash.as_deref(),
+            cfg.password_hash.as_deref(),
             Some("$6$rounds=4096$salt$hash")
         );
     }
@@ -1414,22 +1393,22 @@ mod tests {
     }
 
     #[test]
-    fn firstboot_config_with_dhcp_hostname() {
+    fn install_config_with_dhcp_hostname() {
         let mut state = make_state();
         state.hostname_from_dhcp = true;
-        let fb = state.firstboot_config().unwrap();
-        assert!(fb.hostname_from_dhcp);
-        assert!(fb.hostname.is_none());
+        let cfg = state.install_config_fields().unwrap();
+        assert!(cfg.hostname_from_dhcp);
+        assert!(cfg.hostname.is_none());
     }
 
     #[test]
-    fn firstboot_config_dhcp_overrides_hostname_input() {
+    fn install_config_dhcp_overrides_hostname_input() {
         let mut state = make_state();
         state.hostname_from_dhcp = true;
         state.hostname_input = "should-be-ignored".into();
-        let fb = state.firstboot_config().unwrap();
-        assert!(fb.hostname_from_dhcp);
-        assert!(fb.hostname.is_none());
+        let cfg = state.install_config_fields().unwrap();
+        assert!(cfg.hostname_from_dhcp);
+        assert!(cfg.hostname.is_none());
     }
 
     #[test]
@@ -1442,7 +1421,7 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             hostname: Some("resolved-name".into()),
             hostname_template: Some("srv-{hex:6}".into()),
             ..Default::default()
@@ -1451,7 +1430,7 @@ mod tests {
             devices,
             DiskEncryption::Tpm,
             true,
-            Some(fb),
+            &cfg,
             None,
             None,
             String::new(),
@@ -1480,15 +1459,15 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             timezone: Some("Pacific/Auckland".into()),
             ..Default::default()
         };
         let state = AppState::new(
             devices,
-            DiskEncryption::Tpm,
-            true,
-            Some(fb),
+            DiskEncryption::None,
+            false,
+            &cfg,
             None,
             None,
             String::new(),
@@ -1687,15 +1666,15 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
             ..Default::default()
         };
         let state = AppState::new(
             devices,
-            DiskEncryption::None,
-            false,
-            Some(fb),
+            DiskEncryption::Tpm,
+            true,
+            &cfg,
             None,
             None,
             String::new(),
@@ -1739,35 +1718,35 @@ mod tests {
     }
 
     #[test]
-    fn firstboot_config_includes_non_utc_timezone() {
+    fn install_config_includes_non_utc_timezone() {
         let mut state = make_state();
         state.hostname_input = "host".into();
         state.timezone_selected = "Europe/London".into();
-        let fb = state.firstboot_config().unwrap();
-        assert_eq!(fb.timezone.as_deref(), Some("Europe/London"));
+        let cfg = state.install_config_fields().unwrap();
+        assert_eq!(cfg.timezone.as_deref(), Some("Europe/London"));
     }
 
     // r[verify installer.tui.timezone]
     #[test]
-    fn firstboot_config_utc_timezone_is_none() {
+    fn install_config_utc_timezone_is_none() {
         let mut state = make_state();
         state.hostname_input = "host".into();
         state.timezone_selected = "UTC".into();
-        let fb = state.firstboot_config().unwrap();
-        assert!(fb.timezone.is_none());
+        let cfg = state.install_config_fields().unwrap();
+        assert!(cfg.timezone.is_none());
     }
 
     // r[verify installer.tui.timezone]
     #[test]
-    fn firstboot_config_timezone_alone_triggers_some() {
+    fn install_config_timezone_alone_triggers_some() {
         let mut state = make_state();
         state.timezone_selected = "Asia/Tokyo".into();
-        let fb = state.firstboot_config();
-        assert!(fb.is_some());
-        assert_eq!(fb.unwrap().timezone.as_deref(), Some("Asia/Tokyo"));
+        let cfg = state.install_config_fields();
+        assert!(cfg.is_some());
+        assert_eq!(cfg.unwrap().timezone.as_deref(), Some("Asia/Tokyo"));
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn confirmation_advances_to_installing() {
         let mut state = make_state();
@@ -1777,7 +1756,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Installing);
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn installing_advance_is_noop() {
         let mut state = make_state();
@@ -1786,7 +1765,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Installing);
     }
 
-    // r[verify installer.tui.progress+2]
+    // r[verify installer.tui.progress+3]
     #[test]
     fn installing_no_go_back() {
         let mut state = make_state();

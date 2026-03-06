@@ -13,55 +13,69 @@
 >    mounted by `live-boot`).
 > 3. `/boot/efi/bes-install.toml` (fallback for manual placement).
 
-> r[installer.config.schema+3]
-> The configuration file has the following schema:
->
-> ```toml
-> # Run fully automatically without prompts.
-> # Requires at minimum: disk-encryption and disk.
-> auto = true
->
-> # Disk encryption mode: "tpm", "keyfile", or "none".
-> # "tpm" — LUKS + TPM PCR 1 (requires a TPM; default when TPM present)
-> # "keyfile" — LUKS + keyfile on boot partition (default when no TPM)
-> # "none" — no encryption (cloud image)
-> disk-encryption = "tpm"
->
-> # Target disk: a device path or a strategy.
-> # Strategies: "largest-ssd", "largest", "smallest"
-> disk = "largest-ssd"
->
-> # Copy the installer log into the installed system at /var/log/bes-installer.log.
-> # Default: true. Set to false to disable. No TUI control for this option.
-> copy-install-log = true
->
-> [firstboot]
-> hostname = "server-01"
-> # Use DHCP-provided hostname instead of a static one.
-> # Mutually exclusive with hostname and hostname-template.
-> hostname-from-dhcp = true
-> # Generate a hostname from a template pattern.
-> # Mutually exclusive with hostname and hostname-from-dhcp.
-> hostname-template = "tamanu-{hex:6}"
-> tailscale-authkey = "tskey-auth-xxxxx"
-> ssh-authorized-keys = [
->   "ssh-ed25519 AAAA... admin@example.com",
-> ]
-> # Plaintext password for the ubuntu user (mutually exclusive with password-hash).
-> password = "changeme"
-> # Pre-hashed password for the ubuntu user (crypt(3) format, e.g. from mkpasswd).
-> # Mutually exclusive with password.
-> password-hash = "$6$rounds=4096$..."
-> # IANA timezone (e.g. "America/New_York"). Defaults to "UTC".
-> timezone = "Pacific/Auckland"
-> ```
->
-> All fields are optional. The `[firstboot]` table and all its fields are
-> optional. `password` and `password-hash` are mutually exclusive; if both
-> are present the installer must report a validation error. The three
-> hostname fields — `hostname`, `hostname-from-dhcp`, and
-> `hostname-template` — are mutually exclusive; if more than one is present
-> the installer must report a validation error.
+r[installer.config.format]
+The configuration file is in TOML format. All fields are top-level
+(no tables or sections) and all fields are optional. The installer must
+reject unknown fields with a parse error. The file configures both the
+installation process (disk selection, encryption, automation) and the
+install-time system setup (hostname, credentials, services).
+
+r[installer.config.auto]
+The `auto` field is a boolean. When `true`, the installer runs fully
+automatically without interactive prompts. Automatic mode requires at
+minimum `disk-encryption` and `disk` to be set; if they are missing the
+installer must report a validation error.
+
+r[installer.config.disk-encryption]
+The `disk-encryption` field is a string selecting the disk encryption
+mode. Valid values are `"tpm"` (LUKS + TPM PCR 1; requires a TPM and is
+the default when a TPM is present), `"keyfile"` (LUKS + keyfile on the
+boot partition; default when no TPM is present), or `"none"` (no
+encryption, producing a cloud image).
+
+r[installer.config.disk]
+The `disk` field is a string selecting the target disk. It may be a
+device path (e.g. `"/dev/sda"`) or a strategy name. Valid strategies are
+`"largest-ssd"` (the largest SSD/NVMe device), `"largest"` (the largest
+device regardless of transport), and `"smallest"` (the smallest device).
+
+r[installer.config.copy-install-log]
+The `copy-install-log` field is a boolean controlling whether the
+installer copies its log into the installed system at
+`/var/log/bes-installer.log`. The default is `true`. There is no TUI
+control for this option.
+
+r[installer.config.hostname]
+The `hostname` field is a string setting a static hostname for the
+installed system (e.g. `"server-01"`). The `hostname-from-dhcp` field is
+a boolean; when `true`, the installed system obtains its hostname from
+DHCP. The `hostname-template` field is a string that generates a hostname
+from a template pattern (see `installer.config.hostname-template`). These
+three fields are mutually exclusive; if more than one is present the
+installer must report a validation error.
+
+r[installer.config.tailscale-authkey+2]
+The `tailscale-authkey` field is a string containing a Tailscale auth key
+(e.g. `"tskey-auth-xxxxx"`). When set, the installer uses it to
+authenticate the installed system with Tailscale (see
+`r[installer.finalise.tailscale-authkey]` for the authentication procedure).
+
+r[installer.config.ssh-authorized-keys+2]
+The `ssh-authorized-keys` field is an array of strings, each an OpenSSH
+public key line (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). When
+set, the installer writes these keys into the installed system (see
+`r[installer.finalise.ssh-keys]`).
+
+r[installer.config.password]
+The `password` field is a string containing a plaintext password for the
+`ubuntu` user. The `password-hash` field is a string containing a
+pre-hashed password in crypt(3) format (e.g. `"$6$rounds=4096$..."`).
+These two fields are mutually exclusive; if both are present the installer
+must report a validation error.
+
+r[installer.config.timezone]
+The `timezone` field is a string containing an IANA timezone name (e.g.
+`"Pacific/Auckland"`). The default is `"UTC"`.
 
 r[installer.config.hostname-template]
 The `hostname-template` field value is a string containing literal characters
@@ -85,13 +99,13 @@ When a configuration file is present but `auto` is false or absent, the
 installer must launch the TUI with values from the file pre-filled as
 defaults. The user can override any value.
 
-> r[installer.mode.auto+3]
+> r[installer.mode.auto+4]
 > When `auto = true` and all required fields are present, the installer must
 > proceed without any interactive prompts. It must:
 >
 > 1. Log its configuration to the console.
 > 2. Display progress during image writing.
-> 3. Apply first-boot configuration.
+> 3. Apply install-time configuration.
 > 4. Apply encryption setup (key rotation, TPM/keyfile enrollment, recovery
 >    passphrase) when disk encryption is not `"none"`.
 > 5. Reboot automatically on success.
@@ -99,8 +113,8 @@ defaults. The user can override any value.
 >
 > Required fields: `disk-encryption`, `disk`. Additionally, when
 > `disk-encryption` is `"tpm"` or `"keyfile"`, at least one hostname
-> strategy must be specified: `firstboot.hostname`,
-> `firstboot.hostname-from-dhcp = true`, or `firstboot.hostname-template`.
+> strategy must be specified: `hostname`,
+> `hostname-from-dhcp = true`, or `hostname-template`.
 
 r[installer.mode.auto.progress]
 In automatic mode, the installer must detect whether standard error is
@@ -114,9 +128,9 @@ logs with thousands of nearly-identical progress lines.
 
 r[installer.mode.auto-incomplete+3]
 When `auto = true` but required fields are missing (`disk-encryption`,
-`disk`, or a hostname strategy for encrypted variants), the installer must
-print an error describing the missing fields and fall back to interactive
-mode.
+`disk`, or a hostname strategy for encrypted variants), the installer
+must print an error describing the missing fields and fall back to
+interactive mode.
 
 ## Testing Flags
 
@@ -139,7 +153,7 @@ r[installer.dryrun.output]
 The `--dry-run-output <path>` flag specifies the path for the JSON install
 plan. If omitted, the plan is written to stdout.
 
-> r[installer.dryrun.schema+4]
+> r[installer.dryrun.schema+5]
 > The install plan JSON has the following structure:
 >
 > ```json
@@ -154,7 +168,7 @@ plan. If omitted, the plan is written to stdout.
 >     "transport": "NVMe"
 >   },
 >   "tpm_present": true,
->   "firstboot": {
+>   "install_config": {
 >     "hostname": "server-01",
 >     "hostname_from_template": false,
 >     "tailscale_authkey": true,
@@ -173,14 +187,15 @@ plan. If omitted, the plan is written to stdout.
 > `"cloud"` when `"none"`. `tpm_present` indicates whether a TPM was
 > detected (or faked via `--fake-tpm`).
 >
-> The `firstboot` field is `null` when no first-boot configuration is set.
+> The `install_config` field is `null` when no install-time configuration
+> fields (hostname, tailscale, SSH keys, password, or timezone) are set.
 > `tailscale_authkey` is a boolean (true when a key is provided) to avoid
 > leaking secrets into test output. `password_set` is a boolean (true when
 > a password or password hash is provided). When `hostname-from-dhcp` is
 > chosen, `hostname` is the sentinel string `"dhcp"`. When a hostname was
 > generated from a template, `hostname_from_template` is `true`; otherwise
-> it is `false`. `timezone` is always present in the `firstboot` object and
-> defaults to `"UTC"`.
+> it is `false`. `timezone` is always present in the `install_config`
+> object and defaults to `"UTC"`.
 
 r[installer.dryrun.devices]
 In dry-run mode the installer must still detect real block devices (via
@@ -418,10 +433,10 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+6]
+r[installer.tui.confirmation+7]
 After the timezone screen, and after the pre-summary network results screen,
 the TUI must show a summary screen listing: target disk (path, model, size),
-chosen disk encryption mode, and any first-boot configuration. The summary
+chosen disk encryption mode, and any install-time configuration. The summary
 must clearly state that all data on the target disk will be destroyed. The
 user must type an explicit confirmation (not just press Enter). The
 confirmation screen is step 6/6.
@@ -449,13 +464,13 @@ Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
 set), not simply quit the process. On bare-metal hardware, quitting without
 rebooting leaves the machine in an unusable state.
 
-r[installer.tui.progress+2]
+r[installer.tui.progress+3]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
 `Installing` screen from the moment the user confirms until all steps
 complete. Partition image writes (which have byte-level progress) occupy
 approximately 90% of the bar. Each post-write step (filesystem expansion,
-UUID randomization, boot config rebuild, partition verification, first-boot
+UUID randomization, boot config rebuild, partition verification, install-time
 configuration, and encryption setup) occupies a small fixed slice of the
 remaining 10%, advancing the bar when the step completes. After all steps
 finish, the TUI transitions to a completion screen. For encrypted installs,
@@ -595,7 +610,7 @@ with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the
 > write phase begins. This passphrase is used as the initial LUKS key when
-> formatting the root partition (see `installer.write.luks-before-write`),
+> formatting the root partition (see `r[installer.write.luks-before-write]`),
 > so it is already enrolled as a LUKS password slot — no separate
 > `luksAddKey` step is required. In interactive mode, the passphrase must be
 > generated at confirmation time and displayed on the confirmation screen so
@@ -611,15 +626,15 @@ with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 > initramfs with dracut so it picks up the updated crypttab and (if keyfile
 > mode) the new keyfile.
 
-## First-Boot Configuration
+## Install-Time Configuration
 
-r[installer.firstboot.mount+3]
+r[installer.finalise.mount+4]
 After writing the image, the installer must mount the target disk's root
-BTRFS partition (subvol `@`) to apply first-boot configuration. For the
+BTRFS partition (subvol `@`) to apply install-time configuration. For the
 metal variant (disk encryption `"tpm"` or `"keyfile"`), it must unlock the
 LUKS volume using the recovery passphrase.
 
-r[installer.firstboot.hostname]
+r[installer.finalise.hostname]
 If `hostname` is set (including hostnames generated from a template), the
 installer must write it to `/etc/hostname` and add a `127.0.1.1` entry to
 `/etc/hosts` on the installed system. If `hostname-from-dhcp` is true, the
@@ -627,18 +642,23 @@ installer must write an empty `/etc/hostname` (truncate) and remove any
 `127.0.1.1` line from `/etc/hosts`. If neither is set (cloud only), the
 installer must leave `/etc/hostname` as-is.
 
-r[installer.firstboot.tailscale-authkey]
-If `tailscale-authkey` is set, the installer must write the key to
-`/etc/bes/tailscale-authkey` and enable a first-boot systemd service that
-runs `tailscale up --auth-key=<key> --ssh`, restricts SSH via UFW, and then
-deletes the key file.
+r[installer.finalise.tailscale-authkey+2]
+If `tailscale-authkey` is set and the installer has network connectivity,
+the installer must attempt to authenticate with Tailscale directly by
+chrooting into the mounted target filesystem and running `tailscale up
+--auth-key=<key> --ssh`. The installer must display feedback about the
+authentication attempt (e.g. success, invalid key, network error). If the
+authentication fails, the installer may offer to retry or accept a
+different key. Only if authentication does not succeed does the installer
+fall back to writing the key to `/etc/bes/tailscale-authkey` for first-boot
+authentication via the `r[image.tailscale.firstboot-auth]` systemd service.
 
-r[installer.firstboot.ssh-keys]
+r[installer.finalise.ssh-keys]
 If `ssh-authorized-keys` is set, the installer must append each key to
 `/home/ubuntu/.ssh/authorized_keys` with correct ownership and permissions
 (directory 700, file 600, owned by `ubuntu`).
 
-r[installer.firstboot.password]
+r[installer.finalise.password]
 If a password is provided (either plaintext or pre-hashed), the installer
 must update the `ubuntu` user's password in `/etc/shadow` on the installed
 system. When a plaintext password is given, it must be hashed with SHA-512
@@ -646,14 +666,14 @@ crypt (`$6$`). When a pre-hashed password is given, it must be written
 directly. In either case, the password expiry flag must be cleared so that
 the user is not forced to change the password on first login.
 
-r[installer.firstboot.timezone]
+r[installer.finalise.timezone]
 The installer must set the system timezone on the installed system by
 creating a symlink at `/etc/localtime` pointing to the corresponding
 file under `/usr/share/zoneinfo/` and writing the timezone name to
 `/etc/timezone`. The default timezone is `UTC`.
 
-r[installer.firstboot.copy-install-log]
-After applying first-boot configuration and before encryption setup, the
+r[installer.finalise.copy-install-log+2]
+After applying install-time configuration and before encryption setup, the
 installer must copy its own log file into the installed system at
 `/var/log/bes-installer.log`. This is enabled by default. When
 `copy-install-log` is set to `false` in the configuration file, the copy
@@ -662,7 +682,7 @@ the source log file does not exist), the installer must log a warning but
 must not treat it as a fatal error. There is no TUI control for this
 option.
 
-r[installer.firstboot.unmount]
+r[installer.finalise.unmount]
 After applying configuration, the installer must cleanly unmount all
 filesystems and close any LUKS volumes before prompting for reboot.
 

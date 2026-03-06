@@ -619,7 +619,6 @@ cat > "$MNT_ESP/bes-install.toml" << 'TEMPLATE'
 #   "smallest"    - smallest disk of any type
 # disk = "largest-ssd"
 
-# [firstboot]
 # hostname = "server-01"
 # tailscale-authkey = "tskey-auth-xxxxx"
 # ssh-authorized-keys = [

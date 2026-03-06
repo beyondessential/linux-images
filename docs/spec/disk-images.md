@@ -149,6 +149,15 @@ prompts for a Tailscale auth key, connects to the tailnet with `--ssh`, and on
 success restricts the SSH UFW rule to LAN ranges (RFC 1918, ULA) and the
 `tailscale0` interface.
 
+> r[image.tailscale.firstboot-auth]
+> A systemd service must be installed and enabled with a run condition for the file `/etc/bes/tailscale-authkey` existing.
+> It must authenticate the server to tailscale using the authkey in the file, and enable `--ssh`.
+>
+> On success the service must delete the key file and restrict the SSH UFW rule to LAN ranges and the `tailscale0` interface (the same firewall tightening that `ts-up` performs).
+> The service must remain enabled: the key file not existing will effectively disable it, and it leaves open the possibility to re-enable by adding the file.
+>
+> On failure the service must log the error but not prevent boot. The service must be ordered after `tailscaled.service` and `network-online.target`.
+
 r[image.tailscale.auto-update]
 A weekly cron job must be present to run `apt install -y tailscale`.
 

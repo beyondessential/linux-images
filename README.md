@@ -38,7 +38,7 @@ hostname depends on the variant and how the image is installed:
   strategy. The user can type a static hostname, toggle the "Use DHCP hostname"
   checkbox (Tab/Space on the hostname screen), or use a `hostname-template` in
   the config file. In auto mode, one of `hostname`, `hostname-from-dhcp = true`,
-  or `hostname-template` must be present in the `[firstboot]` table.
+  or `hostname-template` must be present in the configuration file.
 - **Cloud variant (TUI install):** the hostname is optional in the TUI. If left
   empty, the default `ubuntu` hostname is kept. It is expected to be overridden
   at boot by DHCP or cloud-init metadata from the cloud provider.
@@ -58,7 +58,6 @@ timezone.
 The timezone can also be set in the `bes-install.toml` configuration file:
 
 ```
-[firstboot]
 timezone = "Pacific/Auckland"
 ```
 
@@ -79,7 +78,6 @@ kept and the user will be forced to change it on first console login. A password
 can also be set in the `bes-install.toml` configuration file:
 
 ```
-[firstboot]
 # Plaintext (mutually exclusive with password-hash):
 password = "changeme"
 # Or pre-hashed (crypt(3) format, e.g. from mkpasswd):
@@ -165,8 +163,6 @@ Example of an automatic config:
 auto = true
 disk-encryption = "tpm"
 disk = "largest-ssd"
-
-[firstboot]
 hostname = "server-01"
 tailscale-authkey = "tskey-auth-xxxxx"
 ```
@@ -177,8 +173,6 @@ Example using DHCP hostname (encrypted, no static hostname):
 auto = true
 disk-encryption = "keyfile"
 disk = "largest-ssd"
-
-[firstboot]
 hostname-from-dhcp = true
 ```
 
@@ -188,8 +182,6 @@ Example using a hostname template (generates a unique hostname per install):
 auto = true
 disk-encryption = "tpm"
 disk = "largest-ssd"
-
-[firstboot]
 hostname-template = "tamanu-{hex:6}"
 ```
 
@@ -197,8 +189,6 @@ Example of a config setting custom defaults only:
 
 ```toml
 disk-encryption = "none"
-
-[firstboot]
 hostname = "server-02"
 ```
 
@@ -206,22 +196,16 @@ hostname = "server-02"
 
 All fields are optional. Unknown fields are rejected.
 
-#### Top-level fields
-
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `disk-encryption` and `disk`; additionally, when disk encryption is `"tpm"` or `"keyfile"`, a hostname strategy (`hostname`, `hostname-from-dhcp`, or `hostname-template`) is required in the `[firstboot]` table. |
+| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `disk-encryption` and `disk`; additionally, when disk encryption is `"tpm"` or `"keyfile"`, a hostname strategy (`hostname`, `hostname-from-dhcp`, or `hostname-template`) is required. |
 | `disk-encryption` | string | — | Disk encryption mode. `"tpm"` for LUKS + TPM PCR 1 (requires a TPM; default when TPM present), `"keyfile"` for LUKS + keyfile on boot partition (default when no TPM), or `"none"` for no encryption (cloud image). |
 | `disk` | string | — | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
-
-#### `[firstboot]` table
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `hostname` | string | — | Hostname to set on first boot. Required when `disk-encryption` is `"tpm"` or `"keyfile"` unless `hostname-from-dhcp` or `hostname-template` is used; optional for `"none"` (defaults to `ubuntu`, typically overridden by DHCP/cloud-init). Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Mutually exclusive with `hostname-from-dhcp` and `hostname-template`. |
+| `copy-install-log` | boolean | `true` | Copy the installer log into the installed system at `/var/log/bes-installer.log`. Set to `false` to disable. No TUI control for this option. |
+| `hostname` | string | — | Hostname to set during installation. Required when `disk-encryption` is `"tpm"` or `"keyfile"` unless `hostname-from-dhcp` or `hostname-template` is used; optional for `"none"` (defaults to `ubuntu`, typically overridden by DHCP/cloud-init). Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Mutually exclusive with `hostname-from-dhcp` and `hostname-template`. |
 | `hostname-from-dhcp` | boolean | `false` | Use the DHCP-provided hostname instead of a static one. When enabled, `/etc/hostname` is left empty so that `systemd-hostnamed` accepts the transient hostname from DHCP. Mutually exclusive with `hostname` and `hostname-template`. |
 | `hostname-template` | string | — | Generate a unique hostname from a template pattern. The template contains literal characters and `{hex:N}` or `{num:N}` placeholders (e.g. `"tamanu-{hex:6}"` produces `"tamanu-a3f1b2"`). Must contain at least one placeholder; literals must be `[a-z0-9-]`; result must not exceed 63 characters. Mutually exclusive with `hostname` and `hostname-from-dhcp`. |
-| `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`) used to automatically join the Tailscale network on first boot. |
+| `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`). If network is available during installation, the installer attempts to authenticate directly by chrooting into the target system. If that fails, the key is written to `/etc/bes/tailscale-authkey` for first-boot authentication. |
 | `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
 | `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. Mutually exclusive with `password-hash`. |
 | `password-hash` | string | — | Pre-hashed password for the `ubuntu` user in crypt(3) format (e.g. from `mkpasswd --method=sha-512`). Written directly to `/etc/shadow` with the expiry flag cleared. Mutually exclusive with `password`. |

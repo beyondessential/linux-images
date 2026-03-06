@@ -1,0 +1,15 @@
+# r[image.tailscale.firstboot-auth]
+[Unit]
+Description=Authenticate to Tailscale using installer-provided auth key
+After=tailscaled.service network-online.target
+Wants=network-online.target
+Requires=tailscaled.service
+ConditionPathExists=/etc/bes/tailscale-authkey
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bes-tailscale-firstboot-auth
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

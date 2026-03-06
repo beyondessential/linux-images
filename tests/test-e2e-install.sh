@@ -121,8 +121,6 @@ cat > "$WORK_DIR/bes-install.toml" << EOF
 auto = true
 disk-encryption = "$([ "$VARIANT" = "metal" ] && echo "keyfile" || echo "none")"
 disk = "largest"
-
-[firstboot]
 hostname = "e2e-test-$VARIANT"
 EOF
 

@@ -1,8 +1,8 @@
 use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
 // r[verify installer.tui.timezone]
-// r[verify installer.firstboot.timezone]
-// r[verify installer.dryrun.schema+4]
+// r[verify installer.finalise.timezone]
+// r[verify installer.dryrun.schema+5]
 #[test]
 fn auto_timezone_defaults_to_utc() {
     let f = Fixture::new();
@@ -12,8 +12,6 @@ fn auto_timezone_defaults_to_utc() {
         auto = true
         disk-encryption = "none"
         disk = "largest-ssd"
-
-        [firstboot]
     "#,
     );
 
@@ -33,12 +31,18 @@ fn auto_timezone_defaults_to_utc() {
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["timezone"], "UTC");
+    // When no install-time fields are set, install_config is null.
+    // The effective timezone defaults to UTC, but there is no install_config
+    // object to carry it.
+    assert!(
+        plan["install_config"].is_null(),
+        "install_config should be null when no fields are configured"
+    );
 }
 
 // r[verify installer.tui.timezone]
-// r[verify installer.firstboot.timezone]
-// r[verify installer.config.schema+3]
+// r[verify installer.finalise.timezone]
+// r[verify installer.config.timezone]
 #[test]
 fn auto_timezone_from_config() {
     let f = Fixture::new();
@@ -49,7 +53,6 @@ fn auto_timezone_from_config() {
         disk-encryption = "none"
         disk = "largest-ssd"
 
-        [firstboot]
         timezone = "Pacific/Auckland"
     "#,
     );
@@ -70,11 +73,11 @@ fn auto_timezone_from_config() {
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["timezone"], "Pacific/Auckland");
+    assert_eq!(plan["install_config"]["timezone"], "Pacific/Auckland");
 }
 
 // r[verify installer.tui.timezone]
-// r[verify installer.dryrun.schema+4]
+// r[verify installer.dryrun.schema+5]
 #[test]
 fn auto_metal_timezone_from_config() {
     let f = Fixture::new();
@@ -85,7 +88,6 @@ fn auto_metal_timezone_from_config() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "tz-test"
         timezone = "America/New_York"
     "#,
@@ -107,8 +109,8 @@ fn auto_metal_timezone_from_config() {
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["hostname"], "tz-test");
-    assert_eq!(plan["firstboot"]["timezone"], "America/New_York");
+    assert_eq!(plan["install_config"]["hostname"], "tz-test");
+    assert_eq!(plan["install_config"]["timezone"], "America/New_York");
 }
 
 // r[verify installer.tui.timezone]
@@ -162,7 +164,7 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["timezone"], "Pacific/Auckland");
+    assert_eq!(plan["install_config"]["timezone"], "Pacific/Auckland");
 }
 
 // r[verify installer.tui.timezone]
@@ -218,5 +220,5 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["timezone"], "Europe/London");
+    assert_eq!(plan["install_config"]["timezone"], "Europe/London");
 }

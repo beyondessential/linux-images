@@ -6,7 +6,16 @@ use serde::Deserialize;
 
 use crate::hostname_template;
 
-// r[impl installer.config.schema+3]
+// r[impl installer.config.format]
+// r[impl installer.config.auto]
+// r[impl installer.config.disk-encryption]
+// r[impl installer.config.disk]
+// r[impl installer.config.copy-install-log]
+// r[impl installer.config.hostname]
+// r[impl installer.config.tailscale-authkey+2]
+// r[impl installer.config.ssh-authorized-keys+2]
+// r[impl installer.config.password]
+// r[impl installer.config.timezone]
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
@@ -21,7 +30,26 @@ pub struct InstallConfig {
     #[serde(default, rename = "copy-install-log")]
     pub copy_install_log: Option<bool>,
 
-    pub firstboot: Option<FirstbootConfig>,
+    pub hostname: Option<String>,
+
+    #[serde(default, rename = "hostname-from-dhcp")]
+    pub hostname_from_dhcp: bool,
+
+    #[serde(default, rename = "hostname-template")]
+    pub hostname_template: Option<String>,
+
+    #[serde(default, rename = "tailscale-authkey")]
+    pub tailscale_authkey: Option<String>,
+
+    #[serde(default, rename = "ssh-authorized-keys")]
+    pub ssh_authorized_keys: Vec<String>,
+
+    pub password: Option<String>,
+
+    #[serde(default, rename = "password-hash")]
+    pub password_hash: Option<String>,
+
+    pub timezone: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,39 +168,21 @@ impl<'de> Deserialize<'de> for DiskSelector {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct FirstbootConfig {
-    pub hostname: Option<String>,
-
-    #[serde(default, rename = "hostname-from-dhcp")]
-    pub hostname_from_dhcp: bool,
-
-    #[serde(default, rename = "hostname-template")]
-    pub hostname_template: Option<String>,
-
-    #[serde(default, rename = "tailscale-authkey")]
-    pub tailscale_authkey: Option<String>,
-
-    #[serde(default, rename = "ssh-authorized-keys")]
-    pub ssh_authorized_keys: Vec<String>,
-
-    pub password: Option<String>,
-
-    #[serde(default, rename = "password-hash")]
-    pub password_hash: Option<String>,
-
-    /// IANA timezone (e.g. "America/New_York"). Defaults to "UTC".
-    pub timezone: Option<String>,
-}
-
-impl FirstbootConfig {
+impl InstallConfig {
     pub fn has_password(&self) -> bool {
         self.password.is_some() || self.password_hash.is_some()
     }
 
     pub fn has_hostname_config(&self) -> bool {
         self.hostname.is_some() || self.hostname_from_dhcp || self.hostname_template.is_some()
+    }
+
+    pub fn has_install_config_fields(&self) -> bool {
+        self.has_hostname_config()
+            || self.tailscale_authkey.is_some()
+            || !self.ssh_authorized_keys.is_empty()
+            || self.has_password()
+            || self.timezone.is_some()
     }
 }
 
@@ -203,7 +213,7 @@ pub fn validate_hostname(hostname: &str) -> Result<(), String> {
 
 // r[impl installer.mode.interactive+2]
 // r[impl installer.mode.prefilled]
-// r[impl installer.mode.auto+3]
+// r[impl installer.mode.auto+4]
 // r[impl installer.mode.auto-incomplete+3]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperatingMode {
@@ -249,7 +259,7 @@ impl InstallConfig {
         toml::from_str(s).context("parsing TOML config")
     }
 
-    // r[impl installer.mode.auto+3]
+    // r[impl installer.mode.auto+4]
     // r[impl installer.mode.auto-incomplete+3]
     pub fn mode(&self) -> OperatingMode {
         if !self.auto {
@@ -258,11 +268,8 @@ impl InstallConfig {
 
         let missing_disk_encryption = self.disk_encryption.is_none();
         let missing_disk = self.disk.is_none();
-        let missing_hostname = self.disk_encryption.is_some_and(|de| de.is_encrypted())
-            && !self
-                .firstboot
-                .as_ref()
-                .is_some_and(|fb| fb.has_hostname_config());
+        let missing_hostname =
+            self.disk_encryption.is_some_and(|de| de.is_encrypted()) && !self.has_hostname_config();
 
         if !missing_disk_encryption && !missing_disk && !missing_hostname {
             OperatingMode::Auto
@@ -278,62 +285,58 @@ impl InstallConfig {
     pub fn validate(&self) -> Vec<String> {
         let mut issues = Vec::new();
 
-        if let Some(ref fb) = self.firstboot {
-            // Three-way mutual exclusivity for hostname fields
-            let hostname_set = fb.hostname.is_some();
-            let dhcp_set = fb.hostname_from_dhcp;
-            let template_set = fb.hostname_template.is_some();
-            let hostname_count = hostname_set as u8 + dhcp_set as u8 + template_set as u8;
-            if hostname_count > 1 {
-                let mut conflicting = Vec::new();
-                if hostname_set {
-                    conflicting.push("firstboot.hostname");
-                }
-                if dhcp_set {
-                    conflicting.push("firstboot.hostname-from-dhcp");
-                }
-                if template_set {
-                    conflicting.push("firstboot.hostname-template");
-                }
-                issues.push(format!(
-                    "{} are mutually exclusive",
-                    conflicting.join(" and ")
-                ));
+        // Three-way mutual exclusivity for hostname fields
+        let hostname_set = self.hostname.is_some();
+        let dhcp_set = self.hostname_from_dhcp;
+        let template_set = self.hostname_template.is_some();
+        let hostname_count = hostname_set as u8 + dhcp_set as u8 + template_set as u8;
+        if hostname_count > 1 {
+            let mut conflicting = Vec::new();
+            if hostname_set {
+                conflicting.push("hostname");
             }
+            if dhcp_set {
+                conflicting.push("hostname-from-dhcp");
+            }
+            if template_set {
+                conflicting.push("hostname-template");
+            }
+            issues.push(format!(
+                "{} are mutually exclusive",
+                conflicting.join(" and ")
+            ));
+        }
 
-            if let Some(ref hostname) = fb.hostname
-                && let Err(e) = validate_hostname(hostname)
-            {
-                issues.push(format!("firstboot.hostname '{}': {}", hostname, e));
-            }
+        if let Some(ref hostname) = self.hostname
+            && let Err(e) = validate_hostname(hostname)
+        {
+            issues.push(format!("hostname '{}': {}", hostname, e));
+        }
 
-            if let Some(ref tmpl) = fb.hostname_template
-                && let Err(e) = hostname_template::parse(tmpl)
-            {
-                issues.push(format!("firstboot.hostname-template: {e}"));
-            }
+        if let Some(ref tmpl) = self.hostname_template
+            && let Err(e) = hostname_template::parse(tmpl)
+        {
+            issues.push(format!("hostname-template: {e}"));
+        }
 
-            if fb.hostname_from_dhcp
-                && self
-                    .disk_encryption
-                    .is_some_and(|de| de == DiskEncryption::None)
-            {
-                issues.push(
-                    "hostname-from-dhcp has no special effect with disk-encryption = \"none\" (DHCP hostname is already the default)".into(),
-                );
-            }
+        if self.hostname_from_dhcp
+            && self
+                .disk_encryption
+                .is_some_and(|de| de == DiskEncryption::None)
+        {
+            issues.push(
+                "hostname-from-dhcp has no special effect with disk-encryption = \"none\" (DHCP hostname is already the default)".into(),
+            );
+        }
 
-            for (i, key) in fb.ssh_authorized_keys.iter().enumerate() {
-                if key.trim().is_empty() {
-                    issues.push(format!("firstboot.ssh-authorized-keys[{i}] is empty"));
-                }
+        for (i, key) in self.ssh_authorized_keys.iter().enumerate() {
+            if key.trim().is_empty() {
+                issues.push(format!("ssh-authorized-keys[{i}] is empty"));
             }
+        }
 
-            if fb.password.is_some() && fb.password_hash.is_some() {
-                issues.push(
-                    "firstboot.password and firstboot.password-hash are mutually exclusive".into(),
-                );
-            }
+        if self.password.is_some() && self.password_hash.is_some() {
+            issues.push("password and password-hash are mutually exclusive".into());
         }
 
         issues
@@ -366,22 +369,27 @@ pub fn find_config_file() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.format]
     #[test]
     fn parse_empty_config() {
         let config = InstallConfig::from_toml("").unwrap();
         assert_eq!(config, InstallConfig::default());
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.format]
+    // r[verify installer.config.auto]
+    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk]
+    // r[verify installer.config.hostname]
+    // r[verify installer.config.tailscale-authkey+2]
+    // r[verify installer.config.ssh-authorized-keys+2]
+    // r[verify installer.config.password]
     #[test]
     fn parse_full_config() {
         let toml = r#"
             auto = true
             disk-encryption = "tpm"
             disk = "largest-ssd"
-
-            [firstboot]
             hostname = "server-01"
             tailscale-authkey = "tskey-auth-xxxxx"
             ssh-authorized-keys = ["ssh-ed25519 AAAA... admin@example.com"]
@@ -395,18 +403,20 @@ mod tests {
             Some(DiskSelector::Strategy(DiskStrategy::LargestSsd))
         );
 
-        let fb = config.firstboot.as_ref().unwrap();
-        assert_eq!(fb.hostname.as_deref(), Some("server-01"));
-        assert_eq!(fb.tailscale_authkey.as_deref(), Some("tskey-auth-xxxxx"));
+        assert_eq!(config.hostname.as_deref(), Some("server-01"));
         assert_eq!(
-            fb.ssh_authorized_keys,
+            config.tailscale_authkey.as_deref(),
+            Some("tskey-auth-xxxxx")
+        );
+        assert_eq!(
+            config.ssh_authorized_keys,
             vec!["ssh-ed25519 AAAA... admin@example.com"]
         );
-        assert_eq!(fb.password.as_deref(), Some("changeme"));
-        assert_eq!(fb.password_hash, None);
+        assert_eq!(config.password.as_deref(), Some("changeme"));
+        assert_eq!(config.password_hash, None);
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn parse_disk_encryption_variants() {
         let tpm = InstallConfig::from_toml(r#"disk-encryption = "tpm""#).unwrap();
@@ -419,14 +429,14 @@ mod tests {
         assert_eq!(none.disk_encryption, Some(DiskEncryption::None));
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn parse_invalid_disk_encryption_rejected() {
         let result = InstallConfig::from_toml(r#"disk-encryption = "bad""#);
         assert!(result.is_err());
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk]
     #[test]
     fn parse_disk_path() {
         let config = InstallConfig::from_toml(r#"disk = "/dev/nvme0n1""#).unwrap();
@@ -436,7 +446,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk]
     #[test]
     fn parse_disk_strategies() {
         for (input, expected) in [
@@ -449,7 +459,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.format]
     #[test]
     fn parse_unknown_field_rejected() {
         let result = InstallConfig::from_toml(r#"bogus = true"#);
@@ -463,7 +473,7 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Prefilled);
     }
 
-    // r[verify installer.mode.auto+3]
+    // r[verify installer.mode.auto+4]
     #[test]
     fn mode_auto_when_complete_none() {
         let config = InstallConfig {
@@ -475,49 +485,40 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.mode.auto+3]
+    // r[verify installer.mode.auto+4]
     #[test]
     fn mode_auto_when_complete_tpm_with_hostname() {
         let config = InstallConfig {
             auto: true,
             disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            firstboot: Some(FirstbootConfig {
-                hostname: Some("my-server".into()),
-                ..Default::default()
-            }),
+            hostname: Some("my-server".into()),
             ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.mode.auto+3]
+    // r[verify installer.mode.auto+4]
     #[test]
     fn mode_auto_when_complete_keyfile_with_dhcp() {
         let config = InstallConfig {
             auto: true,
             disk_encryption: Some(DiskEncryption::Keyfile),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            firstboot: Some(FirstbootConfig {
-                hostname_from_dhcp: true,
-                ..Default::default()
-            }),
+            hostname_from_dhcp: true,
             ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.mode.auto+3]
+    // r[verify installer.mode.auto+4]
     #[test]
     fn mode_auto_when_complete_tpm_with_template() {
         let config = InstallConfig {
             auto: true,
             disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            firstboot: Some(FirstbootConfig {
-                hostname_template: Some("srv-{hex:6}".into()),
-                ..Default::default()
-            }),
+            hostname_template: Some("srv-{hex:6}".into()),
             ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
@@ -614,7 +615,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.mode.auto+3]
+    // r[verify installer.mode.auto+4]
     #[test]
     fn mode_auto_none_does_not_require_hostname() {
         let config = InstallConfig {
@@ -626,14 +627,11 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.hostname]
     #[test]
     fn validate_bad_hostname() {
         let config = InstallConfig {
-            firstboot: Some(FirstbootConfig {
-                hostname: Some("-bad-".into()),
-                ..Default::default()
-            }),
+            hostname: Some("-bad-".into()),
             ..Default::default()
         };
         let issues = config.validate();
@@ -644,58 +642,46 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.hostname]
     #[test]
     fn validate_long_hostname() {
         let config = InstallConfig {
-            firstboot: Some(FirstbootConfig {
-                hostname: Some("a".repeat(64)),
-                ..Default::default()
-            }),
+            hostname: Some("a".repeat(64)),
             ..Default::default()
         };
         let issues = config.validate();
         assert!(issues.iter().any(|i| i.contains("too long")));
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.ssh-authorized-keys+2]
     #[test]
     fn validate_empty_ssh_key() {
         let config = InstallConfig {
-            firstboot: Some(FirstbootConfig {
-                ssh_authorized_keys: vec!["".into()],
-                ..Default::default()
-            }),
+            ssh_authorized_keys: vec!["".into()],
             ..Default::default()
         };
         let issues = config.validate();
         assert!(issues.iter().any(|i| i.contains("empty")));
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.format]
     #[test]
     fn validate_good_config_has_no_issues() {
         let config = InstallConfig {
             auto: true,
             disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            firstboot: Some(FirstbootConfig {
-                hostname: Some("server-01".into()),
-                hostname_from_dhcp: false,
-                hostname_template: None,
-                tailscale_authkey: Some("tskey-auth-xxxxx".into()),
-                ssh_authorized_keys: vec!["ssh-ed25519 AAAA... admin@example.com".into()],
-                password: Some("changeme".into()),
-                password_hash: None,
-                timezone: None,
-            }),
+            hostname: Some("server-01".into()),
+            tailscale_authkey: Some("tskey-auth-xxxxx".into()),
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAA... admin@example.com".into()],
+            password: Some("changeme".into()),
             ..Default::default()
         };
         let issues = config.validate();
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn disk_encryption_display() {
         assert_eq!(DiskEncryption::Tpm.to_string(), "tpm");
@@ -703,7 +689,7 @@ mod tests {
         assert_eq!(DiskEncryption::None.to_string(), "none");
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn disk_encryption_variant_derivation() {
         assert_eq!(DiskEncryption::Tpm.variant(), Variant::Metal);
@@ -711,14 +697,14 @@ mod tests {
         assert_eq!(DiskEncryption::None.variant(), Variant::Cloud);
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn variant_display() {
         assert_eq!(Variant::Metal.to_string(), "metal");
         assert_eq!(Variant::Cloud.to_string(), "cloud");
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk]
     #[test]
     fn disk_selector_display() {
         assert_eq!(
@@ -731,20 +717,20 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.hostname]
+    // r[verify installer.config.tailscale-authkey+2]
+    // r[verify installer.config.ssh-authorized-keys+2]
     #[test]
-    fn parse_minimal_firstboot() {
+    fn parse_minimal_hostname() {
         let config = InstallConfig::from_toml(
             r#"
-            [firstboot]
             hostname = "test"
         "#,
         )
         .unwrap();
-        let fb = config.firstboot.unwrap();
-        assert_eq!(fb.hostname.as_deref(), Some("test"));
-        assert_eq!(fb.tailscale_authkey, None);
-        assert!(fb.ssh_authorized_keys.is_empty());
+        assert_eq!(config.hostname.as_deref(), Some("test"));
+        assert_eq!(config.tailscale_authkey, None);
+        assert!(config.ssh_authorized_keys.is_empty());
     }
 
     // r[verify installer.config.location]
@@ -784,33 +770,28 @@ mod tests {
         assert!(InstallConfig::load_from_file(&path).is_err());
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.password]
     #[test]
     fn parse_password_hash() {
         let config = InstallConfig::from_toml(
             r#"
-            [firstboot]
             password-hash = "$6$rounds=4096$salt$hash"
         "#,
         )
         .unwrap();
-        let fb = config.firstboot.unwrap();
-        assert_eq!(fb.password, None);
+        assert_eq!(config.password, None);
         assert_eq!(
-            fb.password_hash.as_deref(),
+            config.password_hash.as_deref(),
             Some("$6$rounds=4096$salt$hash")
         );
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.password]
     #[test]
     fn validate_password_and_hash_mutually_exclusive() {
         let config = InstallConfig {
-            firstboot: Some(FirstbootConfig {
-                password: Some("changeme".into()),
-                password_hash: Some("$6$rounds=4096$salt$hash".into()),
-                ..Default::default()
-            }),
+            password: Some("changeme".into()),
+            password_hash: Some("$6$rounds=4096$salt$hash".into()),
             ..Default::default()
         };
         let issues = config.validate();
@@ -824,11 +805,8 @@ mod tests {
     #[test]
     fn validate_hostname_fields_mutually_exclusive() {
         let config = InstallConfig {
-            firstboot: Some(FirstbootConfig {
-                hostname: Some("server-01".into()),
-                hostname_from_dhcp: true,
-                ..Default::default()
-            }),
+            hostname: Some("server-01".into()),
+            hostname_from_dhcp: true,
             ..Default::default()
         };
         let issues = config.validate();
@@ -838,11 +816,8 @@ mod tests {
     #[test]
     fn validate_hostname_and_template_mutually_exclusive() {
         let config = InstallConfig {
-            firstboot: Some(FirstbootConfig {
-                hostname: Some("server-01".into()),
-                hostname_template: Some("srv-{hex:6}".into()),
-                ..Default::default()
-            }),
+            hostname: Some("server-01".into()),
+            hostname_template: Some("srv-{hex:6}".into()),
             ..Default::default()
         };
         let issues = config.validate();
@@ -852,11 +827,8 @@ mod tests {
     #[test]
     fn validate_dhcp_and_template_mutually_exclusive() {
         let config = InstallConfig {
-            firstboot: Some(FirstbootConfig {
-                hostname_from_dhcp: true,
-                hostname_template: Some("srv-{hex:6}".into()),
-                ..Default::default()
-            }),
+            hostname_from_dhcp: true,
+            hostname_template: Some("srv-{hex:6}".into()),
             ..Default::default()
         };
         let issues = config.validate();
@@ -866,28 +838,18 @@ mod tests {
     #[test]
     fn validate_bad_hostname_template() {
         let config = InstallConfig {
-            firstboot: Some(FirstbootConfig {
-                hostname_template: Some("".into()),
-                ..Default::default()
-            }),
+            hostname_template: Some("".into()),
             ..Default::default()
         };
         let issues = config.validate();
-        assert!(
-            issues
-                .iter()
-                .any(|i| i.contains("firstboot.hostname-template"))
-        );
+        assert!(issues.iter().any(|i| i.contains("hostname-template")));
     }
 
     #[test]
     fn validate_dhcp_on_none_encryption_warns() {
         let config = InstallConfig {
             disk_encryption: Some(DiskEncryption::None),
-            firstboot: Some(FirstbootConfig {
-                hostname_from_dhcp: true,
-                ..Default::default()
-            }),
+            hostname_from_dhcp: true,
             ..Default::default()
         };
         let issues = config.validate();
@@ -902,68 +864,64 @@ mod tests {
     fn parse_hostname_from_dhcp() {
         let config = InstallConfig::from_toml(
             r#"
-            [firstboot]
             hostname-from-dhcp = true
         "#,
         )
         .unwrap();
-        let fb = config.firstboot.unwrap();
-        assert!(fb.hostname_from_dhcp);
-        assert_eq!(fb.hostname, None);
-        assert_eq!(fb.hostname_template, None);
+        assert!(config.hostname_from_dhcp);
+        assert_eq!(config.hostname, None);
+        assert_eq!(config.hostname_template, None);
     }
 
     #[test]
     fn parse_hostname_template() {
         let config = InstallConfig::from_toml(
             r#"
-            [firstboot]
             hostname-template = "srv-{hex:6}"
         "#,
         )
         .unwrap();
-        let fb = config.firstboot.unwrap();
-        assert_eq!(fb.hostname_template.as_deref(), Some("srv-{hex:6}"));
-        assert_eq!(fb.hostname, None);
-        assert!(!fb.hostname_from_dhcp);
+        assert_eq!(config.hostname_template.as_deref(), Some("srv-{hex:6}"));
+        assert_eq!(config.hostname, None);
+        assert!(!config.hostname_from_dhcp);
     }
 
     #[test]
     fn has_hostname_config_none() {
-        let fb = FirstbootConfig::default();
-        assert!(!fb.has_hostname_config());
+        let cfg = InstallConfig::default();
+        assert!(!cfg.has_hostname_config());
     }
 
     #[test]
     fn has_hostname_config_hostname() {
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             hostname: Some("test".into()),
             ..Default::default()
         };
-        assert!(fb.has_hostname_config());
+        assert!(cfg.has_hostname_config());
     }
 
     #[test]
     fn has_hostname_config_dhcp() {
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             hostname_from_dhcp: true,
             ..Default::default()
         };
-        assert!(fb.has_hostname_config());
+        assert!(cfg.has_hostname_config());
     }
 
     #[test]
     fn has_hostname_config_template() {
-        let fb = FirstbootConfig {
+        let cfg = InstallConfig {
             hostname_template: Some("srv-{hex:6}".into()),
             ..Default::default()
         };
-        assert!(fb.has_hostname_config());
+        assert!(cfg.has_hostname_config());
     }
 
     // r[verify installer.mode.interactive+2]
     // r[verify installer.mode.prefilled]
-    // r[verify installer.mode.auto+3]
+    // r[verify installer.mode.auto+4]
     // r[verify installer.mode.auto-incomplete+3]
     #[test]
     fn operating_mode_display() {
@@ -981,7 +939,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.schema+3]
+    // r[verify installer.config.disk-encryption]
     #[test]
     fn disk_encryption_is_encrypted() {
         assert!(DiskEncryption::Tpm.is_encrypted());

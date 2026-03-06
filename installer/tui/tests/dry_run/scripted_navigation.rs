@@ -275,7 +275,7 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["hostname"], "bad");
+    assert_eq!(plan["install_config"]["hostname"], "bad");
 }
 
 // r[verify installer.tui.ssh-keys+5]
@@ -332,10 +332,10 @@ enter
         .success();
 
     let plan = f.read_plan();
-    assert_eq!(plan["firstboot"]["ssh_authorized_keys_count"], 2);
+    assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.confirmation+6]
+// r[verify installer.tui.confirmation+7]
 #[test]
 fn scripted_wrong_confirmation_does_not_advance() {
     let f = Fixture::new();

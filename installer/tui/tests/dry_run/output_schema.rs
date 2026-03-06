@@ -13,7 +13,6 @@ fn dry_run_output_to_file() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-host"
     "#,
     );
@@ -49,7 +48,6 @@ fn dry_run_output_to_stdout() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-host"
     "#,
     );
@@ -75,7 +73,7 @@ fn dry_run_output_to_stdout() {
     assert_eq!(plan["disk_encryption"], "tpm");
 }
 
-// r[verify installer.dryrun.schema+4]
+// r[verify installer.dryrun.schema+5]
 #[test]
 fn plan_contains_all_required_fields() {
     let f = Fixture::new();
@@ -86,7 +84,6 @@ fn plan_contains_all_required_fields() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-box"
         tailscale-authkey = "tskey-auth-xxx"
         ssh-authorized-keys = ["ssh-ed25519 AAAA k1"]
@@ -117,7 +114,7 @@ fn plan_contains_all_required_fields() {
         "variant",
         "disk",
         "tpm_present",
-        "firstboot",
+        "install_config",
         "manifest_path",
         "copy_install_log",
         "config_warnings",
@@ -131,13 +128,13 @@ fn plan_contains_all_required_fields() {
         assert!(disk.contains_key(*key), "missing disk key: {key}");
     }
 
-    let fb = plan["firstboot"].as_object().unwrap();
+    let fb = plan["install_config"].as_object().unwrap();
     for key in &["hostname", "tailscale_authkey", "ssh_authorized_keys_count"] {
-        assert!(fb.contains_key(*key), "missing firstboot key: {key}");
+        assert!(fb.contains_key(*key), "missing install_config key: {key}");
     }
 }
 
-// r[verify installer.dryrun.schema+4]
+// r[verify installer.dryrun.schema+5]
 #[test]
 fn plan_tailscale_authkey_is_bool_not_string() {
     let f = Fixture::new();
@@ -148,7 +145,6 @@ fn plan_tailscale_authkey_is_bool_not_string() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-host"
         tailscale-authkey = "tskey-auth-secret-should-not-appear"
     "#,
@@ -170,8 +166,12 @@ fn plan_tailscale_authkey_is_bool_not_string() {
         .success();
 
     let plan = f.read_plan();
-    assert!(plan["firstboot"]["tailscale_authkey"].is_boolean());
-    assert!(plan["firstboot"]["tailscale_authkey"].as_bool().unwrap());
+    assert!(plan["install_config"]["tailscale_authkey"].is_boolean());
+    assert!(
+        plan["install_config"]["tailscale_authkey"]
+            .as_bool()
+            .unwrap()
+    );
 
     let raw = std::fs::read_to_string(f.plan_path()).unwrap();
     assert!(
@@ -190,7 +190,6 @@ fn dry_run_without_script_emits_initial_state() {
         disk-encryption = "none"
         disk = "/dev/sda"
 
-        [firstboot]
         hostname = "pre-host"
     "#,
     );
@@ -214,7 +213,7 @@ fn dry_run_without_script_emits_initial_state() {
     assert_eq!(plan["mode"], "prefilled");
     assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
-    assert_eq!(plan["firstboot"]["hostname"], "pre-host");
+    assert_eq!(plan["install_config"]["hostname"], "pre-host");
 }
 
 // r[verify installer.mode.interactive+2]
@@ -243,6 +242,7 @@ fn dry_run_no_config_is_interactive() {
 }
 
 // r[verify installer.dryrun]
+// r[verify installer.config.copy-install-log]
 #[test]
 fn dry_run_manifest_path_is_null_when_no_images() {
     let f = Fixture::new();
@@ -253,7 +253,6 @@ fn dry_run_manifest_path_is_null_when_no_images() {
         disk-encryption = "tpm"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "test-host"
     "#,
     );
@@ -284,7 +283,7 @@ fn dry_run_manifest_path_is_null_when_no_images() {
     );
 }
 
-// r[verify installer.config.schema+3]
+// r[verify installer.config.format]
 #[test]
 fn multiple_validation_warnings_collected() {
     let f = Fixture::new();
@@ -295,7 +294,6 @@ fn multiple_validation_warnings_collected() {
         disk-encryption = "none"
         disk = "largest-ssd"
 
-        [firstboot]
         hostname = "-bad-"
         ssh-authorized-keys = [""]
     "#,

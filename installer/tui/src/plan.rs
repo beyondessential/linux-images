@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::config::{DiskEncryption, FirstbootConfig, OperatingMode};
+use crate::config::{DiskEncryption, InstallConfig, OperatingMode};
 use crate::disk::BlockDevice;
 
-// r[impl installer.dryrun.schema+4]
+// r[impl installer.dryrun.schema+5]
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallPlan {
     pub mode: String,
@@ -13,7 +13,7 @@ pub struct InstallPlan {
     pub variant: String,
     pub disk: Option<DiskInfo>,
     pub tpm_present: bool,
-    pub firstboot: Option<FirstbootInfo>,
+    pub install_config: Option<InstallConfigInfo>,
     pub manifest_path: Option<PathBuf>,
     pub copy_install_log: bool,
     pub config_warnings: Vec<String>,
@@ -27,9 +27,9 @@ pub struct DiskInfo {
     pub transport: String,
 }
 
-// r[impl installer.dryrun.schema+4]
+// r[impl installer.dryrun.schema+5]
 #[derive(Debug, Clone, Serialize)]
-pub struct FirstbootInfo {
+pub struct InstallConfigInfo {
     pub hostname: Option<String>,
     pub hostname_from_template: bool,
     pub tailscale_authkey: bool,
@@ -49,19 +49,19 @@ impl From<&BlockDevice> for DiskInfo {
     }
 }
 
-impl FirstbootInfo {
-    pub fn from_config(fb: &FirstbootConfig, hostname_from_template: bool, timezone: &str) -> Self {
-        let hostname = if fb.hostname_from_dhcp {
+impl InstallConfigInfo {
+    pub fn from_config(cfg: &InstallConfig, hostname_from_template: bool, timezone: &str) -> Self {
+        let hostname = if cfg.hostname_from_dhcp {
             Some("dhcp".to_string())
         } else {
-            fb.hostname.clone()
+            cfg.hostname.clone()
         };
-        FirstbootInfo {
+        InstallConfigInfo {
             hostname,
             hostname_from_template,
-            tailscale_authkey: fb.tailscale_authkey.is_some(),
-            ssh_authorized_keys_count: fb.ssh_authorized_keys.len(),
-            password_set: fb.has_password(),
+            tailscale_authkey: cfg.tailscale_authkey.is_some(),
+            ssh_authorized_keys_count: cfg.ssh_authorized_keys.len(),
+            password_set: cfg.has_password(),
             timezone: timezone.to_string(),
         }
     }
@@ -77,7 +77,7 @@ pub struct InstallPlanBuilder<'a> {
     disk_encryption: DiskEncryption,
     disk: Option<&'a BlockDevice>,
     tpm_present: bool,
-    firstboot: Option<&'a FirstbootConfig>,
+    install_config: Option<&'a InstallConfig>,
     hostname_from_template: bool,
     timezone: &'a str,
     manifest_path: Option<PathBuf>,
@@ -92,7 +92,7 @@ impl<'a> InstallPlanBuilder<'a> {
             disk_encryption,
             disk: None,
             tpm_present: false,
-            firstboot: None,
+            install_config: None,
             hostname_from_template: false,
             timezone: "UTC",
             manifest_path: None,
@@ -111,8 +111,8 @@ impl<'a> InstallPlanBuilder<'a> {
         self
     }
 
-    pub fn firstboot(mut self, fb: &'a FirstbootConfig) -> Self {
-        self.firstboot = Some(fb);
+    pub fn install_config(mut self, cfg: &'a InstallConfig) -> Self {
+        self.install_config = Some(cfg);
         self
     }
 
@@ -155,8 +155,8 @@ impl<'a> InstallPlanBuilder<'a> {
             variant: self.disk_encryption.variant().to_string(),
             disk: self.disk.map(DiskInfo::from),
             tpm_present: self.tpm_present,
-            firstboot: self.firstboot.map(|fb| {
-                FirstbootInfo::from_config(fb, self.hostname_from_template, self.timezone)
+            install_config: self.install_config.map(|cfg| {
+                InstallConfigInfo::from_config(cfg, self.hostname_from_template, self.timezone)
             }),
             manifest_path: self.manifest_path,
             copy_install_log: self.copy_install_log,
@@ -191,7 +191,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::config::{DiskEncryption, FirstbootConfig, OperatingMode};
+    use crate::config::{DiskEncryption, InstallConfig, OperatingMode};
     use crate::disk::{BlockDevice, TransportType};
 
     fn sample_device() -> BlockDevice {
@@ -204,8 +204,8 @@ mod tests {
         }
     }
 
-    fn sample_firstboot() -> FirstbootConfig {
-        FirstbootConfig {
+    fn sample_install_config() -> InstallConfig {
+        InstallConfig {
             hostname: Some("server-01".into()),
             tailscale_authkey: Some("tskey-auth-xxxxx".into()),
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
@@ -214,15 +214,15 @@ mod tests {
         }
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
     fn plan_serializes_full() {
         let dev = sample_device();
-        let fb = sample_firstboot();
+        let cfg = sample_install_config();
         let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::Tpm)
             .disk(&dev)
             .tpm_present(true)
-            .firstboot(&fb)
+            .install_config(&cfg)
             .timezone("America/New_York")
             .manifest_path(PathBuf::from("/run/live/medium/images/partitions.json"))
             .build();
@@ -236,16 +236,20 @@ mod tests {
         assert_eq!(json["disk"]["size_bytes"], 1_000_204_886_016u64);
         assert_eq!(json["disk"]["transport"], "NVMe");
         assert!(json["tpm_present"].as_bool().unwrap());
-        assert_eq!(json["firstboot"]["hostname"], "server-01");
+        assert_eq!(json["install_config"]["hostname"], "server-01");
         assert!(
-            !json["firstboot"]["hostname_from_template"]
+            !json["install_config"]["hostname_from_template"]
                 .as_bool()
                 .unwrap()
         );
-        assert!(json["firstboot"]["tailscale_authkey"].as_bool().unwrap());
-        assert_eq!(json["firstboot"]["ssh_authorized_keys_count"], 2);
-        assert!(json["firstboot"]["password_set"].as_bool().unwrap());
-        assert_eq!(json["firstboot"]["timezone"], "America/New_York");
+        assert!(
+            json["install_config"]["tailscale_authkey"]
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(json["install_config"]["ssh_authorized_keys_count"], 2);
+        assert!(json["install_config"]["password_set"].as_bool().unwrap());
+        assert_eq!(json["install_config"]["timezone"], "America/New_York");
         assert_eq!(
             json["manifest_path"],
             "/run/live/medium/images/partitions.json"
@@ -254,7 +258,7 @@ mod tests {
         assert!(json["config_warnings"].as_array().unwrap().is_empty());
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
     fn plan_serializes_minimal() {
         let plan = InstallPlan::builder(&OperatingMode::Interactive, DiskEncryption::None)
@@ -267,13 +271,13 @@ mod tests {
         assert_eq!(json["variant"], "cloud");
         assert!(json["disk"].is_null());
         assert!(!json["tpm_present"].as_bool().unwrap());
-        assert!(json["firstboot"].is_null());
+        assert!(json["install_config"].is_null());
         assert!(json["manifest_path"].is_null());
         assert!(json["copy_install_log"].as_bool().unwrap());
         assert_eq!(json["config_warnings"][0], "some warning");
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
     fn plan_keyfile_derives_metal_variant() {
         let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::Keyfile).build();
@@ -284,7 +288,7 @@ mod tests {
         assert!(!json["tpm_present"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
     fn plan_copy_install_log_false() {
         let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::None)
@@ -295,14 +299,14 @@ mod tests {
         assert!(!json["copy_install_log"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
-    fn firstboot_info_hides_authkey_value() {
-        let fb = FirstbootConfig {
+    fn install_config_info_hides_authkey_value() {
+        let cfg = InstallConfig {
             tailscale_authkey: Some("tskey-auth-secret-value".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false, "UTC");
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
         assert!(info.tailscale_authkey);
 
         let json = serde_json::to_value(&info).unwrap();
@@ -310,41 +314,41 @@ mod tests {
         assert!(json["tailscale_authkey"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
-    fn firstboot_info_no_authkey() {
-        let fb = FirstbootConfig {
+    fn install_config_info_no_authkey() {
+        let cfg = InstallConfig {
             hostname: Some("host".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false, "UTC");
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
         assert!(!info.tailscale_authkey);
         assert!(!info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
-    fn firstboot_info_password_set_from_plaintext() {
-        let fb = FirstbootConfig {
+    fn install_config_info_password_set_from_plaintext() {
+        let cfg = InstallConfig {
             password: Some("secret".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false, "UTC");
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
         assert!(info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
-    fn firstboot_info_password_set_from_hash() {
-        let fb = FirstbootConfig {
+    fn install_config_info_password_set_from_hash() {
+        let cfg = InstallConfig {
             password_hash: Some("$6$rounds=4096$salt$hash".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false, "UTC");
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
         assert!(info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
     fn disk_info_from_block_device() {
         let dev = sample_device();
@@ -355,7 +359,7 @@ mod tests {
         assert_eq!(info.transport, "NVMe");
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
     fn all_operating_modes_map_correctly() {
         let dev = sample_device();
@@ -402,36 +406,36 @@ mod tests {
         assert!(parsed["tpm_present"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
-    fn firstboot_info_dhcp_hostname_sentinel() {
-        let fb = FirstbootConfig {
+    fn install_config_info_dhcp_hostname_sentinel() {
+        let cfg = InstallConfig {
             hostname_from_dhcp: true,
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, false, "UTC");
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
         assert_eq!(info.hostname.as_deref(), Some("dhcp"));
         assert!(!info.hostname_from_template);
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
-    fn firstboot_info_template_flag() {
-        let fb = FirstbootConfig {
+    fn install_config_info_template_flag() {
+        let cfg = InstallConfig {
             hostname: Some("srv-a1b2c3".into()),
             ..Default::default()
         };
-        let info = FirstbootInfo::from_config(&fb, true, "Pacific/Auckland");
+        let info = InstallConfigInfo::from_config(&cfg, true, "Pacific/Auckland");
         assert_eq!(info.hostname.as_deref(), Some("srv-a1b2c3"));
         assert!(info.hostname_from_template);
         assert_eq!(info.timezone, "Pacific/Auckland");
     }
 
-    // r[verify installer.dryrun.schema+4]
+    // r[verify installer.dryrun.schema+5]
     #[test]
-    fn firstboot_info_timezone_default() {
-        let fb = FirstbootConfig::default();
-        let info = FirstbootInfo::from_config(&fb, false, "UTC");
+    fn install_config_info_timezone_default() {
+        let cfg = InstallConfig::default();
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
         assert_eq!(info.timezone, "UTC");
     }
 }
