@@ -126,12 +126,13 @@ be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 > - **USB storage:** `usb_storage`, `uas`
 > - **Hyper-V:** `hv_storvsc`, `hv_netvsc`, `hv_vmbus`
 
-> r[image.boot.cloud-drivers+3]
+> r[image.boot.cloud-drivers+4]
 > The cloud variant must include a dracut configuration at
 > `/etc/dracut.conf.d/04-cloud-drivers.conf` that force-includes
 > cloud-specific kernel modules into the initramfs:
 >
 > - **AWS:** `ena`, `xen_blkfront`
+> - **GCP:** `gve`
 
 r[image.boot.grub-install]
 GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
