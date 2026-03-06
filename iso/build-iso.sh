@@ -204,6 +204,7 @@ chroot "$MNT_ROOTFS" bash -c "
         cloud-guest-utils \
         zstd \
         cryptsetup \
+        tpm2-tools \
         btrfs-progs \
         lvm2 \
         dosfstools \
