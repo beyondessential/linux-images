@@ -16,6 +16,7 @@ pub struct InstallPlan {
     pub install_config: Option<InstallConfigInfo>,
     pub manifest_path: Option<PathBuf>,
     pub copy_install_log: bool,
+    pub save_recovery_keys: bool,
     pub config_warnings: Vec<String>,
 }
 
@@ -82,6 +83,7 @@ pub struct InstallPlanBuilder<'a> {
     timezone: &'a str,
     manifest_path: Option<PathBuf>,
     copy_install_log: bool,
+    save_recovery_keys: bool,
     config_warnings: Vec<String>,
 }
 
@@ -97,6 +99,7 @@ impl<'a> InstallPlanBuilder<'a> {
             timezone: "UTC",
             manifest_path: None,
             copy_install_log: true,
+            save_recovery_keys: false,
             config_warnings: Vec::new(),
         }
     }
@@ -136,6 +139,11 @@ impl<'a> InstallPlanBuilder<'a> {
         self
     }
 
+    pub fn save_recovery_keys(mut self, save: bool) -> Self {
+        self.save_recovery_keys = save;
+        self
+    }
+
     pub fn config_warnings(mut self, warnings: Vec<String>) -> Self {
         self.config_warnings = warnings;
         self
@@ -160,6 +168,7 @@ impl<'a> InstallPlanBuilder<'a> {
             }),
             manifest_path: self.manifest_path,
             copy_install_log: self.copy_install_log,
+            save_recovery_keys: self.save_recovery_keys,
             config_warnings: self.config_warnings,
         }
     }

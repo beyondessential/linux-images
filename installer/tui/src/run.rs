@@ -6,6 +6,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 
 use crate::Cli;
+use crate::besconf;
 use crate::config;
 use crate::disk;
 use crate::encryption;
@@ -31,6 +32,7 @@ pub struct RunContext {
     pub arch: String,
     pub available_timezones: Vec<String>,
     pub config_warnings: Vec<String>,
+    pub besconf: besconf::BesconfState,
 }
 
 impl RunContext {
@@ -80,10 +82,23 @@ impl RunContext {
         };
         tracing::info!("TPM present: {tpm_present}");
 
+        // r[impl installer.config.recovery-passphrase]
+        install_config.validate_hard()?;
+
         let config_warnings = install_config.validate();
         for w in &config_warnings {
             tracing::warn!("config: {w}");
         }
+
+        // r[impl installer.besconf.writable-detection]
+        let besconf = if cli.dry_run {
+            besconf::BesconfState::readonly()
+        } else {
+            let state = besconf::detect_writable();
+            // r[impl installer.besconf.failure-log]
+            besconf::rotate_failure_log(&state);
+            besconf::with_save_recovery_keys(state, install_config.save_recovery_keys)
+        };
 
         Ok(Self {
             cli,
@@ -95,10 +110,24 @@ impl RunContext {
             arch,
             available_timezones,
             config_warnings,
+            besconf,
         })
     }
 
     pub fn run(self) -> Result<()> {
+        let besconf = self.besconf.clone();
+        let log_path = self.cli.log.clone();
+        let result = self.run_inner();
+
+        // r[impl installer.besconf.failure-log]
+        if result.is_err() {
+            besconf::write_failure_log(&besconf, &log_path);
+        }
+
+        result
+    }
+
+    fn run_inner(self) -> Result<()> {
         match self.mode {
             config::OperatingMode::Auto => self.run_auto(),
             // r[impl installer.mode.auto-incomplete+3]
@@ -168,6 +197,7 @@ impl RunContext {
                     .hostname_from_template(hostname_from_template)
                     .timezone(effective_timezone)
                     .copy_install_log(copy_install_log)
+                    .save_recovery_keys(self.besconf.save_recovery_keys())
                     .config_warnings(self.config_warnings);
             if self.install_config.has_install_config_fields() {
                 builder = builder.install_config(&self.install_config);
@@ -224,8 +254,14 @@ impl RunContext {
         writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
 
         // r[impl installer.encryption.recovery-passphrase+3]
+        // r[impl installer.config.recovery-passphrase]
         let recovery_passphrase = if disk_encryption.is_encrypted() {
-            Some(encryption::generate_recovery_passphrase())
+            Some(
+                self.install_config
+                    .recovery_passphrase
+                    .clone()
+                    .unwrap_or_else(encryption::generate_recovery_passphrase),
+            )
         } else {
             None
         };
@@ -341,6 +377,16 @@ impl RunContext {
             eprintln!("You will need it if the primary unlock mechanism fails.");
             eprintln!("===========================");
             eprintln!();
+
+            // r[impl installer.config.save-recovery-keys]
+            if self.besconf.save_recovery_keys() {
+                let root_part = crate::util::partition_path(&target.path, 3)?;
+                if let Err(e) = besconf::append_recovery_key(&self.besconf, passphrase, &root_part)
+                {
+                    tracing::warn!("failed to save recovery key to BESCONF: {e}");
+                    eprintln!("warning: failed to save recovery key to BESCONF: {e}");
+                }
+            }
         }
 
         // r[impl installer.no-reboot]
@@ -386,7 +432,7 @@ impl RunContext {
 
         let hostname_from_template = self.install_config.hostname_template.is_some();
 
-        let state = ui::AppState::new(
+        let mut state = ui::AppState::new(
             self.devices,
             disk_encryption,
             self.tpm_present,
@@ -396,6 +442,11 @@ impl RunContext {
             build_info,
             self.available_timezones,
         );
+
+        // r[impl installer.config.recovery-passphrase]
+        if let Some(ref pp) = self.install_config.recovery_passphrase {
+            state.recovery_passphrase = Some(pp.clone());
+        }
 
         // r[impl installer.dryrun.script]
         // r[impl installer.dryrun.script.headless]
@@ -410,6 +461,7 @@ impl RunContext {
                     hostname_from_template,
                     &manifest_path,
                     copy_install_log,
+                    self.besconf.save_recovery_keys(),
                     &self.config_warnings,
                 );
                 return emit_plan(&plan, &self.cli);
@@ -427,6 +479,7 @@ impl RunContext {
                 hostname_from_template,
                 &manifest_path,
                 copy_install_log,
+                self.besconf.save_recovery_keys(),
                 &self.config_warnings,
             );
             return emit_plan(&plan, &self.cli);
@@ -444,6 +497,7 @@ impl RunContext {
             &images_dir,
             install_log,
             self.cli.no_reboot,
+            &self.besconf,
         )
     }
 }
@@ -486,6 +540,7 @@ fn plan_from_tui_state(
     hostname_from_template: bool,
     manifest_path: &Option<PathBuf>,
     copy_install_log: bool,
+    save_recovery_keys: bool,
     config_warnings: &[String],
 ) -> plan::InstallPlan {
     let disk = state.selected_disk();
@@ -495,6 +550,7 @@ fn plan_from_tui_state(
         .hostname_from_template(state.hostname_from_template || hostname_from_template)
         .timezone(state.effective_timezone())
         .copy_install_log(copy_install_log)
+        .save_recovery_keys(save_recovery_keys)
         .config_warnings(config_warnings.to_vec());
     if let Some(dev) = disk {
         builder = builder.disk(dev);

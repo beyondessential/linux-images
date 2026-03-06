@@ -7,6 +7,7 @@ use clap::Parser;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 
+mod besconf;
 mod config;
 mod disk;
 mod encryption;

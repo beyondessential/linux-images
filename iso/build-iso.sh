@@ -624,6 +624,16 @@ cat > "$MNT_ESP/bes-install.toml" << 'TEMPLATE'
 # ssh-authorized-keys = [
 #   "ssh-ed25519 AAAA... admin@example.com",
 # ]
+
+# Pre-determined recovery passphrase for disk encryption.
+# Must be at least 25 characters, printable ASCII only (no whitespace).
+# If not set, a random diceware passphrase is generated.
+# recovery-passphrase = "xK9$mP2vL!nQ7wR4jH6dT0yB3fA8s"
+
+# Save recovery keys to recovery-keys.txt on the BESCONF partition.
+# Each line contains: passphrase, root partition UUID, machine serial.
+# Only works when BESCONF is writable (USB boot, not optical).
+# save-recovery-keys = false
 TEMPLATE
 umount "$MNT_ESP"
 
