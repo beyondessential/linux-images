@@ -109,12 +109,18 @@ r[image.boot.dracut]
 The initramfs must be generated using dracut, not initramfs-tools. Dracut must
 be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 
-r[image.boot.cloud-drivers]
+r[image.boot.hardware-drivers]
+Both variants must include a dracut configuration at
+`/etc/dracut.conf.d/03-hardware-drivers.conf` that force-includes the `nvme`
+and `nvme_core` kernel modules into the initramfs. This is necessary because
+`hostonly` mode only includes drivers for hardware detected at image-build
+time, and images are built on loop devices without NVMe hardware.
+
+r[image.boot.cloud-drivers+2]
 The cloud variant must include a dracut configuration at
-`/etc/dracut.conf.d/03-cloud-drivers.conf` that force-includes the `ena`,
-`nvme`, `nvme_core`, and `xen_blkfront` kernel modules into the initramfs.
-This is necessary because `hostonly` mode only includes drivers for hardware
-detected at image-build time, which does not include cloud-specific devices.
+`/etc/dracut.conf.d/04-cloud-drivers.conf` that force-includes the `ena` and
+`xen_blkfront` kernel modules into the initramfs. These are cloud-specific
+network and block device drivers not present on the build host.
 
 r[image.boot.grub-install]
 GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
