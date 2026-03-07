@@ -154,11 +154,16 @@ At runtime, the installer:
 4. Runs `veritysetup open` on the partition with `--hash-offset` and the
    root hash.
 5. Mounts the dm-verity device as squashfs.
-6. Reads partition images as regular files. The kernel handles both verity
-   verification and zstd decompression transparently on each read.
-7. Streams the raw image data directly to the target partition devices
-   (same `dd`-style write loop, but reading uncompressed data from the
-   mounted squashfs instead of piping through a zstd decoder).
+6. Performs a full integrity check: reads every partition image file
+   sequentially into `/dev/null` using `splice(2)`, forcing dm-verity to
+   verify every block up front. Displays progress during this check.
+   If any read returns an I/O error, the installer shows the corruption
+   error and halts.
+7. Writes partition images to the target disk using `splice(2)` for
+   zero-copy kernel-side transfer (file -> pipe -> block device). The
+   pipe buffer is resized to 1 MiB via `fcntl(F_SETPIPE_SZ)`. Progress
+   is tracked from splice return values. Data never transits through
+   userspace.
 
 ### Changes to `partitions.json`
 
@@ -172,8 +177,11 @@ The manifest format changes:
 ### Changes to the Installer
 
 1. **Remove zstd decompression**: The `decompress_to_device` method is
-   replaced with a plain streaming copy (`copy_to_device`). No `zstd`
-   crate dependency needed for image writing.
+   replaced with a `splice_to_device` method that uses `splice(2)` for
+   zero-copy kernel-side transfer. A pipe is created, resized to 1 MiB,
+   and data is spliced from the source file through the pipe to the
+   target block device. No `zstd` crate dependency needed for image
+   writing. `libc::splice` is already available via the `libc` crate.
 
 2. **Remove `.size` sidecar logic**: `image_uncompressed_size()` is replaced
    by `std::fs::metadata().len()` on the mounted file.
@@ -192,6 +200,19 @@ The manifest format changes:
 
 5. **Disk size check**: Uses `stat` on the raw `.img` files instead of
    reading `.size` sidecars.
+
+6. **Integrity check on boot**: Before writing anything, the installer
+   reads every partition image file sequentially into `/dev/null` via
+   `splice(2)` (file -> pipe -> /dev/null). This forces dm-verity to
+   verify every block of the images partition up front, catching
+   corruption before the target disk is touched. Progress is displayed
+   during this check.
+
+7. **Corruption error UX**: If verity verification fails (during the
+   integrity check or during the write), the installer displays an error
+   screen stating: the installation media is corrupted, the target disk
+   may have been partially written and cannot be used, and the only
+   recourse is to write a new copy of the installation medium.
 
 ### Changes to `build-iso.sh`
 
@@ -304,11 +325,17 @@ Status: not started.
 - Add images partition discovery and verity open/mount.
 - The installer reads the 8-byte trailer from the partition to compute
   the hash offset, and reads the root hash from `/proc/cmdline`.
-- Replace `decompress_to_device` with `copy_to_device`.
+- Add integrity check: splice all image files to `/dev/null` before
+  writing, displaying progress.
+- Replace `decompress_to_device` with `splice_to_device` using
+  `libc::splice` (file -> pipe -> block device), zero-copy.
+- Resize pipe to 1 MiB via `fcntl(F_SETPIPE_SZ)`.
 - Remove `.size` sidecar logic; use `stat` for sizes.
 - Remove `partitions.json` `image` field `.zst` suffix.
 - Update `find_partition_manifest` search paths.
 - Preserve fallback for plain directory (testing).
+- Add corruption error screen (media corrupted, disk unusable, rewrite
+  medium).
 - Update all stale `installer.write.source`, `installer.write.disk-size-check`,
   and `installer.write.decompress-stream` annotations.
 
@@ -345,15 +372,22 @@ Status: not started.
    filesystem label `BESIMAGES` (via `/dev/disk/by-label/`), not by type
    UUID.
 
+3. **Failure UX for images verity**: Error screen states: installation
+   media is corrupted, target disk may have been partially written and
+   cannot be used, only recourse is to write a new copy of the medium.
+
+4. **Development builds without verity**: No. All builds include verity.
+   The initramfs hook still skips gracefully if the root hash is absent
+   from the kernel command line (for manual testing with hand-crafted
+   ISOs), but `build-iso.sh` always produces verity-protected images.
+
+5. **Kernel-side copy via splice(2)**: Both the integrity check read and
+   the partition image writes use `splice(2)` for zero-copy transfer.
+   Data never transits through userspace. Pipe buffer resized to 1 MiB.
+   Progress tracked from splice return values. Validated experimentally:
+   splice works from regular files on dm-verity/squashfs to both
+   `/dev/null` and block devices.
+
 ## Open Questions
 
-1. **Failure UX for images verity**: If the images partition fails verity
-   verification, the installer should show a clear error message explaining
-   that the USB media is corrupted. Need to decide on exact wording and
-   whether to offer a retry or just halt.
-
-2. **Development builds**: Should there be an option to build ISOs without
-   verity for faster iteration? A `SKIP_VERITY=1` environment variable in
-   `build-iso.sh` could skip the verity steps and produce an ISO with plain
-   squashfs (no hash trees, no root hash in cmdline). The initramfs hook
-   already handles the absent-root-hash case gracefully.
+(none remaining)

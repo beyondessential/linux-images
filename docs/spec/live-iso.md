@@ -185,13 +185,25 @@ UEFI systems from that media.
 > `veritysetup open` with the root hash and `--hash-offset`, mount the
 > resulting dm-verity device as squashfs, and read partition images from it.
 
-> r[iso.verity.failure]
+> r[iso.verity.failure+2]
 > If dm-verity verification fails (either for the squashfs rootfs or the
 > images partition), the system must not silently use corrupted data. For the
 > squashfs rootfs, the kernel returns I/O errors on corrupted blocks, causing
 > boot to fail visibly. For the images partition, the installer must detect
-> the `veritysetup open` failure or subsequent I/O errors and display a clear
-> error message indicating that the installation media is corrupted.
+> the `veritysetup open` failure or subsequent I/O errors and display an
+> error screen stating that the installation media is corrupted, that the
+> target disk may have been partially written and cannot be used, and that
+> the only recourse is to write a new copy of the installation medium.
+
+> r[iso.verity.check]
+> On boot, after the images partition is opened via dm-verity, the installer
+> must perform a full sequential read of every partition image file into
+> `/dev/null` using `splice(2)` before beginning the installation. This
+> forces dm-verity to verify every block of the images partition up front,
+> catching corruption before any data is written to the target disk. The
+> installer must display progress during this check. If any read returns an
+> I/O error, the installer must display the corruption error described in
+> `r[iso.verity.failure]`.
 
 r[iso.verity.build-deps]
 The ISO build script must have `cryptsetup` (which provides `veritysetup`)

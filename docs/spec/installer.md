@@ -607,14 +607,18 @@ sizes (plus GPT overhead). If the disk is too small, the installer must
 refuse to write and report the required size and disk size in the error
 message.
 
-r[installer.write.stream-copy]
+r[installer.write.stream-copy+2]
 The installer must stream-copy each raw partition image directly to its
 corresponding partition device (or to the opened LUKS mapper device for the
-root partition when encryption is enabled), avoiding the need to hold the
-full image in memory. Since the images are stored in a squashfs with
-transparent compression, the kernel handles decompression on read; the
-installer performs a plain read/write copy loop. dm-verity verification
-also happens transparently on each block read.
+root partition when encryption is enabled) using `splice(2)` for zero-copy
+kernel-side transfer. The installer creates a pipe, splices data from the
+source file descriptor into the pipe, then splices from the pipe to the
+target block device. The pipe buffer must be resized to at least 1 MiB via
+`fcntl(F_SETPIPE_SZ)` to reduce the number of splice calls. Progress is
+tracked from the return values of each splice call. Since the images are
+stored in a squashfs with transparent compression, the kernel handles
+decompression on read; dm-verity verification also happens transparently
+on each block read. Data never transits through userspace.
 
 r[installer.write.luks-before-write+2]
 When disk encryption is not `"none"`, the installer must format the root
