@@ -239,7 +239,7 @@ install -D -m 755 "$SCRIPT_DIR/initramfs/scripts/live-premount/verity" \
 
 # Rebuild initramfs to include the verity hook and premount script
 echo "    Rebuilding initramfs to include verity hook..."
-chroot "$MNT_ROOTFS" update-initramfs -u -k all
+chroot "$MNT_ROOTFS" /usr/sbin/update-initramfs -u -k all
 
 # r[impl iso.network-config+2]
 # Configure netplan to DHCP on all Ethernet interfaces.
