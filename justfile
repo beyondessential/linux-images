@@ -48,6 +48,7 @@ output_raw := output_dir / filestem + ".raw"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
 output_iso := output_arch_dir / "bes-installer-" + arch + ".iso"
+iso_base_tarball := work_dir / "iso-base.tar"
 iso_rootfs_dir := work_dir / "iso-rootfs"
 
 # --- Rust installer settings ---
@@ -81,10 +82,26 @@ installer-lint:
 # ============================================================
 # Live ISO
 # ============================================================
-# Build the live rootfs (debootstrap + packages + installer + squashfs + verity).
+# Build the ISO base rootfs (debootstrap + packages + OS config).
 
-# Cached: skips if the output directory already contains a filesystem.squashfs.
-iso-rootfs: _validate-arch installer-build _ensure-dirs
+# Cached: skips if the tarball already exists. This is the slow step.
+iso-base: _validate-arch _ensure-dirs
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -f "{{ iso_base_tarball }}" ]; then
+      echo "ISO base tarball already exists: {{ iso_base_tarball }} (skipping build)"
+      exit 0
+    fi
+    sudo ARCH="{{ arch }}" \
+         OUTPUT="{{ iso_base_tarball }}" \
+         UBUNTU_SUITE="{{ ubuntu_suite }}" \
+         UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         iso/build-iso-base.sh
+
+# Build the live rootfs (unpack base + inject installer + squashfs + verity).
+
+# Cached: skips if the squashfs already exists. Rebuilds when the installer changes.
+iso-rootfs: _validate-arch iso-base installer-build _ensure-dirs
     #!/usr/bin/env bash
     set -euo pipefail
     if [ -f "{{ iso_rootfs_dir }}/live/filesystem.squashfs" ]; then
@@ -94,9 +111,8 @@ iso-rootfs: _validate-arch installer-build _ensure-dirs
     rm -rf "{{ iso_rootfs_dir }}"
     sudo ARCH="{{ arch }}" \
          OUTPUT_DIR="{{ iso_rootfs_dir }}" \
+         BASE_TARBALL="{{ iso_base_tarball }}" \
          INSTALLER_BIN="{{ installer_bin }}" \
-         UBUNTU_SUITE="{{ ubuntu_suite }}" \
-         UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
          iso/build-iso-rootfs.sh
 
 # Assemble the live installer ISO from the cached rootfs + cloud image.
@@ -121,16 +137,27 @@ iso: _validate-arch iso-rootfs
          CLOUD_IMAGE="$CLOUD_IMAGE" \
          iso/build-iso.sh
 
-# Force-rebuild the ISO rootfs (removes cached rootfs first)
-iso-rootfs-rebuild: _validate-arch installer-build _ensure-dirs
+# Force-rebuild the ISO base (removes cached tarball first)
+iso-base-rebuild: _validate-arch _ensure-dirs
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -f "{{ iso_base_tarball }}"
+    rm -rf "{{ iso_rootfs_dir }}"
+    sudo ARCH="{{ arch }}" \
+         OUTPUT="{{ iso_base_tarball }}" \
+         UBUNTU_SUITE="{{ ubuntu_suite }}" \
+         UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         iso/build-iso-base.sh
+
+# Force-rebuild the ISO rootfs (removes cached rootfs, keeps base tarball)
+iso-rootfs-rebuild: _validate-arch iso-base installer-build _ensure-dirs
     #!/usr/bin/env bash
     set -euo pipefail
     rm -rf "{{ iso_rootfs_dir }}"
     sudo ARCH="{{ arch }}" \
          OUTPUT_DIR="{{ iso_rootfs_dir }}" \
+         BASE_TARBALL="{{ iso_base_tarball }}" \
          INSTALLER_BIN="{{ installer_bin }}" \
-         UBUNTU_SUITE="{{ ubuntu_suite }}" \
-         UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
          iso/build-iso-rootfs.sh
 
 # ============================================================
