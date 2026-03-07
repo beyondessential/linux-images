@@ -182,7 +182,7 @@ interactive mode.
 
 ## External Binaries
 
-r[installer.hardcoded-paths+2]
+r[installer.hardcoded-paths]
 The installer must use hardcoded absolute paths for every external binary
 it invokes (e.g. `/usr/bin/mount`, `/usr/sbin/cryptsetup`). This avoids
 reliance on `PATH` in the live ISO environment, where the shell or systemd

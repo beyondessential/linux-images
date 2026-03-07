@@ -310,7 +310,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     # r[verify iso.contents+2]
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
 
-    # r[verify installer.hardcoded-paths+2]
+    # r[verify installer.hardcoded-paths]
     if [ -n "$INSTALLER_BIN" ] && [ -x "$INSTALLER_BIN" ]; then
         CHECK_OUTPUT="$("$INSTALLER_BIN" --check-paths "$SQFS_MNT" 2>&1)" && CHECK_RC=0 || CHECK_RC=$?
         if [ "$CHECK_RC" -eq 0 ]; then

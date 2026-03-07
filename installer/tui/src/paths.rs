@@ -1,6 +1,6 @@
 use std::path::Path;
 
-// r[impl installer.hardcoded-paths+2]
+// r[impl installer.hardcoded-paths]
 // Absolute paths for external binaries used by the installer.
 //
 // Hardcoding these avoids reliance on `PATH` in the live ISO environment,
@@ -51,7 +51,7 @@ pub const BASH: &str = "/bin/bash";
 pub const CURL: &str = "/usr/bin/curl";
 pub const TAILSCALE: &str = "/usr/bin/tailscale";
 
-// r[impl installer.hardcoded-paths+2]
+// r[impl installer.hardcoded-paths]
 // Binaries executed directly by the installer in the live ISO environment.
 const ISO_PATHS: &[(&str, &str)] = &[
     ("mount", MOUNT),
