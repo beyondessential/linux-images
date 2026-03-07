@@ -182,28 +182,11 @@ interactive mode.
 
 ## External Binaries
 
-r[installer.hardcoded-paths]
+r[installer.hardcoded-paths+2]
 The installer must use hardcoded absolute paths for every external binary
 it invokes (e.g. `/usr/bin/mount`, `/usr/sbin/cryptsetup`). This avoids
 reliance on `PATH` in the live ISO environment, where the shell or systemd
-context may not include `/usr/sbin` or `/sbin`. All paths must be declared
-as constants in a single module so they can be enumerated programmatically.
-
-r[installer.hardcoded-paths.iso]
-Paths for binaries executed directly by the installer in the live ISO
-environment (e.g. `mount`, `sgdisk`, `cryptsetup`, `e2fsck`) must be
-verifiable with `--check-paths [sysroot]`. This flag checks that every
-ISO-environment binary exists (optionally under a sysroot prefix such as
-a mounted squashfs) and exits with status 0 on success or status 1 with
-a list of missing binaries on failure.
-
-r[installer.hardcoded-paths.chroot]
-Paths for binaries that the installer invokes inside a `chroot` into the
-target system (e.g. `dracut`) must be verifiable with
-`--check-chroot-paths [sysroot]`. This flag checks that every
-chroot-target binary exists (optionally under a sysroot prefix) and exits
-with status 0 on success or status 1 with a list of missing binaries on
-failure. These binaries do not need to be present in the live ISO squashfs.
+context may not include `/usr/sbin` or `/sbin`.
 
 ## Testing Flags
 
