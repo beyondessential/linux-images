@@ -442,19 +442,26 @@ echo "--- Images Partition ---"
 # r[verify iso.images-partition]
 # r[verify iso.verity.images]
 # r[verify iso.verity.layout]
-# Find GPT partition 4 on the loop device (the images squashfs with verity)
+# Find the images partition by GPT type UUID (Linux filesystem).
+# We cannot use a hardcoded partition number because xorriso may renumber
+# partitions relative to the -append_partition arguments.
+GPT_TYPE_LINUX_FILESYSTEM="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 IMAGES_PART=""
-for part in "${LOOP_DEVICE}p"*; do
-    [ -b "$part" ] || continue
-    PARTNUM="$(echo "$part" | grep -o '[0-9]*$')"
-    if [ "$PARTNUM" = "4" ]; then
-        IMAGES_PART="$part"
-        break
+while IFS= read -r line; do
+    # sgdisk -p output: "   N  start  end  size  code  name"
+    PARTNUM="$(echo "$line" | awk '{print $1}')"
+    CODE="$(echo "$line" | awk '{print $6}')"
+    if [ "$CODE" = "8300" ]; then
+        CANDIDATE="${LOOP_DEVICE}p${PARTNUM}"
+        if [ -b "$CANDIDATE" ]; then
+            IMAGES_PART="$CANDIDATE"
+            break
+        fi
     fi
-done
+done < <(sgdisk -p "$LOOP_DEVICE" 2>/dev/null | grep '^ *[0-9]')
 
 if [ -n "$IMAGES_PART" ]; then
-    pass "images partition found as GPT partition 4 ($IMAGES_PART)"
+    pass "images partition found by type UUID ($IMAGES_PART)"
 
     # Verify the verity trailer: last 8 bytes are a LE u64 hash size
     IMAGES_TOTAL_SIZE="$(blockdev --getsize64 "$IMAGES_PART")"
@@ -582,7 +589,7 @@ if [ -n "$IMAGES_PART" ]; then
         fail "images.verity.roothash found in grub.cfg"
     fi
 else
-    fail "images partition found as GPT partition 4"
+    fail "images partition found by type UUID (Linux filesystem)"
 fi
 
 # r[verify iso.verity.squashfs]
