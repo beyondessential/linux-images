@@ -74,6 +74,13 @@ unique machine ID on each first boot.
 r[image.base.resolver]
 systemd-resolved must be enabled and configured as the system DNS resolver.
 
+r[image.base.network]
+A netplan configuration must be installed at
+`/etc/netplan/01-all-en-dhcp.yaml` that matches all Ethernet interfaces
+(`en*`) and enables DHCPv4. This ensures that both metal and cloud images
+obtain an IP address on first boot regardless of whether cloud-init or any
+other datasource is present.
+
 ## Packages
 
 r[image.packages.bes-tools]
@@ -102,6 +109,31 @@ r[image.boot.dracut]
 The initramfs must be generated using dracut, not initramfs-tools. Dracut must
 be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 
+> r[image.boot.hardware-drivers+2]
+> Both variants must include a dracut configuration at
+> `/etc/dracut.conf.d/03-hardware-drivers.conf` that force-includes kernel
+> modules into the initramfs for hardware not present at image-build time.
+> The following module categories must be included:
+>
+> - **NVMe:** `nvme`, `nvme_core`
+> - **SATA/AHCI:** `ahci`
+> - **RAID controllers:** `megaraid_sas`, `mpt3sas`
+> - **Virtio (KVM/Proxmox/GCP/OpenStack):** `virtio_blk`, `virtio_scsi`,
+>   `virtio_net`, `virtio_pci`
+> - **Intel Ethernet:** `e1000e`, `igb`, `ixgbe`, `i40e`, `ice`
+> - **Broadcom Ethernet:** `bnxt_en`, `tg3`
+> - **Mellanox/NVIDIA Ethernet:** `mlx5_core`
+> - **USB storage:** `usb_storage`, `uas`
+> - **Hyper-V:** `hv_storvsc`, `hv_netvsc`, `hv_vmbus`
+
+> r[image.boot.cloud-drivers+4]
+> The cloud variant must include a dracut configuration at
+> `/etc/dracut.conf.d/04-cloud-drivers.conf` that force-includes
+> cloud-specific kernel modules into the initramfs:
+>
+> - **AWS:** `ena`, `xen_blkfront`
+> - **GCP:** `gve`
+
 r[image.boot.grub-install]
 GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
 
@@ -111,6 +143,11 @@ GRUB must be configured with `GRUB_TIMEOUT=5`,
 
 r[image.boot.grub-cmdline]
 The GRUB kernel command line must include `noresume`.
+
+r[image.boot.cloud-console]
+The cloud variant must append `console=ttyS0,115200n8` to the GRUB kernel
+command line so that boot output is visible on the EC2 serial console (and
+equivalent serial consoles on other cloud providers).
 
 r[image.boot.grub-uuids]
 The generated `grub.cfg` must reference filesystem UUIDs that match the

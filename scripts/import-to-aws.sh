@@ -1,8 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-# Import bare metal image to AWS as AMI
-# This allows the sophisticated BTRFS+LUKS setup to be used in AWS
+# Import a cloud variant disk image to AWS as an EBS snapshot.
+#
+# The cloud image (no LUKS) is the correct variant for AWS — encryption at
+# rest is provided by EBS.
+#
+# Usage: ./import-to-aws.sh [amd64|arm64] [region] [s3-bucket]
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ARCH="${1:-amd64}"
 REGION="${2:-ap-southeast-2}"
@@ -13,37 +20,37 @@ if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "arm64" ]; then
     exit 1
 fi
 
-echo "=== Importing bare metal image to AWS ==="
+echo "=== Importing cloud image to AWS ==="
 echo "Architecture: $ARCH"
 echo "Region: $REGION"
 echo "S3 Bucket: $BUCKET_NAME"
 
-# Find the latest bare metal image
-OUTPUT_DIR="../packer/output/bare-metal-${ARCH}"
+# Find the cloud image under output/<arch>/cloud/
+OUTPUT_DIR="$REPO_ROOT/output/${ARCH}/cloud"
 if [ ! -d "$OUTPUT_DIR" ]; then
-    echo "ERROR: No bare metal images found in $OUTPUT_DIR"
-    echo "Build a bare metal image first with: just build-bare-metal-${ARCH}"
+    echo "ERROR: No cloud images found in $OUTPUT_DIR"
+    echo "Build a cloud image first with: just arch=${ARCH} variant=cloud build"
     exit 1
 fi
 
-IMAGE_FILE=$(ls -t "$OUTPUT_DIR"/*.raw 2>/dev/null | head -1)
+IMAGE_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.raw' -not -name '*.raw.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 if [ -z "$IMAGE_FILE" ]; then
-    IMAGE_FILE=$(ls -t "$OUTPUT_DIR"/*.raw.zst 2>/dev/null | head -1)
-    if [ -z "$IMAGE_FILE" ]; then
+    ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.raw.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    if [ -z "$ZST_FILE" ]; then
         echo "ERROR: No raw image files found in $OUTPUT_DIR"
         exit 1
     fi
-    echo "Found compressed image: $IMAGE_FILE"
+    echo "Found compressed image: $ZST_FILE"
     echo "Decompressing..."
-    zstd -d "$IMAGE_FILE" -o "${IMAGE_FILE%.zst}"
-    IMAGE_FILE="${IMAGE_FILE%.zst}"
+    IMAGE_FILE="${ZST_FILE%.zst}"
+    zstd -d "$ZST_FILE" -o "$IMAGE_FILE"
 else
     echo "Found image: $IMAGE_FILE"
 fi
 
 IMAGE_BASENAME=$(basename "$IMAGE_FILE")
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-AMI_NAME="ubuntu-24.04-bes-${ARCH}-${TIMESTAMP}"
+AMI_NAME="ubuntu-24.04-bes-cloud-${ARCH}-${TIMESTAMP}"
 
 # Create S3 bucket if it doesn't exist
 echo "=== Ensuring S3 bucket exists ==="
@@ -52,7 +59,8 @@ if ! aws s3 ls "s3://${BUCKET_NAME}" 2>/dev/null; then
     if [ "$REGION" = "us-east-1" ]; then
         aws s3 mb "s3://${BUCKET_NAME}" --region "$REGION"
     else
-        aws s3 mb "s3://${BUCKET_NAME}" --region "$REGION" --create-bucket-configuration LocationConstraint="$REGION"
+        aws s3 mb "s3://${BUCKET_NAME}" --region "$REGION" \
+            --create-bucket-configuration LocationConstraint="$REGION"
     fi
 else
     echo "S3 bucket already exists: $BUCKET_NAME"
@@ -72,10 +80,10 @@ IMPORT_TASK_FILE="/tmp/import-task-${TIMESTAMP}.json"
 
 cat > "$IMPORT_TASK_FILE" <<EOF
 {
-  "Description": "BES Ubuntu 24.04 ${ARCH} with BTRFS+LUKS",
+  "Description": "BES Ubuntu 24.04 cloud ${ARCH} with BTRFS",
   "DiskContainers": [
     {
-      "Description": "BES Ubuntu 24.04 ${ARCH}",
+      "Description": "BES Ubuntu 24.04 cloud ${ARCH}",
       "Format": "raw",
       "UserBucket": {
         "S3Bucket": "${BUCKET_NAME}",
@@ -139,7 +147,7 @@ fi
 echo "=== Starting import ==="
 IMPORT_TASK_ID=$(aws ec2 import-snapshot \
     --region "$REGION" \
-    --description "BES Ubuntu 24.04 ${ARCH}" \
+    --description "BES Ubuntu 24.04 cloud ${ARCH}" \
     --disk-container "file://${IMPORT_TASK_FILE}" \
     --query 'ImportTaskId' \
     --output text)
@@ -173,7 +181,7 @@ echo "Or watch status:"
 echo "  watch -n 30 'aws ec2 describe-import-snapshot-tasks --region $REGION --import-task-ids $IMPORT_TASK_ID --query \"ImportSnapshotTasks[0].SnapshotTaskDetail.[Status,Progress,StatusMessage]\" --output table'"
 echo ""
 echo "Once import is complete (status: completed), register as AMI with:"
-echo "  cd scripts && ./register-ami.sh $IMPORT_TASK_ID $REGION $ARCH"
+echo "  scripts/register-ami.sh $IMPORT_TASK_ID $REGION $ARCH"
 echo ""
 echo "Then optionally clean up S3:"
 echo "  aws s3 rm s3://${BUCKET_NAME}/${S3_KEY} --region $REGION"

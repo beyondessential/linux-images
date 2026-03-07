@@ -322,6 +322,13 @@ check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
 check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/systemd/resolve/stub-resolv.conf" ]
 
+# r[verify image.base.network]
+check "netplan config exists" test -f "$MNT/etc/netplan/01-all-en-dhcp.yaml"
+NETPLAN_MODE="$(stat -c%a "$MNT/etc/netplan/01-all-en-dhcp.yaml" 2>/dev/null || true)"
+check "netplan config has mode 600" [ "$NETPLAN_MODE" = "600" ]
+check "netplan config matches en*" grep -q 'name:.*"en\*"' "$MNT/etc/netplan/01-all-en-dhcp.yaml"
+check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$MNT/etc/netplan/01-all-en-dhcp.yaml"
+
 # r[verify image.boot.dracut]
 check "kernel exists in /boot" ls "$MNT"/boot/vmlinuz-* >/dev/null 2>&1
 check "initramfs exists in /boot" ls "$MNT"/boot/initrd.img-* >/dev/null 2>&1
@@ -479,6 +486,43 @@ check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-t
 check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 
+# r[verify image.boot.hardware-drivers+2]
+check "dracut hardware-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
+HWDRV="$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
+check "dracut hardware-drivers has nvme" grep -wq 'nvme' "$HWDRV"
+check "dracut hardware-drivers has nvme_core" grep -wq 'nvme_core' "$HWDRV"
+check "dracut hardware-drivers has ahci" grep -wq 'ahci' "$HWDRV"
+check "dracut hardware-drivers has megaraid_sas" grep -wq 'megaraid_sas' "$HWDRV"
+check "dracut hardware-drivers has mpt3sas" grep -wq 'mpt3sas' "$HWDRV"
+check "dracut hardware-drivers has virtio_blk" grep -wq 'virtio_blk' "$HWDRV"
+check "dracut hardware-drivers has virtio_scsi" grep -wq 'virtio_scsi' "$HWDRV"
+check "dracut hardware-drivers has virtio_net" grep -wq 'virtio_net' "$HWDRV"
+check "dracut hardware-drivers has virtio_pci" grep -wq 'virtio_pci' "$HWDRV"
+check "dracut hardware-drivers has e1000e" grep -wq 'e1000e' "$HWDRV"
+check "dracut hardware-drivers has igb" grep -wq 'igb' "$HWDRV"
+check "dracut hardware-drivers has ixgbe" grep -wq 'ixgbe' "$HWDRV"
+check "dracut hardware-drivers has i40e" grep -wq 'i40e' "$HWDRV"
+check "dracut hardware-drivers has ice" grep -wq 'ice' "$HWDRV"
+check "dracut hardware-drivers has bnxt_en" grep -wq 'bnxt_en' "$HWDRV"
+check "dracut hardware-drivers has tg3" grep -wq 'tg3' "$HWDRV"
+check "dracut hardware-drivers has mlx5_core" grep -wq 'mlx5_core' "$HWDRV"
+check "dracut hardware-drivers has usb_storage" grep -wq 'usb_storage' "$HWDRV"
+check "dracut hardware-drivers has uas" grep -wq 'uas' "$HWDRV"
+check "dracut hardware-drivers has hv_storvsc" grep -wq 'hv_storvsc' "$HWDRV"
+check "dracut hardware-drivers has hv_netvsc" grep -wq 'hv_netvsc' "$HWDRV"
+check "dracut hardware-drivers has hv_vmbus" grep -wq 'hv_vmbus' "$HWDRV"
+
+# r[verify image.boot.cloud-drivers+4]
+if [ "$VARIANT" = "cloud" ]; then
+    check "dracut cloud-drivers config exists" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+    CLOUDDRV="$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+    check "dracut cloud-drivers has ena" grep -wq 'ena' "$CLOUDDRV"
+    check "dracut cloud-drivers has xen_blkfront" grep -wq 'xen_blkfront' "$CLOUDDRV"
+    check "dracut cloud-drivers has gve" grep -wq 'gve' "$CLOUDDRV"
+else
+    check_not "no cloud-drivers config for metal variant" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+fi
+
 # r[verify image.boot.grub-timeout]
 check "GRUB timeout is 5" grep -q '^GRUB_TIMEOUT=5' "$MNT/etc/default/grub"
 check "GRUB timeout style is menu" grep -q '^GRUB_TIMEOUT_STYLE=menu' "$MNT/etc/default/grub"
@@ -486,6 +530,13 @@ check "GRUB recordfail timeout is 5" grep -q '^GRUB_RECORDFAIL_TIMEOUT=5' "$MNT/
 
 # r[verify image.boot.grub-cmdline]
 check "GRUB cmdline has noresume" grep -q 'noresume' "$MNT/etc/default/grub"
+
+# r[verify image.boot.cloud-console]
+if [ "$VARIANT" = "cloud" ]; then
+    check "GRUB cmdline has serial console for cloud" grep -q 'console=ttyS0,115200n8' "$MNT/etc/default/grub"
+else
+    check_not "GRUB cmdline has no serial console for metal" grep -q 'console=ttyS0' "$MNT/etc/default/grub"
+fi
 
 # r[verify image.credentials.ubuntu-user]
 check "ubuntu user exists in passwd" grep -q '^ubuntu:' "$MNT/etc/passwd"
