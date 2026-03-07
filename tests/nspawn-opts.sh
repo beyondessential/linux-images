@@ -158,12 +158,14 @@ swtpm_start() {
     # daemonizing. The kernel also creates a corresponding /dev/tpmrmN
     # resource manager device.
     local swtpm_log="$state_dir/swtpm.log"
+    local pid_file="$state_dir/swtpm.pid"
     local tpm_info
     if ! tpm_info=$(swtpm chardev \
         --tpmstate dir="$state_dir" \
         --tpm2 \
         --vtpm-proxy \
         --daemon \
+        --pid file="$pid_file" \
         --log file="$swtpm_log",level=5 \
         2>&1); then
         echo "ERROR: swtpm failed to start: $tpm_info"
@@ -183,11 +185,35 @@ swtpm_start() {
     tpm_num=$(echo "$_SWTPM_TPM_DEV" | grep -oP '\d+$')
     _SWTPM_TPMRM_DEV="/dev/tpmrm${tpm_num}"
 
-    # swtpm daemonizes; find its PID via the device it holds open.
-    _SWTPM_PID=$(fuser "$_SWTPM_TPM_DEV" 2>/dev/null | tr -d '[:space:]') || true
+    # Read PID from pidfile (most reliable), fall back to fuser, then to
+    # scanning /proc for the swtpm process that owns our state directory.
+    _SWTPM_PID=""
+    local retries=10
+    while [ -z "$_SWTPM_PID" ] && [ "$retries" -gt 0 ]; do
+        if [ -f "$pid_file" ]; then
+            _SWTPM_PID=$(tr -d '[:space:]' < "$pid_file")
+        fi
+        if [ -z "$_SWTPM_PID" ] && [ -c "$_SWTPM_TPM_DEV" ]; then
+            _SWTPM_PID=$(fuser "$_SWTPM_TPM_DEV" 2>/dev/null | tr -d '[:space:]') || true
+        fi
+        if [ -n "$_SWTPM_PID" ]; then
+            break
+        fi
+        sleep 0.1
+        retries=$((retries - 1))
+    done
+
+    # Last resort: scan /proc for swtpm with our state directory.
+    if [ -z "$_SWTPM_PID" ]; then
+        _SWTPM_PID=$(pgrep -f "swtpm.*--tpmstate dir=$state_dir" 2>/dev/null | head -1) || true
+    fi
+
+    if [ -z "$_SWTPM_PID" ]; then
+        echo "WARNING: could not determine swtpm PID; cleanup may leave an orphan"
+    fi
 
     # Wait briefly for both device nodes to become usable.
-    local retries=20
+    retries=20
     while [ "$retries" -gt 0 ]; do
         if [ -c "$_SWTPM_TPM_DEV" ] && [ -c "$_SWTPM_TPMRM_DEV" ]; then
             break
@@ -214,12 +240,53 @@ swtpm_start() {
 # Stop the software TPM started by swtpm_start.
 #
 # Safe to call even if swtpm_start was never called (no-op).
+# Uses multiple strategies to ensure the swtpm process is killed:
+#   1. Kill by tracked PID
+#   2. Kill by PID file (in case _SWTPM_PID was lost)
+#   3. Kill by fuser on the device node
+#   4. Kill by pgrep matching the state directory
 swtpm_stop() {
+    local killed=0
+
+    # Strategy 1: tracked PID
     if [ -n "$_SWTPM_PID" ]; then
-        kill "$_SWTPM_PID" 2>/dev/null || true
+        kill "$_SWTPM_PID" 2>/dev/null && killed=1
         wait "$_SWTPM_PID" 2>/dev/null || true
-        _SWTPM_PID=""
     fi
+
+    # Strategy 2: PID file
+    if [ "$killed" -eq 0 ] && [ -n "$_SWTPM_STATE_DIR" ] \
+            && [ -f "$_SWTPM_STATE_DIR/swtpm.pid" ]; then
+        local file_pid
+        file_pid=$(tr -d '[:space:]' < "$_SWTPM_STATE_DIR/swtpm.pid")
+        if [ -n "$file_pid" ]; then
+            kill "$file_pid" 2>/dev/null && killed=1
+            wait "$file_pid" 2>/dev/null || true
+        fi
+    fi
+
+    # Strategy 3: fuser on the device node
+    if [ "$killed" -eq 0 ] && [ -n "$_SWTPM_TPM_DEV" ] \
+            && [ -c "$_SWTPM_TPM_DEV" ]; then
+        local dev_pid
+        dev_pid=$(fuser "$_SWTPM_TPM_DEV" 2>/dev/null | tr -d '[:space:]') || true
+        if [ -n "$dev_pid" ]; then
+            kill "$dev_pid" 2>/dev/null && killed=1
+            wait "$dev_pid" 2>/dev/null || true
+        fi
+    fi
+
+    # Strategy 4: pgrep for swtpm with our state directory
+    if [ "$killed" -eq 0 ] && [ -n "$_SWTPM_STATE_DIR" ]; then
+        local pgrep_pid
+        pgrep_pid=$(pgrep -f "swtpm.*--tpmstate dir=$_SWTPM_STATE_DIR" 2>/dev/null | head -1) || true
+        if [ -n "$pgrep_pid" ]; then
+            kill "$pgrep_pid" 2>/dev/null && killed=1
+            wait "$pgrep_pid" 2>/dev/null || true
+        fi
+    fi
+
+    _SWTPM_PID=""
     _SWTPM_TPM_DEV=""
     _SWTPM_TPMRM_DEV=""
     _SWTPM_STATE_DIR=""
