@@ -621,13 +621,26 @@ unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
 changes.
 
-r[installer.write.rebuild-boot-config]
-After randomizing filesystem UUIDs, the installer must unconditionally
-rebuild the initramfs and GRUB configuration in a chroot of the installed
-system, regardless of encryption mode. This is required because the GRUB
-config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
-have been rotated. The installer must run `dracut --force` and `update-grub`
-with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
+> r[installer.write.rebuild-boot-config+2]
+> After randomizing filesystem UUIDs, the installer must unconditionally
+> rebuild the initramfs and GRUB configuration in a chroot of the installed
+> system, regardless of encryption mode. This is required because the GRUB
+> config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
+> have been rotated. The installer must run `dracut --force` and `update-grub`
+> with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
+>
+> When disk encryption is enabled, the installer must also, before running
+> `update-grub`:
+>
+>   - Read the LUKS UUID from the raw root partition (via `blkid`).
+>   - Set `GRUB_CMDLINE_LINUX` in `/etc/default/grub` to include
+>     `rd.luks.name=<LUKS-UUID>=root rd.luks.options=discard` so the
+>     initramfs knows to unlock the LUKS volume during early boot.
+>   - Remove the cloud-only serial console (`console=ttyS0,115200n8`) from
+>     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target bare-metal
+>     hardware.
+>   - Have the `grub-probe` wrapper return `"luks"` for `--target=abstraction`
+>     queries on `/`, so `grub-mkconfig` emits the correct LUKS stanza.
 
 ## Encryption Setup
 
