@@ -308,6 +308,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
 
     # r[verify iso.verify-paths]
+    # r[verify installer.check-paths]
     if [ -n "$INSTALLER_BIN" ] && [ -x "$INSTALLER_BIN" ]; then
         CHECK_OUTPUT="$("$INSTALLER_BIN" --check-paths "$SQFS_MNT" 2>&1)"
         CHECK_RC=$?
@@ -386,6 +387,10 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     fi
     check "ip command exists (iproute2)" test -x "$SQFS_MNT/usr/sbin/ip" -o -x "$SQFS_MNT/sbin/ip" -o -x "$SQFS_MNT/usr/bin/ip" -o -x "$SQFS_MNT/bin/ip"
     check "ping command exists (iputils-ping)" test -x "$SQFS_MNT/usr/bin/ping" -o -x "$SQFS_MNT/bin/ping"
+
+    # r[verify iso.blacklist-drm]
+    check "GPU blacklist exists" test -f "$SQFS_MNT/etc/modprobe.d/blacklist-gpu.conf"
+    check "blacklist blocks vmwgfx" grep -q 'install vmwgfx /bin/false' "$SQFS_MNT/etc/modprobe.d/blacklist-gpu.conf"
 
     # r[verify iso.network-config+2]
     check "netplan DHCP config exists" test -f "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
