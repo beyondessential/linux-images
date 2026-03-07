@@ -478,22 +478,19 @@ fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
     let explanation = match state.disk_encryption {
         DiskEncryption::Tpm => vec![
             Line::from(""),
-            Line::from("  The disk's encryption key will be sealed to this machine's TPM"),
-            Line::from("  using PCR 1 (hardware identity: motherboard, CPU, and RAM"),
-            Line::from("  model/serials). The system will boot unattended as long as the"),
-            Line::from("  hardware stays the same. If you move the disk to different"),
-            Line::from("  hardware, you will need the recovery passphrase. Changing the"),
-            Line::from("  CPU or RAM may also require the recovery passphrase."),
+            Line::from(
+                "The disk's encryption key will be sealed to this machine's TPM using PCR 1 (hardware identity: motherboard, CPU, and RAM model/serials). The system will boot unattended as long as the hardware stays the same. If you move the disk to different hardware, you will need the recovery passphrase. Changing the CPU or RAM may also require the recovery passphrase.",
+            ),
         ],
         DiskEncryption::Keyfile => vec![
             Line::from(""),
-            Line::from("  A keyfile will be stored on the boot partition. The system will"),
-            Line::from("  boot unattended on any hardware. If the boot partition is lost,"),
-            Line::from("  you will need the recovery passphrase."),
+            Line::from(
+                "A keyfile will be stored on the boot partition. The system will boot unattended on any hardware. If the boot partition is lost, you will need the recovery passphrase.",
+            ),
         ],
         DiskEncryption::None => vec![
             Line::from(""),
-            Line::from("  The root partition will not be encrypted."),
+            Line::from("The root partition will not be encrypted."),
         ],
     };
 
@@ -510,7 +507,9 @@ fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
     let list = List::new(items);
     frame.render_widget(list, chunks[0]);
 
-    let paragraph = Paragraph::new(explanation);
+    let paragraph = Paragraph::new(explanation)
+        .wrap(Wrap { trim: true })
+        .block(Block::default().padding(Padding::horizontal(2)));
     frame.render_widget(paragraph, chunks[1]);
 }
 
@@ -705,11 +704,7 @@ fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from("  Leave empty to skip Tailscale configuration."),
         Line::from(""),
         Line::from(Span::styled(
-            "  The key will be used on first boot to run 'tailscale up --auth-key --ssh'",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "  and will be deleted after use.",
+            "  The key will be used on first boot to run 'tailscale up --auth-key --ssh' and will be deleted after use.",
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
@@ -729,7 +724,7 @@ fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
         .title(" Login > Tailscale ")
         .borders(Borders::ALL);
 
-    let paragraph = Paragraph::new(lines).block(block);
+    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, area);
 }
 
@@ -738,15 +733,14 @@ fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     let intro_lines = vec![
         Line::from(""),
         Line::from(
-            "  SSH authorized keys. Tab/Shift+Tab to navigate. Type in the blank field to add a key.",
+            "  SSH authorized keys. Tab/Shift+Tab to navigate. Type in the blank field to add a key. Leave empty to skip.",
         ),
-        Line::from("  Leave empty to skip."),
         Line::from(""),
     ];
 
-    let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
+    let chunks = Layout::vertical([Constraint::Length(4), Constraint::Min(0)]).split(area);
 
-    let intro_paragraph = Paragraph::new(intro_lines);
+    let intro_paragraph = Paragraph::new(intro_lines).wrap(Wrap { trim: true });
     frame.render_widget(intro_paragraph, chunks[0]);
 
     let mut key_lines: Vec<Line> = Vec::new();
