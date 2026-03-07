@@ -346,9 +346,9 @@ xorriso -as mkisofs \
     \
     --efi-boot-part --efi-boot-image \
     \
-    -append_partition 3 "$GPT_TYPE_MICROSOFT_BASIC_DATA" "$BESCONF_IMG" \
+    -append_partition 3 "$GPT_TYPE_LINUX_FILESYSTEM" "$IMAGES_SQFS" \
     \
-    -append_partition 4 "$GPT_TYPE_LINUX_FILESYSTEM" "$IMAGES_SQFS" \
+    -append_partition 4 "$GPT_TYPE_MICROSOFT_BASIC_DATA" "$BESCONF_IMG" \
     \
     "$STAGING"
 
