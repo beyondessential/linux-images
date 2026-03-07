@@ -33,10 +33,3 @@ tempfile = "3.26.0"
 
 [features]
 luks-tests = []
-
-[profile.release]
-opt-level = "s"
-lto = true
-strip = true
-panic = "abort"
-codegen-units = 1
