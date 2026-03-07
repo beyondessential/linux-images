@@ -15,10 +15,12 @@
 # variables controlling disk-encryption, hostname, tailscale, and SSH keys.
 #
 # Requires: systemd-nspawn, xorriso, unsquashfs, losetup, lsblk, partprobe,
-#           cryptsetup, btrfs-progs, util-linux. Must run as root.
+#           cryptsetup, btrfs-progs, util-linux, veritysetup, sgdisk.
+#           Must run as root.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/iso-images-mount.sh"
 
 ISO="${1:?Usage: $0 <iso> <arch> [filter]}"
 ARCH="${2:?Usage: $0 <iso> <arch> [filter]}"
@@ -43,7 +45,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 MISSING=()
-for cmd in systemd-nspawn xorriso unsquashfs losetup lsblk partprobe jq; do
+for cmd in systemd-nspawn xorriso unsquashfs losetup lsblk partprobe jq sgdisk veritysetup; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -59,6 +61,7 @@ WORK_DIR=""
 cleanup() {
     local exit_code=$?
     set +e
+    iso_images_cleanup
     if [ -n "$WORK_DIR" ]; then
         rm -rf "$WORK_DIR"
     fi
@@ -84,7 +87,6 @@ echo "==> Extracting rootfs and images from ISO..."
 
 SQUASHFS="$WORK_DIR/filesystem.squashfs"
 ROOTFS_DIR="$WORK_DIR/rootfs"
-IMAGES_DIR="$WORK_DIR/images"
 
 xorriso -osirrox on -indev "$ISO" \
     -extract /live/filesystem.squashfs "$SQUASHFS" \
@@ -101,17 +103,11 @@ unsquashfs -d "$ROOTFS_DIR" -f "$SQUASHFS" >/dev/null 2>&1
 rm -f "$SQUASHFS"
 echo "    Unpacked rootfs to $ROOTFS_DIR"
 
-mkdir -p "$IMAGES_DIR"
-xorriso -osirrox on -indev "$ISO" \
-    -extract /images "$IMAGES_DIR" \
-    2>/dev/null
-
-if [ ! -f "$IMAGES_DIR/partitions.json" ]; then
-    echo "ERROR: partitions.json not found in ISO /images/"
-    exit 1
-fi
-PART_IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.img.zst' | wc -l)
-echo "    Extracted partitions.json + $PART_IMAGE_COUNT partition image(s)"
+# Mount the images squashfs from the ISO's GPT images partition via dm-verity.
+# This verifies integrity and gives us the real squashfs mount that the
+# installer would see in production at /run/bes-images.
+iso_images_mount "$ISO"
+IMAGES_DIR="$ISO_IMAGES_MNT"
 echo ""
 
 # ============================================================

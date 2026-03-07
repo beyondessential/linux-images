@@ -14,7 +14,7 @@
 #
 # Required environment:
 #   ROOTFS_DIR   — path to pre-extracted live rootfs
-#   IMAGES_DIR   — path to directory containing partitions.json and .img.zst images
+#   IMAGES_DIR   — path to directory containing partitions.json and raw .img files
 #
 # Scenario environment (all optional):
 #   SCENARIO_NAME  — human-readable name (default: "unnamed")

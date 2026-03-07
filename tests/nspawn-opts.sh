@@ -91,7 +91,7 @@ nspawn_installer_binds() {
 
     NSPAWN_BINDS=(
         "--bind=$loop_dev"
-        "--bind-ro=$images_dir:/run/live/medium/images"
+        "--bind-ro=$images_dir:/run/bes-images"
         "--bind-ro=$devices_json:/tmp/devices.json"
     )
 
