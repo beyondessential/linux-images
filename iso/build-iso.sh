@@ -208,6 +208,7 @@ chroot "$MNT_ROOTFS" bash -c "
         btrfs-progs \
         lvm2 \
         dosfstools \
+        mtools \
         pciutils \
         usbutils \
         curl
