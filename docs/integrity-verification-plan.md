@@ -208,11 +208,16 @@ The manifest format changes:
    corruption before the target disk is touched. Progress is displayed
    during this check.
 
-7. **Corruption error UX**: If verity verification fails (during the
-   integrity check or during the write), the installer displays an error
-   screen stating: the installation media is corrupted, the target disk
-   may have been partially written and cannot be used, and the only
-   recourse is to write a new copy of the installation medium.
+7. **Corruption error UX**: Two distinct error messages depending on when
+   verification fails:
+   - **During the upfront integrity check** (before any writes): the
+     installation media is corrupted, the target disk has **not** been
+     written to, and the only recourse is to write a new copy of the
+     installation medium.
+   - **During the partition write phase**: the installation media is
+     corrupted, the target disk has been partially written and cannot be
+     used, and the only recourse is to write a new copy of the
+     installation medium.
 
 ### Changes to `build-iso.sh`
 
@@ -334,8 +339,8 @@ Status: not started.
 - Remove `partitions.json` `image` field `.zst` suffix.
 - Update `find_partition_manifest` search paths.
 - Preserve fallback for plain directory (testing).
-- Add corruption error screen (media corrupted, disk unusable, rewrite
-  medium).
+- Add corruption error screens: pre-write (disk untouched) vs mid-write
+  (disk partially written, unusable).
 - Update all stale `installer.write.source`, `installer.write.disk-size-check`,
   and `installer.write.decompress-stream` annotations.
 
@@ -372,9 +377,11 @@ Status: not started.
    filesystem label `BESIMAGES` (via `/dev/disk/by-label/`), not by type
    UUID.
 
-3. **Failure UX for images verity**: Error screen states: installation
-   media is corrupted, target disk may have been partially written and
-   cannot be used, only recourse is to write a new copy of the medium.
+3. **Failure UX for images verity**: Two distinct messages. During the
+   upfront integrity check: disk has not been written to. During the
+   write phase: disk has been partially written and cannot be used.
+   Both state the media is corrupted and the only recourse is to write
+   a new copy of the medium.
 
 4. **Development builds without verity**: No. All builds include verity.
    The initramfs hook still skips gracefully if the root hash is absent
