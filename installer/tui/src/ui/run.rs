@@ -569,6 +569,25 @@ fn run_full_install(
         .randomize_filesystem_uuids()
         .context("randomizing filesystem UUIDs")?;
 
+    // r[impl installer.encryption.overview+3]
+    // Encryption enrollment + config writes (~93%) — must happen before
+    // rebuild_boot_config so dracut picks up the updated crypttab/keyfile.
+    if let Some(pp) = disk_writer.passphrase {
+        let mounted = firstboot::mount_target(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            disk_writer.passphrase,
+        )?;
+        encryption::enroll_and_configure_encryption(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            mounted.path(),
+            pp,
+        )
+        .context("encryption setup")?;
+        firstboot::unmount_target(mounted)?;
+    }
+
     // Rebuild boot config (~94%)
     disk_writer
         .rebuild_boot_config()
@@ -612,22 +631,8 @@ fn run_full_install(
         firstboot::unmount_target(mounted)?;
     }
 
-    // Encryption setup (~96-100%)
+    // Save recovery key + return passphrase
     let passphrase = if let Some(pp) = disk_writer.passphrase {
-        let mounted = firstboot::mount_target(
-            disk_writer.target,
-            disk_writer.disk_encryption,
-            disk_writer.passphrase,
-        )?;
-        encryption::run_encryption_setup(
-            disk_writer.target,
-            disk_writer.disk_encryption,
-            mounted.path(),
-            pp,
-        )
-        .context("encryption setup")?;
-        firstboot::unmount_target(mounted)?;
-
         // r[impl installer.config.save-recovery-keys]
         if besconf.save_recovery_keys() {
             let root_part = crate::util::partition_path(disk_writer.target, 3)?;

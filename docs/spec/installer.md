@@ -629,13 +629,17 @@ unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
 changes.
 
-> r[installer.write.rebuild-boot-config+2]
-> After randomizing filesystem UUIDs, the installer must unconditionally
+> r[installer.write.rebuild-boot-config+3]
+> After randomizing filesystem UUIDs (and after encryption enrollment and
+> config-file writes when encryption is enabled — see
+> `r[installer.encryption.overview]`), the installer must unconditionally
 > rebuild the initramfs and GRUB configuration in a chroot of the installed
 > system, regardless of encryption mode. This is required because the GRUB
 > config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
-> have been rotated. The installer must run `dracut --force` and `update-grub`
-> with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
+> have been rotated, and because the encryption setup writes crypttab and
+> dracut configuration that must be baked into the initramfs. The installer
+> must run `dracut --force` and `update-grub` with `/proc`, `/sys`, and
+> `/dev` bind-mounted into the target.
 >
 > When disk encryption is enabled, the installer must also, before running
 > `update-grub`:
@@ -652,15 +656,21 @@ changes.
 
 ## Encryption Setup
 
-> r[installer.encryption.overview+2]
-> After writing the image and expanding partitions, and when disk encryption
-> is `"tpm"` or `"keyfile"`, the installer must perform all encryption setup
-> on the target disk. The LUKS volume already has the recovery passphrase as
-> its sole key (enrolled during `installer.write.luks-before-write`). The
-> installer must:
+> r[installer.encryption.overview+3]
+> After writing the image, expanding partitions, and randomizing UUIDs, but
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config]`),
+> when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
+> encryption setup on the target disk. The LUKS volume already has the
+> recovery passphrase as its sole key (enrolled during
+> `installer.write.luks-before-write`). The installer must:
 >
 > 1. Enroll the chosen unlock mechanism (TPM or keyfile).
-> 2. Configure the installed system (crypttab, initramfs).
+> 2. Write the updated crypttab (and dracut keyfile config for keyfile mode)
+>    into the installed system's root filesystem.
+>
+> The initramfs rebuild is **not** performed here; it is handled by
+> `r[installer.write.rebuild-boot-config]`, which runs afterwards and picks
+> up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created
 > the LUKS volume with fresh key material and the recovery passphrase as the
@@ -698,10 +708,13 @@ changes.
 
 
 
-> r[installer.encryption.configure-system]
-> The installer must chroot into the installed system and rebuild the
-> initramfs with dracut so it picks up the updated crypttab and (if keyfile
-> mode) the new keyfile.
+> r[installer.encryption.configure-system+2]
+> The installer must not rebuild the initramfs as a separate encryption step.
+> Instead, the initramfs is rebuilt during
+> `r[installer.write.rebuild-boot-config]`, which runs after encryption
+> enrollment and configuration. This single rebuild picks up the updated
+> crypttab and (if keyfile mode) the new keyfile, because the encryption
+> config files are written before `rebuild-boot-config` executes.
 
 ## Install-Time Configuration
 

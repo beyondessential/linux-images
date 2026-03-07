@@ -678,7 +678,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Encryption setup verification (metal only) ---
-        # r[verify installer.encryption.overview+2]
+        # r[verify installer.encryption.overview+3]
         if [ "$VARIANT" = "metal" ]; then
             CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
             check "crypttab exists" test -f "$CRYPTTAB"
@@ -690,7 +690,7 @@ if [ -n "$BTRFS_DEV" ]; then
 
         # --- Filesystem UUID / grub.cfg consistency ---
         # r[verify installer.write.randomize-uuids+2]
-        # r[verify installer.write.rebuild-boot-config+2]
+        # r[verify installer.write.rebuild-boot-config+3]
         # Mount /boot so we can read grub.cfg
         BOOT_MNT="$WORK_DIR/verify-boot"
         mkdir -p "$BOOT_MNT"

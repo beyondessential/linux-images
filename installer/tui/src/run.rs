@@ -313,6 +313,24 @@ impl RunContext {
             .randomize_filesystem_uuids()
             .context("randomizing filesystem UUIDs")?;
 
+        // r[impl installer.encryption.overview+3]
+        if let Some(ref passphrase) = recovery_passphrase {
+            eprintln!("setting up disk encryption...");
+            let mounted = firstboot::mount_target(
+                &target.path,
+                disk_encryption,
+                recovery_passphrase.as_deref(),
+            )?;
+            encryption::enroll_and_configure_encryption(
+                &target.path,
+                disk_encryption,
+                mounted.path(),
+                passphrase,
+            )
+            .context("encryption setup")?;
+            firstboot::unmount_target(mounted)?;
+        }
+
         eprintln!("rebuilding boot config (initramfs + grub)...");
         disk_writer
             .rebuild_boot_config()
@@ -351,23 +369,7 @@ impl RunContext {
             firstboot::unmount_target(mounted)?;
         }
 
-        // r[impl installer.encryption.overview+2]
         if let Some(ref passphrase) = recovery_passphrase {
-            eprintln!("setting up disk encryption...");
-            let mounted = firstboot::mount_target(
-                &target.path,
-                disk_encryption,
-                recovery_passphrase.as_deref(),
-            )?;
-            encryption::run_encryption_setup(
-                &target.path,
-                disk_encryption,
-                mounted.path(),
-                passphrase,
-            )
-            .context("encryption setup")?;
-            firstboot::unmount_target(mounted)?;
-
             // r[impl installer.encryption.recovery-passphrase+3]
             eprintln!();
             eprintln!("=== RECOVERY PASSPHRASE ===");
