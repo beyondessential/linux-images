@@ -560,7 +560,7 @@ grub-mkimage \
     chain efinet
 
 cat > "$STAGING/boot/grub/grub.cfg" << 'GRUBCFG'
-set timeout=3
+set timeout=1
 set default=0
 
 insmod all_video
