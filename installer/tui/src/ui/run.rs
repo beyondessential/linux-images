@@ -44,7 +44,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         return KeyAction::Continue;
     }
 
-    // r[impl installer.tui.debug-shell+2]
+    // r[impl installer.tui.debug-shell+3]
     if key
         .modifiers
         .contains(KeyModifiers::ALT | KeyModifiers::CONTROL)
@@ -54,7 +54,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     }
 
     match &state.screen {
-        // r[impl installer.tui.welcome+4]
+        // r[impl installer.tui.welcome+5]
         Screen::Welcome => match key.code {
             KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Char('n') => state.open_network_check(),
@@ -450,7 +450,7 @@ fn event_loop(
                     besconf,
                 );
             }
-            // r[impl installer.tui.debug-shell+2]
+            // r[impl installer.tui.debug-shell+3]
             KeyAction::Shell => {
                 drop_to_shell(terminal)?;
             }
@@ -869,7 +869,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.welcome+4]
+    // r[verify installer.tui.welcome+5]
     #[test]
     fn welcome_q_triggers_reboot() {
         let mut state = make_state();
@@ -1480,7 +1480,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.tui.debug-shell+2]
+    // r[verify installer.tui.debug-shell+3]
     #[test]
     fn ctrl_alt_d_returns_shell_action() {
         let mut state = make_state();
@@ -1490,7 +1490,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.debug-shell+2]
+    // r[verify installer.tui.debug-shell+3]
     #[test]
     fn ctrl_alt_d_breaks_scripted_loop() {
         let state = make_state();

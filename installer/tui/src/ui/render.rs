@@ -290,12 +290,12 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     let hints: String = match &state.screen {
         Screen::Welcome => "Enter: start | n: network check | q: reboot | Ctrl+Alt+d: shell".into(),
         Screen::NetworkCheck => {
-            "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: reboot | Ctrl+Alt+d: shell".into()
+            "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: reboot".into()
         }
-        Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: reboot | Ctrl+Alt+d: shell".into(),
-        Screen::DiskEncryption => "Up/Down: select | Enter: next | Esc: back | q: reboot | Ctrl+Alt+d: shell".into(),
-        Screen::Hostname => "Up/Down: select | Enter: next | Esc: back | Ctrl+Alt+d: shell".into(),
-        Screen::HostnameInput => "Enter: next | Esc: back | Ctrl+Alt+d: shell".into(),
+        Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: reboot".into(),
+        Screen::DiskEncryption => "Up/Down: select | Enter: next | Esc: back | q: reboot".into(),
+        Screen::Hostname => "Up/Down: select | Enter: next | Esc: back".into(),
+        Screen::HostnameInput => "Enter: next | Esc: back".into(),
         Screen::Login => {
             let mut h = String::from("Alt+t: tailscale | Alt+s: ssh keys");
             if state.github_reachable() {
@@ -306,27 +306,26 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
             } else {
                 h.push_str(" | Enter: next | Esc: back");
             }
-            h.push_str(" | Ctrl+Alt+d: shell");
             h
         }
-        Screen::LoginTailscale => "Enter: done | Esc: back | Ctrl+Alt+d: shell".into(),
-        Screen::LoginSshKeys => "Tab: next | Shift+Tab: prev | Enter: done | Esc: back | Ctrl+Alt+d: shell".into(),
-        Screen::LoginGithub => "Enter: fetch keys | Esc: back | Ctrl+Alt+d: shell".into(),
-        Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back | Ctrl+Alt+d: shell".into(),
+        Screen::LoginTailscale => "Enter: done | Esc: back".into(),
+        Screen::LoginSshKeys => "Tab: next | Shift+Tab: prev | Enter: done | Esc: back".into(),
+        Screen::LoginGithub => "Enter: fetch keys | Esc: back".into(),
+        Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back".into(),
         Screen::NetworkResults => {
-            "Tab: switch pane | Up/Down: scroll | Enter: next | r: re-run | Esc: back | q: reboot | Ctrl+Alt+d: shell"
+            "Tab: switch pane | Up/Down: scroll | Enter: next | r: re-run | Esc: back | q: reboot"
                 .into()
         }
-        Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: reboot | Ctrl+Alt+d: shell".into(),
-        Screen::Installing => "Please wait... | Ctrl+Alt+d: shell".into(),
-        Screen::Done => "Press Enter to reboot | Ctrl+Alt+d: shell".into(),
-        Screen::Error(_) => "Press any key to reboot | Ctrl+Alt+d: shell".into(),
+        Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: reboot".into(),
+        Screen::Installing => "Please wait...".into(),
+        Screen::Done => "Press Enter to reboot".into(),
+        Screen::Error(_) => "Press any key to reboot".into(),
     };
     let paragraph = Paragraph::new(hints);
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.welcome+4]
+// r[impl installer.tui.welcome+5]
 // r[impl installer.tui.ascii-rendering]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut description = vec![
