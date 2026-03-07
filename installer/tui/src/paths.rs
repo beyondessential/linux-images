@@ -33,7 +33,7 @@ pub const E2FSCK: &str = "/usr/sbin/e2fsck";
 pub const TUNE2FS: &str = "/usr/sbin/tune2fs";
 pub const MLABEL: &str = "/usr/bin/mlabel";
 
-// initramfs
+// initramfs (used inside chroot into target system)
 pub const DRACUT: &str = "/usr/bin/dracut";
 
 // systemd
@@ -51,8 +51,9 @@ pub const BASH: &str = "/bin/bash";
 pub const CURL: &str = "/usr/bin/curl";
 pub const TAILSCALE: &str = "/usr/bin/tailscale";
 
-// r[related installer.hardcoded-paths]
-const ALL_PATHS: &[(&str, &str)] = &[
+// r[impl installer.hardcoded-paths.iso]
+// Binaries executed directly by the installer in the live ISO environment.
+const ISO_PATHS: &[(&str, &str)] = &[
     ("mount", MOUNT),
     ("umount", UMOUNT),
     ("mknod", MKNOD),
@@ -70,7 +71,6 @@ const ALL_PATHS: &[(&str, &str)] = &[
     ("e2fsck", E2FSCK),
     ("tune2fs", TUNE2FS),
     ("mlabel", MLABEL),
-    ("dracut", DRACUT),
     ("systemctl", SYSTEMCTL),
     ("systemd-cryptenroll", SYSTEMD_CRYPTENROLL),
     ("reboot", REBOOT),
@@ -80,15 +80,15 @@ const ALL_PATHS: &[(&str, &str)] = &[
     ("tailscale", TAILSCALE),
 ];
 
-/// Check that every hardcoded binary path exists on disk.
-///
-/// Returns `Ok(())` if all paths are present, or `Err` with a message listing
-/// every missing binary. When `sysroot` is `Some`, paths are resolved relative
-/// to that directory (e.g. a mounted squashfs).
-pub fn check_all(sysroot: Option<&Path>) -> Result<(), String> {
+// r[impl installer.hardcoded-paths.chroot]
+// Binaries invoked inside a chroot into the target system (not needed in the
+// live ISO squashfs).
+const CHROOT_PATHS: &[(&str, &str)] = &[("dracut", DRACUT)];
+
+fn check_paths(paths: &[(&str, &str)], sysroot: Option<&Path>) -> Result<(), String> {
     let mut missing: Vec<String> = Vec::new();
 
-    for &(name, path) in ALL_PATHS {
+    for &(name, path) in paths {
         let full = match sysroot {
             Some(root) => root.join(path.strip_prefix('/').unwrap_or(path)),
             None => Path::new(path).to_path_buf(),
@@ -107,4 +107,21 @@ pub fn check_all(sysroot: Option<&Path>) -> Result<(), String> {
             missing.join("\n")
         ))
     }
+}
+
+/// Check that every hardcoded ISO-environment binary path exists on disk.
+///
+/// Returns `Ok(())` if all paths are present, or `Err` with a message listing
+/// every missing binary. When `sysroot` is `Some`, paths are resolved relative
+/// to that directory (e.g. a mounted squashfs).
+pub fn check_iso(sysroot: Option<&Path>) -> Result<(), String> {
+    check_paths(ISO_PATHS, sysroot)
+}
+
+/// Check that every hardcoded chroot-target binary path exists on disk.
+///
+/// These are binaries invoked inside a `chroot` into the installed system
+/// (e.g. `dracut`). They do not need to be present in the live ISO rootfs.
+pub fn check_chroot(sysroot: Option<&Path>) -> Result<(), String> {
+    check_paths(CHROOT_PATHS, sysroot)
 }
