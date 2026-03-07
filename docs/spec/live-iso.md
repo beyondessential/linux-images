@@ -11,10 +11,13 @@ The ISO must be a hybrid image: simultaneously a valid ISO9660 filesystem
 `xorriso` must embed a GPT via `--efi-boot-part --efi-boot-image` and include
 an EFI System Partition image for El Torito EFI boot.
 
-r[iso.base]
-The live rootfs must be built with `debootstrap` (not `live-build`) for
-consistency with the disk image builder. The rootfs is packaged as a
-squashfs and placed inside the ISO.
+r[iso.base+2]
+The live rootfs must be built with `debootstrap` using the default variant
+(not `--variant=minbase` or `live-build`) for consistency with the disk
+image builder. The default variant provides a functional Ubuntu base
+including systemd, networking (netplan, systemd-networkd, systemd-resolved),
+and standard tools, reducing the amount of manual package installation
+needed. The rootfs is packaged as a squashfs and placed inside the ISO.
 
 r[iso.live-boot]
 The live environment must include the `live-boot` and `live-boot-initramfs-tools`
@@ -22,26 +25,27 @@ packages so that the kernel can locate and mount the squashfs root via the
 `boot=live` parameter. The squashfs must be placed at `/live/filesystem.squashfs`
 inside the ISO, which is the default path `live-boot` searches.
 
-r[iso.minimal]
-The live environment must be minimal: a kernel, an initramfs, and just enough
+r[iso.minimal+2]
+The live environment must include a kernel, an initramfs, and enough
 userspace to run the TUI installer (block device utilities, zstd, and
-cryptsetup for LUKS operations).
+cryptsetup for LUKS operations). The default debootstrap variant provides
+the base; only packages not included in it need to be installed explicitly.
 
-r[iso.network-tools+2]
+r[iso.network-tools+3]
 The live environment must include `curl` (for HTTPS connectivity checks and
 GitHub SSH key lookups) and `tailscale` (for running `tailscale netcheck`
 diagnostics during installation). These are used by the interactive TUI
 screens for network checks and are not required for offline installation.
-The live environment must also include `iproute2` (for `ip`) and
+The default debootstrap variant already provides `iproute2` (for `ip`) and
 `iputils-ping` (for `ping`) so that network problems can be debugged
 from the debug shell.
 
-r[iso.network-config]
+r[iso.network-config+2]
 The live environment must configure automatic DHCP on all Ethernet
 interfaces so that network connectivity is available without manual
-setup. This must use `systemd-networkd` with a match-all `.network`
-file, and `systemd-resolved` for DNS. The corresponding systemd units
-must be enabled in the live rootfs.
+setup. This must use a netplan configuration file matching `en*` with
+`dhcp4: true`. The default debootstrap variant provides `netplan.io`,
+`systemd-networkd`, and `systemd-resolved`.
 
 r[iso.offline]
 The live ISO must be fully functional without network connectivity. No

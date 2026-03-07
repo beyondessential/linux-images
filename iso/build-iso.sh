@@ -134,10 +134,10 @@ STAGING="$WORK_DIR/staging"
 mkdir -p "$MNT_ROOTFS" "$MNT_ESP" "$STAGING"
 
 # ============================================================
-# Phase 1: Build minimal live rootfs via debootstrap
+# Phase 1: Build live rootfs via debootstrap
 # ============================================================
-# r[impl iso.base]
-echo "==> Phase 1: Building minimal live rootfs..."
+# r[impl iso.base+2]
+echo "==> Phase 1: Building live rootfs (default variant)..."
 
 DEBOOTSTRAP_EXTRA_ARGS=()
 if [ ! -f /usr/share/keyrings/ubuntu-archive-keyring.gpg ]; then
@@ -147,8 +147,6 @@ fi
 
 debootstrap \
     --arch="$ARCH" \
-    --variant=minbase \
-    --include=ca-certificates \
     "${DEBOOTSTRAP_EXTRA_ARGS[@]}" \
     "$UBUNTU_SUITE" "$MNT_ROOTFS" "$UBUNTU_MIRROR"
 
@@ -172,11 +170,10 @@ else
     echo "nameserver 1.1.1.1" > "$MNT_ROOTFS/etc/resolv.conf"
 fi
 
-# r[impl iso.minimal]
+# r[impl iso.minimal+2]
 # r[impl iso.live-boot]
 # r[impl iso.offline]
-# r[impl iso.network-tools+2]
-# r[impl iso.network-config]
+# r[impl iso.network-tools+3]
 # Enable the universe repository (live-boot is not in main)
 cat > "$MNT_ROOTFS/etc/apt/sources.list.d/universe.list" << SOURCES
 deb $UBUNTU_MIRROR $UBUNTU_SUITE main universe
@@ -196,14 +193,6 @@ chroot "$MNT_ROOTFS" bash -c "
         initramfs-tools \
         live-boot \
         live-boot-initramfs-tools \
-        systemd \
-        systemd-sysv \
-        dbus \
-        udev \
-        util-linux \
-        kbd \
-        iproute2 \
-        iputils-ping \
         parted \
         gdisk \
         cloud-guest-utils \
@@ -213,12 +202,9 @@ chroot "$MNT_ROOTFS" bash -c "
         btrfs-progs \
         lvm2 \
         dosfstools \
-        e2fsprogs \
         pciutils \
         usbutils \
-        less \
-        curl \
-        ca-certificates
+        curl
 
     # Install tailscale for 'tailscale netcheck' diagnostics during installation.
     # curl is installed above; tailscale needs its own apt repo.
@@ -233,25 +219,19 @@ chroot "$MNT_ROOTFS" bash -c "
     rm -rf /var/lib/apt/lists/*
 "
 
-# r[impl iso.network-config]
-# Configure systemd-networkd to DHCP on all Ethernet interfaces.
-mkdir -p "$MNT_ROOTFS/etc/systemd/network"
-cat > "$MNT_ROOTFS/etc/systemd/network/20-dhcp.network" << 'NETCFG'
-[Match]
-Name=en*
-
-[Network]
-DHCP=yes
-
-[DHCPv4]
-UseDNS=yes
+# r[impl iso.network-config+2]
+# Configure netplan to DHCP on all Ethernet interfaces.
+mkdir -p "$MNT_ROOTFS/etc/netplan"
+cat > "$MNT_ROOTFS/etc/netplan/01-all-en-dhcp.yaml" << 'NETCFG'
+network:
+  version: 2
+  ethernets:
+    all-en:
+      match:
+        name: "en*"
+      dhcp4: true
 NETCFG
-
-chroot "$MNT_ROOTFS" systemctl enable systemd-networkd
-chroot "$MNT_ROOTFS" systemctl enable systemd-resolved
-
-# Point resolv.conf at the systemd-resolved stub so DNS works at runtime.
-ln -sf /run/systemd/resolve/stub-resolv.conf "$MNT_ROOTFS/etc/resolv.conf"
+chmod 600 "$MNT_ROOTFS/etc/netplan/01-all-en-dhcp.yaml"
 
 # ============================================================
 # Phase 3: Install the TUI installer and configure autostart

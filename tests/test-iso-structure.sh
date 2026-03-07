@@ -187,7 +187,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     fi
 fi
 
-# r[verify iso.base]
+# r[verify iso.base+2]
 check "/live/vmlinuz exists" test -f "$ISO_MNT/live/vmlinuz"
 check "/live/initrd.img exists" test -f "$ISO_MNT/live/initrd.img"
 
@@ -343,7 +343,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fail "dpkg-query not found in squashfs — cannot verify packages"
     fi
 
-    # r[verify iso.minimal]
+    # r[verify iso.minimal+2]
     if [ -x "$SQFS_MNT/sbin/cryptsetup" ] || [ -x "$SQFS_MNT/usr/sbin/cryptsetup" ]; then
         pass "cryptsetup exists in rootfs"
     else
@@ -356,7 +356,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fail "sgdisk exists in rootfs"
     fi
 
-    # r[verify iso.network-tools+2]
+    # r[verify iso.network-tools+3]
     check "curl exists in rootfs" test -x "$SQFS_MNT/usr/bin/curl"
     if [ -x "$SQFS_MNT/usr/bin/tailscale" ] || [ -x "$SQFS_MNT/usr/sbin/tailscale" ]; then
         pass "tailscale exists in rootfs"
@@ -366,21 +366,11 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     check "ip command exists (iproute2)" test -x "$SQFS_MNT/usr/sbin/ip" -o -x "$SQFS_MNT/sbin/ip" -o -x "$SQFS_MNT/usr/bin/ip" -o -x "$SQFS_MNT/bin/ip"
     check "ping command exists (iputils-ping)" test -x "$SQFS_MNT/usr/bin/ping" -o -x "$SQFS_MNT/bin/ping"
 
-    # r[verify iso.network-config]
-    check "systemd-networkd DHCP config exists" test -f "$SQFS_MNT/etc/systemd/network/20-dhcp.network"
-    check "DHCP config matches en* interfaces" grep -q 'Name=en\*' "$SQFS_MNT/etc/systemd/network/20-dhcp.network"
-    check "DHCP config enables DHCP" grep -q 'DHCP=yes' "$SQFS_MNT/etc/systemd/network/20-dhcp.network"
+    # r[verify iso.network-config+2]
+    check "netplan DHCP config exists" test -f "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
+    check "netplan config matches en* interfaces" grep -q 'name:.*en\*' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
+    check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
     check "resolv.conf is symlink to resolved stub" test -L "$SQFS_MNT/etc/resolv.conf"
-    if find "$SQFS_MNT/etc/systemd/system" -path '*/systemd-networkd.service' -type l 2>/dev/null | grep -q .; then
-        pass "systemd-networkd is enabled"
-    else
-        fail "systemd-networkd is enabled"
-    fi
-    if find "$SQFS_MNT/etc/systemd/system" -path '*/systemd-resolved.service' -type l 2>/dev/null | grep -q .; then
-        pass "systemd-resolved is enabled"
-    else
-        fail "systemd-resolved is enabled"
-    fi
 
     # r[verify iso.config-partition]
     check "run-besconf.mount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
