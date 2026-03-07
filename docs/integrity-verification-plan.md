@@ -305,7 +305,7 @@ implementation steps 2-6:
 - Add `images.verity.roothash=<hash>` to the GRUB kernel command line.
 - Update `r[impl iso.contents]` and `r[impl iso.minimal]` annotations.
 
-Status: not started.
+Status: done.
 
 ### Step 3: Squashfs verity in `build-iso.sh`
 

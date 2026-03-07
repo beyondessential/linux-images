@@ -63,7 +63,7 @@ if [ ! -f "$CLOUD_IMAGE" ]; then
 fi
 
 MISSING=()
-for cmd in debootstrap mksquashfs sfdisk mkfs.vfat losetup grub-mkimage xorriso zstd jq; do
+for cmd in debootstrap mksquashfs sfdisk mkfs.vfat losetup grub-mkimage xorriso zstd jq veritysetup; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -175,7 +175,7 @@ else
     echo "nameserver 1.1.1.1" > "$MNT_ROOTFS/etc/resolv.conf"
 fi
 
-# r[impl iso.minimal+2]
+# r[impl iso.minimal+3]
 # r[impl iso.live-boot]
 # r[impl iso.offline]
 # r[impl iso.network-tools+3]
@@ -471,9 +471,11 @@ echo "    squashfs: $(du -h "$STAGING/live/filesystem.squashfs" | cut -f1)"
 # ============================================================
 # Phase 5: Extract partition images from cloud image
 # ============================================================
-# r[impl iso.contents+2]
+# r[impl iso.contents+3]
+# r[impl iso.images-partition]
 echo "==> Phase 5: Extracting partition images from cloud image..."
-mkdir -p "$STAGING/images"
+IMAGES_STAGING="$WORK_DIR/images-staging"
+mkdir -p "$IMAGES_STAGING"
 
 CLOUD_RAW="$WORK_DIR/cloud.raw"
 if [[ "$CLOUD_IMAGE" == *.zst ]]; then
@@ -523,21 +525,12 @@ PART_SIZES_MIB[2]=0
 for idx in 0 1 2; do
     NAME="${PART_NAMES[$idx]}"
     DEV="${PART_DEVS[$idx]}"
-    UNCOMPRESSED="$WORK_DIR/${NAME}.img"
 
     echo "    Extracting $NAME partition from $DEV ..."
-    dd if="$DEV" of="$UNCOMPRESSED" bs=4M status=none
+    dd if="$DEV" of="$IMAGES_STAGING/${NAME}.img" bs=4M status=none
 
-    UNCOMPRESSED_SIZE="$(stat --format='%s' "$UNCOMPRESSED")"
-    echo "$UNCOMPRESSED_SIZE" > "$STAGING/images/${NAME}.img.size"
-    echo "    ${NAME}.img.size: $UNCOMPRESSED_SIZE bytes"
-
-    echo "    Compressing ${NAME}.img -> ${NAME}.img.zst ..."
-    zstd -6 "$UNCOMPRESSED" -o "$STAGING/images/${NAME}.img.zst"
-    rm -f "$UNCOMPRESSED"
-
-    COMPRESSED_SIZE="$(stat --format='%s' "$STAGING/images/${NAME}.img.zst")"
-    echo "    ${NAME}.img.zst: $(( COMPRESSED_SIZE / 1048576 )) MiB"
+    IMG_SIZE="$(stat --format='%s' "$IMAGES_STAGING/${NAME}.img")"
+    echo "    ${NAME}.img: $(( IMG_SIZE / 1048576 )) MiB"
 done
 
 losetup -d "$EXTRACT_LOOP"
@@ -557,15 +550,42 @@ jq -n \
     '{
         arch: $arch,
         partitions: [
-            { label: "efi",   type_uuid: $efi_type,   size_mib: $efi_size,   image: "efi.img.zst" },
-            { label: "xboot", type_uuid: $xboot_type,  size_mib: $xboot_size, image: "xboot.img.zst" },
-            { label: "root",  type_uuid: $root_type,   size_mib: $root_size,  image: "root.img.zst" }
+            { label: "efi",   type_uuid: $efi_type,   size_mib: $efi_size,   image: "efi.img" },
+            { label: "xboot", type_uuid: $xboot_type,  size_mib: $xboot_size, image: "xboot.img" },
+            { label: "root",  type_uuid: $root_type,   size_mib: $root_size,  image: "root.img" }
         ]
-    }' > "$STAGING/images/partitions.json"
+    }' > "$IMAGES_STAGING/partitions.json"
 
 echo "    partitions.json:"
-cat "$STAGING/images/partitions.json"
+cat "$IMAGES_STAGING/partitions.json"
 echo ""
+
+# ============================================================
+# Phase 5b: Build images squashfs with verity
+# ============================================================
+# r[impl iso.images-partition]
+# r[impl iso.verity.images]
+# r[impl iso.verity.layout]
+# r[impl iso.verity.build-deps]
+echo "==> Phase 5b: Building images squashfs with verity..."
+
+IMAGES_SQFS="$WORK_DIR/images.squashfs"
+mksquashfs "$IMAGES_STAGING" "$IMAGES_SQFS" \
+    -comp zstd -no-exports -noappend -quiet
+rm -rf "$IMAGES_STAGING"
+echo "    images squashfs: $(du -h "$IMAGES_SQFS" | cut -f1)"
+
+IMAGES_HASHTREE="$WORK_DIR/images.squashfs.hashtree"
+VERITY_OUTPUT="$(veritysetup format "$IMAGES_SQFS" "$IMAGES_HASHTREE" 2>&1)"
+IMAGES_ROOTHASH="$(echo "$VERITY_OUTPUT" | grep "Root hash:" | awk '{print $NF}')"
+echo "    images verity root hash: $IMAGES_ROOTHASH"
+
+# Append hash tree + size trailer (self-describing verity layout)
+HASHTREE_SIZE="$(stat --format='%s' "$IMAGES_HASHTREE")"
+cat "$IMAGES_HASHTREE" >> "$IMAGES_SQFS"
+rm -f "$IMAGES_HASHTREE"
+python3 -c "import struct,sys; sys.stdout.buffer.write(struct.pack('<Q', $HASHTREE_SIZE))" >> "$IMAGES_SQFS"
+echo "    images blob (sqfs+verity): $(du -h "$IMAGES_SQFS" | cut -f1)"
 
 # ============================================================
 # Phase 6: Build GRUB EFI bootloader and ESP image
@@ -587,7 +607,7 @@ grub-mkimage \
     search search_label search_fs_uuid search_fs_file ls cat echo test true \
     chain efinet
 
-cat > "$STAGING/boot/grub/grub.cfg" << 'GRUBCFG'
+cat > "$STAGING/boot/grub/grub.cfg" << GRUBCFG
 set timeout=1
 set default=0
 
@@ -595,18 +615,16 @@ insmod all_video
 
 search --file --no-floppy --set=root /live/vmlinuz
 
-menuentry "BES Installer (__ARCH__, built __BUILD_DATE__)" {
-    linux /live/vmlinuz boot=live toram console=tty1
+menuentry "BES Installer (${ARCH}, built ${BUILD_DATE})" {
+    linux /live/vmlinuz boot=live toram console=tty1 images.verity.roothash=${IMAGES_ROOTHASH}
     initrd /live/initrd.img
 }
 
-menuentry "BES Installer (__ARCH__, built __BUILD_DATE__) -- quiet" {
-    linux /live/vmlinuz boot=live toram quiet console=tty1
+menuentry "BES Installer (${ARCH}, built ${BUILD_DATE}) -- quiet" {
+    linux /live/vmlinuz boot=live toram quiet console=tty1 images.verity.roothash=${IMAGES_ROOTHASH}
     initrd /live/initrd.img
 }
 GRUBCFG
-
-sed -i "s/__ARCH__/${ARCH}/g; s/__BUILD_DATE__/${BUILD_DATE}/g" "$STAGING/boot/grub/grub.cfg"
 
 # Build a FAT32 image for the El Torito EFI boot catalog entry.
 # This image is embedded inside the ISO filesystem at /boot/efi.img and
@@ -705,6 +723,8 @@ xorriso -as mkisofs \
     --efi-boot-part --efi-boot-image \
     \
     -append_partition 3 EBD0A0A2-B9E5-4433-87C0-68B6B72699C7 "$BESCONF_IMG" \
+    \
+    -append_partition 4 0FC63DAF-8483-4772-8E79-3D69D8477DE4 "$IMAGES_SQFS" \
     \
     "$STAGING"
 
