@@ -218,7 +218,21 @@ Update `docs/spec/live-iso.md` and `docs/spec/installer.md` with new
 requirements for verity, the images partition, and the removal of zstd
 streaming decompression.
 
-Status: done (in this commit).
+Status: done.
+
+The following tracey references are now stale and will be resolved during
+implementation steps 2-6:
+
+- `iso.minimal+2` -> `+3` in `iso/build-iso.sh` (step 2)
+- `iso.contents+2` -> `+3` in `iso/build-iso.sh`, `tests/test-iso-structure.sh` (steps 2, 6)
+- `installer.write.source+2` -> `+3` in `installer/tui/src/writer/manifest.rs`,
+  `installer/tui/tests/` (step 5)
+- `installer.write.disk-size-check+2` -> `+3` in `installer/tui/src/writer/manifest.rs`,
+  `installer/tui/src/run.rs`, `installer/tui/src/ui/run.rs`,
+  `tests/test-iso-structure.sh` (steps 5, 6)
+- `installer.write.decompress-stream+2` removed, replaced by
+  `installer.write.stream-copy` in `installer/tui/src/writer/disk_writer.rs`,
+  `installer/tui/src/writer/progress.rs` (step 5)
 
 ### Step 2: Images squashfs in `build-iso.sh`
 
@@ -227,6 +241,9 @@ Status: done (in this commit).
 - Run `veritysetup format` on the images squashfs.
 - Append as GPT partition 4 with verity hash tree.
 - Write root hash + hash offset to `/images-verity.json` in the ISO.
+- Update `r[impl iso.contents]` and `r[impl iso.minimal]` annotations.
+
+Status: not started.
 
 ### Step 3: Squashfs verity in `build-iso.sh`
 
@@ -234,12 +251,16 @@ Status: done (in this commit).
 - Place hash tree at `/live/filesystem.squashfs.verity`.
 - Add `live.verity.roothash=<hash>` to GRUB command line.
 
+Status: not started.
+
 ### Step 4: Initramfs verity hook
 
 - Write the initramfs hook and premount script.
 - Install them in the live rootfs during Phase 2 of `build-iso.sh`.
 - Test by booting the ISO in QEMU with a known-good image and verifying
   that dm-verity devices appear.
+
+Status: not started.
 
 ### Step 5: Installer changes
 
@@ -249,18 +270,28 @@ Status: done (in this commit).
 - Remove `partitions.json` `image` field `.zst` suffix.
 - Update `find_partition_manifest` search paths.
 - Preserve fallback for plain directory (testing).
+- Update all stale `installer.write.source`, `installer.write.disk-size-check`,
+  and `installer.write.decompress-stream` annotations.
+
+Status: not started.
 
 ### Step 6: Test updates
 
 - Update container test harness for the new images layout.
 - Add verity corruption tests.
 - Verify ISO boots in QEMU with verity enabled.
+- Update stale annotations in `tests/test-iso-structure.sh`.
+
+Status: not started.
 
 ### Step 7: Cleanup
 
 - Remove unused zstd decompression code from the installer.
 - Remove the `zstd` crate dependency if no longer needed elsewhere.
 - Update documentation and comments.
+- Run `tracey query stale` and confirm zero stale references.
+
+Status: not started.
 
 ## Open Questions
 
