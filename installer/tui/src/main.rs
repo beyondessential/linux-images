@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -77,10 +78,37 @@ pub(crate) struct Cli {
     /// Do not reboot after a successful installation. Exit cleanly instead.
     #[arg(long)]
     pub no_reboot: bool,
+
+    // r[impl installer.check-paths]
+    /// Verify that all hardcoded external binary paths exist, then exit.
+    /// Optionally takes a sysroot prefix (e.g. a mounted squashfs) to
+    /// resolve paths against.
+    #[arg(long, num_args = 0..=1, default_missing_value = "/")]
+    pub check_paths: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    // r[impl installer.check-paths]
+    if let Some(ref sysroot) = cli.check_paths {
+        let root: &Path = sysroot.as_path();
+        let sysroot_arg = if root == Path::new("/") {
+            None
+        } else {
+            Some(root)
+        };
+        match paths::check_all(sysroot_arg) {
+            Ok(()) => {
+                println!("all binary paths OK");
+                return ExitCode::SUCCESS;
+            }
+            Err(msg) => {
+                eprintln!("{msg}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
 
     if let Err(e) = init_logging(&cli.log) {
         eprintln!(

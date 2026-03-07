@@ -3,12 +3,14 @@
 # This runs in CI without KVM — it inspects the ISO via xorriso, mounts
 # the squashfs, and checks the appended BESCONF partition.
 #
-# Usage: test-iso-structure.sh <iso-file> <arch>
+# Usage: test-iso-structure.sh <iso-file> <arch> [installer-bin]
 #   arch: amd64 | arm64
+#   installer-bin: optional path to host bes-installer binary (for --check-paths)
 set -euo pipefail
 
-ISO="${1:?Usage: $0 <iso-file> <arch>}"
-ARCH="${2:?Usage: $0 <iso-file> <arch>}"
+ISO="${1:?Usage: $0 <iso-file> <arch> [installer-bin]}"
+ARCH="${2:?Usage: $0 <iso-file> <arch> [installer-bin]}"
+INSTALLER_BIN="${3:-}"
 
 PASS=0
 FAIL=0
@@ -304,6 +306,24 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
 
     # r[verify iso.contents+2]
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
+
+    # r[verify iso.verify-paths]
+    if [ -n "$INSTALLER_BIN" ] && [ -x "$INSTALLER_BIN" ]; then
+        CHECK_OUTPUT="$("$INSTALLER_BIN" --check-paths "$SQFS_MNT" 2>&1)"
+        CHECK_RC=$?
+        if [ "$CHECK_RC" -eq 0 ]; then
+            pass "bes-installer --check-paths against squashfs"
+        else
+            fail "bes-installer --check-paths against squashfs"
+            echo "$CHECK_OUTPUT" | sed 's/^/    /'
+        fi
+    else
+        if [ -n "$INSTALLER_BIN" ]; then
+            fail "bes-installer --check-paths (binary not found: $INSTALLER_BIN)"
+        else
+            echo "  SKIP: bes-installer --check-paths (no installer-bin argument provided)"
+        fi
+    fi
 
     # r[verify iso.boot.autostart+3]
     check "bes-installer-wrapper exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer-wrapper"

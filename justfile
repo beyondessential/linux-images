@@ -351,7 +351,7 @@ iso-test-structure: _validate-arch
       echo "Run 'just iso' first to build the ISO."
       exit 1
     fi
-    sudo tests/test-iso-structure.sh "$ISO" "{{ arch }}"
+    sudo tests/test-iso-structure.sh "$ISO" "{{ arch }}" "{{ installer_bin }}"
 
 # Prepare QEMU firmware files for boot tests
 _prepare-firmware: _ensure-dirs

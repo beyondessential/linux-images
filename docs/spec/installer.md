@@ -182,6 +182,15 @@ interactive mode.
 
 ## Testing Flags
 
+r[installer.check-paths]
+When the `--check-paths` flag is passed (with an optional sysroot path
+argument), the installer must verify that every hardcoded external binary
+path exists on disk and then exit. If a sysroot is provided, paths are
+resolved relative to that directory (e.g. a mounted squashfs); otherwise
+they are checked against `/`. The exit code must be 0 when all paths are
+present and non-zero when any are missing, with the missing paths printed
+to stderr.
+
 r[installer.no-reboot]
 When the `--no-reboot` flag is passed, the installer must not call `reboot`
 after a successful installation. Instead it must exit cleanly with status 0.

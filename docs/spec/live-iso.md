@@ -31,6 +31,12 @@ userspace to run the TUI installer (block device utilities, zstd, and
 cryptsetup for LUKS operations). The default debootstrap variant provides
 the base; only packages not included in it need to be installed explicitly.
 
+r[iso.verify-paths]
+The ISO structure test must invoke the installer binary with `--check-paths`
+against the mounted squashfs rootfs to verify that every hardcoded external
+binary path resolves to an existing file. This catches path mismatches
+between the installer and the packages installed in the live environment.
+
 r[iso.blacklist-drm]
 The live environment must blacklist all DRM/GPU kernel modules via
 `/etc/modprobe.d/blacklist-gpu.conf`. The TUI installer runs on a text
