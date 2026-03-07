@@ -107,16 +107,41 @@ UEFI systems from that media.
 
 ## Integrity Verification
 
-> r[iso.verity.layout]
+> r[iso.verity.layout+2]
 > All verity-protected blobs (the squashfs rootfs and the images partition)
 > must use a self-describing layout: `[data | verity hash tree | hash_size]`,
-> where `hash_size` is the size of the verity hash tree in bytes, stored as a
-> little-endian unsigned 64-bit integer (8 bytes) at the very end of the
-> blob. At runtime, the consumer reads the last 8 bytes to recover
-> `hash_size`, computes `hash_offset = total_size - 8 - hash_size`, and
-> passes `--hash-offset=<hash_offset>` to `veritysetup open`. No external
-> metadata file is needed for offsets. The root hash is the only piece of
-> information that must be stored externally (it is the trust anchor).
+> where `hash_size` is a little-endian unsigned 64-bit integer (8 bytes) at
+> the very end of the blob. The value of `hash_size` encodes the distance in
+> bytes from the end of the data region to the start of the trailer, i.e.
+> `hash_size = total_blob_size - 8 - data_size`. This distance includes the
+> actual verity hash tree and any alignment padding that follows it.
+>
+> When a verity blob is used as a GPT partition (appended via xorriso), the
+> blob must be padded to a 2048-byte boundary (the ISO 9660 sector size) so
+> that the partition size reported by the block device matches the blob size
+> exactly. The build process must:
+>
+> 1. Record the data size before appending the hash tree.
+> 2. Append the hash tree.
+> 3. Compute the total size needed: round up `(current_size + 8)` to the
+>    next 2048-byte boundary.
+> 4. Pad with zero bytes to `total_needed - 8`.
+> 5. Write the 8-byte trailer where `hash_size = total_needed - 8 - data_size`.
+>
+> This ensures the trailer is always at position `partition_size - 8`
+> regardless of how the partitioning tool rounds up sector sizes. The padding
+> bytes between the hash tree and the trailer are harmless because
+> `veritysetup` infers the hash tree extent from the data size and hash
+> algorithm, ignoring any trailing content.
+>
+> At runtime, the consumer reads the last 8 bytes to recover `hash_size`,
+> computes `hash_offset = total_size - 8 - hash_size`, and passes
+> `--hash-offset=<hash_offset>` to `veritysetup open`. For block devices,
+> `total_size` must be obtained via a method that returns the device size
+> (e.g. seeking to the end), not `stat()` which returns 0 for block devices
+> on Linux. No external metadata file is needed for offsets. The root hash is
+> the only piece of information that must be stored externally (it is the
+> trust anchor).
 
 > r[iso.verity.squashfs]
 > The live rootfs squashfs (`/live/filesystem.squashfs`) must be protected by
@@ -166,17 +191,19 @@ UEFI systems from that media.
 > compression so that the kernel decompresses data transparently on read.
 > The filesystem label must be `BESIMAGES`.
 
-> r[iso.verity.images]
+> r[iso.verity.images+2]
 > The images squashfs partition must be protected by dm-verity using the
 > layout described in `r[iso.verity.layout]`. At build time:
 >
 > 1. Run `mksquashfs` to produce the images squashfs.
-> 2. Run `veritysetup format` on the squashfs to produce a hash tree file
+> 2. Record the squashfs data size.
+> 3. Run `veritysetup format` on the squashfs to produce a hash tree file
 >    and a root hash.
-> 3. Append the hash tree to the squashfs file.
-> 4. Append the hash tree size as a little-endian u64 (8 bytes).
-> 5. Append the combined blob as GPT partition 4 via xorriso.
-> 6. Store the root hash in the GRUB kernel command line as
+> 4. Append the hash tree to the squashfs file.
+> 5. Pad the blob to 2048-byte alignment and write the trailer as described
+>    in `r[iso.verity.layout]`.
+> 6. Append the combined blob as a GPT partition via xorriso.
+> 7. Store the root hash in the GRUB kernel command line as
 >    `images.verity.roothash=<hex>`.
 >
 > At runtime, the installer must find the images partition (GPT partition 4

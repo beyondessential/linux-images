@@ -149,7 +149,7 @@ echo "    squashfs: $(du -h "$OUTPUT_DIR/live/filesystem.squashfs" | cut -f1)"
 # Phase 4: Add verity to squashfs rootfs
 # ============================================================
 # r[impl iso.verity.squashfs]
-# r[impl iso.verity.layout]
+# r[impl iso.verity.layout+2]
 # r[impl iso.verity.build-deps]
 echo "==> Phase 4: Adding verity to squashfs rootfs..."
 

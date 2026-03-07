@@ -218,7 +218,7 @@ if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
     # r[verify iso.verity.squashfs]
     check "grub.cfg contains live.verity.roothash" grep -q "live.verity.roothash=" "$ISO_MNT/boot/grub/grub.cfg"
 
-    # r[verify iso.verity.images]
+    # r[verify iso.verity.images+2]
     check "grub.cfg contains images.verity.roothash" grep -q "images.verity.roothash=" "$ISO_MNT/boot/grub/grub.cfg"
 fi
 
@@ -440,8 +440,8 @@ echo ""
 echo "--- Images Partition ---"
 
 # r[verify iso.images-partition]
-# r[verify iso.verity.images]
-# r[verify iso.verity.layout]
+# r[verify iso.verity.images+2]
+# r[verify iso.verity.layout+2]
 # Find the images partition by GPT type UUID (Linux filesystem).
 # We cannot use a hardcoded partition number because xorriso may renumber
 # partitions relative to the -append_partition arguments.
@@ -483,7 +483,7 @@ if [ -n "$IMAGES_PART" ]; then
         fail "images partition is large enough for verity trailer ($IMAGES_TOTAL_SIZE bytes)"
     fi
 
-    # r[verify iso.verity.images]
+    # r[verify iso.verity.images+2]
     # Extract the root hash from grub.cfg and verify the images partition
     IMAGES_ROOTHASH=""
     if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then

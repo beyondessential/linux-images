@@ -233,8 +233,8 @@ echo ""
 # Phase 2: Build images squashfs with verity
 # ============================================================
 # r[impl iso.images-partition]
-# r[impl iso.verity.images]
-# r[impl iso.verity.layout]
+# r[impl iso.verity.images+2]
+# r[impl iso.verity.layout+2]
 # r[impl iso.verity.build-deps]
 echo "==> Phase 2: Building images squashfs with verity..."
 
@@ -249,11 +249,32 @@ VERITY_OUTPUT="$(veritysetup format "$IMAGES_SQFS" "$IMAGES_HASHTREE" 2>&1)"
 IMAGES_ROOTHASH="$(echo "$VERITY_OUTPUT" | grep "Root hash:" | awk '{print $NF}')"
 echo "    images verity root hash: $IMAGES_ROOTHASH"
 
-# Append hash tree + size trailer (self-describing verity layout)
-HASHTREE_SIZE="$(stat --format='%s' "$IMAGES_HASHTREE")"
+# r[impl iso.verity.layout+2]
+# Append hash tree + sector-aligned trailer (self-describing verity layout).
+# The blob must be padded to a 2048-byte boundary so that the partition size
+# reported by blockdev --getsize64 matches the blob size exactly. Without this,
+# xorriso silently pads to the sector boundary and the trailer is no longer at
+# the end of the partition.
+IMAGES_DATA_SIZE="$(stat --format='%s' "$IMAGES_SQFS")"
 cat "$IMAGES_HASHTREE" >> "$IMAGES_SQFS"
 rm -f "$IMAGES_HASHTREE"
-python3 -c "import struct,sys; sys.stdout.buffer.write(struct.pack('<Q', $HASHTREE_SIZE))" >> "$IMAGES_SQFS"
+
+CURRENT_SIZE="$(stat --format='%s' "$IMAGES_SQFS")"
+# Total needed: round up (current + 8-byte trailer) to next 2048-byte boundary
+TOTAL_NEEDED=$(python3 -c "
+cur = $CURRENT_SIZE + 8
+aligned = ((cur + 2047) // 2048) * 2048
+print(aligned)
+")
+PADDING=$((TOTAL_NEEDED - CURRENT_SIZE - 8))
+if [ "$PADDING" -gt 0 ]; then
+    dd if=/dev/zero bs=1 count="$PADDING" 2>/dev/null >> "$IMAGES_SQFS"
+fi
+# hash_size = distance from end of data to start of trailer
+TRAILER_HASH_SIZE=$((TOTAL_NEEDED - 8 - IMAGES_DATA_SIZE))
+python3 -c "import struct,sys; sys.stdout.buffer.write(struct.pack('<Q', $TRAILER_HASH_SIZE))" >> "$IMAGES_SQFS"
+echo "    images data size:  $IMAGES_DATA_SIZE"
+echo "    images total size: $TOTAL_NEEDED (sector-aligned)"
 echo "    images blob (sqfs+verity): $(du -h "$IMAGES_SQFS" | cut -f1)"
 
 # ============================================================
