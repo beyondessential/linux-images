@@ -587,25 +587,32 @@ fn emit_plan(plan: &plan::InstallPlan, cli: &Cli) -> Result<()> {
 }
 
 fn read_build_info() -> String {
-    let contents = match fs::read_to_string("/etc/bes-build-info") {
-        Ok(c) => c,
-        Err(_) => return String::new(),
+    let commit = crate::Bosion::GIT_COMMIT_SHORTHASH;
+    let bosion_date = crate::Bosion::BUILD_DATE;
+
+    let (date, arch) = match fs::read_to_string("/etc/bes-build-info") {
+        Ok(contents) => {
+            let mut d = None;
+            let mut a = None;
+            for line in contents.lines() {
+                if let Some(val) = line.strip_prefix("BUILD_DATE=") {
+                    d = Some(val.trim().to_string());
+                } else if let Some(val) = line.strip_prefix("ARCH=") {
+                    a = Some(val.trim().to_string());
+                }
+            }
+            (d, a)
+        }
+        Err(_) => (None, None),
     };
 
-    let mut date = None;
-    let mut arch = None;
-    for line in contents.lines() {
-        if let Some(val) = line.strip_prefix("BUILD_DATE=") {
-            date = Some(val.trim());
-        } else if let Some(val) = line.strip_prefix("ARCH=") {
-            arch = Some(val.trim());
-        }
-    }
+    let date = date.unwrap_or_else(|| bosion_date.to_string());
+    let arch = arch.unwrap_or_else(detect_arch);
 
-    match (date, arch) {
-        (Some(d), Some(a)) => format!("Built {d} ({a})"),
-        (Some(d), None) => format!("Built {d}"),
-        _ => String::new(),
+    if commit.is_empty() {
+        format!("Built {date} ({arch})")
+    } else {
+        format!("Built {date} ({arch}) {commit}")
     }
 }
 

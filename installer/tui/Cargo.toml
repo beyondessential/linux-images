@@ -33,3 +33,6 @@ tempfile = "3.26.0"
 
 [features]
 luks-tests = []
+
+[build-dependencies]
+bosion = "2.0.0"
