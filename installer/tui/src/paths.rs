@@ -24,7 +24,7 @@ pub const PARTPROBE: &str = "/usr/sbin/partprobe";
 pub const CRYPTSETUP: &str = "/usr/sbin/cryptsetup";
 
 // filesystem tools
-pub const BTRFS: &str = "/usr/sbin/btrfs";
+pub const BTRFS: pub const BTRFS: &str = "/usr/sbin/btrfs";str = "/usr/bin/btrfs";
 pub const BTRFSTUNE: &str = "/usr/bin/btrfstune";
 pub const E2FSCK: &str = "/usr/sbin/e2fsck";
 pub const TUNE2FS: &str = "/usr/sbin/tune2fs";
