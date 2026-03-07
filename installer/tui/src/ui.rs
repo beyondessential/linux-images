@@ -782,7 +782,7 @@ mod tests {
         )
     }
 
-    // r[verify installer.tui.welcome+3]
+    // r[verify installer.tui.welcome+4]
     #[test]
     fn initial_state() {
         let state = make_state();

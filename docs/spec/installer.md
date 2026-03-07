@@ -280,11 +280,14 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome+3]
+r[installer.tui.welcome+4]
 The TUI must open with a welcome screen that displays a description of what
 the image is for, contact information, and instructions on how to proceed.
 The user presses Enter to proceed to the disk selection screen. The welcome
 screen also offers a `n` keybind to open a dedicated network check screen.
+Pressing `q` triggers a reboot (same as the Done/Error screens). The footer
+must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
+debug shell without leaving the installer permanently.
 
 > r[installer.tui.network-check+4]
 > The TUI must perform network connectivity checks in the background,
@@ -533,14 +536,13 @@ finish, the TUI transitions to a completion screen. For encrypted installs,
 the completion screen also displays the recovery passphrase (replacing the
 separate recovery passphrase screen).
 
-r[installer.tui.debug-shell]
+r[installer.tui.debug-shell+2]
 Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
 interactive shell (`/bin/sh`). The TUI must leave the alternate screen,
 disable raw mode, and spawn the shell as a child process, waiting for it to
 exit. When the shell exits, the TUI must re-enter the alternate screen,
-re-enable raw mode, and redraw. This keybind is intentionally undocumented
-in the on-screen help; it is a debugging aid for diagnosing failures in
-container and bare-metal environments.
+re-enable raw mode, and redraw. The keybind must be shown in the footer
+hints on all screens so users can discover it.
 
 r[installer.tui.loop-device]
 The installer's TUI and write pipeline must not assume the target device is

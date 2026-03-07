@@ -31,7 +31,6 @@ enum WorkerMessage {
 #[derive(Debug)]
 enum KeyAction {
     Continue,
-    Quit,
     Reboot,
     StartWrite,
     Shell,
@@ -44,7 +43,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         return KeyAction::Continue;
     }
 
-    // r[impl installer.tui.debug-shell]
+    // r[impl installer.tui.debug-shell+2]
     if key
         .modifiers
         .contains(KeyModifiers::ALT | KeyModifiers::CONTROL)
@@ -54,8 +53,9 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     }
 
     match &state.screen {
+        // r[impl installer.tui.welcome+4]
         Screen::Welcome => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Char('n') => state.open_network_check(),
             KeyCode::Enter => state.advance(),
             _ => {}
@@ -63,7 +63,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.network-check+4]
         Screen::NetworkCheck => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
             KeyCode::Tab => state.toggle_net_pane(),
@@ -74,7 +74,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.network-check+4]
         Screen::NetworkResults => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
             KeyCode::Tab => state.toggle_net_pane(),
@@ -85,7 +85,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         },
 
         Screen::DiskSelection => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Char('k') => state.select_prev_disk(),
             KeyCode::Down | KeyCode::Char('j') => state.select_next_disk(),
@@ -99,7 +99,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.disk-encryption+2]
         Screen::DiskEncryption => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Down | KeyCode::Char('j') => {
                 state.cycle_disk_encryption();
@@ -316,7 +316,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         },
 
         Screen::Confirmation => match key.code {
-            KeyCode::Char('q') if state.confirm_input.is_empty() => return KeyAction::Quit,
+            KeyCode::Char('q') if state.confirm_input.is_empty() => return KeyAction::Reboot,
             KeyCode::Esc => {
                 state.confirm_input.clear();
                 state.go_back();
@@ -431,7 +431,6 @@ fn event_loop(
 
         match handle_key(key, state) {
             KeyAction::Continue => {}
-            KeyAction::Quit => break,
             // r[impl installer.no-reboot]
             // r[impl installer.tui.reboot-feedback]
             KeyAction::Reboot => {
@@ -450,7 +449,7 @@ fn event_loop(
                     besconf,
                 );
             }
-            // r[impl installer.tui.debug-shell]
+            // r[impl installer.tui.debug-shell+2]
             KeyAction::Shell => {
                 drop_to_shell(terminal)?;
             }
@@ -473,7 +472,7 @@ pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState 
         state.poll_github_keys();
 
         match handle_key(key, &mut state) {
-            KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot | KeyAction::Shell => {
+            KeyAction::StartWrite | KeyAction::Reboot | KeyAction::Shell => {
                 break;
             }
             KeyAction::Continue => {}
@@ -842,11 +841,24 @@ mod tests {
 
     // r[verify installer.dryrun.script.headless]
     #[test]
-    fn scripted_quit_on_welcome() {
+    fn scripted_reboot_on_welcome() {
         let state = make_state();
         let events = vec![press(KeyCode::Char('q'))];
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Welcome);
+    }
+
+    // r[verify installer.tui.welcome+4]
+    #[test]
+    fn welcome_q_triggers_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Welcome;
+        let action = handle_key(press(KeyCode::Char('q')), &mut state);
+        assert!(
+            matches!(action, KeyAction::Reboot),
+            "expected Reboot for 'q' on Welcome screen, got {:?}",
+            action,
+        );
     }
 
     // r[verify installer.dryrun.script.headless]
@@ -1447,7 +1459,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.tui.debug-shell]
+    // r[verify installer.tui.debug-shell+2]
     #[test]
     fn ctrl_alt_d_returns_shell_action() {
         let mut state = make_state();
@@ -1457,7 +1469,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.debug-shell]
+    // r[verify installer.tui.debug-shell+2]
     #[test]
     fn ctrl_alt_d_breaks_scripted_loop() {
         let state = make_state();
