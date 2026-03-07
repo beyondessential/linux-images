@@ -48,6 +48,7 @@ output_raw := output_dir / filestem + ".raw"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
 output_iso := output_arch_dir / "bes-installer-" + arch + ".iso"
+iso_rootfs_dir := work_dir / "iso-rootfs"
 
 # --- Rust installer settings ---
 
@@ -80,14 +81,29 @@ installer-lint:
 # ============================================================
 # Live ISO
 # ============================================================
+# Build the live rootfs (debootstrap + packages + installer + squashfs + verity).
 
-# Build the live installer ISO (requires images + installer binary)
-iso: _validate-arch installer-build
+# Cached: skips if the output directory already contains a filesystem.squashfs.
+iso-rootfs: _validate-arch installer-build _ensure-dirs
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -f "{{ iso_rootfs_dir }}/live/filesystem.squashfs" ]; then
+      echo "ISO rootfs already exists: {{ iso_rootfs_dir }} (skipping build)"
+      exit 0
+    fi
+    rm -rf "{{ iso_rootfs_dir }}"
+    sudo ARCH="{{ arch }}" \
+         OUTPUT_DIR="{{ iso_rootfs_dir }}" \
+         INSTALLER_BIN="{{ installer_bin }}" \
+         UBUNTU_SUITE="{{ ubuntu_suite }}" \
+         UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         iso/build-iso-rootfs.sh
+
+# Assemble the live installer ISO from the cached rootfs + cloud image.
+iso: _validate-arch iso-rootfs
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Verify we have the cloud image (partition images are extracted from it).
-    # Prefer .raw.zst but accept uncompressed .raw too.
     CLOUD_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw.zst' | head -1)"
     if [ -z "$CLOUD_IMAGE" ]; then
       CLOUD_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw' | head -1)"
@@ -101,11 +117,21 @@ iso: _validate-arch installer-build
 
     sudo ARCH="{{ arch }}" \
          OUTPUT="{{ output_iso }}" \
-         INSTALLER_BIN="{{ installer_bin }}" \
+         ROOTFS_DIR="{{ iso_rootfs_dir }}" \
          CLOUD_IMAGE="$CLOUD_IMAGE" \
+         iso/build-iso.sh
+
+# Force-rebuild the ISO rootfs (removes cached rootfs first)
+iso-rootfs-rebuild: _validate-arch installer-build _ensure-dirs
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf "{{ iso_rootfs_dir }}"
+    sudo ARCH="{{ arch }}" \
+         OUTPUT_DIR="{{ iso_rootfs_dir }}" \
+         INSTALLER_BIN="{{ installer_bin }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
-         iso/build-iso.sh
+         iso/build-iso-rootfs.sh
 
 # ============================================================
 # Housekeeping
@@ -334,7 +360,7 @@ test-shellcheck:
     set -euo pipefail
     echo "Running shellcheck..."
     find image/ tests/ scripts/ iso/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=error
-    shellcheck --severity=error image/files/grow-root-filesystem image/files/ts-up image/files/bes-tailscale-firstboot-auth
+    shellcheck --severity=error image/files/grow-root-filesystem image/files/ts-up image/files/bes-tailscale-firstboot-auth iso/rootfs-files/usr/local/bin/bes-installer-wrapper
     echo "All scripts passed shellcheck."
 
 # Verify image structure by loopback-mounting (requires sudo)

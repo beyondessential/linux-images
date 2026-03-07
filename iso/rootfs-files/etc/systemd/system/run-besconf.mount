@@ -1,0 +1,14 @@
+[Unit]
+Description=BES Configuration Partition
+After=local-fs-pre.target
+DefaultDependencies=no
+
+[Mount]
+What=/dev/disk/by-label/BESCONF
+Where=/run/besconf
+Type=vfat
+Options=ro,noatime,iocharset=ascii
+TimeoutSec=5
+
+[Install]
+WantedBy=local-fs.target

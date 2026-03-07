@@ -1,0 +1,38 @@
+# BES Installer Configuration
+#
+# Uncomment and edit the options below to pre-configure the installer.
+# When written to the BESCONF partition of a USB stick, these values
+# will be used as defaults (or to drive a fully automatic install).
+
+# Run fully automatically without prompts.
+# Requires at minimum: disk-encryption and disk.
+# auto = true
+
+# Disk encryption mode: "tpm", "keyfile", or "none".
+#   tpm     - LUKS + TPM PCR 1 (requires a TPM; default when TPM present)
+#   keyfile - LUKS + keyfile on boot partition (default when no TPM)
+#   none    - No encryption (cloud image)
+# disk-encryption = "tpm"
+
+# Target disk: a device path (e.g. "/dev/sda") or a selection strategy.
+# Strategies:
+#   "largest-ssd" - largest SSD by capacity
+#   "largest"     - largest disk of any type
+#   "smallest"    - smallest disk of any type
+# disk = "largest-ssd"
+
+# hostname = "server-01"
+# tailscale-authkey = "tskey-auth-xxxxx"
+# ssh-authorized-keys = [
+#   "ssh-ed25519 AAAA... admin@example.com",
+# ]
+
+# Pre-determined recovery passphrase for disk encryption.
+# Must be at least 25 characters, printable ASCII only (no whitespace).
+# If not set, a random diceware passphrase is generated.
+# recovery-passphrase = "xK9$mP2vL!nQ7wR4jH6dT0yB3fA8s"
+
+# Save recovery keys to recovery-keys.txt on the BESCONF partition.
+# Each line contains: passphrase, root partition UUID, machine serial.
+# Only works when BESCONF is writable (USB boot, not optical).
+# save-recovery-keys = false
