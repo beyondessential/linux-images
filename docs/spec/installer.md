@@ -836,6 +836,44 @@ and the device cleaned up when the test scenario finishes. The shared
 nspawn helpers must support an optional TPM device bind-mount so that only
 TPM scenarios pay the setup cost.
 
+r[installer.container.fake-luks]
+Container-based integration tests must be able to run metal (encrypted)
+scenarios in CI environments where the kernel keyring is not available
+(e.g. `systemd-nspawn` on GitHub Actions runners, where `cryptsetup open`
+fails with "Failed to load key in kernel keyring"). This is achieved by
+replacing `cryptsetup` and `systemd-cryptenroll` inside the container with
+shim scripts that simulate LUKS operations without `dm-crypt`:
+
+- `luksFormat`: no-op (the partition remains raw, unencrypted).
+- `open <device> <name>`: creates a symlink `/dev/mapper/<name>` pointing
+  to the raw partition device, so the installer can write to and mount the
+  "opened" volume transparently.
+- `close <name>`: removes the symlink.
+- `luksAddKey`, `luksChangeKey`: no-op.
+- `systemd-cryptenroll`: no-op.
+
+Because the partition is not actually encrypted, the btrfs filesystem is
+written directly to the raw partition. The installer's full code path still
+executes: partitioning, image writing, `crypttab` generation, dracut
+keyfile configuration, initramfs rebuild, and grub configuration. The only
+difference is that no real encryption or key enrollment occurs.
+
+Detection is automatic: before running a metal scenario, the test harness
+attempts a real `cryptsetup luksFormat` + `open` + `close` cycle on a
+temporary loopback device. If this probe fails, `BES_FAKE_LUKS` is set to
+`1` and the shims are installed. The caller can also force fake mode by
+setting `BES_FAKE_LUKS=1` or force real mode with `BES_FAKE_LUKS=0`.
+
+When fake-LUKS mode is active for a TPM scenario, `swtpm` is not started
+(the `systemd-cryptenroll` shim does not need a real or emulated TPM).
+
+The host-side verification phase (mounting the installed filesystem to check
+its contents) must also account for fake mode: instead of calling
+`cryptsetup open` on the host, it creates a symlink to the raw partition.
+The shared nspawn helpers (`nspawn-opts.sh`) provide `host_luks_open`,
+`host_luks_close`, and `host_luks_cleanup` functions that dispatch to real
+`cryptsetup` or symlink operations depending on `BES_FAKE_LUKS`.
+
 r[installer.container.error-logging]
 Fatal errors that propagate to the installer's top-level must be logged via
 the tracing/log file **in addition to** being printed to stderr, so that

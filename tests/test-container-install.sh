@@ -87,6 +87,16 @@ if [ ! -d "$IMAGES_DIR" ]; then
 fi
 
 # ============================================================
+# Fake-LUKS detection
+# ============================================================
+# r[impl installer.container.fake-luks]
+if [ "$VARIANT" = "metal" ]; then
+    luks_detect_or_fake
+else
+    BES_FAKE_LUKS=0
+fi
+
+# ============================================================
 # State tracking for cleanup
 # ============================================================
 WORK_DIR=""
@@ -117,11 +127,11 @@ cleanup() {
     fi
 
     if [ -e /dev/mapper/bes-target-root ]; then
-        cryptsetup close bes-target-root 2>/dev/null
+        host_luks_cleanup bes-target-root
     fi
 
     if [ -e "/dev/mapper/$LUKS_NAME" ]; then
-        cryptsetup close "$LUKS_NAME" 2>/dev/null
+        host_luks_cleanup "$LUKS_NAME"
     fi
 
     if [ -n "$LOOP_DEV" ]; then
@@ -160,6 +170,7 @@ echo "  password-hash: ${SET_PASSWORD_HASH:+(hash provided)}${SET_PASSWORD_HASH:
 echo "  timezone:      ${SET_TIMEZONE:-(not set, defaults to UTC)}"
 echo "  copy-log:      ${SET_COPY_INSTALL_LOG:-(not set, defaults to true)}"
 echo "  private-net:   $PRIVATE_NETWORK"
+echo "  fake-luks:     ${BES_FAKE_LUKS:-0}"
 echo "  disk size:     $TARGET_DISK_SIZE"
 echo ""
 
@@ -269,9 +280,24 @@ echo "==> Running installer in systemd-nspawn container..."
 # r[verify installer.container.swtpm]
 # For TPM scenarios, start a software TPM emulator so that
 # systemd-cryptenroll --tpm2-device=auto has a real (emulated) TPM to talk to.
-if [ "$DISK_ENCRYPTION" = "tpm" ]; then
+# In fake-LUKS mode, swtpm is not needed (the shim handles cryptenroll).
+if [ "$DISK_ENCRYPTION" = "tpm" ] && [ "${BES_FAKE_LUKS:-0}" != "1" ]; then
     echo "==> Starting software TPM (swtpm)..."
     swtpm_start "$WORK_DIR/swtpm"
+elif [ "$DISK_ENCRYPTION" = "tpm" ] && [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+    echo "==> Skipping swtpm (fake-LUKS mode)"
+fi
+
+# r[impl installer.container.fake-luks]
+# r[verify installer.container.fake-luks]
+# Install fake cryptsetup/systemd-cryptenroll shims into the container rootfs
+# when the kernel keyring is unavailable for real LUKS operations.
+# Verification: a successful metal scenario with BES_FAKE_LUKS=1 proves the
+# shims work end-to-end (partitioning, image write, encryption config,
+# initramfs rebuild, grub config, and post-install verification all pass).
+if [ "${BES_FAKE_LUKS:-0}" = "1" ] && [ "$VARIANT" = "metal" ]; then
+    echo "==> Installing fake-LUKS shims into container rootfs..."
+    install_fake_luks_shims "$SCENARIO_ROOTFS"
 fi
 
 # r[impl installer.container.isolation+3]: build nspawn options and binds
@@ -363,11 +389,20 @@ echo "    PASS: no stale mounts from ${LOOP_DEV}"
 
 # r[verify installer.write.luks-before-write+2]
 if [ "$VARIANT" = "metal" ]; then
-    if [ -e /dev/mapper/bes-target-root ]; then
-        echo "    FAIL: LUKS volume bes-target-root still open"
-        exit 1
+    if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+        # In fake mode, check that the symlink was removed by the shim's close.
+        if [ -L /dev/mapper/bes-target-root ]; then
+            echo "    FAIL: fake-LUKS symlink bes-target-root still present"
+            exit 1
+        fi
+        echo "    PASS: fake-LUKS symlink bes-target-root is removed"
+    else
+        if [ -e /dev/mapper/bes-target-root ]; then
+            echo "    FAIL: LUKS volume bes-target-root still open"
+            exit 1
+        fi
+        echo "    PASS: LUKS volume bes-target-root is closed"
     fi
-    echo "    PASS: LUKS volume bes-target-root is closed"
 fi
 
 # ============================================================
@@ -426,35 +461,52 @@ ROOT_PART="${LOOP_DEV}p3"
 if [ "$VARIANT" = "metal" ]; then
     echo "    Opening LUKS volume..."
 
-    # The installer uses the recovery passphrase as the initial LUKS key.
-    # Extract it from the installer output (printed between === markers).
-    RECOVERY_PASSPHRASE=""
-    if [ -f "$INSTALLER_OUTPUT" ]; then
-        RECOVERY_PASSPHRASE="$(sed -n '/=== RECOVERY PASSPHRASE ===/,/==========================/{/===/d; s/^[[:space:]]*//; /^$/d; p;}' "$INSTALLER_OUTPUT" | head -1)"
-    fi
-
-    LUKS_RC=1
-    if [ -n "$RECOVERY_PASSPHRASE" ]; then
-        PASSPHRASE_KEYFILE="$WORK_DIR/passphrase-keyfile"
-        printf '%s' "$RECOVERY_PASSPHRASE" > "$PASSPHRASE_KEYFILE"
-        chmod 400 "$PASSPHRASE_KEYFILE"
-
+    if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+        # In fake-LUKS mode the partition is raw btrfs (not encrypted).
+        # Use host_luks_open which creates a symlink for consistency.
         set +e
-        cryptsetup open "$ROOT_PART" "$LUKS_NAME" --key-file "$PASSPHRASE_KEYFILE" 2>/dev/null
+        host_luks_open "$ROOT_PART" "$LUKS_NAME"
         LUKS_RC=$?
         set -e
-    fi
 
-    if [ $LUKS_RC -eq 0 ]; then
-        check "LUKS volume opened with recovery passphrase" true
-        BTRFS_DEV="/dev/mapper/$LUKS_NAME"
-    else
-        check "LUKS volume opened with recovery passphrase" false
-        echo "    Cannot open LUKS volume; skipping filesystem checks."
-        if [ -z "$RECOVERY_PASSPHRASE" ]; then
-            echo "    (recovery passphrase not found in installer output)"
+        if [ $LUKS_RC -eq 0 ]; then
+            check "fake-LUKS volume opened (symlink)" true
+            BTRFS_DEV="/dev/mapper/$LUKS_NAME"
+        else
+            check "fake-LUKS volume opened (symlink)" false
+            BTRFS_DEV=""
         fi
-        BTRFS_DEV=""
+    else
+        # The installer uses the recovery passphrase as the initial LUKS key.
+        # Extract it from the installer output (printed between === markers).
+        RECOVERY_PASSPHRASE=""
+        if [ -f "$INSTALLER_OUTPUT" ]; then
+            RECOVERY_PASSPHRASE="$(sed -n '/=== RECOVERY PASSPHRASE ===/,/==========================/{/===/d; s/^[[:space:]]*//; /^$/d; p;}' "$INSTALLER_OUTPUT" | head -1)"
+        fi
+
+        LUKS_RC=1
+        if [ -n "$RECOVERY_PASSPHRASE" ]; then
+            PASSPHRASE_KEYFILE="$WORK_DIR/passphrase-keyfile"
+            printf '%s' "$RECOVERY_PASSPHRASE" > "$PASSPHRASE_KEYFILE"
+            chmod 400 "$PASSPHRASE_KEYFILE"
+
+            set +e
+            host_luks_open "$ROOT_PART" "$LUKS_NAME" --key-file "$PASSPHRASE_KEYFILE" 2>/dev/null
+            LUKS_RC=$?
+            set -e
+        fi
+
+        if [ $LUKS_RC -eq 0 ]; then
+            check "LUKS volume opened with recovery passphrase" true
+            BTRFS_DEV="/dev/mapper/$LUKS_NAME"
+        else
+            check "LUKS volume opened with recovery passphrase" false
+            echo "    Cannot open LUKS volume; skipping filesystem checks."
+            if [ -z "$RECOVERY_PASSPHRASE" ]; then
+                echo "    (recovery passphrase not found in installer output)"
+            fi
+            BTRFS_DEV=""
+        fi
     fi
 else
     BTRFS_DEV="$ROOT_PART"
@@ -769,7 +821,7 @@ if [ -n "$BTRFS_DEV" ]; then
     fi
 
     if [ "$VARIANT" = "metal" ] && [ -e "/dev/mapper/$LUKS_NAME" ]; then
-        cryptsetup close "$LUKS_NAME"
+        host_luks_close "$LUKS_NAME"
     fi
 fi
 

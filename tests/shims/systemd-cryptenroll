@@ -1,0 +1,16 @@
+#!/bin/bash
+#
+# Fake systemd-cryptenroll shim for CI environments where the kernel keyring
+# or TPM hardware is not available.
+#
+# This is a no-op: it logs the invocation and exits successfully. The
+# installer calls systemd-cryptenroll to enroll a TPM2 key slot on the LUKS
+# volume. In fake-LUKS mode the volume is not really encrypted, so there is
+# nothing to enroll — but the installer must see a successful exit so it
+# proceeds to write crypttab and rebuild the initramfs.
+#
+# Installed at /usr/bin/systemd-cryptenroll inside the container rootfs
+# (replacing the real binary) only when BES_FAKE_LUKS=1.
+
+echo "[fake-systemd-cryptenroll] (no-op): $*" >&2
+exit 0

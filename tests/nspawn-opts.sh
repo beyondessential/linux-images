@@ -10,6 +10,10 @@
 # single file so that the isolation test validates the same nspawn
 # configuration that the installer tests and interactive trial use.
 
+# r[impl installer.container.fake-luks]
+# Directory containing shim scripts (relative to this file).
+_SHIMS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shims"
+
 # ============================================================
 # State: tracked by this library, cleaned up by swtpm_stop.
 # ============================================================
@@ -219,4 +223,152 @@ swtpm_stop() {
     _SWTPM_TPM_DEV=""
     _SWTPM_TPMRM_DEV=""
     _SWTPM_STATE_DIR=""
+}
+
+# ============================================================
+# Fake-LUKS helpers for CI environments
+# ============================================================
+
+# r[impl installer.container.fake-luks]
+# Detect whether real dm-crypt / kernel-keyring LUKS operations are
+# available. Sets BES_FAKE_LUKS=1 when they are not.
+#
+# The caller can force fake mode by setting BES_FAKE_LUKS=1 before calling,
+# or force real mode by setting BES_FAKE_LUKS=0.
+#
+# Usage:
+#   luks_detect_or_fake
+#
+# After this call, BES_FAKE_LUKS is "1" (fake) or "0" (real).
+luks_detect_or_fake() {
+    # Honour explicit override.
+    case "${BES_FAKE_LUKS:-}" in
+        0) echo "    luks: real mode (BES_FAKE_LUKS=0 forced)"; return ;;
+        1) echo "    luks: fake mode (BES_FAKE_LUKS=1 forced)"; return ;;
+    esac
+
+    # Auto-detect: attempt to format+open a tiny LUKS volume on a temp file.
+    # If this fails (e.g. "Failed to load key in kernel keyring"), fall back
+    # to fake mode.
+    local probe_dir
+    probe_dir="$(mktemp -d -t bes-luks-probe-XXXXXX)"
+    local probe_img="$probe_dir/probe.img"
+    local probe_loop="" probe_ok=0
+
+    truncate -s 16M "$probe_img"
+    probe_loop="$(losetup --show --find "$probe_img" 2>/dev/null)" || true
+
+    if [ -n "$probe_loop" ]; then
+        # Try a quick luksFormat + open + close cycle.
+        local probe_kf="$probe_dir/kf"
+        printf 'probe-passphrase' > "$probe_kf"
+        if cryptsetup luksFormat --type luks2 --batch-mode \
+                --pbkdf pbkdf2 --pbkdf-force-iterations 1000 \
+                "$probe_loop" --key-file "$probe_kf" 2>/dev/null \
+           && cryptsetup open "$probe_loop" bes-luks-probe \
+                --key-file "$probe_kf" 2>/dev/null; then
+            cryptsetup close bes-luks-probe 2>/dev/null || true
+            probe_ok=1
+        fi
+        losetup -d "$probe_loop" 2>/dev/null || true
+    fi
+
+    rm -rf "$probe_dir"
+
+    if [ "$probe_ok" -eq 1 ]; then
+        BES_FAKE_LUKS=0
+        echo "    luks: real mode (probe succeeded)"
+    else
+        BES_FAKE_LUKS=1
+        echo "    luks: fake mode (probe failed, kernel keyring unavailable)"
+    fi
+}
+
+# Install the fake cryptsetup and systemd-cryptenroll shims into a container
+# rootfs, replacing the real binaries.
+#
+# Usage:
+#   install_fake_luks_shims <rootfs-dir>
+#
+# Only call when BES_FAKE_LUKS=1.
+install_fake_luks_shims() {
+    local rootfs="${1:?install_fake_luks_shims: rootfs-dir required}"
+
+    if [ ! -f "$_SHIMS_DIR/cryptsetup" ]; then
+        echo "ERROR: shim not found: $_SHIMS_DIR/cryptsetup"
+        return 1
+    fi
+
+    # Replace the real cryptsetup with the shim.
+    # Back up the original in case the rootfs is reused.
+    local cs_path="$rootfs/usr/sbin/cryptsetup"
+    if [ -f "$cs_path" ] && [ ! -f "$cs_path.real" ]; then
+        mv "$cs_path" "$cs_path.real"
+    fi
+    cp "$_SHIMS_DIR/cryptsetup" "$cs_path"
+    chmod +x "$cs_path"
+
+    # Replace systemd-cryptenroll.
+    local ce_path="$rootfs/usr/bin/systemd-cryptenroll"
+    if [ -f "$ce_path" ] && [ ! -f "$ce_path.real" ]; then
+        mv "$ce_path" "$ce_path.real"
+    fi
+    cp "$_SHIMS_DIR/systemd-cryptenroll" "$ce_path"
+    chmod +x "$ce_path"
+
+    echo "    installed fake-LUKS shims into $rootfs"
+}
+
+# Open a "LUKS" volume for host-side verification.
+#
+# In real mode, calls cryptsetup open. In fake mode (BES_FAKE_LUKS=1),
+# creates a symlink at /dev/mapper/<name> pointing to the raw partition
+# (the partition is unencrypted btrfs in fake mode).
+#
+# Usage:
+#   host_luks_open <device> <name> [--key-file <keyfile>]
+#
+# Returns 0 on success, non-zero on failure.
+host_luks_open() {
+    local device="$1" name="$2"
+    shift 2
+
+    if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+        mkdir -p /dev/mapper
+        ln -sf "$device" "/dev/mapper/$name"
+        return 0
+    else
+        cryptsetup open "$device" "$name" "$@"
+    fi
+}
+
+# Close a "LUKS" volume for host-side verification.
+#
+# In real mode, calls cryptsetup close. In fake mode, removes the symlink.
+#
+# Usage:
+#   host_luks_close <name>
+host_luks_close() {
+    local name="$1"
+
+    if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+        rm -f "/dev/mapper/$name"
+    else
+        cryptsetup close "$name"
+    fi
+}
+
+# Clean up any fake-LUKS mapper symlinks left behind.
+# Safe to call in both real and fake mode.
+#
+# Usage:
+#   host_luks_cleanup <name>
+host_luks_cleanup() {
+    local name="$1"
+
+    if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+        rm -f "/dev/mapper/$name" 2>/dev/null || true
+    else
+        cryptsetup close "$name" 2>/dev/null || true
+    fi
 }
