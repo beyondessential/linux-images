@@ -305,11 +305,12 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     # r[verify iso.contents+2]
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
 
-    # r[verify iso.boot.autostart+2]
+    # r[verify iso.boot.autostart+3]
     check "bes-installer-wrapper exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer-wrapper"
     check "bes-installer.service exists" test -f "$SQFS_MNT/etc/systemd/system/bes-installer.service"
     check "bes-chvt.service exists" test -f "$SQFS_MNT/etc/systemd/system/bes-chvt.service"
     check "chvt binary exists (kbd package)" test -x "$SQFS_MNT/usr/bin/chvt"
+    check "reboot binary exists (systemd-sysv)" test -x "$SQFS_MNT/sbin/reboot" -o -x "$SQFS_MNT/usr/sbin/reboot"
 
     # Check that the services are enabled (symlinked into .wants)
     if find "$SQFS_MNT/etc/systemd/system" -name "bes-installer.service" -type l 2>/dev/null | grep -q .; then
@@ -396,7 +397,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fi
     fi
 
-    # r[verify iso.boot.autostart+2]
+    # r[verify iso.boot.autostart+3]
     # getty on tty2 should be masked so it doesn't compete with the installer
     if [ -L "$SQFS_MNT/etc/systemd/system/getty@tty2.service" ]; then
         MASK_TARGET="$(readlink "$SQFS_MNT/etc/systemd/system/getty@tty2.service")"

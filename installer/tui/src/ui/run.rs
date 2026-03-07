@@ -432,7 +432,7 @@ fn event_loop(
         match handle_key(key, state) {
             KeyAction::Continue => {}
             // r[impl installer.no-reboot]
-            // r[impl installer.tui.reboot-feedback]
+            // r[impl installer.tui.reboot-feedback+2]
             KeyAction::Reboot => {
                 if !no_reboot {
                     reboot(terminal);
@@ -667,7 +667,7 @@ fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     Ok(())
 }
 
-// r[impl installer.tui.reboot-feedback]
+// r[impl installer.tui.reboot-feedback+2]
 fn reboot(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
     tracing::info!("rebooting system");
 
@@ -678,9 +678,31 @@ fn reboot(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
     println!("Rebooting...");
 
     // Switch back to tty1 so systemd shutdown output is visible.
-    let _ = std::process::Command::new("chvt").arg("1").status();
+    let _ = std::process::Command::new("/usr/bin/chvt")
+        .arg("1")
+        .status();
 
-    let _ = std::process::Command::new("reboot").status();
+    // Try `reboot` first (provided by systemd-sysv), fall back to `systemctl reboot`.
+    match std::process::Command::new("/sbin/reboot").status() {
+        Ok(s) if s.success() => return,
+        Ok(s) => tracing::warn!("reboot exited with {s}, trying systemctl"),
+        Err(e) => tracing::warn!("reboot not found ({e}), trying systemctl"),
+    }
+
+    match std::process::Command::new("/usr/bin/systemctl")
+        .arg("reboot")
+        .status()
+    {
+        Ok(s) if s.success() => return,
+        Ok(s) => tracing::error!("systemctl reboot exited with {s}"),
+        Err(e) => tracing::error!("systemctl reboot failed: {e}"),
+    }
+
+    eprintln!("Failed to reboot. Press Ctrl-Alt-F1 for a shell, then run: reboot -f");
+    // Block so the user can read the message and the service doesn't restart in a loop.
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
+    }
 }
 
 #[cfg(test)]
@@ -1894,7 +1916,7 @@ mod tests {
         assert!(matches!(final_state.screen, Screen::Error(_)));
     }
 
-    // r[verify installer.tui.reboot-feedback]
+    // r[verify installer.tui.reboot-feedback+2]
     #[test]
     fn done_screen_enter_triggers_reboot() {
         let mut state = make_state();
@@ -1908,7 +1930,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.reboot-feedback]
+    // r[verify installer.tui.reboot-feedback+2]
     #[test]
     fn done_screen_non_enter_does_not_reboot() {
         let mut state = make_state();

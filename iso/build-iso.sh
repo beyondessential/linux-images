@@ -198,6 +198,7 @@ chroot "$MNT_ROOTFS" bash -c "
         initramfs-tools \
         live-boot \
         live-boot-initramfs-tools \
+        systemd-sysv \
         parted \
         gdisk \
         cloud-guest-utils \
@@ -256,7 +257,7 @@ BUILD_DATE=$BUILD_DATE
 ARCH=$ARCH
 BUILDINFO
 
-# r[impl iso.boot.autostart+2]
+# r[impl iso.boot.autostart+3]
 # Wrapper script: runs the installer with logging to a file (not piped
 # through tee, which would break the TUI's alternate screen mode).
 # If the installer crashes, it leaves the alternate screen and shows

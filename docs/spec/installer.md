@@ -515,11 +515,15 @@ Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
 set), not simply quit the process. On bare-metal hardware, quitting without
 rebooting leaves the machine in an unusable state.
 
-r[installer.tui.reboot-feedback]
+r[installer.tui.reboot-feedback+2]
 When a reboot is triggered (from the Done screen or the Error screen), the
 TUI must immediately leave the alternate screen, print a visible
 "Rebooting..." message to stdout, and switch back to tty1 (via `chvt 1`) so
 the user can see systemd shutdown output. Only then must it call `reboot`.
+If the `reboot` command is not found or fails, `systemctl reboot` must be
+tried as a fallback. If both fail, the TUI must print an error message
+directing the user to use Ctrl-Alt-F1 for a shell and block indefinitely
+rather than exiting (which would leave the machine on a dead TTY).
 This prevents the appearance of the installer being stuck between the
 keypress and the screen blanking.
 

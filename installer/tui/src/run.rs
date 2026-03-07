@@ -394,7 +394,15 @@ impl RunContext {
             eprintln!("installation complete (--no-reboot, not rebooting)");
         } else {
             eprintln!("installation complete, rebooting...");
-            let _ = std::process::Command::new("reboot").status();
+            let reboot_ok = std::process::Command::new("/sbin/reboot")
+                .status()
+                .is_ok_and(|s| s.success());
+            if !reboot_ok {
+                tracing::warn!("/sbin/reboot failed, trying systemctl");
+                let _ = std::process::Command::new("/usr/bin/systemctl")
+                    .arg("reboot")
+                    .status();
+            }
         }
         Ok(())
     }
