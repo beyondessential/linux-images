@@ -575,7 +575,7 @@ must then create the GPT table and all three partitions (EFI, xboot, root)
 using the geometry from `partitions.json`. After writing all partition
 images, the installer must verify the partition table.
 
-> r[installer.write.source+3]
+> r[installer.write.source+4]
 > The installer must read `partitions.json` from the verity-protected images
 > partition to locate the partition images and their layout metadata. There is
 > one set of partition images per architecture, not per variant. The partition
@@ -584,12 +584,13 @@ images, the installer must verify the partition table.
 >
 > The installer must locate the images partition by searching for a block
 > device with the filesystem label `BESIMAGES` (via `/dev/disk/by-label/`),
-> or as GPT partition 4 of the detected boot device. It must then read the
-> verity metadata from `/images-verity.json` on the ISO filesystem (search
-> paths: `/run/live/medium/images-verity.json`, `/cdrom/images-verity.json`),
-> open the partition with `veritysetup open` using the root hash and hash
-> offset from that file, mount the resulting dm-verity device as squashfs,
-> and read `partitions.json` and the raw image files from the mount point.
+> or as GPT partition 4 of the detected boot device. The partition uses the
+> self-describing verity layout from `r[iso.verity.layout]`: the installer
+> reads the last 8 bytes to recover the hash tree size, computes the hash
+> offset, reads the root hash from the `images.verity.roothash=` kernel
+> command line parameter, and calls `veritysetup open` with `--hash-offset`.
+> It then mounts the resulting dm-verity device as squashfs and reads
+> `partitions.json` and the raw image files from the mount point.
 >
 > As a fallback for development and testing, if a `partitions.json` file is
 > found in a pre-mounted directory (the legacy search paths

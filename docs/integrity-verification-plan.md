@@ -49,35 +49,62 @@ zstd-compressed files with `.size` sidecars, read by the installer from
 
 ## Design
 
+### Self-Describing Verity Layout
+
+All verity-protected blobs use the same binary layout:
+
+```
+[data (N bytes)] [verity hash tree (M bytes)] [M as u64 LE (8 bytes)]
+```
+
+At runtime, the consumer:
+
+1. Reads the last 8 bytes to recover `M` (the hash tree size).
+2. Computes `hash_offset = total_size - 8 - M`.
+3. Calls `veritysetup open <dev> <name> <dev> <roothash> --hash-offset=<hash_offset>`.
+
+The data starts at offset 0, so the dm-verity device exposes a clean data
+image (squashfs in both cases) that can be mounted directly.
+
+No external metadata file is needed for offsets. The root hash is the only
+piece of information stored externally — it is the trust anchor and belongs
+in the GRUB kernel command line.
+
+This layout was validated experimentally: `veritysetup` ignores trailing
+bytes beyond the hash tree, so the 8-byte size trailer does not interfere.
+
 ### New ISO Layout
 
 | GPT partition | Content | Type |
 |---------------|---------|------|
-| 1 (implicit)  | ISO 9660 data (kernel, initrd, squashfs + verity hash tree, GRUB config) | — |
+| 1 (implicit)  | ISO 9660 data (kernel, initrd, squashfs with verity trailer, GRUB config) | — |
 | 2             | ESP (FAT32, GRUB EFI binary + grub.cfg) | EFI System Partition |
 | 3             | BESCONF (FAT32, writable, user config) | Microsoft basic data |
-| 4             | Images squashfs + appended verity hash tree | Linux filesystem data |
+| 4             | Images squashfs with verity trailer | Linux filesystem data |
 
 ### Component 1: Squashfs Rootfs Verity
 
 At build time, after `mksquashfs` produces `filesystem.squashfs`:
 
-1. Run `veritysetup format filesystem.squashfs filesystem.squashfs.verity`
+1. Run `veritysetup format filesystem.squashfs filesystem.squashfs.hashtree`
    to produce a hash tree file and a root hash.
-2. Place both `filesystem.squashfs` and `filesystem.squashfs.verity` inside
-   the ISO at `/live/`.
-3. Embed the root hash in the kernel command line as
+2. Append the hash tree to `filesystem.squashfs`.
+3. Append the hash tree file size as a little-endian u64 (8 bytes).
+4. Place the resulting single file at `/live/filesystem.squashfs` in the ISO.
+5. Embed the root hash in the kernel command line as
    `live.verity.roothash=<hex>`.
 
-At boot time, a custom initramfs hook (a `live-boot` hook script) runs
-before the squashfs is mounted:
+At boot time, a custom initramfs premount script runs before `live-boot`
+mounts the squashfs:
 
 1. Read the `live.verity.roothash=` parameter from `/proc/cmdline`.
-2. Set up a loop device on `/live/filesystem.squashfs`.
-3. Run `veritysetup open` with the loop device as the data device and
-   `/live/filesystem.squashfs.verity` as the hash device.
-4. Mount the resulting `/dev/mapper/live-verity` as the squashfs root
-   instead of mounting the squashfs file directly.
+2. Read the last 8 bytes of `/live/filesystem.squashfs` to recover
+   `hash_size`, compute `hash_offset = file_size - 8 - hash_size`.
+3. Set up a loop device on the file.
+4. Run `veritysetup open` with the loop device as both data and hash device,
+   passing `--hash-offset=<hash_offset>`.
+5. Mount the resulting `/dev/mapper/live-verity` as the squashfs root
+   instead of mounting the file directly.
 
 If the root hash parameter is absent, the hook is skipped and boot proceeds
 without verification (graceful fallback for development builds).
@@ -100,32 +127,36 @@ ISO 9660 filesystem:
    This replaces the per-file zstd compression. The squashfs handles
    compression transparently; files appear uncompressed when mounted.
 
-2. Run `veritysetup format images.squashfs images.squashfs.verity` to
+2. Run `veritysetup format images.squashfs images.squashfs.hashtree` to
    produce the hash tree and root hash.
 
-3. Concatenate the hash tree onto the squashfs:
+3. Append the hash tree to the squashfs:
    ```
-   cat images.squashfs.verity >> images.squashfs
+   cat images.squashfs.hashtree >> images.squashfs
    ```
-   Record the byte offset where the hash tree starts (= original squashfs
-   size). This is the `--hash-offset` for `veritysetup open`.
 
-4. Append the combined blob as GPT partition 4 via xorriso
+4. Append the hash tree file size as a little-endian u64 (8 bytes).
+
+5. Append the combined blob as GPT partition 4 via xorriso
    `--append_partition`.
 
-5. Store the root hash and hash offset in a metadata file inside the ISO
-   (e.g. `/images-verity.json`), and/or in the kernel command line.
+6. Store the root hash in the kernel command line as
+   `images.verity.roothash=<hex>`.
 
 At runtime, the installer:
 
-1. Finds the images partition (partition 4 of the boot device, or by GPT
-   type UUID / label).
-2. Runs `veritysetup open` on the partition with `--hash-offset` and the
-   stored root hash.
-3. Mounts the dm-verity device as squashfs.
-4. Reads partition images as regular files. The kernel handles both verity
+1. Finds the images partition (partition 4 of the boot device, or by
+   filesystem label `BESIMAGES`).
+2. Reads the last 8 bytes to recover the hash tree size, computes the
+   hash offset.
+3. Reads the root hash from the `images.verity.roothash=` kernel command
+   line parameter.
+4. Runs `veritysetup open` on the partition with `--hash-offset` and the
+   root hash.
+5. Mounts the dm-verity device as squashfs.
+6. Reads partition images as regular files. The kernel handles both verity
    verification and zstd decompression transparently on each read.
-5. Streams the raw image data directly to the target partition devices
+7. Streams the raw image data directly to the target partition devices
    (same `dd`-style write loop, but reading uncompressed data from the
    mounted squashfs instead of piping through a zstd decoder).
 
@@ -149,7 +180,9 @@ The manifest format changes:
 
 3. **Add verity setup**: Before reading images, the installer must open the
    images partition via `veritysetup open`. This requires `cryptsetup`
-   (already present in the live environment for LUKS operations).
+   (already present in the live environment for LUKS operations). The
+   installer reads the last 8 bytes of the partition to compute the hash
+   offset, and reads the root hash from `/proc/cmdline`.
 
 4. **Image source discovery**: Instead of searching for `partitions.json`
    under `/run/live/medium/images/`, the installer searches for the
@@ -167,18 +200,19 @@ The manifest format changes:
    alongside `partitions.json`.
 
 2. **New phase: Build images squashfs**: Run `mksquashfs` on the images
-   staging directory with `-comp zstd`. Run `veritysetup format`. Record
-   root hash and hash offset.
+   staging directory with `-comp zstd`. Run `veritysetup format`. Append
+   hash tree + size trailer.
 
 3. **New phase: Build squashfs verity**: After creating
-   `filesystem.squashfs`, run `veritysetup format` and place the hash tree
-   file alongside it in the ISO staging area.
+   `filesystem.squashfs`, run `veritysetup format`. Append hash tree +
+   size trailer to the squashfs file.
 
-4. **Phase (GRUB config)**: Add `live.verity.roothash=<hash>` to the kernel
-   command line in `grub.cfg`.
+4. **Phase (GRUB config)**: Add `live.verity.roothash=<hash>` and
+   `images.verity.roothash=<hash>` to the kernel command line in
+   `grub.cfg`.
 
-5. **Phase (xorriso)**: Add `--append_partition 4` for the images squashfs
-   (with appended verity hash tree).
+5. **Phase (xorriso)**: Add `--append_partition 4` for the images
+   partition blob.
 
 6. **New build dependency**: `cryptsetup` (for `veritysetup`).
 
@@ -190,7 +224,8 @@ The manifest format changes:
 
 2. **New live-boot premount script**: A script in
    `/usr/share/initramfs-tools/scripts/live-premount/` that intercepts the
-   squashfs mount and wraps it with dm-verity.
+   squashfs mount and wraps it with dm-verity, including the trailer read
+   to recover the hash offset.
 
 3. **Package dependency**: `cryptsetup` must be installed in the live rootfs
    (it is already present for LUKS operations during installation).
@@ -225,7 +260,7 @@ implementation steps 2-6:
 
 - `iso.minimal+2` -> `+3` in `iso/build-iso.sh` (step 2)
 - `iso.contents+2` -> `+3` in `iso/build-iso.sh`, `tests/test-iso-structure.sh` (steps 2, 6)
-- `installer.write.source+2` -> `+3` in `installer/tui/src/writer/manifest.rs`,
+- `installer.write.source+2` -> `+4` in `installer/tui/src/writer/manifest.rs`,
   `installer/tui/tests/` (step 5)
 - `installer.write.disk-size-check+2` -> `+3` in `installer/tui/src/writer/manifest.rs`,
   `installer/tui/src/run.rs`, `installer/tui/src/ui/run.rs`,
@@ -239,8 +274,9 @@ implementation steps 2-6:
 - Stop zstd-compressing individual partition images.
 - Build a squashfs containing raw images + `partitions.json`.
 - Run `veritysetup format` on the images squashfs.
-- Append as GPT partition 4 with verity hash tree.
-- Write root hash + hash offset to `/images-verity.json` in the ISO.
+- Append hash tree + size trailer to produce the self-describing blob.
+- Append as GPT partition 4.
+- Add `images.verity.roothash=<hash>` to the GRUB kernel command line.
 - Update `r[impl iso.contents]` and `r[impl iso.minimal]` annotations.
 
 Status: not started.
@@ -248,7 +284,7 @@ Status: not started.
 ### Step 3: Squashfs verity in `build-iso.sh`
 
 - Run `veritysetup format` on `filesystem.squashfs`.
-- Place hash tree at `/live/filesystem.squashfs.verity`.
+- Append hash tree + size trailer to produce the self-describing blob.
 - Add `live.verity.roothash=<hash>` to GRUB command line.
 
 Status: not started.
@@ -257,6 +293,7 @@ Status: not started.
 
 - Write the initramfs hook and premount script.
 - Install them in the live rootfs during Phase 2 of `build-iso.sh`.
+- The premount script reads the 8-byte trailer to recover the hash offset.
 - Test by booting the ISO in QEMU with a known-good image and verifying
   that dm-verity devices appear.
 
@@ -265,6 +302,8 @@ Status: not started.
 ### Step 5: Installer changes
 
 - Add images partition discovery and verity open/mount.
+- The installer reads the 8-byte trailer from the partition to compute
+  the hash offset, and reads the root hash from `/proc/cmdline`.
 - Replace `decompress_to_device` with `copy_to_device`.
 - Remove `.size` sidecar logic; use `stat` for sizes.
 - Remove `partitions.json` `image` field `.zst` suffix.
@@ -293,19 +332,27 @@ Status: not started.
 
 Status: not started.
 
+## Resolved Questions
+
+1. **Verity offset storage**: Resolved by the self-describing
+   `[data | hash | size_le64]` layout. The 8-byte trailer eliminates the
+   need for an external metadata file (`/images-verity.json`). Validated
+   experimentally: `veritysetup` ignores trailing bytes beyond the hash
+   tree.
+
+2. **GPT type UUID for the images partition**: Using the generic Linux
+   filesystem GUID via xorriso `--append_partition`. Discovery is by
+   filesystem label `BESIMAGES` (via `/dev/disk/by-label/`), not by type
+   UUID.
+
 ## Open Questions
 
-1. **GPT type UUID for the images partition**: Use the generic Linux
-   filesystem GUID (`0FC63DAF-8483-4772-8E79-3D69D8477DE4`) or define a
-   custom one? A custom UUID makes discovery unambiguous. A label
-   (`BESIMAGES`) would also work for lookup via `/dev/disk/by-label/`.
-
-2. **Failure UX for images verity**: If the images partition fails verity
+1. **Failure UX for images verity**: If the images partition fails verity
    verification, the installer should show a clear error message explaining
    that the USB media is corrupted. Need to decide on exact wording and
    whether to offer a retry or just halt.
 
-3. **Development builds**: Should there be an option to build ISOs without
+2. **Development builds**: Should there be an option to build ISOs without
    verity for faster iteration? A `SKIP_VERITY=1` environment variable in
    `build-iso.sh` could skip the verity steps and produce an ISO with plain
    squashfs (no hash trees, no root hash in cmdline). The initramfs hook

@@ -107,30 +107,56 @@ UEFI systems from that media.
 
 ## Integrity Verification
 
-> r[iso.verity.squashfs]
+> r[iso.verity.layout]
+> All verity-protected blobs (the squashfs rootfs and the images partition)
+> must use a self-describing layout: `[data | verity hash tree | hash_size]`,
+> where `hash_size` is the size of the verity hash tree in bytes, stored as a
+> little-endian unsigned 64-bit integer (8 bytes) at the very end of the
+> blob. At runtime, the consumer reads the last 8 bytes to recover
+> `hash_size`, computes `hash_offset = total_size - 8 - hash_size`, and
+> passes `--hash-offset=<hash_offset>` to `veritysetup open`. No external
+> metadata file is needed for offsets. The root hash is the only piece of
+> information that must be stored externally (it is the trust anchor).
+
+> r[iso.verity.squashfs+2]
 > The live rootfs squashfs (`/live/filesystem.squashfs`) must be protected by
-> dm-verity. At build time, `veritysetup format` must be run on the squashfs
-> to produce a hash tree file. The hash tree must be placed at
-> `/live/filesystem.squashfs.verity` inside the ISO. The root hash must be
-> embedded in the GRUB kernel command line as
-> `live.verity.roothash=<hex>`.
+> dm-verity using the layout described in `r[iso.verity.layout]`. At build
+> time:
 >
-> At boot, a custom initramfs premount script must read the root hash from
-> `/proc/cmdline`, set up a loop device on the squashfs file, run
-> `veritysetup open` with the hash tree file, and mount the resulting
-> dm-verity device as the live root instead of mounting the squashfs directly.
+> 1. Run `mksquashfs` to produce the squashfs.
+> 2. Run `veritysetup format` on the squashfs to produce a hash tree file
+>    and a root hash.
+> 3. Append the hash tree to the squashfs file.
+> 4. Append the hash tree size as a little-endian u64 (8 bytes).
+> 5. Embed the root hash in the GRUB kernel command line as
+>    `live.verity.roothash=<hex>`.
+>
+> The resulting file at `/live/filesystem.squashfs` inside the ISO contains
+> `[squashfs | hash tree | hash_size_le64]` as a single blob.
+>
+> At boot, a custom initramfs premount script must:
+>
+> 1. Read the `live.verity.roothash=` parameter from `/proc/cmdline`.
+> 2. Read the last 8 bytes of the squashfs file to recover the hash tree
+>    size, and compute the hash offset.
+> 3. Set up a loop device on the squashfs file.
+> 4. Run `veritysetup open` with the loop device as both data and hash
+>    device, passing `--hash-offset`.
+> 5. Mount the resulting `/dev/mapper/live-verity` as the live root instead
+>    of mounting the squashfs file directly.
 >
 > If the `live.verity.roothash=` parameter is absent from the kernel command
 > line, the hook must be skipped and boot must proceed without verification
 > (graceful fallback for development builds).
 
-> r[iso.verity.initramfs-hook]
+> r[iso.verity.initramfs-hook+2]
 > The live rootfs must include an initramfs hook at
 > `/usr/share/initramfs-tools/hooks/verity` that copies `veritysetup` and its
 > runtime dependencies (shared libraries, `libcryptsetup`, `libdevmapper`)
 > into the initramfs. A premount script at
 > `/usr/share/initramfs-tools/scripts/live-premount/verity` must implement
-> the dm-verity setup described in `r[iso.verity.squashfs]`.
+> the dm-verity setup described in `r[iso.verity.squashfs]`, including the
+> trailer read to recover the hash offset.
 
 > r[iso.images-partition]
 > The ISO must include a read-only squashfs partition appended as GPT
@@ -140,25 +166,23 @@ UEFI systems from that media.
 > compression so that the kernel decompresses data transparently on read.
 > The filesystem label must be `BESIMAGES`.
 
-> r[iso.verity.images]
-> The images squashfs partition must be protected by dm-verity. At build
-> time, `veritysetup format` must be run on the squashfs to produce a hash
-> tree. The hash tree must be appended to the squashfs blob (concatenated
-> after the squashfs data), and `veritysetup open` must be called with
-> `--hash-offset` set to the original squashfs size. The root hash and hash
-> offset must be stored in a JSON metadata file at `/images-verity.json`
-> inside the ISO, with the schema:
+> r[iso.verity.images+2]
+> The images squashfs partition must be protected by dm-verity using the
+> layout described in `r[iso.verity.layout]`. At build time:
 >
-> ```json
-> {
->   "root_hash": "<hex>",
->   "hash_offset": <bytes>
-> }
-> ```
+> 1. Run `mksquashfs` to produce the images squashfs.
+> 2. Run `veritysetup format` on the squashfs to produce a hash tree file
+>    and a root hash.
+> 3. Append the hash tree to the squashfs file.
+> 4. Append the hash tree size as a little-endian u64 (8 bytes).
+> 5. Append the combined blob as GPT partition 4 via xorriso.
+> 6. Store the root hash in the GRUB kernel command line as
+>    `images.verity.roothash=<hex>`.
 >
 > At runtime, the installer must find the images partition (GPT partition 4
-> of the boot device, or by filesystem label `BESIMAGES`), run
-> `veritysetup open` with the stored root hash and hash offset, mount the
+> of the boot device, or by filesystem label `BESIMAGES`), read the last 8
+> bytes to recover the hash tree size and compute the hash offset, then run
+> `veritysetup open` with the root hash and `--hash-offset`, mount the
 > resulting dm-verity device as squashfs, and read partition images from it.
 
 > r[iso.verity.failure]
