@@ -568,12 +568,12 @@ insmod all_video
 search --file --no-floppy --set=root /live/vmlinuz
 
 menuentry "BES Installer (__ARCH__, built __BUILD_DATE__)" {
-    linux /live/vmlinuz boot=live toram quiet console=tty1
+    linux /live/vmlinuz boot=live toram console=tty1
     initrd /live/initrd.img
 }
 
-menuentry "BES Installer (__ARCH__, built __BUILD_DATE__) -- verbose" {
-    linux /live/vmlinuz boot=live toram console=tty1
+menuentry "BES Installer (__ARCH__, built __BUILD_DATE__) -- quiet" {
+    linux /live/vmlinuz boot=live toram quiet console=tty1
     initrd /live/initrd.img
 }
 GRUBCFG
