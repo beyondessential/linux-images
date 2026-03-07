@@ -92,6 +92,7 @@ pub struct ImagesVerity {
 }
 
 impl ImagesVerity {
+    #[expect(dead_code, reason = "public API for callers that need the mount path")]
     pub fn mount_point(&self) -> &Path {
         &self.mount_point
     }
@@ -244,7 +245,7 @@ pub fn splice_fd_to_fd(
         loop {
             let remaining = expected_bytes.map(|e| e - transferred);
             let to_splice = match remaining {
-                Some(r) if r == 0 => break,
+                Some(0) => break,
                 Some(r) => r.min(chunk_size as u64) as usize,
                 None => chunk_size,
             };

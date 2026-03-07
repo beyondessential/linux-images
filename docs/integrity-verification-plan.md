@@ -362,7 +362,7 @@ Status: done.
 - Update documentation and comments.
 - Run `tracey query stale` and confirm zero stale references.
 
-Status: not started.
+Status: done.
 
 ## Resolved Questions
 

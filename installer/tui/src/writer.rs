@@ -13,4 +13,4 @@ pub use manifest::{
     partition_images_total_size,
 };
 pub use progress::{WriteProgress, format_eta};
-pub use verity::{ImagesVerity, integrity_check, open_and_mount_images, splice_fd_to_fd};
+pub use verity::{integrity_check, open_and_mount_images};

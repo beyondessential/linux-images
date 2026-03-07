@@ -178,6 +178,22 @@ impl RunContext {
         let hostname_from_template = self.install_config.hostname_template.is_some();
 
         let target = disk::resolve_disk(disk_selector, &self.devices, self.boot_device.as_ref())?;
+
+        // r[impl installer.write.source+4]
+        // Open the images partition via dm-verity before searching for the manifest.
+        // The verity mount at /run/bes-images is the primary search path.
+        let _images_verity = if self.cli.dry_run {
+            None
+        } else {
+            match writer::open_and_mount_images(self.boot_device.as_deref()) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("failed to open images verity: {e:#}");
+                    None
+                }
+            }
+        };
+
         let manifest_result = if self.cli.dry_run {
             writer::find_partition_manifest().ok()
         } else {
@@ -253,6 +269,30 @@ impl RunContext {
         let total_image_size = writer::partition_images_total_size(&manifest, &images_dir)
             .context("reading partition image sizes")?;
         writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
+
+        // r[impl iso.verity.check]
+        if _images_verity.is_some() {
+            eprintln!("verifying installation media integrity...");
+            let image_files = writer::image_file_sizes(&manifest, &images_dir)
+                .context("reading image file sizes for integrity check")?;
+            let interactive = std::io::stderr().is_terminal();
+            writer::integrity_check(&images_dir, &image_files, &mut |progress| {
+                if interactive {
+                    let pct = progress.fraction().map(|f| f * 100.0).unwrap_or(0.0);
+                    let mbps = progress.throughput_mbps();
+                    let eta = progress
+                        .eta()
+                        .map(writer::format_eta)
+                        .unwrap_or_else(|| "...".into());
+                    eprint!("\r  {pct:5.1}% | {mbps:.1} MiB/s | ETA: {eta}    ");
+                }
+            })
+            .context("installation media integrity check failed")?;
+            if interactive {
+                eprintln!();
+            }
+            eprintln!("integrity check passed");
+        }
 
         // r[impl installer.encryption.recovery-passphrase+3]
         // r[impl installer.config.recovery-passphrase]
@@ -429,6 +469,20 @@ impl RunContext {
                 .ok()
                 .and_then(|resolved| self.devices.iter().position(|d| d.path == resolved.path))
         });
+
+        // r[impl installer.write.source+4]
+        // Open the images partition via dm-verity before searching for the manifest.
+        let _images_verity = if self.cli.dry_run {
+            None
+        } else {
+            match writer::open_and_mount_images(self.boot_device.as_deref()) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("failed to open images verity: {e:#}");
+                    None
+                }
+            }
+        };
 
         let manifest_result = if self.cli.dry_run {
             writer::find_partition_manifest().ok()
