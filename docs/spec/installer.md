@@ -607,7 +607,7 @@ sizes (plus GPT overhead). If the disk is too small, the installer must
 refuse to write and report the required size and disk size in the error
 message.
 
-r[installer.write.stream-copy+2]
+r[installer.write.stream-copy]
 The installer must stream-copy each raw partition image directly to its
 corresponding partition device (or to the opened LUKS mapper device for the
 root partition when encryption is enabled) using `splice(2)` for zero-copy

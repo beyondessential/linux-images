@@ -118,7 +118,7 @@ UEFI systems from that media.
 > metadata file is needed for offsets. The root hash is the only piece of
 > information that must be stored externally (it is the trust anchor).
 
-> r[iso.verity.squashfs+2]
+> r[iso.verity.squashfs]
 > The live rootfs squashfs (`/live/filesystem.squashfs`) must be protected by
 > dm-verity using the layout described in `r[iso.verity.layout]`. At build
 > time:
@@ -149,7 +149,7 @@ UEFI systems from that media.
 > line, the hook must be skipped and boot must proceed without verification
 > (graceful fallback for development builds).
 
-> r[iso.verity.initramfs-hook+2]
+> r[iso.verity.initramfs-hook]
 > The live rootfs must include an initramfs hook at
 > `/usr/share/initramfs-tools/hooks/verity` that copies `veritysetup` and its
 > runtime dependencies (shared libraries, `libcryptsetup`, `libdevmapper`)
@@ -166,7 +166,7 @@ UEFI systems from that media.
 > compression so that the kernel decompresses data transparently on read.
 > The filesystem label must be `BESIMAGES`.
 
-> r[iso.verity.images+2]
+> r[iso.verity.images]
 > The images squashfs partition must be protected by dm-verity using the
 > layout described in `r[iso.verity.layout]`. At build time:
 >
@@ -203,7 +203,7 @@ UEFI systems from that media.
 >   written and cannot be used, and that the only recourse is to write a new
 >   copy of the installation medium.
 
-> r[iso.verity.check+2]
+> r[iso.verity.check]
 > On boot, after the images partition is opened via dm-verity, the installer
 > must perform a full sequential read of every partition image file into
 > `/dev/null` using `splice(2)` before beginning the installation. This
