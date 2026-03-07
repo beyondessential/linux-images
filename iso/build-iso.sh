@@ -233,8 +233,8 @@ echo ""
 # Phase 2: Build images squashfs with verity
 # ============================================================
 # r[impl iso.images-partition]
-# r[impl iso.verity.images+2]
-# r[impl iso.verity.layout+2]
+# r[impl iso.verity.images+3]
+# r[impl iso.verity.layout+3]
 # r[impl iso.verity.build-deps]
 echo "==> Phase 2: Building images squashfs with verity..."
 
@@ -249,9 +249,9 @@ VERITY_OUTPUT="$(veritysetup format "$IMAGES_SQFS" "$IMAGES_HASHTREE" 2>&1)"
 IMAGES_ROOTHASH="$(echo "$VERITY_OUTPUT" | grep "Root hash:" | awk '{print $NF}')"
 echo "    images verity root hash: $IMAGES_ROOTHASH"
 
-# r[impl iso.verity.layout+2]
+# r[impl iso.verity.layout+3]
 # Append hash tree + sector-aligned trailer (self-describing verity layout).
-# The blob must be padded to a 2048-byte boundary so that the partition size
+# The blob must be padded to a 4096-byte boundary so that the partition size
 # reported by blockdev --getsize64 matches the blob size exactly. Without this,
 # xorriso silently pads to the sector boundary and the trailer is no longer at
 # the end of the partition.
@@ -260,10 +260,10 @@ cat "$IMAGES_HASHTREE" >> "$IMAGES_SQFS"
 rm -f "$IMAGES_HASHTREE"
 
 CURRENT_SIZE="$(stat --format='%s' "$IMAGES_SQFS")"
-# Total needed: round up (current + 8-byte trailer) to next 2048-byte boundary
+# Total needed: round up (current + 8-byte trailer) to next 4096-byte boundary
 TOTAL_NEEDED=$(python3 -c "
 cur = $CURRENT_SIZE + 8
-aligned = ((cur + 2047) // 2048) * 2048
+aligned = ((cur + 4095) // 4096) * 4096
 print(aligned)
 ")
 PADDING=$((TOTAL_NEEDED - CURRENT_SIZE - 8))

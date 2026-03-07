@@ -148,20 +148,38 @@ echo "    squashfs: $(du -h "$OUTPUT_DIR/live/filesystem.squashfs" | cut -f1)"
 # ============================================================
 # Phase 4: Add verity to squashfs rootfs
 # ============================================================
-# r[impl iso.verity.squashfs]
-# r[impl iso.verity.layout+2]
+# r[impl iso.verity.squashfs+2]
+# r[impl iso.verity.layout+3]
 # r[impl iso.verity.build-deps]
 echo "==> Phase 4: Adding verity to squashfs rootfs..."
 
 SQFS_HASHTREE="$WORK_DIR/filesystem.squashfs.hashtree"
+SQFS_DATA_SIZE="$(stat --format='%s' "$OUTPUT_DIR/live/filesystem.squashfs")"
 SQFS_VERITY_OUTPUT="$(veritysetup format "$OUTPUT_DIR/live/filesystem.squashfs" "$SQFS_HASHTREE" 2>&1)"
 LIVE_ROOTHASH="$(echo "$SQFS_VERITY_OUTPUT" | grep "Root hash:" | awk '{print $NF}')"
 echo "    live verity root hash: $LIVE_ROOTHASH"
 
-SQFS_HASHTREE_SIZE="$(stat --format='%s' "$SQFS_HASHTREE")"
+# r[impl iso.verity.layout+3]
+# Append hash tree + sector-aligned trailer. The blob must be padded to a
+# 4096-byte boundary so that losetup does not truncate the trailing bytes
+# and the verity trailer remains at exactly total_size - 8.
 cat "$SQFS_HASHTREE" >> "$OUTPUT_DIR/live/filesystem.squashfs"
 rm -f "$SQFS_HASHTREE"
-python3 -c "import struct,sys; sys.stdout.buffer.write(struct.pack('<Q', $SQFS_HASHTREE_SIZE))" >> "$OUTPUT_DIR/live/filesystem.squashfs"
+
+SQFS_CURRENT_SIZE="$(stat --format='%s' "$OUTPUT_DIR/live/filesystem.squashfs")"
+SQFS_TOTAL_NEEDED=$(python3 -c "
+cur = $SQFS_CURRENT_SIZE + 8
+aligned = ((cur + 4095) // 4096) * 4096
+print(aligned)
+")
+SQFS_PADDING=$((SQFS_TOTAL_NEEDED - SQFS_CURRENT_SIZE - 8))
+if [ "$SQFS_PADDING" -gt 0 ]; then
+    dd if=/dev/zero bs=1 count="$SQFS_PADDING" 2>/dev/null >> "$OUTPUT_DIR/live/filesystem.squashfs"
+fi
+SQFS_TRAILER_HASH_SIZE=$((SQFS_TOTAL_NEEDED - 8 - SQFS_DATA_SIZE))
+python3 -c "import struct,sys; sys.stdout.buffer.write(struct.pack('<Q', $SQFS_TRAILER_HASH_SIZE))" >> "$OUTPUT_DIR/live/filesystem.squashfs"
+echo "    squashfs data size:  $SQFS_DATA_SIZE"
+echo "    squashfs total size: $SQFS_TOTAL_NEEDED (sector-aligned)"
 echo "    squashfs blob (sqfs+verity): $(du -h "$OUTPUT_DIR/live/filesystem.squashfs" | cut -f1)"
 
 echo "$LIVE_ROOTHASH" > "$OUTPUT_DIR/live/verity-roothash"

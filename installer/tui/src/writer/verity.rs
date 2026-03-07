@@ -14,7 +14,7 @@ const VERITY_NAME: &str = "besimages-verity";
 const IMAGES_MOUNT: &str = "/run/bes-images";
 
 // r[impl installer.write.source+4]
-// r[impl iso.verity.layout+2]
+// r[impl iso.verity.layout+3]
 /// Read the verity hash tree size from the 8-byte little-endian trailer
 /// at the end of a self-describing verity blob.
 ///
@@ -137,7 +137,7 @@ impl Drop for ImagesVerity {
     }
 }
 
-// r[impl iso.verity.images+2]
+// r[impl iso.verity.images+3]
 // r[impl installer.write.source+4]
 /// Open the images partition via dm-verity and mount it as squashfs.
 ///
@@ -378,7 +378,7 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    // r[verify iso.verity.layout+2]
+    // r[verify iso.verity.layout+3]
     #[test]
     fn read_verity_trailer_valid() {
         let dir = tempfile::tempdir().unwrap();
@@ -400,7 +400,7 @@ mod tests {
         assert_eq!(hash_size, 2048);
     }
 
-    // r[verify iso.verity.layout+2]
+    // r[verify iso.verity.layout+3]
     #[test]
     fn read_verity_trailer_too_small() {
         let dir = tempfile::tempdir().unwrap();
@@ -410,7 +410,7 @@ mod tests {
         assert!(read_verity_trailer(&path).is_err());
     }
 
-    // r[verify iso.verity.layout+2]
+    // r[verify iso.verity.layout+3]
     #[test]
     fn read_verity_trailer_invalid_hash_size() {
         let dir = tempfile::tempdir().unwrap();
@@ -428,7 +428,7 @@ mod tests {
         assert!(read_verity_trailer(&path).is_err());
     }
 
-    // r[verify iso.verity.layout+2]
+    // r[verify iso.verity.layout+3]
     #[test]
     fn read_verity_trailer_sector_aligned_with_padding() {
         let dir = tempfile::tempdir().unwrap();
@@ -437,7 +437,7 @@ mod tests {
 
         // Simulate a sector-aligned blob:
         //   4096 bytes data + 2048 bytes hash tree + padding + 8 bytes trailer
-        // Total must be a multiple of 2048.
+        // Total must be a multiple of 4096.
         let data_size: u64 = 4096;
         let hash_tree_size: u64 = 2048;
         let data = vec![0u8; data_size as usize];
@@ -446,10 +446,10 @@ mod tests {
         f.write_all(&data).unwrap();
         f.write_all(&hash).unwrap();
 
-        // current_size = 6144, need to fit + 8 byte trailer, round up to 2048
+        // current_size = 6144, need to fit + 8 byte trailer, round up to 4096
         // (6144 + 8) = 6152, round up to 8192
         let current_size = data_size + hash_tree_size;
-        let total_needed = ((current_size + 8 + 2047) / 2048) * 2048;
+        let total_needed = ((current_size + 8 + 4095) / 4096) * 4096;
         let padding = total_needed - current_size - 8;
         assert_eq!(total_needed, 8192);
         assert_eq!(padding, 2040);
@@ -465,7 +465,7 @@ mod tests {
 
         let file_size = std::fs::metadata(&path).unwrap().len();
         assert_eq!(file_size, total_needed);
-        assert_eq!(file_size % 2048, 0);
+        assert_eq!(file_size % 4096, 0);
 
         let (hash_offset, hash_size) = read_verity_trailer(&path).unwrap();
         assert_eq!(hash_offset, data_size);

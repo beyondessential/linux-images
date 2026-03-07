@@ -1,5 +1,5 @@
 #!/bin/sh
-# r[impl iso.verity.squashfs]
+# r[impl iso.verity.squashfs+2]
 # r[impl iso.verity.initramfs-hook]
 #
 # dm-verity premount hook for live-boot.
