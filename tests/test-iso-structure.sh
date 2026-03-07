@@ -53,7 +53,7 @@ if [ ! -f "$ISO" ]; then
     exit 1
 fi
 
-for cmd in xorriso sgdisk blkid file losetup jq; do
+for cmd in xorriso sgdisk blkid file losetup jq veritysetup; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "ERROR: required command not found: $cmd"
         exit 1
@@ -74,15 +74,18 @@ echo ""
 ISO_MNT=""
 SQFS_MNT=""
 BESCONF_MNT=""
+IMAGES_MNT=""
 LOOP_DEVICE=""
 DD_IMG=""
 DD_LOOP=""
 ISO_MOUNTED=0
 SQFS_MOUNTED=0
 BESCONF_MOUNTED=0
+IMAGES_MOUNTED=0
 
 cleanup() {
     set +e
+    [ "$IMAGES_MOUNTED" -eq 1 ] && umount "$IMAGES_MNT" 2>/dev/null
     [ "$BESCONF_MOUNTED" -eq 1 ] && umount "$BESCONF_MNT" 2>/dev/null
     [ "$SQFS_MOUNTED" -eq 1 ] && umount "$SQFS_MNT" 2>/dev/null
     [ "$ISO_MOUNTED" -eq 1 ] && umount "$ISO_MNT" 2>/dev/null
@@ -92,12 +95,14 @@ cleanup() {
     [ -n "$ISO_MNT" ] && rmdir "$ISO_MNT" 2>/dev/null
     [ -n "$SQFS_MNT" ] && rmdir "$SQFS_MNT" 2>/dev/null
     [ -n "$BESCONF_MNT" ] && rmdir "$BESCONF_MNT" 2>/dev/null
+    [ -n "$IMAGES_MNT" ] && rmdir "$IMAGES_MNT" 2>/dev/null
 }
 trap cleanup EXIT
 
 ISO_MNT="$(mktemp -d -t iso-mnt-XXXXXX)"
 SQFS_MNT="$(mktemp -d -t sqfs-mnt-XXXXXX)"
 BESCONF_MNT="$(mktemp -d -t besconf-mnt-XXXXXX)"
+IMAGES_MNT="$(mktemp -d -t images-mnt-XXXXXX)"
 
 # ============================================================
 # 1. ISO9660 format checks
@@ -209,89 +214,22 @@ check "/boot/grub/grub.cfg exists" test -f "$ISO_MNT/boot/grub/grub.cfg"
 # Verify grub.cfg contains boot=live
 if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
     check "grub.cfg contains boot=live" grep -q "boot=live" "$ISO_MNT/boot/grub/grub.cfg"
+
+    # r[verify iso.verity.squashfs]
+    check "grub.cfg contains live.verity.roothash" grep -q "live.verity.roothash=" "$ISO_MNT/boot/grub/grub.cfg"
+
+    # r[verify iso.verity.images]
+    check "grub.cfg contains images.verity.roothash" grep -q "images.verity.roothash=" "$ISO_MNT/boot/grub/grub.cfg"
 fi
 
-# r[verify iso.contents+2]
-check "partitions.json exists" test -f "$ISO_MNT/images/partitions.json"
-
-# Verify partitions.json is valid JSON with expected structure
-if [ -f "$ISO_MNT/images/partitions.json" ]; then
-    if jq empty "$ISO_MNT/images/partitions.json" 2>/dev/null; then
-        pass "partitions.json is valid JSON"
-    else
-        fail "partitions.json is valid JSON"
-    fi
-
-    MANIFEST_ARCH="$(jq -r '.arch' "$ISO_MNT/images/partitions.json" 2>/dev/null)"
-    if [ "$MANIFEST_ARCH" = "$ARCH" ]; then
-        pass "partitions.json arch matches expected ($ARCH)"
-    else
-        fail "partitions.json arch matches expected ($ARCH, got: $MANIFEST_ARCH)"
-    fi
-
-    PART_COUNT="$(jq '.partitions | length' "$ISO_MNT/images/partitions.json" 2>/dev/null)"
-    if [ "$PART_COUNT" -eq 3 ]; then
-        pass "partitions.json has 3 partitions"
-    else
-        fail "partitions.json has 3 partitions (got: $PART_COUNT)"
-    fi
-
-    # Verify each partition entry has the required fields
-    for field in label type_uuid size_mib image; do
-        MISSING_FIELD="$(jq -r ".partitions[] | select(.${field} == null) | .label // \"unknown\"" "$ISO_MNT/images/partitions.json" 2>/dev/null)"
-        if [ -z "$MISSING_FIELD" ]; then
-            pass "all partitions have '$field' field"
-        else
-            fail "all partitions have '$field' field (missing in: $MISSING_FIELD)"
-        fi
-    done
-
-    # Verify expected partition labels
-    for label in efi xboot root; do
-        FOUND_LABEL="$(jq -r ".partitions[] | select(.label == \"$label\") | .label" "$ISO_MNT/images/partitions.json" 2>/dev/null)"
-        if [ "$FOUND_LABEL" = "$label" ]; then
-            pass "partitions.json contains '$label' partition"
-        else
-            fail "partitions.json contains '$label' partition"
-        fi
-    done
-fi
-
-# r[verify iso.contents+2]
-# Verify partition image files and their .size sidecars
-for name in efi xboot root; do
-    check "${name}.img.zst exists" test -f "$ISO_MNT/images/${name}.img.zst"
-
-    # Verify it's actually zstd-compressed
-    if [ -f "$ISO_MNT/images/${name}.img.zst" ]; then
-        IMG_TYPE="$(file -b "$ISO_MNT/images/${name}.img.zst")"
-        if echo "$IMG_TYPE" | grep -qi "zstandard"; then
-            pass "${name}.img.zst is valid zstd"
-        else
-            fail "${name}.img.zst is valid zstd (got: $IMG_TYPE)"
-        fi
-    fi
-
-    # r[verify installer.write.disk-size-check+2]
-    if [ -f "$ISO_MNT/images/${name}.img.size" ]; then
-        pass ".size sidecar exists for ${name}.img.zst"
-        SIZE_VALUE="$(cat "$ISO_MNT/images/${name}.img.size")"
-        if [ "$SIZE_VALUE" -gt 0 ] 2>/dev/null; then
-            pass "${name}.img.size contains a positive number ($SIZE_VALUE)"
-        else
-            fail "${name}.img.size contains a positive number (got: $SIZE_VALUE)"
-        fi
-    else
-        fail ".size sidecar exists for ${name}.img.zst"
-    fi
-done
-
-# Verify no whole-disk .raw.zst images are present (old format)
-OLD_IMAGE_COUNT="$(find "$ISO_MNT/images" -maxdepth 1 -name '*.raw.zst' 2>/dev/null | wc -l)"
-if [ "$OLD_IMAGE_COUNT" -eq 0 ]; then
-    pass "no old whole-disk .raw.zst images in /images/"
+# r[verify iso.contents+3]
+# Partition images are no longer in the ISO9660 filesystem.
+# They live in GPT partition 4 (the images squashfs with verity).
+# Verify the old /images/ directory is NOT present in the ISO.
+if [ -d "$ISO_MNT/images" ]; then
+    fail "no /images/ directory in ISO9660 (images moved to GPT partition 4)"
 else
-    fail "no old whole-disk .raw.zst images in /images/ (found $OLD_IMAGE_COUNT)"
+    pass "no /images/ directory in ISO9660 (images moved to GPT partition 4)"
 fi
 
 # r[verify iso.boot.uefi]
@@ -307,7 +245,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     mount -o loop,ro "$ISO_MNT/live/filesystem.squashfs" "$SQFS_MNT"
     SQFS_MOUNTED=1
 
-    # r[verify iso.contents+2]
+    # r[verify iso.contents+3]
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
 
     # r[verify installer.hardcoded-paths]
@@ -366,11 +304,16 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fail "dpkg-query not found in squashfs — cannot verify packages"
     fi
 
-    # r[verify iso.minimal+2]
+    # r[verify iso.minimal+3]
     if [ -x "$SQFS_MNT/sbin/cryptsetup" ] || [ -x "$SQFS_MNT/usr/sbin/cryptsetup" ]; then
         pass "cryptsetup exists in rootfs"
     else
         fail "cryptsetup exists in rootfs"
+    fi
+    if [ -x "$SQFS_MNT/sbin/veritysetup" ] || [ -x "$SQFS_MNT/usr/sbin/veritysetup" ]; then
+        pass "veritysetup exists in rootfs"
+    else
+        fail "veritysetup exists in rootfs"
     fi
     check "zstd exists in rootfs" test -x "$SQFS_MNT/usr/bin/zstd"
     if [ -x "$SQFS_MNT/sbin/sgdisk" ] || [ -x "$SQFS_MNT/usr/sbin/sgdisk" ]; then
@@ -378,6 +321,10 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     else
         fail "sgdisk exists in rootfs"
     fi
+
+    # r[verify iso.verity.initramfs-hook]
+    check "verity initramfs hook exists" test -f "$SQFS_MNT/usr/share/initramfs-tools/hooks/verity"
+    check "verity premount script exists" test -f "$SQFS_MNT/usr/share/initramfs-tools/scripts/live-premount/verity"
 
     # r[verify iso.network-tools+3]
     check "curl exists in rootfs" test -x "$SQFS_MNT/usr/bin/curl"
@@ -486,6 +433,204 @@ else
     fail "BESCONF partition found"
 fi
 
+# ============================================================
+# 6b. Images partition (GPT partition 4) check
+# ============================================================
+echo ""
+echo "--- Images Partition ---"
+
+# r[verify iso.images-partition]
+# r[verify iso.verity.images]
+# r[verify iso.verity.layout]
+# Find GPT partition 4 on the loop device (the images squashfs with verity)
+IMAGES_PART=""
+for part in "${LOOP_DEVICE}p"*; do
+    [ -b "$part" ] || continue
+    PARTNUM="$(echo "$part" | grep -o '[0-9]*$')"
+    if [ "$PARTNUM" = "4" ]; then
+        IMAGES_PART="$part"
+        break
+    fi
+done
+
+if [ -n "$IMAGES_PART" ]; then
+    pass "images partition found as GPT partition 4 ($IMAGES_PART)"
+
+    # Verify the verity trailer: last 8 bytes are a LE u64 hash size
+    IMAGES_TOTAL_SIZE="$(blockdev --getsize64 "$IMAGES_PART")"
+    if [ "$IMAGES_TOTAL_SIZE" -gt 8 ]; then
+        TRAILER_BYTES="$(dd if="$IMAGES_PART" bs=1 skip=$((IMAGES_TOTAL_SIZE - 8)) count=8 2>/dev/null | od -A n -t u1 | tr -s ' ')"
+        HASH_SIZE=0
+        SHIFT=0
+        for b in $TRAILER_BYTES; do
+            HASH_SIZE=$((HASH_SIZE + (b << SHIFT)))
+            SHIFT=$((SHIFT + 8))
+        done
+
+        if [ "$HASH_SIZE" -gt 0 ] && [ "$HASH_SIZE" -lt "$IMAGES_TOTAL_SIZE" ]; then
+            pass "images partition has valid verity trailer (hash_size=$HASH_SIZE)"
+        else
+            fail "images partition has valid verity trailer (hash_size=$HASH_SIZE, total=$IMAGES_TOTAL_SIZE)"
+        fi
+    else
+        fail "images partition is large enough for verity trailer ($IMAGES_TOTAL_SIZE bytes)"
+    fi
+
+    # r[verify iso.verity.images]
+    # Extract the root hash from grub.cfg and verify the images partition
+    IMAGES_ROOTHASH=""
+    if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
+        IMAGES_ROOTHASH="$(grep -o 'images\.verity\.roothash=[^ ]*' "$ISO_MNT/boot/grub/grub.cfg" | head -1 | cut -d= -f2)"
+    fi
+    if [ -n "$IMAGES_ROOTHASH" ]; then
+        HASH_OFFSET=$((IMAGES_TOTAL_SIZE - 8 - HASH_SIZE))
+        if veritysetup verify "$IMAGES_PART" "$IMAGES_PART" "$IMAGES_ROOTHASH" --hash-offset="$HASH_OFFSET" 2>/dev/null; then
+            pass "images partition passes veritysetup verify"
+        else
+            fail "images partition passes veritysetup verify"
+        fi
+
+        # Open verity, mount, and check contents
+        if veritysetup open "$IMAGES_PART" test-besimages "$IMAGES_PART" "$IMAGES_ROOTHASH" --hash-offset="$HASH_OFFSET" 2>/dev/null; then
+            mount -t squashfs -o ro /dev/mapper/test-besimages "$IMAGES_MNT" 2>/dev/null && IMAGES_MOUNTED=1
+
+            if [ "$IMAGES_MOUNTED" -eq 1 ]; then
+                pass "images squashfs mounts via verity"
+
+                # r[verify iso.contents+3]
+                check "partitions.json in images squashfs" test -f "$IMAGES_MNT/partitions.json"
+
+                if [ -f "$IMAGES_MNT/partitions.json" ]; then
+                    if jq empty "$IMAGES_MNT/partitions.json" 2>/dev/null; then
+                        pass "partitions.json is valid JSON"
+                    else
+                        fail "partitions.json is valid JSON"
+                    fi
+
+                    MANIFEST_ARCH="$(jq -r '.arch' "$IMAGES_MNT/partitions.json" 2>/dev/null)"
+                    if [ "$MANIFEST_ARCH" = "$ARCH" ]; then
+                        pass "partitions.json arch matches expected ($ARCH)"
+                    else
+                        fail "partitions.json arch matches expected ($ARCH, got: $MANIFEST_ARCH)"
+                    fi
+
+                    PART_COUNT="$(jq '.partitions | length' "$IMAGES_MNT/partitions.json" 2>/dev/null)"
+                    if [ "$PART_COUNT" -eq 3 ]; then
+                        pass "partitions.json has 3 partitions"
+                    else
+                        fail "partitions.json has 3 partitions (got: $PART_COUNT)"
+                    fi
+
+                    for field in label type_uuid size_mib image; do
+                        MISSING_FIELD="$(jq -r ".partitions[] | select(.${field} == null) | .label // \"unknown\"" "$IMAGES_MNT/partitions.json" 2>/dev/null)"
+                        if [ -z "$MISSING_FIELD" ]; then
+                            pass "all partitions have '$field' field"
+                        else
+                            fail "all partitions have '$field' field (missing in: $MISSING_FIELD)"
+                        fi
+                    done
+
+                    for label in efi xboot root; do
+                        FOUND_LABEL="$(jq -r ".partitions[] | select(.label == \"$label\") | .label" "$IMAGES_MNT/partitions.json" 2>/dev/null)"
+                        if [ "$FOUND_LABEL" = "$label" ]; then
+                            pass "partitions.json contains '$label' partition"
+                        else
+                            fail "partitions.json contains '$label' partition"
+                        fi
+                    done
+
+                    # r[verify iso.contents+3]
+                    # Verify raw image files (no .zst, no .size sidecars)
+                    for name in efi xboot root; do
+                        check "${name}.img exists in images squashfs" test -f "$IMAGES_MNT/${name}.img"
+
+                        # r[verify installer.write.disk-size-check+3]
+                        if [ -f "$IMAGES_MNT/${name}.img" ]; then
+                            IMG_SIZE="$(stat --format='%s' "$IMAGES_MNT/${name}.img")"
+                            if [ "$IMG_SIZE" -gt 0 ] 2>/dev/null; then
+                                pass "${name}.img has positive size ($IMG_SIZE bytes)"
+                            else
+                                fail "${name}.img has positive size (got: $IMG_SIZE)"
+                            fi
+                        fi
+
+                        # No .zst or .size sidecars should exist
+                        if [ -f "$IMAGES_MNT/${name}.img.zst" ]; then
+                            fail "no ${name}.img.zst in images squashfs (old format)"
+                        else
+                            pass "no ${name}.img.zst in images squashfs (old format)"
+                        fi
+                        if [ -f "$IMAGES_MNT/${name}.img.size" ]; then
+                            fail "no ${name}.img.size sidecar in images squashfs"
+                        else
+                            pass "no ${name}.img.size sidecar in images squashfs"
+                        fi
+                    done
+                fi
+
+                umount "$IMAGES_MNT"
+                IMAGES_MOUNTED=0
+            else
+                fail "images squashfs mounts via verity"
+            fi
+
+            veritysetup close test-besimages 2>/dev/null
+        else
+            fail "images partition verity open succeeded"
+        fi
+    else
+        fail "images.verity.roothash found in grub.cfg"
+    fi
+else
+    fail "images partition found as GPT partition 4"
+fi
+
+# r[verify iso.verity.squashfs]
+# Verify the squashfs rootfs verity trailer
+echo ""
+echo "--- Squashfs Verity ---"
+
+if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
+    SQFS_TOTAL_SIZE="$(stat --format='%s' "$ISO_MNT/live/filesystem.squashfs")"
+    if [ "$SQFS_TOTAL_SIZE" -gt 8 ]; then
+        SQFS_TRAILER_BYTES="$(dd if="$ISO_MNT/live/filesystem.squashfs" bs=1 skip=$((SQFS_TOTAL_SIZE - 8)) count=8 2>/dev/null | od -A n -t u1 | tr -s ' ')"
+        SQFS_HASH_SIZE=0
+        SQFS_SHIFT=0
+        for b in $SQFS_TRAILER_BYTES; do
+            SQFS_HASH_SIZE=$((SQFS_HASH_SIZE + (b << SQFS_SHIFT)))
+            SQFS_SHIFT=$((SQFS_SHIFT + 8))
+        done
+
+        if [ "$SQFS_HASH_SIZE" -gt 0 ] && [ "$SQFS_HASH_SIZE" -lt "$SQFS_TOTAL_SIZE" ]; then
+            pass "squashfs rootfs has valid verity trailer (hash_size=$SQFS_HASH_SIZE)"
+        else
+            fail "squashfs rootfs has valid verity trailer (hash_size=$SQFS_HASH_SIZE, total=$SQFS_TOTAL_SIZE)"
+        fi
+
+        LIVE_ROOTHASH=""
+        if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
+            LIVE_ROOTHASH="$(grep -o 'live\.verity\.roothash=[^ ]*' "$ISO_MNT/boot/grub/grub.cfg" | head -1 | cut -d= -f2)"
+        fi
+        if [ -n "$LIVE_ROOTHASH" ]; then
+            SQFS_HASH_OFFSET=$((SQFS_TOTAL_SIZE - 8 - SQFS_HASH_SIZE))
+            # Use a loop device for veritysetup (it needs a block device)
+            SQFS_LOOP="$(losetup -f --show -r "$ISO_MNT/live/filesystem.squashfs")"
+            if veritysetup verify "$SQFS_LOOP" "$SQFS_LOOP" "$LIVE_ROOTHASH" --hash-offset="$SQFS_HASH_OFFSET" 2>/dev/null; then
+                pass "squashfs rootfs passes veritysetup verify"
+            else
+                fail "squashfs rootfs passes veritysetup verify"
+            fi
+            losetup -d "$SQFS_LOOP"
+        else
+            fail "live.verity.roothash found in grub.cfg for verification"
+        fi
+    else
+        fail "squashfs rootfs is large enough for verity trailer ($SQFS_TOTAL_SIZE bytes)"
+    fi
+else
+    fail "cannot check squashfs verity — file missing"
+fi
+
 losetup -d "$LOOP_DEVICE"
 LOOP_DEVICE=""
 
@@ -542,6 +687,23 @@ if [ "$DD_BESCONF_FOUND" -eq 1 ]; then
     pass "dd output contains BESCONF partition"
 else
     fail "dd output contains BESCONF partition"
+fi
+
+# r[verify iso.images-partition]
+# GPT partition 4 (images) must also survive the dd
+DD_IMAGES_FOUND=0
+for part in "${DD_LOOP}p"*; do
+    [ -b "$part" ] || continue
+    PARTNUM="$(echo "$part" | grep -o '[0-9]*$')"
+    if [ "$PARTNUM" = "4" ]; then
+        DD_IMAGES_FOUND=1
+        break
+    fi
+done
+if [ "$DD_IMAGES_FOUND" -eq 1 ]; then
+    pass "dd output contains images partition (partition 4)"
+else
+    fail "dd output contains images partition (partition 4)"
 fi
 
 losetup -d "$DD_LOOP"

@@ -353,7 +353,7 @@ Status: done.
 - Verify ISO boots in QEMU with verity enabled.
 - Update stale annotations in `tests/test-iso-structure.sh`.
 
-Status: not started.
+Status: done.
 
 ### Step 7: Cleanup
 
