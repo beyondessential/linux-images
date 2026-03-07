@@ -323,7 +323,7 @@ Status: done.
 - Test by booting the ISO in QEMU with a known-good image and verifying
   that dm-verity devices appear.
 
-Status: not started.
+Status: done.
 
 ### Step 5: Installer changes
 

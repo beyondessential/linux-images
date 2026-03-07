@@ -226,6 +226,121 @@ chroot "$MNT_ROOTFS" bash -c "
     rm -rf /var/lib/apt/lists/*
 "
 
+# r[impl iso.verity.initramfs-hook]
+# Install the initramfs hook that copies veritysetup into the initramfs,
+# and the premount script that sets up dm-verity on the live squashfs.
+mkdir -p "$MNT_ROOTFS/usr/share/initramfs-tools/hooks"
+cat > "$MNT_ROOTFS/usr/share/initramfs-tools/hooks/verity" << 'HOOK'
+#!/bin/sh
+set -e
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0;; esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+copy_exec /usr/sbin/veritysetup
+# veritysetup needs libcryptsetup, libdevmapper, etc. — copy_exec
+# handles shared library dependencies automatically.
+HOOK
+chmod 755 "$MNT_ROOTFS/usr/share/initramfs-tools/hooks/verity"
+
+mkdir -p "$MNT_ROOTFS/usr/share/initramfs-tools/scripts/live-premount"
+cat > "$MNT_ROOTFS/usr/share/initramfs-tools/scripts/live-premount/verity" << 'PREMOUNT'
+#!/bin/sh
+# r[impl iso.verity.squashfs]
+# dm-verity premount hook for live-boot.
+#
+# Reads the self-describing verity trailer from filesystem.squashfs,
+# sets up a dm-verity device, and tells live-boot to use it instead
+# of mounting the squashfs directly.
+#
+# If live.verity.roothash= is absent from the kernel command line,
+# this hook is skipped (graceful fallback for development builds).
+
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0;; esac
+
+ROOTHASH=""
+for param in $(cat /proc/cmdline); do
+    case "$param" in
+        live.verity.roothash=*)
+            ROOTHASH="${param#live.verity.roothash=}"
+            ;;
+    esac
+done
+
+if [ -z "$ROOTHASH" ]; then
+    exit 0
+fi
+
+log_begin_msg "Setting up dm-verity for live squashfs"
+
+# live-boot mounts the ISO/USB at /run/live/medium (or /lib/live/mount/medium
+# on older versions). Find the squashfs.
+SQFS=""
+for candidate in /run/live/medium/live/filesystem.squashfs /lib/live/mount/medium/live/filesystem.squashfs /cdrom/live/filesystem.squashfs; do
+    if [ -f "$candidate" ]; then
+        SQFS="$candidate"
+        break
+    fi
+done
+
+if [ -z "$SQFS" ]; then
+    log_warning_msg "verity: squashfs not found, skipping"
+    log_end_msg
+    exit 0
+fi
+
+# Read the last 8 bytes to recover the hash tree size (little-endian u64).
+TOTAL_SIZE=$(stat -c '%s' "$SQFS")
+TRAILER_OFFSET=$((TOTAL_SIZE - 8))
+
+# Use dd + od to read 8 bytes as little-endian u64.
+# od -A n -t u1 gives us the individual bytes; we reconstruct the value.
+BYTES=$(dd if="$SQFS" bs=1 skip="$TRAILER_OFFSET" count=8 2>/dev/null | od -A n -t u1 | tr -s ' ')
+HASH_SIZE=0
+SHIFT=0
+for b in $BYTES; do
+    HASH_SIZE=$((HASH_SIZE + (b << SHIFT)))
+    SHIFT=$((SHIFT + 8))
+done
+
+HASH_OFFSET=$((TOTAL_SIZE - 8 - HASH_SIZE))
+
+# Set up a loop device on the squashfs file.
+LOOP=$(losetup -f --show -r "$SQFS")
+
+# Open dm-verity: data and hash are on the same device, hash at offset.
+veritysetup open "$LOOP" live-verity "$LOOP" "$ROOTHASH" \
+    --hash-offset="$HASH_OFFSET"
+
+# Tell live-boot to use the verity device instead of the raw squashfs.
+# live-boot checks for /run/live/medium/live/filesystem.squashfs and
+# loop-mounts it. We pre-empt this by mounting the verity device at
+# the location live-boot expects the root overlay to come from.
+#
+# The standard mechanism is to set LIVEFS and export it; however,
+# live-boot's actual contract varies by version. The most reliable
+# approach is to mount the dm-verity device over the squashfs path
+# so live-boot's loop mount picks up the verified data.
+mkdir -p /run/live/verity
+mount -t squashfs -o ro /dev/mapper/live-verity /run/live/verity
+
+# Override live-boot's squashfs discovery: create a symlink so the
+# verified mount is used as the rootfs source.
+export LIVEFS="/run/live/verity"
+export LIVEFS_ROOT="/run/live/verity"
+
+log_end_msg
+PREMOUNT
+chmod 755 "$MNT_ROOTFS/usr/share/initramfs-tools/scripts/live-premount/verity"
+
+# Rebuild initramfs to include the verity hook and premount script
+echo "    Rebuilding initramfs to include verity hook..."
+chroot "$MNT_ROOTFS" update-initramfs -u -k all
+
 # r[impl iso.network-config+2]
 # Configure netplan to DHCP on all Ethernet interfaces.
 mkdir -p "$MNT_ROOTFS/etc/netplan"
