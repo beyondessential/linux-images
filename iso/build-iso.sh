@@ -238,6 +238,12 @@ network:
 NETCFG
 chmod 600 "$MNT_ROOTFS/etc/netplan/01-all-en-dhcp.yaml"
 
+# live-boot's initramfs networking script (9990-networking.sh) tries to write
+# /root/etc/network/interfaces during early boot. The directory doesn't exist
+# because we use netplan, not ifupdown. Create it so the script doesn't print
+# "can't create /root/etc/network/interfaces" on the console.
+mkdir -p "$MNT_ROOTFS/etc/network"
+
 # ============================================================
 # Phase 3: Install the TUI installer and configure autostart
 # ============================================================
