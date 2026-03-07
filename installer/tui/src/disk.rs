@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{DiskSelector, DiskStrategy};
+use crate::paths;
 
 // r[impl installer.dryrun.devices]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,7 +123,7 @@ struct LsblkDevice {
 
 // r[impl installer.tui.disk-detection+3]
 pub fn detect_block_devices() -> Result<Vec<BlockDevice>> {
-    let output = Command::new("lsblk")
+    let output = Command::new(paths::LSBLK)
         .args([
             "--json",
             "--bytes",
@@ -235,7 +236,7 @@ pub fn load_fake_devices(path: &Path) -> Result<Vec<BlockDevice>> {
 /// Try to determine which block device we booted from, so we can exclude it
 /// as an install target.
 pub fn detect_boot_device() -> Option<PathBuf> {
-    let output = Command::new("lsblk")
+    let output = Command::new(paths::LSBLK)
         .args(["--json", "--output", "NAME,MOUNTPOINTS,TYPE", "--tree"])
         .output()
         .ok()?;

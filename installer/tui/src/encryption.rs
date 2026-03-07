@@ -6,6 +6,7 @@ use anyhow::{Context, Result, bail};
 use rand::{distr::slice::Choose, prelude::*};
 
 use crate::config::DiskEncryption;
+use crate::paths;
 use crate::util::{create_passphrase_keyfile, partition_path, run_command};
 
 const KEYFILE_PATH: &str = "/etc/luks/keyfile";
@@ -72,7 +73,7 @@ fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) ->
     let keyfile_str = tmp_keyfile.to_str().unwrap_or_default();
 
     run_command(
-        "systemd-cryptenroll",
+        paths::SYSTEMD_CRYPTENROLL,
         &[
             part_str,
             "--unlock-key-file",
@@ -118,7 +119,7 @@ fn enroll_keyfile(root_part: &Path, mount_path: &Path, recovery_passphrase: &str
     let new_str = tmp_new_keyfile.to_str().unwrap_or_default();
 
     run_command(
-        "cryptsetup",
+        paths::CRYPTSETUP,
         &[
             "luksAddKey",
             part_str,
@@ -201,17 +202,17 @@ fn configure_installed_system(disk_encryption: DiskEncryption, mount_path: &Path
     let dev_path = mount_path.join("dev");
 
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/proc", proc_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /proc into target")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/sys", sys_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /sys into target")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/dev", dev_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /dev into target")?;
@@ -238,19 +239,22 @@ fn configure_installed_system(disk_encryption: DiskEncryption, mount_path: &Path
 
     let dracut_result = if let Some(ref kver) = kernel_version {
         tracing::info!("rebuilding initramfs for kernel {kver}");
-        run_command("chroot", &[mount_str, "dracut", "--force", "--kver", kver])
+        run_command(
+            paths::CHROOT,
+            &[mount_str, paths::DRACUT, "--force", "--kver", kver],
+        )
     } else {
         tracing::warn!("no kernel version found in target, running dracut without --kver");
         run_command(
-            "chroot",
-            &[mount_str, "dracut", "--force", "--regenerate-all"],
+            paths::CHROOT,
+            &[mount_str, paths::DRACUT, "--force", "--regenerate-all"],
         )
     };
 
     // Clean up bind mounts regardless of dracut result
-    let _ = run_command("umount", &[dev_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[sys_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[proc_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[dev_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[sys_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[proc_path.to_str().unwrap_or_default()]);
 
     dracut_result.context("rebuilding initramfs with dracut in chroot")?;
 

@@ -12,6 +12,7 @@ use crate::disk;
 use crate::encryption;
 use crate::firstboot;
 use crate::hostname_template;
+use crate::paths;
 use crate::plan;
 use crate::script;
 use crate::timezone;
@@ -394,12 +395,12 @@ impl RunContext {
             eprintln!("installation complete (--no-reboot, not rebooting)");
         } else {
             eprintln!("installation complete, rebooting...");
-            let reboot_ok = std::process::Command::new("/sbin/reboot")
+            let reboot_ok = std::process::Command::new(paths::REBOOT)
                 .status()
                 .is_ok_and(|s| s.success());
             if !reboot_ok {
-                tracing::warn!("/sbin/reboot failed, trying systemctl");
-                let _ = std::process::Command::new("/usr/bin/systemctl")
+                tracing::warn!("{} failed, trying systemctl", paths::REBOOT);
+                let _ = std::process::Command::new(paths::SYSTEMCTL)
                     .arg("reboot")
                     .status();
             }

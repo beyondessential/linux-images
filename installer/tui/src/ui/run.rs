@@ -15,6 +15,7 @@ use crate::besconf::{self, BesconfState};
 use crate::config::validate_hostname;
 use crate::encryption;
 use crate::firstboot;
+use crate::paths;
 use crate::writer;
 use crate::writer::PartitionManifest;
 
@@ -650,7 +651,7 @@ fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     terminal::disable_raw_mode()?;
 
     eprintln!("--- debug shell (type 'exit' to return to installer) ---");
-    let status = std::process::Command::new("/bin/bash")
+    let status = std::process::Command::new(paths::BASH)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -678,18 +679,16 @@ fn reboot(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
     println!("Rebooting...");
 
     // Switch back to tty1 so systemd shutdown output is visible.
-    let _ = std::process::Command::new("/usr/bin/chvt")
-        .arg("1")
-        .status();
+    let _ = std::process::Command::new(paths::CHVT).arg("1").status();
 
     // Try `reboot` first (provided by systemd-sysv), fall back to `systemctl reboot`.
-    match std::process::Command::new("/sbin/reboot").status() {
+    match std::process::Command::new(paths::REBOOT).status() {
         Ok(s) if s.success() => return,
         Ok(s) => tracing::warn!("reboot exited with {s}, trying systemctl"),
         Err(e) => tracing::warn!("reboot not found ({e}), trying systemctl"),
     }
 
-    match std::process::Command::new("/usr/bin/systemctl")
+    match std::process::Command::new(paths::SYSTEMCTL)
         .arg("reboot")
         .status()
     {

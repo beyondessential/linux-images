@@ -14,6 +14,7 @@ mod encryption;
 mod firstboot;
 mod hostname_template;
 mod net;
+mod paths;
 mod plan;
 mod run;
 mod script;
