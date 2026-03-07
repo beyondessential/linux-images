@@ -274,7 +274,7 @@ jobs:
         timeout-minutes: 30
 
       - name: Test ISO structure
-        run: just arch=${{ matrix.arch }} iso-test-structure
+        run: just arch=${{ matrix.arch }} installer_bin=installer-bin/bes-installer iso-test-structure
 
       - name: Upload ISO
         uses: actions/upload-artifact@v7

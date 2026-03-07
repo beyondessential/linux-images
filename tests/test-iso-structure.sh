@@ -11,6 +11,9 @@ set -euo pipefail
 ISO="${1:?Usage: $0 <iso-file> <arch> [installer-bin]}"
 ARCH="${2:?Usage: $0 <iso-file> <arch> [installer-bin]}"
 INSTALLER_BIN="${3:-}"
+if [ -n "$INSTALLER_BIN" ] && [ "${INSTALLER_BIN#/}" = "$INSTALLER_BIN" ]; then
+    INSTALLER_BIN="$PWD/$INSTALLER_BIN"
+fi
 
 PASS=0
 FAIL=0
