@@ -175,7 +175,8 @@ fi
 # r[impl iso.minimal]
 # r[impl iso.live-boot]
 # r[impl iso.offline]
-# r[impl iso.network-tools]
+# r[impl iso.network-tools+2]
+# r[impl iso.network-config]
 # Enable the universe repository (live-boot is not in main)
 cat > "$MNT_ROOTFS/etc/apt/sources.list.d/universe.list" << SOURCES
 deb $UBUNTU_MIRROR $UBUNTU_SUITE main universe
@@ -201,6 +202,8 @@ chroot "$MNT_ROOTFS" bash -c "
         udev \
         util-linux \
         kbd \
+        iproute2 \
+        iputils-ping \
         parted \
         gdisk \
         cloud-guest-utils \
@@ -229,6 +232,26 @@ chroot "$MNT_ROOTFS" bash -c "
     apt-get clean
     rm -rf /var/lib/apt/lists/*
 "
+
+# r[impl iso.network-config]
+# Configure systemd-networkd to DHCP on all Ethernet interfaces.
+mkdir -p "$MNT_ROOTFS/etc/systemd/network"
+cat > "$MNT_ROOTFS/etc/systemd/network/20-dhcp.network" << 'NETCFG'
+[Match]
+Name=en*
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+UseDNS=yes
+NETCFG
+
+chroot "$MNT_ROOTFS" systemctl enable systemd-networkd
+chroot "$MNT_ROOTFS" systemctl enable systemd-resolved
+
+# Point resolv.conf at the systemd-resolved stub so DNS works at runtime.
+ln -sf /run/systemd/resolve/stub-resolv.conf "$MNT_ROOTFS/etc/resolv.conf"
 
 # ============================================================
 # Phase 3: Install the TUI installer and configure autostart
@@ -394,7 +417,7 @@ umount "$MNT_ROOTFS/run"
 CHROOT_MOUNTS_ACTIVE=0
 
 rm -f "$MNT_ROOTFS/etc/resolv.conf"
-echo "nameserver 1.1.1.1" > "$MNT_ROOTFS/etc/resolv.conf"
+ln -sf /run/systemd/resolve/stub-resolv.conf "$MNT_ROOTFS/etc/resolv.conf"
 
 rm -rf "$MNT_ROOTFS/tmp/"*
 rm -rf "$MNT_ROOTFS/var/cache/apt/archives/"*.deb

@@ -27,11 +27,21 @@ The live environment must be minimal: a kernel, an initramfs, and just enough
 userspace to run the TUI installer (block device utilities, zstd, and
 cryptsetup for LUKS operations).
 
-r[iso.network-tools]
+r[iso.network-tools+2]
 The live environment must include `curl` (for HTTPS connectivity checks and
 GitHub SSH key lookups) and `tailscale` (for running `tailscale netcheck`
 diagnostics during installation). These are used by the interactive TUI
 screens for network checks and are not required for offline installation.
+The live environment must also include `iproute2` (for `ip`) and
+`iputils-ping` (for `ping`) so that network problems can be debugged
+from the debug shell.
+
+r[iso.network-config]
+The live environment must configure automatic DHCP on all Ethernet
+interfaces so that network connectivity is available without manual
+setup. This must use `systemd-networkd` with a match-all `.network`
+file, and `systemd-resolved` for DNS. The corresponding systemd units
+must be enabled in the live rootfs.
 
 r[iso.offline]
 The live ISO must be fully functional without network connectivity. No
