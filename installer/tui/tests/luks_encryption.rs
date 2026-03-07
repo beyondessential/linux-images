@@ -352,38 +352,6 @@ impl LuksFixture {
         result
     }
 
-    /// Find which keyslot a given key material unlocks, or None.
-    fn find_slot_for_keyfile(&self, key_data: &[u8]) -> Option<u32> {
-        let kf_path = self.work_dir.path().join("find-slot-key");
-        fs::write(&kf_path, key_data).expect("writing trial keyfile");
-        fs::set_permissions(&kf_path, fs::Permissions::from_mode(0o400)).ok();
-
-        let slots = self.active_keyslots();
-
-        for slot in &slots {
-            let ok = Command::new("cryptsetup")
-                .args([
-                    "open",
-                    "--test-passphrase",
-                    "--key-slot",
-                    &slot.to_string(),
-                    "--key-file",
-                    kf_path.to_str().unwrap(),
-                    self.luks_part_str(),
-                ])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if ok {
-                let _ = fs::remove_file(&kf_path);
-                return Some(*slot);
-            }
-        }
-
-        let _ = fs::remove_file(&kf_path);
-        None
-    }
-
     /// Try to unlock the LUKS volume with the given passphrase string.
     fn try_open_with_passphrase(&self, passphrase: &str) -> bool {
         // cryptsetup treats the contents of --key-file as raw key material
