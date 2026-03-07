@@ -180,16 +180,16 @@ When `auto = true` but required fields are missing (`disk-encryption`,
 must print an error describing the missing fields and fall back to
 interactive mode.
 
-## Testing Flags
+## External Binaries
 
-r[installer.check-paths]
-When the `--check-paths` flag is passed (with an optional sysroot path
-argument), the installer must verify that every hardcoded external binary
-path exists on disk and then exit. If a sysroot is provided, paths are
-resolved relative to that directory (e.g. a mounted squashfs); otherwise
-they are checked against `/`. The exit code must be 0 when all paths are
-present and non-zero when any are missing, with the missing paths printed
-to stderr.
+r[installer.hardcoded-paths]
+The installer must use hardcoded absolute paths for every external binary
+it invokes (e.g. `/usr/bin/mount`, `/usr/sbin/cryptsetup`). This avoids
+reliance on `PATH` in the live ISO environment, where the shell or systemd
+context may not include `/usr/sbin` or `/sbin`. All paths must be declared
+as constants in a single module so they can be enumerated programmatically.
+
+## Testing Flags
 
 r[installer.no-reboot]
 When the `--no-reboot` flag is passed, the installer must not call `reboot`
