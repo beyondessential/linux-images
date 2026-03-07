@@ -99,8 +99,12 @@ cleanup() {
     local exit_code=$?
     set +e
 
-    if [ -n "$VERIFY_MOUNT" ] && mountpoint -q "$VERIFY_MOUNT" 2>/dev/null; then
-        umount "$VERIFY_MOUNT"
+    if [ -n "$VERIFY_MOUNT" ]; then
+        umount "$VERIFY_MOUNT/proc" 2>/dev/null
+        umount "$VERIFY_MOUNT/boot" 2>/dev/null
+        if mountpoint -q "$VERIFY_MOUNT" 2>/dev/null; then
+            umount "$VERIFY_MOUNT"
+        fi
     fi
 
     # Clean up any mounts the installer left on the target device or its
@@ -688,15 +692,16 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
         fi
 
-        # --- Filesystem UUID / grub.cfg consistency ---
+        # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
         # r[verify installer.write.randomize-uuids+2]
         # r[verify installer.write.rebuild-boot-config+3]
-        # Mount /boot so we can read grub.cfg
-        BOOT_MNT="$WORK_DIR/verify-boot"
-        mkdir -p "$BOOT_MNT"
+        # Mount /boot under the verify root so we can read grub.cfg and
+        # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"
+        BOOT_MNT="$VERIFY_MOUNT/boot"
+        mkdir -p "$BOOT_MNT"
         set +e
-        mount -o ro "$XBOOT_PART" "$BOOT_MNT" 2>/dev/null
+        mount "$XBOOT_PART" "$BOOT_MNT" 2>/dev/null
         BOOT_MOUNT_RC=$?
         set -e
         if [ $BOOT_MOUNT_RC -eq 0 ]; then
@@ -716,9 +721,44 @@ if [ -n "$BTRFS_DEV" ]; then
             else
                 echo "    (grub.cfg not found — skipping UUID consistency check)"
             fi
+
+            # --- Initramfs crypttab verification (metal only) ---
+            # r[verify installer.encryption.configure-system+2]
+            # The initramfs must contain the updated crypttab so the system
+            # can unlock without a passphrase prompt at boot.
+            if [ "$VARIANT" = "metal" ]; then
+                INITRD_FILE="$(ls "$BOOT_MNT"/initrd.img-* 2>/dev/null | head -1)"
+                if [ -n "$INITRD_FILE" ] && [ -f "$INITRD_FILE" ]; then
+                    INITRD_BASENAME="/boot/$(basename "$INITRD_FILE")"
+                    # Use lsinitrd from the installed system via chroot
+                    mount -t proc proc "$VERIFY_MOUNT/proc" 2>/dev/null || true
+                    INITRD_CRYPTTAB="$(chroot "$VERIFY_MOUNT" lsinitrd -f /etc/crypttab "$INITRD_BASENAME" 2>/dev/null || true)"
+                    umount "$VERIFY_MOUNT/proc" 2>/dev/null || true
+
+                    if [ -n "$INITRD_CRYPTTAB" ]; then
+                        echo "    initramfs crypttab: $INITRD_CRYPTTAB"
+                        INITRD_CRYPTTAB_FILE="$WORK_DIR/initrd-crypttab"
+                        printf '%s\n' "$INITRD_CRYPTTAB" > "$INITRD_CRYPTTAB_FILE"
+                        check "initramfs crypttab references root" \
+                            grep -q 'root' "$INITRD_CRYPTTAB_FILE"
+                        if [ "$DISK_ENCRYPTION" = "tpm" ]; then
+                            check "initramfs crypttab has tpm2-device=auto" \
+                                grep -q 'tpm2-device=auto' "$INITRD_CRYPTTAB_FILE"
+                        elif [ "$DISK_ENCRYPTION" = "keyfile" ]; then
+                            check "initramfs crypttab references /etc/luks/keyfile" \
+                                grep -q '/etc/luks/keyfile' "$INITRD_CRYPTTAB_FILE"
+                        fi
+                    else
+                        check "initramfs contains crypttab" false
+                    fi
+                else
+                    echo "    (no initrd.img found on xboot — skipping initramfs check)"
+                fi
+            fi
+
             umount "$BOOT_MNT"
         else
-            echo "    (could not mount xboot — skipping grub.cfg checks)"
+            echo "    (could not mount xboot — skipping grub.cfg and initramfs checks)"
         fi
 
         umount "$VERIFY_MOUNT"
