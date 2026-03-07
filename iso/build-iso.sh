@@ -245,6 +245,32 @@ chmod 600 "$MNT_ROOTFS/etc/netplan/01-all-en-dhcp.yaml"
 # "can't create /root/etc/network/interfaces" on the console.
 mkdir -p "$MNT_ROOTFS/etc/network"
 
+# r[impl iso.blacklist-drm]
+# The TUI installer runs on a text console and needs only the EFI framebuffer
+# (efifb/simplefb). Blacklist all DRM/GPU drivers to avoid spurious errors
+# (e.g. vmwgfx failing under VirtualBox) and speed up boot.
+# Uses "install ... /bin/false" instead of "blacklist" to also prevent
+# transitive loading by other modules.
+cat > "$MNT_ROOTFS/etc/modprobe.d/blacklist-gpu.conf" << 'MODPROBE'
+# BES live ISO: no GPU drivers needed for TUI installer
+install vmwgfx /bin/false
+install qxl /bin/false
+install bochs /bin/false
+install cirrus-qemu /bin/false
+install vboxvideo /bin/false
+install virtio-gpu /bin/false
+install ast /bin/false
+install mgag200 /bin/false
+install hibmc-drm /bin/false
+install hyperv_drm /bin/false
+install nouveau /bin/false
+install i915 /bin/false
+install xe /bin/false
+install amdgpu /bin/false
+install radeon /bin/false
+install drm_vram_helper /bin/false
+MODPROBE
+
 # ============================================================
 # Phase 3: Install the TUI installer and configure autostart
 # ============================================================

@@ -31,6 +31,19 @@ userspace to run the TUI installer (block device utilities, zstd, and
 cryptsetup for LUKS operations). The default debootstrap variant provides
 the base; only packages not included in it need to be installed explicitly.
 
+r[iso.blacklist-drm]
+The live environment must blacklist all DRM/GPU kernel modules via
+`/etc/modprobe.d/blacklist-gpu.conf`. The TUI installer runs on a text
+console and needs only the EFI framebuffer (`efifb`/`simplefb`); loading
+hardware-specific DRM drivers wastes time and produces spurious errors
+(e.g. `vmwgfx` failing under VirtualBox). The blacklist must cover at
+least: `vmwgfx`, `qxl`, `bochs`, `cirrus-qemu`, `vboxvideo`, `virtio-gpu`,
+`ast`, `mgag200`, `hibmc-drm`, `hyperv_drm`, `nouveau`, `i915`, `xe`,
+`amdgpu`, `radeon`, and `drm_vram_helper`. The file must use
+`install <module> /bin/false` directives rather than plain `blacklist`
+lines, because `blacklist` only prevents autoloading and does not prevent
+transitive loading by other modules.
+
 r[iso.network-tools+3]
 The live environment must include `curl` (for HTTPS connectivity checks and
 GitHub SSH key lookups) and `tailscale` (for running `tailscale netcheck`
