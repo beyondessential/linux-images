@@ -162,6 +162,11 @@ mount --bind /dev/pts "$MNT_ROOTFS/dev/pts"
 mount -t tmpfs tmpfs "$MNT_ROOTFS/run"
 CHROOT_MOUNTS_ACTIVE=1
 
+# The default debootstrap variant installs systemd-resolved, which creates
+# /etc/resolv.conf as a symlink to /run/systemd/resolve/stub-resolv.conf.
+# That target doesn't exist yet (no systemd running), so the symlink is
+# dangling and cp refuses to write through it. Remove it first.
+rm -f "$MNT_ROOTFS/etc/resolv.conf"
 if [ -f /etc/resolv.conf ]; then
     cp --dereference /etc/resolv.conf "$MNT_ROOTFS/etc/resolv.conf"
 elif [ -f /run/systemd/resolve/stub-resolv.conf ]; then
