@@ -135,6 +135,17 @@ STAGING="$WORK_DIR/staging"
 
 mkdir -p "$MNT_ROOTFS" "$MNT_ESP" "$STAGING"
 
+# Helper: run a command inside the chroot with a sane PATH and locale.
+# Without this, chroot inherits the host's PATH which may not include
+# /usr/sbin (where update-initramfs, mkinitramfs, etc. live), and the
+# host's locale which may not be installed in the chroot.
+run_in_chroot() {
+    chroot "$MNT_ROOTFS" /usr/bin/env \
+        PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+        LC_ALL=C \
+        "$@"
+}
+
 # ============================================================
 # Phase 1: Build live rootfs via debootstrap
 # ============================================================
@@ -188,9 +199,8 @@ deb $UBUNTU_MIRROR $UBUNTU_SUITE-updates main universe
 deb $UBUNTU_MIRROR $UBUNTU_SUITE-security main universe
 SOURCES
 
-chroot "$MNT_ROOTFS" bash -c "
+run_in_chroot bash -c "
     export DEBIAN_FRONTEND=noninteractive
-    export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
     apt-get update -q
 
@@ -239,7 +249,7 @@ install -D -m 755 "$SCRIPT_DIR/initramfs/scripts/live-premount/verity" \
 
 # Rebuild initramfs to include the verity hook and premount script
 echo "    Rebuilding initramfs to include verity hook..."
-chroot "$MNT_ROOTFS" /usr/sbin/update-initramfs -u -k all
+run_in_chroot update-initramfs -u -k all
 
 # r[impl iso.network-config+2]
 # Configure netplan to DHCP on all Ethernet interfaces.
@@ -373,12 +383,12 @@ RestartSec=3
 WantedBy=multi-user.target
 UNIT
 
-chroot "$MNT_ROOTFS" systemctl enable bes-chvt.service
-chroot "$MNT_ROOTFS" systemctl enable bes-installer.service
+run_in_chroot systemctl enable bes-chvt.service
+run_in_chroot systemctl enable bes-installer.service
 
 # Disable getty and autovt on tty2 so they don't compete with the installer
-chroot "$MNT_ROOTFS" systemctl mask getty@tty2.service
-chroot "$MNT_ROOTFS" systemctl mask autovt@tty2.service
+run_in_chroot systemctl mask getty@tty2.service
+run_in_chroot systemctl mask autovt@tty2.service
 
 # Enable root autologin on tty1 so users can debug the live environment.
 # Alt+F1 from the installer reaches a root shell without needing a password.
@@ -390,7 +400,7 @@ ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
 DROPIN
 
 # Also allow root login with no password on other ttys (live system only)
-chroot "$MNT_ROOTFS" bash -c "passwd -d root"
+run_in_chroot passwd -d root
 
 # Prevent systemd-logind from spawning VTs on demand for tty2
 mkdir -p "$MNT_ROOTFS/etc/systemd/logind.conf.d"
@@ -434,10 +444,10 @@ TimeoutIdleSec=60
 WantedBy=local-fs.target
 UNIT
 
-chroot "$MNT_ROOTFS" systemctl enable run-besconf.automount
+run_in_chroot systemctl enable run-besconf.automount
 
 echo "bes-installer" > "$MNT_ROOTFS/etc/hostname"
-chroot "$MNT_ROOTFS" systemd-machine-id-setup 2>/dev/null || true
+run_in_chroot systemd-machine-id-setup 2>/dev/null || true
 
 # ============================================================
 # Phase 4: Unmount chroot and create squashfs
