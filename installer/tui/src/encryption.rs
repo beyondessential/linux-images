@@ -44,7 +44,7 @@ pub fn enroll_and_configure_encryption(
 
     let root_part = partition_path(target_device, 3)?;
 
-    // r[impl installer.encryption.tpm-enroll+2]
+    // r[impl installer.encryption.tpm-enroll+3]
     // r[impl installer.encryption.keyfile-enroll+2]
     enroll_unlock_mechanism(&root_part, disk_encryption, mount_path, recovery_passphrase)?;
 
@@ -83,7 +83,7 @@ fn enroll_unlock_mechanism(
     Ok(())
 }
 
-// r[impl installer.encryption.tpm-enroll+2]
+// r[impl installer.encryption.tpm-enroll+3]
 fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) -> Result<()> {
     tracing::info!("enrolling TPM with PCR 1");
 
@@ -108,7 +108,7 @@ fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) ->
 
     let crypttab_path = mount_path.join(CRYPTTAB_PATH.strip_prefix('/').unwrap_or(CRYPTTAB_PATH));
     let crypttab_content = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
     fs::write(&crypttab_path, crypttab_content)
         .with_context(|| format!("writing crypttab at {}", crypttab_path.display()))?;
 

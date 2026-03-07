@@ -711,12 +711,14 @@ changes.
 
 
 
-> r[installer.encryption.tpm-enroll+2]
+> r[installer.encryption.tpm-enroll+3]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
 > `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
 > recovery passphrase. PCR 1 covers hardware identity (motherboard model,
 > CPU, RAM model and serials). The installer must update `/etc/crypttab` to
-> use `tpm2-device=auto` with a passphrase timeout fallback.
+> use `tpm2-device=auto` with a passphrase timeout fallback and the `force`
+> option (so dracut includes the entry in the initramfs even when the
+> build-time root is not a `crypto_LUKS` device).
 
 > r[installer.encryption.keyfile-enroll+2]
 > When disk encryption is `"keyfile"`, the installer must generate a random
