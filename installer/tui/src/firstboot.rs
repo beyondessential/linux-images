@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use sha_crypt::{Sha512Params, sha512_simple};
 
 use crate::config::{DiskEncryption, InstallConfig};
+use crate::paths;
 use crate::util::{partition_path, run_command};
 use crate::writer;
 
@@ -48,7 +49,7 @@ pub fn mount_target(
     fs::create_dir_all(&mount_path).context("creating mount point")?;
 
     run_command(
-        "mount",
+        paths::MOUNT,
         &[
             "-t",
             "btrfs",
@@ -68,8 +69,11 @@ pub fn mount_target(
 
 // r[impl installer.finalise.unmount]
 pub fn unmount_target(target: MountedTarget) -> Result<()> {
-    run_command("umount", &[target.mount_path.to_str().unwrap_or_default()])
-        .context("unmounting target root")?;
+    run_command(
+        paths::UMOUNT,
+        &[target.mount_path.to_str().unwrap_or_default()],
+    )
+    .context("unmounting target root")?;
 
     if target.luks_active {
         writer::close_luks_root()?;
@@ -359,22 +363,22 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
     let resolv_path = root.join("etc/resolv.conf");
 
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/proc", proc_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /proc for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/sys", sys_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /sys for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/dev", dev_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /dev for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/run", run_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /run for tailscale auth")?;
@@ -395,7 +399,7 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
 
     tracing::info!("attempting tailscale auth via chroot into {mount_str}");
 
-    let output = Command::new("chroot")
+    let output = Command::new(paths::CHROOT)
         .args([mount_str, "tailscale", "up", "--auth-key", authkey, "--ssh"])
         .output()
         .context("spawning chroot tailscale up")?;
@@ -404,10 +408,10 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
     if copied_resolv {
         let _ = fs::remove_file(&resolv_path);
     }
-    let _ = run_command("umount", &[run_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[dev_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[sys_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[proc_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[run_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[dev_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[sys_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[proc_path.to_str().unwrap_or_default()]);
 
     if output.status.success() {
         tracing::info!("tailscale auth succeeded via chroot");

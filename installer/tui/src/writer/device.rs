@@ -5,6 +5,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
+use crate::paths;
 pub use crate::util::{partition_path, run_command};
 
 // r[impl installer.container.partition-devices+2]
@@ -118,7 +119,7 @@ fn mknod_block_device(dev_path: &Path, name: &str, major: u32, minor: u32) -> Re
 
     tracing::info!("creating device node /dev/{name} (block {major}:{minor})");
 
-    let status = Command::new("mknod")
+    let status = Command::new(paths::MKNOD)
         .args([
             dev_path.to_str().unwrap_or_default(),
             "b",
@@ -138,7 +139,7 @@ fn mknod_block_device(dev_path: &Path, name: &str, major: u32, minor: u32) -> Re
 }
 
 pub fn reread_partition_table(target: &Path) -> Result<()> {
-    let output = Command::new("partprobe")
+    let output = Command::new(paths::PARTPROBE)
         .arg(target)
         .output()
         .context("running partprobe")?;
@@ -153,7 +154,7 @@ pub fn reread_partition_table(target: &Path) -> Result<()> {
         tracing::debug!("partprobe: {stderr}");
     }
 
-    let _ = Command::new("udevadm")
+    let _ = Command::new(paths::UDEVADM)
         .args(["settle", "--timeout=5"])
         .status();
 

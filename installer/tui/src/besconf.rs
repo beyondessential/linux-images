@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::paths;
+
 const BESCONF_MOUNT: &str = "/run/besconf";
 const FAILURE_LOG_NAME: &str = "installer-failed.log";
 const FAILURE_LOG_OLD_NAME: &str = "installer-failed.log.old";
@@ -60,7 +62,7 @@ pub fn detect_writable() -> BesconfState {
         };
     }
 
-    let output = std::process::Command::new("mount")
+    let output = std::process::Command::new(paths::MOUNT)
         .args(["-o", "remount,rw", BESCONF_MOUNT])
         .output();
 
@@ -173,7 +175,7 @@ pub fn read_machine_serial() -> String {
 
 /// Read the UUID of a block device via `blkid`.
 pub fn read_partition_uuid(device: &Path) -> Result<String> {
-    let output = std::process::Command::new("blkid")
+    let output = std::process::Command::new(paths::BLKID)
         .args(["-s", "UUID", "-o", "value"])
         .arg(device)
         .output()

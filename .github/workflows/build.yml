@@ -274,7 +274,7 @@ jobs:
         timeout-minutes: 30
 
       - name: Test ISO structure
-        run: just arch=${{ matrix.arch }} iso-test-structure
+        run: just arch=${{ matrix.arch }} installer_bin=installer-bin/bes-installer iso-test-structure
 
       - name: Upload ISO
         uses: actions/upload-artifact@v7
@@ -326,8 +326,8 @@ jobs:
         run: just arch=${{ matrix.arch }} variant=metal test-container-isolation
         timeout-minutes: 5
 
-      - name: Run container install test (cloud only, metal needs kernel keyring for LUKS)
-        run: just arch=${{ matrix.arch }} container_test_filter=cloud test-container-install
+      - name: Run container install test (all scenarios, fake-LUKS auto-detected)
+        run: just arch=${{ matrix.arch }} test-container-install
         timeout-minutes: 30
 
   release:

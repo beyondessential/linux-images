@@ -134,10 +134,10 @@ STAGING="$WORK_DIR/staging"
 mkdir -p "$MNT_ROOTFS" "$MNT_ESP" "$STAGING"
 
 # ============================================================
-# Phase 1: Build minimal live rootfs via debootstrap
+# Phase 1: Build live rootfs via debootstrap
 # ============================================================
-# r[impl iso.base]
-echo "==> Phase 1: Building minimal live rootfs..."
+# r[impl iso.base+2]
+echo "==> Phase 1: Building live rootfs (default variant)..."
 
 DEBOOTSTRAP_EXTRA_ARGS=()
 if [ ! -f /usr/share/keyrings/ubuntu-archive-keyring.gpg ]; then
@@ -147,8 +147,6 @@ fi
 
 debootstrap \
     --arch="$ARCH" \
-    --variant=minbase \
-    --include=ca-certificates \
     "${DEBOOTSTRAP_EXTRA_ARGS[@]}" \
     "$UBUNTU_SUITE" "$MNT_ROOTFS" "$UBUNTU_MIRROR"
 
@@ -164,6 +162,11 @@ mount --bind /dev/pts "$MNT_ROOTFS/dev/pts"
 mount -t tmpfs tmpfs "$MNT_ROOTFS/run"
 CHROOT_MOUNTS_ACTIVE=1
 
+# The default debootstrap variant installs systemd-resolved, which creates
+# /etc/resolv.conf as a symlink to /run/systemd/resolve/stub-resolv.conf.
+# That target doesn't exist yet (no systemd running), so the symlink is
+# dangling and cp refuses to write through it. Remove it first.
+rm -f "$MNT_ROOTFS/etc/resolv.conf"
 if [ -f /etc/resolv.conf ]; then
     cp --dereference /etc/resolv.conf "$MNT_ROOTFS/etc/resolv.conf"
 elif [ -f /run/systemd/resolve/stub-resolv.conf ]; then
@@ -172,10 +175,10 @@ else
     echo "nameserver 1.1.1.1" > "$MNT_ROOTFS/etc/resolv.conf"
 fi
 
-# r[impl iso.minimal]
+# r[impl iso.minimal+2]
 # r[impl iso.live-boot]
 # r[impl iso.offline]
-# r[impl iso.network-tools]
+# r[impl iso.network-tools+3]
 # Enable the universe repository (live-boot is not in main)
 cat > "$MNT_ROOTFS/etc/apt/sources.list.d/universe.list" << SOURCES
 deb $UBUNTU_MIRROR $UBUNTU_SUITE main universe
@@ -195,11 +198,7 @@ chroot "$MNT_ROOTFS" bash -c "
         initramfs-tools \
         live-boot \
         live-boot-initramfs-tools \
-        systemd \
         systemd-sysv \
-        dbus \
-        udev \
-        util-linux \
         parted \
         gdisk \
         cloud-guest-utils \
@@ -209,12 +208,10 @@ chroot "$MNT_ROOTFS" bash -c "
         btrfs-progs \
         lvm2 \
         dosfstools \
-        e2fsprogs \
+        mtools \
         pciutils \
         usbutils \
-        less \
-        curl \
-        ca-certificates
+        curl
 
     # Install tailscale for 'tailscale netcheck' diagnostics during installation.
     # curl is installed above; tailscale needs its own apt repo.
@@ -229,6 +226,52 @@ chroot "$MNT_ROOTFS" bash -c "
     rm -rf /var/lib/apt/lists/*
 "
 
+# r[impl iso.network-config+2]
+# Configure netplan to DHCP on all Ethernet interfaces.
+mkdir -p "$MNT_ROOTFS/etc/netplan"
+cat > "$MNT_ROOTFS/etc/netplan/01-all-en-dhcp.yaml" << 'NETCFG'
+network:
+  version: 2
+  ethernets:
+    all-en:
+      match:
+        name: "en*"
+      dhcp4: true
+NETCFG
+chmod 600 "$MNT_ROOTFS/etc/netplan/01-all-en-dhcp.yaml"
+
+# live-boot's initramfs networking script (9990-networking.sh) tries to write
+# /root/etc/network/interfaces during early boot. The directory doesn't exist
+# because we use netplan, not ifupdown. Create it so the script doesn't print
+# "can't create /root/etc/network/interfaces" on the console.
+mkdir -p "$MNT_ROOTFS/etc/network"
+
+# r[impl iso.blacklist-drm]
+# The TUI installer runs on a text console and needs only the EFI framebuffer
+# (efifb/simplefb). Blacklist all DRM/GPU drivers to avoid spurious errors
+# (e.g. vmwgfx failing under VirtualBox) and speed up boot.
+# Uses "install ... /bin/false" instead of "blacklist" to also prevent
+# transitive loading by other modules.
+cat > "$MNT_ROOTFS/etc/modprobe.d/blacklist-gpu.conf" << 'MODPROBE'
+# BES live ISO: no GPU drivers needed for TUI installer
+install vmwgfx /bin/false
+install qxl /bin/false
+install bochs /bin/false
+install cirrus-qemu /bin/false
+install vboxvideo /bin/false
+install virtio-gpu /bin/false
+install ast /bin/false
+install mgag200 /bin/false
+install hibmc-drm /bin/false
+install hyperv_drm /bin/false
+install nouveau /bin/false
+install i915 /bin/false
+install xe /bin/false
+install amdgpu /bin/false
+install radeon /bin/false
+install drm_vram_helper /bin/false
+MODPROBE
+
 # ============================================================
 # Phase 3: Install the TUI installer and configure autostart
 # ============================================================
@@ -241,7 +284,7 @@ BUILD_DATE=$BUILD_DATE
 ARCH=$ARCH
 BUILDINFO
 
-# r[impl iso.boot.autostart]
+# r[impl iso.boot.autostart+3]
 # Wrapper script: runs the installer with logging to a file (not piped
 # through tee, which would break the TUI's alternate screen mode).
 # If the installer crashes, it leaves the alternate screen and shows
@@ -393,7 +436,7 @@ umount "$MNT_ROOTFS/run"
 CHROOT_MOUNTS_ACTIVE=0
 
 rm -f "$MNT_ROOTFS/etc/resolv.conf"
-echo "nameserver 1.1.1.1" > "$MNT_ROOTFS/etc/resolv.conf"
+ln -sf /run/systemd/resolve/stub-resolv.conf "$MNT_ROOTFS/etc/resolv.conf"
 
 rm -rf "$MNT_ROOTFS/tmp/"*
 rm -rf "$MNT_ROOTFS/var/cache/apt/archives/"*.deb
@@ -545,7 +588,7 @@ grub-mkimage \
     chain efinet
 
 cat > "$STAGING/boot/grub/grub.cfg" << 'GRUBCFG'
-set timeout=3
+set timeout=1
 set default=0
 
 insmod all_video
@@ -553,12 +596,12 @@ insmod all_video
 search --file --no-floppy --set=root /live/vmlinuz
 
 menuentry "BES Installer (__ARCH__, built __BUILD_DATE__)" {
-    linux /live/vmlinuz boot=live toram quiet console=tty1
+    linux /live/vmlinuz boot=live toram console=tty1
     initrd /live/initrd.img
 }
 
-menuentry "BES Installer (__ARCH__, built __BUILD_DATE__) -- verbose" {
-    linux /live/vmlinuz boot=live toram console=tty1
+menuentry "BES Installer (__ARCH__, built __BUILD_DATE__) -- quiet" {
+    linux /live/vmlinuz boot=live toram quiet console=tty1
     initrd /live/initrd.img
 }
 GRUBCFG

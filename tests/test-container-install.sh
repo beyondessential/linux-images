@@ -87,6 +87,16 @@ if [ ! -d "$IMAGES_DIR" ]; then
 fi
 
 # ============================================================
+# Fake-LUKS detection
+# ============================================================
+# r[impl installer.container.fake-luks]
+if [ "$VARIANT" = "metal" ]; then
+    luks_detect_or_fake
+else
+    BES_FAKE_LUKS=0
+fi
+
+# ============================================================
 # State tracking for cleanup
 # ============================================================
 WORK_DIR=""
@@ -99,8 +109,12 @@ cleanup() {
     local exit_code=$?
     set +e
 
-    if [ -n "$VERIFY_MOUNT" ] && mountpoint -q "$VERIFY_MOUNT" 2>/dev/null; then
-        umount "$VERIFY_MOUNT"
+    if [ -n "$VERIFY_MOUNT" ]; then
+        umount "$VERIFY_MOUNT/proc" 2>/dev/null
+        umount "$VERIFY_MOUNT/boot" 2>/dev/null
+        if mountpoint -q "$VERIFY_MOUNT" 2>/dev/null; then
+            umount "$VERIFY_MOUNT"
+        fi
     fi
 
     # Clean up any mounts the installer left on the target device or its
@@ -113,11 +127,11 @@ cleanup() {
     fi
 
     if [ -e /dev/mapper/bes-target-root ]; then
-        cryptsetup close bes-target-root 2>/dev/null
+        host_luks_cleanup bes-target-root
     fi
 
     if [ -e "/dev/mapper/$LUKS_NAME" ]; then
-        cryptsetup close "$LUKS_NAME" 2>/dev/null
+        host_luks_cleanup "$LUKS_NAME"
     fi
 
     if [ -n "$LOOP_DEV" ]; then
@@ -156,6 +170,7 @@ echo "  password-hash: ${SET_PASSWORD_HASH:+(hash provided)}${SET_PASSWORD_HASH:
 echo "  timezone:      ${SET_TIMEZONE:-(not set, defaults to UTC)}"
 echo "  copy-log:      ${SET_COPY_INSTALL_LOG:-(not set, defaults to true)}"
 echo "  private-net:   $PRIVATE_NETWORK"
+echo "  fake-luks:     ${BES_FAKE_LUKS:-0}"
 echo "  disk size:     $TARGET_DISK_SIZE"
 echo ""
 
@@ -265,9 +280,24 @@ echo "==> Running installer in systemd-nspawn container..."
 # r[verify installer.container.swtpm]
 # For TPM scenarios, start a software TPM emulator so that
 # systemd-cryptenroll --tpm2-device=auto has a real (emulated) TPM to talk to.
-if [ "$DISK_ENCRYPTION" = "tpm" ]; then
+# In fake-LUKS mode, swtpm is not needed (the shim handles cryptenroll).
+if [ "$DISK_ENCRYPTION" = "tpm" ] && [ "${BES_FAKE_LUKS:-0}" != "1" ]; then
     echo "==> Starting software TPM (swtpm)..."
     swtpm_start "$WORK_DIR/swtpm"
+elif [ "$DISK_ENCRYPTION" = "tpm" ] && [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+    echo "==> Skipping swtpm (fake-LUKS mode)"
+fi
+
+# r[impl installer.container.fake-luks]
+# r[verify installer.container.fake-luks]
+# Install fake cryptsetup/systemd-cryptenroll shims into the container rootfs
+# when the kernel keyring is unavailable for real LUKS operations.
+# Verification: a successful metal scenario with BES_FAKE_LUKS=1 proves the
+# shims work end-to-end (partitioning, image write, encryption config,
+# initramfs rebuild, grub config, and post-install verification all pass).
+if [ "${BES_FAKE_LUKS:-0}" = "1" ] && [ "$VARIANT" = "metal" ]; then
+    echo "==> Installing fake-LUKS shims into container rootfs..."
+    install_fake_luks_shims "$SCENARIO_ROOTFS"
 fi
 
 # r[impl installer.container.isolation+3]: build nspawn options and binds
@@ -359,11 +389,20 @@ echo "    PASS: no stale mounts from ${LOOP_DEV}"
 
 # r[verify installer.write.luks-before-write+2]
 if [ "$VARIANT" = "metal" ]; then
-    if [ -e /dev/mapper/bes-target-root ]; then
-        echo "    FAIL: LUKS volume bes-target-root still open"
-        exit 1
+    if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+        # In fake mode, check that the symlink was removed by the shim's close.
+        if [ -L /dev/mapper/bes-target-root ]; then
+            echo "    FAIL: fake-LUKS symlink bes-target-root still present"
+            exit 1
+        fi
+        echo "    PASS: fake-LUKS symlink bes-target-root is removed"
+    else
+        if [ -e /dev/mapper/bes-target-root ]; then
+            echo "    FAIL: LUKS volume bes-target-root still open"
+            exit 1
+        fi
+        echo "    PASS: LUKS volume bes-target-root is closed"
     fi
-    echo "    PASS: LUKS volume bes-target-root is closed"
 fi
 
 # ============================================================
@@ -422,35 +461,52 @@ ROOT_PART="${LOOP_DEV}p3"
 if [ "$VARIANT" = "metal" ]; then
     echo "    Opening LUKS volume..."
 
-    # The installer uses the recovery passphrase as the initial LUKS key.
-    # Extract it from the installer output (printed between === markers).
-    RECOVERY_PASSPHRASE=""
-    if [ -f "$INSTALLER_OUTPUT" ]; then
-        RECOVERY_PASSPHRASE="$(sed -n '/=== RECOVERY PASSPHRASE ===/,/==========================/{/===/d; s/^[[:space:]]*//; /^$/d; p;}' "$INSTALLER_OUTPUT" | head -1)"
-    fi
-
-    LUKS_RC=1
-    if [ -n "$RECOVERY_PASSPHRASE" ]; then
-        PASSPHRASE_KEYFILE="$WORK_DIR/passphrase-keyfile"
-        printf '%s' "$RECOVERY_PASSPHRASE" > "$PASSPHRASE_KEYFILE"
-        chmod 400 "$PASSPHRASE_KEYFILE"
-
+    if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
+        # In fake-LUKS mode the partition is raw btrfs (not encrypted).
+        # Use host_luks_open which creates a symlink for consistency.
         set +e
-        cryptsetup open "$ROOT_PART" "$LUKS_NAME" --key-file "$PASSPHRASE_KEYFILE" 2>/dev/null
+        host_luks_open "$ROOT_PART" "$LUKS_NAME"
         LUKS_RC=$?
         set -e
-    fi
 
-    if [ $LUKS_RC -eq 0 ]; then
-        check "LUKS volume opened with recovery passphrase" true
-        BTRFS_DEV="/dev/mapper/$LUKS_NAME"
-    else
-        check "LUKS volume opened with recovery passphrase" false
-        echo "    Cannot open LUKS volume; skipping filesystem checks."
-        if [ -z "$RECOVERY_PASSPHRASE" ]; then
-            echo "    (recovery passphrase not found in installer output)"
+        if [ $LUKS_RC -eq 0 ]; then
+            check "fake-LUKS volume opened (symlink)" true
+            BTRFS_DEV="/dev/mapper/$LUKS_NAME"
+        else
+            check "fake-LUKS volume opened (symlink)" false
+            BTRFS_DEV=""
         fi
-        BTRFS_DEV=""
+    else
+        # The installer uses the recovery passphrase as the initial LUKS key.
+        # Extract it from the installer output (printed between === markers).
+        RECOVERY_PASSPHRASE=""
+        if [ -f "$INSTALLER_OUTPUT" ]; then
+            RECOVERY_PASSPHRASE="$(sed -n '/=== RECOVERY PASSPHRASE ===/,/==========================/{/===/d; s/^[[:space:]]*//; /^$/d; p;}' "$INSTALLER_OUTPUT" | head -1)"
+        fi
+
+        LUKS_RC=1
+        if [ -n "$RECOVERY_PASSPHRASE" ]; then
+            PASSPHRASE_KEYFILE="$WORK_DIR/passphrase-keyfile"
+            printf '%s' "$RECOVERY_PASSPHRASE" > "$PASSPHRASE_KEYFILE"
+            chmod 400 "$PASSPHRASE_KEYFILE"
+
+            set +e
+            host_luks_open "$ROOT_PART" "$LUKS_NAME" --key-file "$PASSPHRASE_KEYFILE" 2>/dev/null
+            LUKS_RC=$?
+            set -e
+        fi
+
+        if [ $LUKS_RC -eq 0 ]; then
+            check "LUKS volume opened with recovery passphrase" true
+            BTRFS_DEV="/dev/mapper/$LUKS_NAME"
+        else
+            check "LUKS volume opened with recovery passphrase" false
+            echo "    Cannot open LUKS volume; skipping filesystem checks."
+            if [ -z "$RECOVERY_PASSPHRASE" ]; then
+                echo "    (recovery passphrase not found in installer output)"
+            fi
+            BTRFS_DEV=""
+        fi
     fi
 else
     BTRFS_DEV="$ROOT_PART"
@@ -678,7 +734,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Encryption setup verification (metal only) ---
-        # r[verify installer.encryption.overview+2]
+        # r[verify installer.encryption.overview+3]
         if [ "$VARIANT" = "metal" ]; then
             CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
             check "crypttab exists" test -f "$CRYPTTAB"
@@ -688,15 +744,16 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
         fi
 
-        # --- Filesystem UUID / grub.cfg consistency ---
+        # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
         # r[verify installer.write.randomize-uuids+2]
-        # r[verify installer.write.rebuild-boot-config]
-        # Mount /boot so we can read grub.cfg
-        BOOT_MNT="$WORK_DIR/verify-boot"
-        mkdir -p "$BOOT_MNT"
+        # r[verify installer.write.rebuild-boot-config+3]
+        # Mount /boot under the verify root so we can read grub.cfg and
+        # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"
+        BOOT_MNT="$VERIFY_MOUNT/boot"
+        mkdir -p "$BOOT_MNT"
         set +e
-        mount -o ro "$XBOOT_PART" "$BOOT_MNT" 2>/dev/null
+        mount "$XBOOT_PART" "$BOOT_MNT" 2>/dev/null
         BOOT_MOUNT_RC=$?
         set -e
         if [ $BOOT_MOUNT_RC -eq 0 ]; then
@@ -716,9 +773,44 @@ if [ -n "$BTRFS_DEV" ]; then
             else
                 echo "    (grub.cfg not found — skipping UUID consistency check)"
             fi
+
+            # --- Initramfs crypttab verification (metal only) ---
+            # r[verify installer.encryption.configure-system+2]
+            # The initramfs must contain the updated crypttab so the system
+            # can unlock without a passphrase prompt at boot.
+            if [ "$VARIANT" = "metal" ]; then
+                INITRD_FILE="$(ls "$BOOT_MNT"/initrd.img-* 2>/dev/null | head -1)"
+                if [ -n "$INITRD_FILE" ] && [ -f "$INITRD_FILE" ]; then
+                    INITRD_BASENAME="/boot/$(basename "$INITRD_FILE")"
+                    # Use lsinitrd from the installed system via chroot
+                    mount -t proc proc "$VERIFY_MOUNT/proc" 2>/dev/null || true
+                    INITRD_CRYPTTAB="$(chroot "$VERIFY_MOUNT" lsinitrd -f /etc/crypttab "$INITRD_BASENAME" 2>/dev/null || true)"
+                    umount "$VERIFY_MOUNT/proc" 2>/dev/null || true
+
+                    if [ -n "$INITRD_CRYPTTAB" ]; then
+                        echo "    initramfs crypttab: $INITRD_CRYPTTAB"
+                        INITRD_CRYPTTAB_FILE="$WORK_DIR/initrd-crypttab"
+                        printf '%s\n' "$INITRD_CRYPTTAB" > "$INITRD_CRYPTTAB_FILE"
+                        check "initramfs crypttab references root" \
+                            grep -q 'root' "$INITRD_CRYPTTAB_FILE"
+                        if [ "$DISK_ENCRYPTION" = "tpm" ]; then
+                            check "initramfs crypttab has tpm2-device=auto" \
+                                grep -q 'tpm2-device=auto' "$INITRD_CRYPTTAB_FILE"
+                        elif [ "$DISK_ENCRYPTION" = "keyfile" ]; then
+                            check "initramfs crypttab references /etc/luks/keyfile" \
+                                grep -q '/etc/luks/keyfile' "$INITRD_CRYPTTAB_FILE"
+                        fi
+                    else
+                        check "initramfs contains crypttab" false
+                    fi
+                else
+                    echo "    (no initrd.img found on xboot — skipping initramfs check)"
+                fi
+            fi
+
             umount "$BOOT_MNT"
         else
-            echo "    (could not mount xboot — skipping grub.cfg checks)"
+            echo "    (could not mount xboot — skipping grub.cfg and initramfs checks)"
         fi
 
         umount "$VERIFY_MOUNT"
@@ -729,7 +821,7 @@ if [ -n "$BTRFS_DEV" ]; then
     fi
 
     if [ "$VARIANT" = "metal" ] && [ -e "/dev/mapper/$LUKS_NAME" ]; then
-        cryptsetup close "$LUKS_NAME"
+        host_luks_close "$LUKS_NAME"
     fi
 fi
 

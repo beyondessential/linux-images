@@ -3,12 +3,17 @@
 # This runs in CI without KVM — it inspects the ISO via xorriso, mounts
 # the squashfs, and checks the appended BESCONF partition.
 #
-# Usage: test-iso-structure.sh <iso-file> <arch>
+# Usage: test-iso-structure.sh <iso-file> <arch> [installer-bin]
 #   arch: amd64 | arm64
+#   installer-bin: optional path to host bes-installer binary (for --check-paths)
 set -euo pipefail
 
-ISO="${1:?Usage: $0 <iso-file> <arch>}"
-ARCH="${2:?Usage: $0 <iso-file> <arch>}"
+ISO="${1:?Usage: $0 <iso-file> <arch> [installer-bin]}"
+ARCH="${2:?Usage: $0 <iso-file> <arch> [installer-bin]}"
+INSTALLER_BIN="${3:-}"
+if [ -n "$INSTALLER_BIN" ] && [ "${INSTALLER_BIN#/}" = "$INSTALLER_BIN" ]; then
+    INSTALLER_BIN="$PWD/$INSTALLER_BIN"
+fi
 
 PASS=0
 FAIL=0
@@ -187,7 +192,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     fi
 fi
 
-# r[verify iso.base]
+# r[verify iso.base+2]
 check "/live/vmlinuz exists" test -f "$ISO_MNT/live/vmlinuz"
 check "/live/initrd.img exists" test -f "$ISO_MNT/live/initrd.img"
 
@@ -305,10 +310,29 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     # r[verify iso.contents+2]
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
 
-    # r[verify iso.boot.autostart]
+    # r[verify installer.hardcoded-paths]
+    if [ -n "$INSTALLER_BIN" ] && [ -x "$INSTALLER_BIN" ]; then
+        CHECK_OUTPUT="$("$INSTALLER_BIN" --check-paths "$SQFS_MNT" 2>&1)" && CHECK_RC=0 || CHECK_RC=$?
+        if [ "$CHECK_RC" -eq 0 ]; then
+            pass "bes-installer --check-paths (ISO binaries) against squashfs"
+        else
+            fail "bes-installer --check-paths (ISO binaries) against squashfs"
+            echo "$CHECK_OUTPUT" | sed 's/^/    /'
+        fi
+    else
+        if [ -n "$INSTALLER_BIN" ]; then
+            fail "bes-installer --check-paths (binary not found: $INSTALLER_BIN)"
+        else
+            echo "  SKIP: bes-installer --check-paths (no installer-bin argument provided)"
+        fi
+    fi
+
+    # r[verify iso.boot.autostart+3]
     check "bes-installer-wrapper exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer-wrapper"
     check "bes-installer.service exists" test -f "$SQFS_MNT/etc/systemd/system/bes-installer.service"
     check "bes-chvt.service exists" test -f "$SQFS_MNT/etc/systemd/system/bes-chvt.service"
+    check "chvt binary exists (kbd package)" test -x "$SQFS_MNT/usr/bin/chvt"
+    check "reboot binary exists (systemd-sysv)" test -x "$SQFS_MNT/sbin/reboot" -o -x "$SQFS_MNT/usr/sbin/reboot"
 
     # Check that the services are enabled (symlinked into .wants)
     if find "$SQFS_MNT/etc/systemd/system" -name "bes-installer.service" -type l 2>/dev/null | grep -q .; then
@@ -342,7 +366,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fail "dpkg-query not found in squashfs — cannot verify packages"
     fi
 
-    # r[verify iso.minimal]
+    # r[verify iso.minimal+2]
     if [ -x "$SQFS_MNT/sbin/cryptsetup" ] || [ -x "$SQFS_MNT/usr/sbin/cryptsetup" ]; then
         pass "cryptsetup exists in rootfs"
     else
@@ -355,13 +379,25 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fail "sgdisk exists in rootfs"
     fi
 
-    # r[verify iso.network-tools]
+    # r[verify iso.network-tools+3]
     check "curl exists in rootfs" test -x "$SQFS_MNT/usr/bin/curl"
     if [ -x "$SQFS_MNT/usr/bin/tailscale" ] || [ -x "$SQFS_MNT/usr/sbin/tailscale" ]; then
         pass "tailscale exists in rootfs"
     else
         fail "tailscale exists in rootfs"
     fi
+    check "ip command exists (iproute2)" test -x "$SQFS_MNT/usr/sbin/ip" -o -x "$SQFS_MNT/sbin/ip" -o -x "$SQFS_MNT/usr/bin/ip" -o -x "$SQFS_MNT/bin/ip"
+    check "ping command exists (iputils-ping)" test -x "$SQFS_MNT/usr/bin/ping" -o -x "$SQFS_MNT/bin/ping"
+
+    # r[verify iso.blacklist-drm]
+    check "GPU blacklist exists" test -f "$SQFS_MNT/etc/modprobe.d/blacklist-gpu.conf"
+    check "blacklist blocks vmwgfx" grep -q 'install vmwgfx /bin/false' "$SQFS_MNT/etc/modprobe.d/blacklist-gpu.conf"
+
+    # r[verify iso.network-config+2]
+    check "netplan DHCP config exists" test -f "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
+    check "netplan config matches en* interfaces" grep -q 'name:.*en\*' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
+    check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
+    check "resolv.conf is symlink to resolved stub" test -L "$SQFS_MNT/etc/resolv.conf"
 
     # r[verify iso.config-partition]
     check "run-besconf.mount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
@@ -387,7 +423,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fi
     fi
 
-    # r[verify iso.boot.autostart]
+    # r[verify iso.boot.autostart+3]
     # getty on tty2 should be masked so it doesn't compete with the installer
     if [ -L "$SQFS_MNT/etc/systemd/system/getty@tty2.service" ]; then
         MASK_TARGET="$(readlink "$SQFS_MNT/etc/systemd/system/getty@tty2.service")"

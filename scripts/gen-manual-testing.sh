@@ -184,10 +184,10 @@ step4
 
 # r[verify iso.format]
 # r[verify iso.boot.uefi]
-# r[verify iso.boot.autostart]
+# r[verify iso.boot.autostart+3]
 # r[verify iso.live-boot]
 # r[verify iso.offline]
-# r[verify installer.tui.welcome+3]
+# r[verify installer.tui.welcome+5]
 # r[verify installer.tui.confirmation+7]
 # r[verify installer.tui.ascii-rendering]
 # r[verify installer.tui.error-reboot]

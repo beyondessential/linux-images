@@ -180,6 +180,14 @@ When `auto = true` but required fields are missing (`disk-encryption`,
 must print an error describing the missing fields and fall back to
 interactive mode.
 
+## External Binaries
+
+r[installer.hardcoded-paths]
+The installer must use hardcoded absolute paths for every external binary
+it invokes (e.g. `/usr/bin/mount`, `/usr/sbin/cryptsetup`). This avoids
+reliance on `PATH` in the live ISO environment, where the shell or systemd
+context may not include `/usr/sbin` or `/sbin`.
+
 ## Testing Flags
 
 r[installer.no-reboot]
@@ -280,11 +288,15 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome+3]
+r[installer.tui.welcome+5]
 The TUI must open with a welcome screen that displays a description of what
 the image is for, contact information, and instructions on how to proceed.
 The user presses Enter to proceed to the disk selection screen. The welcome
 screen also offers a `n` keybind to open a dedicated network check screen.
+Pressing `q` triggers a reboot (same as the Done/Error screens). The footer
+must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
+debug shell without leaving the installer permanently (this is the only
+screen where the hint is shown, though the keybind works everywhere).
 
 > r[installer.tui.network-check+4]
 > The TUI must perform network connectivity checks in the background,
@@ -481,21 +493,21 @@ highlighted timezone and advances to the next screen. The field defaults to
 `--fake-timezones <path>` flag is given, the installer reads timezone names
 (one per line) from that file instead of the system tzdata.
 
-r[installer.tui.confirmation+7]
-After the timezone screen, and after the pre-summary network results screen,
-the TUI must show a summary screen listing: target disk (path, model, size),
-chosen disk encryption mode, and any install-time configuration. The summary
-must clearly state that all data on the target disk will be destroyed. The
-user must type an explicit confirmation (not just press Enter). The
-confirmation screen is step 6/6.
-
-When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
-screen must also generate and display the recovery passphrase. This gives
-the user an opportunity to write it down **before** the destructive write
-begins. The same passphrase is later enrolled into the LUKS volume during
-encryption setup. The completion screen displays the recovery passphrase
-again as a final reminder; the user must press Enter to acknowledge before
-the system reboots.
+> r[installer.tui.confirmation+7]
+> After the timezone screen, and after the pre-summary network results screen,
+> the TUI must show a summary screen listing: target disk (path, model, size),
+> chosen disk encryption mode, and any install-time configuration. The summary
+> must clearly state that all data on the target disk will be destroyed. The
+> user must type an explicit confirmation (not just press Enter). The
+> confirmation screen is step 6/6.
+> 
+> When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
+> screen must also generate and display the recovery passphrase. This gives
+> the user an opportunity to write it down **before** the destructive write
+> begins. The same passphrase is later enrolled into the LUKS volume during
+> encryption setup. The completion screen displays the recovery passphrase
+> again as a final reminder; the user must press Enter to acknowledge before
+> the system reboots.
 
 r[installer.tui.ascii-rendering]
 All text rendered by the TUI must use only printable ASCII characters. In
@@ -512,6 +524,18 @@ Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
 set), not simply quit the process. On bare-metal hardware, quitting without
 rebooting leaves the machine in an unusable state.
 
+r[installer.tui.reboot-feedback+2]
+When a reboot is triggered (from the Done screen or the Error screen), the
+TUI must immediately leave the alternate screen, print a visible
+"Rebooting..." message to stdout, and switch back to tty1 (via `chvt 1`) so
+the user can see systemd shutdown output. Only then must it call `reboot`.
+If the `reboot` command is not found or fails, `systemctl reboot` must be
+tried as a fallback. If both fail, the TUI must print an error message
+directing the user to use Ctrl-Alt-F1 for a shell and block indefinitely
+rather than exiting (which would leave the machine on a dead TTY).
+This prevents the appearance of the installer being stuck between the
+keypress and the screen blanking.
+
 r[installer.tui.progress+3]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
@@ -525,14 +549,14 @@ finish, the TUI transitions to a completion screen. For encrypted installs,
 the completion screen also displays the recovery passphrase (replacing the
 separate recovery passphrase screen).
 
-r[installer.tui.debug-shell]
+r[installer.tui.debug-shell+3]
 Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
 interactive shell (`/bin/sh`). The TUI must leave the alternate screen,
 disable raw mode, and spawn the shell as a child process, waiting for it to
 exit. When the shell exits, the TUI must re-enter the alternate screen,
-re-enable raw mode, and redraw. This keybind is intentionally undocumented
-in the on-screen help; it is a debugging aid for diagnosing failures in
-container and bare-metal environments.
+re-enable raw mode, and redraw. The keybind must be shown in the footer
+hints on the welcome screen so users can discover it; it does not need to
+be repeated on every screen.
 
 r[installer.tui.loop-device]
 The installer's TUI and write pipeline must not assume the target device is
@@ -613,25 +637,48 @@ unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
 changes.
 
-r[installer.write.rebuild-boot-config]
-After randomizing filesystem UUIDs, the installer must unconditionally
-rebuild the initramfs and GRUB configuration in a chroot of the installed
-system, regardless of encryption mode. This is required because the GRUB
-config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
-have been rotated. The installer must run `dracut --force` and `update-grub`
-with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
+> r[installer.write.rebuild-boot-config+3]
+> After randomizing filesystem UUIDs (and after encryption enrollment and
+> config-file writes when encryption is enabled — see
+> `r[installer.encryption.overview]`), the installer must unconditionally
+> rebuild the initramfs and GRUB configuration in a chroot of the installed
+> system, regardless of encryption mode. This is required because the GRUB
+> config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
+> have been rotated, and because the encryption setup writes crypttab and
+> dracut configuration that must be baked into the initramfs. The installer
+> must run `dracut --force` and `update-grub` with `/proc`, `/sys`, and
+> `/dev` bind-mounted into the target.
+>
+> When disk encryption is enabled, the installer must also, before running
+> `update-grub`:
+>
+>   - Read the LUKS UUID from the raw root partition (via `blkid`).
+>   - Set `GRUB_CMDLINE_LINUX` in `/etc/default/grub` to include
+>     `rd.luks.name=<LUKS-UUID>=root rd.luks.options=discard` so the
+>     initramfs knows to unlock the LUKS volume during early boot.
+>   - Remove the cloud-only serial console (`console=ttyS0,115200n8`) from
+>     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target bare-metal
+>     hardware.
+>   - Have the `grub-probe` wrapper return `"luks"` for `--target=abstraction`
+>     queries on `/`, so `grub-mkconfig` emits the correct LUKS stanza.
 
 ## Encryption Setup
 
-> r[installer.encryption.overview+2]
-> After writing the image and expanding partitions, and when disk encryption
-> is `"tpm"` or `"keyfile"`, the installer must perform all encryption setup
-> on the target disk. The LUKS volume already has the recovery passphrase as
-> its sole key (enrolled during `installer.write.luks-before-write`). The
-> installer must:
+> r[installer.encryption.overview+3]
+> After writing the image, expanding partitions, and randomizing UUIDs, but
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config]`),
+> when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
+> encryption setup on the target disk. The LUKS volume already has the
+> recovery passphrase as its sole key (enrolled during
+> `installer.write.luks-before-write`). The installer must:
 >
 > 1. Enroll the chosen unlock mechanism (TPM or keyfile).
-> 2. Configure the installed system (crypttab, initramfs).
+> 2. Write the updated crypttab (and dracut keyfile config for keyfile mode)
+>    into the installed system's root filesystem.
+>
+> The initramfs rebuild is **not** performed here; it is handled by
+> `r[installer.write.rebuild-boot-config]`, which runs afterwards and picks
+> up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created
 > the LUKS volume with fresh key material and the recovery passphrase as the
@@ -669,10 +716,13 @@ with `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 
 
 
-> r[installer.encryption.configure-system]
-> The installer must chroot into the installed system and rebuild the
-> initramfs with dracut so it picks up the updated crypttab and (if keyfile
-> mode) the new keyfile.
+> r[installer.encryption.configure-system+2]
+> The installer must not rebuild the initramfs as a separate encryption step.
+> Instead, the initramfs is rebuilt during
+> `r[installer.write.rebuild-boot-config]`, which runs after encryption
+> enrollment and configuration. This single rebuild picks up the updated
+> crypttab and (if keyfile mode) the new keyfile, because the encryption
+> config files are written before `rebuild-boot-config` executes.
 
 ## Install-Time Configuration
 
@@ -793,6 +843,44 @@ kernel module must be loaded on the host. The `swtpm` process is stopped
 and the device cleaned up when the test scenario finishes. The shared
 nspawn helpers must support an optional TPM device bind-mount so that only
 TPM scenarios pay the setup cost.
+
+r[installer.container.fake-luks]
+Container-based integration tests must be able to run metal (encrypted)
+scenarios in CI environments where the kernel keyring is not available
+(e.g. `systemd-nspawn` on GitHub Actions runners, where `cryptsetup open`
+fails with "Failed to load key in kernel keyring"). This is achieved by
+replacing `cryptsetup` and `systemd-cryptenroll` inside the container with
+shim scripts that simulate LUKS operations without `dm-crypt`:
+
+- `luksFormat`: no-op (the partition remains raw, unencrypted).
+- `open <device> <name>`: creates a symlink `/dev/mapper/<name>` pointing
+  to the raw partition device, so the installer can write to and mount the
+  "opened" volume transparently.
+- `close <name>`: removes the symlink.
+- `luksAddKey`, `luksChangeKey`: no-op.
+- `systemd-cryptenroll`: no-op.
+
+Because the partition is not actually encrypted, the btrfs filesystem is
+written directly to the raw partition. The installer's full code path still
+executes: partitioning, image writing, `crypttab` generation, dracut
+keyfile configuration, initramfs rebuild, and grub configuration. The only
+difference is that no real encryption or key enrollment occurs.
+
+Detection is automatic: before running a metal scenario, the test harness
+attempts a real `cryptsetup luksFormat` + `open` + `close` cycle on a
+temporary loopback device. If this probe fails, `BES_FAKE_LUKS` is set to
+`1` and the shims are installed. The caller can also force fake mode by
+setting `BES_FAKE_LUKS=1` or force real mode with `BES_FAKE_LUKS=0`.
+
+When fake-LUKS mode is active for a TPM scenario, `swtpm` is not started
+(the `systemd-cryptenroll` shim does not need a real or emulated TPM).
+
+The host-side verification phase (mounting the installed filesystem to check
+its contents) must also account for fake mode: instead of calling
+`cryptsetup open` on the host, it creates a symlink to the raw partition.
+The shared nspawn helpers (`nspawn-opts.sh`) provide `host_luks_open`,
+`host_luks_close`, and `host_luks_cleanup` functions that dispatch to real
+`cryptsetup` or symlink operations depending on `BES_FAKE_LUKS`.
 
 r[installer.container.error-logging]
 Fatal errors that propagate to the installer's top-level must be logged via

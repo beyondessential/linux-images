@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -14,6 +15,7 @@ mod encryption;
 mod firstboot;
 mod hostname_template;
 mod net;
+mod paths;
 mod plan;
 mod run;
 mod script;
@@ -21,6 +23,8 @@ mod timezone;
 mod ui;
 mod util;
 mod writer;
+
+include!(env!("BOSION_PATH"));
 
 const DEFAULT_LOG_PATH: &str = "/var/log/bes-installer.log";
 
@@ -76,10 +80,64 @@ pub(crate) struct Cli {
     /// Do not reboot after a successful installation. Exit cleanly instead.
     #[arg(long)]
     pub no_reboot: bool,
+
+    // r[related installer.hardcoded-paths]
+    /// Verify that all hardcoded ISO-environment binary paths exist, then exit.
+    /// Optionally takes a sysroot prefix (e.g. a mounted squashfs) to
+    /// resolve paths against.
+    #[arg(long, num_args = 0..=1, default_missing_value = "/")]
+    pub check_paths: Option<PathBuf>,
+
+    // r[related installer.hardcoded-paths]
+    /// Verify that all hardcoded chroot-target binary paths exist, then exit.
+    /// These are binaries invoked inside a chroot into the installed system.
+    /// Optionally takes a sysroot prefix to resolve paths against.
+    #[arg(long, num_args = 0..=1, default_missing_value = "/")]
+    pub check_chroot_paths: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    // r[related installer.hardcoded-paths]
+    if let Some(ref sysroot) = cli.check_paths {
+        let root: &Path = sysroot.as_path();
+        let sysroot_arg = if root == Path::new("/") {
+            None
+        } else {
+            Some(root)
+        };
+        match paths::check_iso(sysroot_arg) {
+            Ok(()) => {
+                println!("all ISO binary paths OK");
+                return ExitCode::SUCCESS;
+            }
+            Err(msg) => {
+                eprintln!("{msg}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    // r[related installer.hardcoded-paths]
+    if let Some(ref sysroot) = cli.check_chroot_paths {
+        let root: &Path = sysroot.as_path();
+        let sysroot_arg = if root == Path::new("/") {
+            None
+        } else {
+            Some(root)
+        };
+        match paths::check_chroot(sysroot_arg) {
+            Ok(()) => {
+                println!("all chroot binary paths OK");
+                return ExitCode::SUCCESS;
+            }
+            Err(msg) => {
+                eprintln!("{msg}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
 
     if let Err(e) = init_logging(&cli.log) {
         eprintln!(

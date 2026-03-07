@@ -12,6 +12,7 @@ use crate::disk;
 use crate::encryption;
 use crate::firstboot;
 use crate::hostname_template;
+use crate::paths;
 use crate::plan;
 use crate::script;
 use crate::timezone;
@@ -312,6 +313,24 @@ impl RunContext {
             .randomize_filesystem_uuids()
             .context("randomizing filesystem UUIDs")?;
 
+        // r[impl installer.encryption.overview+3]
+        if let Some(ref passphrase) = recovery_passphrase {
+            eprintln!("setting up disk encryption...");
+            let mounted = firstboot::mount_target(
+                &target.path,
+                disk_encryption,
+                recovery_passphrase.as_deref(),
+            )?;
+            encryption::enroll_and_configure_encryption(
+                &target.path,
+                disk_encryption,
+                mounted.path(),
+                passphrase,
+            )
+            .context("encryption setup")?;
+            firstboot::unmount_target(mounted)?;
+        }
+
         eprintln!("rebuilding boot config (initramfs + grub)...");
         disk_writer
             .rebuild_boot_config()
@@ -350,23 +369,7 @@ impl RunContext {
             firstboot::unmount_target(mounted)?;
         }
 
-        // r[impl installer.encryption.overview+2]
         if let Some(ref passphrase) = recovery_passphrase {
-            eprintln!("setting up disk encryption...");
-            let mounted = firstboot::mount_target(
-                &target.path,
-                disk_encryption,
-                recovery_passphrase.as_deref(),
-            )?;
-            encryption::run_encryption_setup(
-                &target.path,
-                disk_encryption,
-                mounted.path(),
-                passphrase,
-            )
-            .context("encryption setup")?;
-            firstboot::unmount_target(mounted)?;
-
             // r[impl installer.encryption.recovery-passphrase+3]
             eprintln!();
             eprintln!("=== RECOVERY PASSPHRASE ===");
@@ -394,7 +397,15 @@ impl RunContext {
             eprintln!("installation complete (--no-reboot, not rebooting)");
         } else {
             eprintln!("installation complete, rebooting...");
-            let _ = std::process::Command::new("reboot").status();
+            let reboot_ok = std::process::Command::new(paths::REBOOT)
+                .status()
+                .is_ok_and(|s| s.success());
+            if !reboot_ok {
+                tracing::warn!("{} failed, trying systemctl", paths::REBOOT);
+                let _ = std::process::Command::new(paths::SYSTEMCTL)
+                    .arg("reboot")
+                    .status();
+            }
         }
         Ok(())
     }
@@ -576,25 +587,32 @@ fn emit_plan(plan: &plan::InstallPlan, cli: &Cli) -> Result<()> {
 }
 
 fn read_build_info() -> String {
-    let contents = match fs::read_to_string("/etc/bes-build-info") {
-        Ok(c) => c,
-        Err(_) => return String::new(),
+    let commit = crate::Bosion::GIT_COMMIT_SHORTHASH;
+    let bosion_date = crate::Bosion::BUILD_DATE;
+
+    let (date, arch) = match fs::read_to_string("/etc/bes-build-info") {
+        Ok(contents) => {
+            let mut d = None;
+            let mut a = None;
+            for line in contents.lines() {
+                if let Some(val) = line.strip_prefix("BUILD_DATE=") {
+                    d = Some(val.trim().to_string());
+                } else if let Some(val) = line.strip_prefix("ARCH=") {
+                    a = Some(val.trim().to_string());
+                }
+            }
+            (d, a)
+        }
+        Err(_) => (None, None),
     };
 
-    let mut date = None;
-    let mut arch = None;
-    for line in contents.lines() {
-        if let Some(val) = line.strip_prefix("BUILD_DATE=") {
-            date = Some(val.trim());
-        } else if let Some(val) = line.strip_prefix("ARCH=") {
-            arch = Some(val.trim());
-        }
-    }
+    let date = date.unwrap_or_else(|| bosion_date.to_string());
+    let arch = arch.unwrap_or_else(detect_arch);
 
-    match (date, arch) {
-        (Some(d), Some(a)) => format!("Built {d} ({a})"),
-        (Some(d), None) => format!("Built {d}"),
-        _ => String::new(),
+    if commit.is_empty() {
+        format!("Built {date} ({arch})")
+    } else {
+        format!("Built {date} ({arch}) {commit}")
     }
 }
 

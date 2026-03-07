@@ -11,10 +11,13 @@ The ISO must be a hybrid image: simultaneously a valid ISO9660 filesystem
 `xorriso` must embed a GPT via `--efi-boot-part --efi-boot-image` and include
 an EFI System Partition image for El Torito EFI boot.
 
-r[iso.base]
-The live rootfs must be built with `debootstrap` (not `live-build`) for
-consistency with the disk image builder. The rootfs is packaged as a
-squashfs and placed inside the ISO.
+r[iso.base+2]
+The live rootfs must be built with `debootstrap` using the default variant
+(not `--variant=minbase` or `live-build`) for consistency with the disk
+image builder. The default variant provides a functional Ubuntu base
+including systemd, networking (netplan, systemd-networkd, systemd-resolved),
+and standard tools, reducing the amount of manual package installation
+needed. The rootfs is packaged as a squashfs and placed inside the ISO.
 
 r[iso.live-boot]
 The live environment must include the `live-boot` and `live-boot-initramfs-tools`
@@ -22,16 +25,40 @@ packages so that the kernel can locate and mount the squashfs root via the
 `boot=live` parameter. The squashfs must be placed at `/live/filesystem.squashfs`
 inside the ISO, which is the default path `live-boot` searches.
 
-r[iso.minimal]
-The live environment must be minimal: a kernel, an initramfs, and just enough
+r[iso.minimal+2]
+The live environment must include a kernel, an initramfs, and enough
 userspace to run the TUI installer (block device utilities, zstd, and
-cryptsetup for LUKS operations).
+cryptsetup for LUKS operations). The default debootstrap variant provides
+the base; only packages not included in it need to be installed explicitly.
 
-r[iso.network-tools]
+r[iso.blacklist-drm]
+The live environment must blacklist all DRM/GPU kernel modules via
+`/etc/modprobe.d/blacklist-gpu.conf`. The TUI installer runs on a text
+console and needs only the EFI framebuffer (`efifb`/`simplefb`); loading
+hardware-specific DRM drivers wastes time and produces spurious errors
+(e.g. `vmwgfx` failing under VirtualBox). The blacklist must cover at
+least: `vmwgfx`, `qxl`, `bochs`, `cirrus-qemu`, `vboxvideo`, `virtio-gpu`,
+`ast`, `mgag200`, `hibmc-drm`, `hyperv_drm`, `nouveau`, `i915`, `xe`,
+`amdgpu`, `radeon`, and `drm_vram_helper`. The file must use
+`install <module> /bin/false` directives rather than plain `blacklist`
+lines, because `blacklist` only prevents autoloading and does not prevent
+transitive loading by other modules.
+
+r[iso.network-tools+3]
 The live environment must include `curl` (for HTTPS connectivity checks and
 GitHub SSH key lookups) and `tailscale` (for running `tailscale netcheck`
 diagnostics during installation). These are used by the interactive TUI
 screens for network checks and are not required for offline installation.
+The default debootstrap variant already provides `iproute2` (for `ip`) and
+`iputils-ping` (for `ping`) so that network problems can be debugged
+from the debug shell.
+
+r[iso.network-config+2]
+The live environment must configure automatic DHCP on all Ethernet
+interfaces so that network connectivity is available without manual
+setup. This must use a netplan configuration file matching `en*` with
+`dhcp4: true`. The default debootstrap variant provides `netplan.io`,
+`systemd-networkd`, and `systemd-resolved`.
 
 r[iso.offline]
 The live ISO must be fully functional without network connectivity. No
@@ -52,9 +79,13 @@ boot image is a FAT32 filesystem image containing a GRUB EFI binary at
 the default removable media path (`EFI/BOOT/BOOTX64.EFI` for amd64,
 `EFI/BOOT/BOOTAA64.EFI` for arm64).
 
-r[iso.boot.autostart]
+r[iso.boot.autostart+3]
 On boot, the live environment must automatically launch the TUI installer on
-the primary console.
+tty2. A separate oneshot service must switch the active VT to tty2 before
+the installer starts, so the user sees the installer immediately. The `kbd`
+package must be installed in the live rootfs to provide `/usr/bin/chvt`.
+The `systemd-sysv` package must be installed to provide `/sbin/reboot`
+so that the installer's reboot action works.
 
 > r[iso.config-partition]
 > The ISO must include an appended FAT32 partition (GPT type `Microsoft basic

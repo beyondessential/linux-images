@@ -15,6 +15,7 @@ use crate::besconf::{self, BesconfState};
 use crate::config::validate_hostname;
 use crate::encryption;
 use crate::firstboot;
+use crate::paths;
 use crate::writer;
 use crate::writer::PartitionManifest;
 
@@ -31,7 +32,6 @@ enum WorkerMessage {
 #[derive(Debug)]
 enum KeyAction {
     Continue,
-    Quit,
     Reboot,
     StartWrite,
     Shell,
@@ -44,7 +44,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         return KeyAction::Continue;
     }
 
-    // r[impl installer.tui.debug-shell]
+    // r[impl installer.tui.debug-shell+3]
     if key
         .modifiers
         .contains(KeyModifiers::ALT | KeyModifiers::CONTROL)
@@ -54,8 +54,9 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     }
 
     match &state.screen {
+        // r[impl installer.tui.welcome+5]
         Screen::Welcome => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Char('n') => state.open_network_check(),
             KeyCode::Enter => state.advance(),
             _ => {}
@@ -63,7 +64,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.network-check+4]
         Screen::NetworkCheck => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
             KeyCode::Tab => state.toggle_net_pane(),
@@ -74,7 +75,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.network-check+4]
         Screen::NetworkResults => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
             KeyCode::Tab => state.toggle_net_pane(),
@@ -85,7 +86,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         },
 
         Screen::DiskSelection => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Char('k') => state.select_prev_disk(),
             KeyCode::Down | KeyCode::Char('j') => state.select_next_disk(),
@@ -99,7 +100,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.disk-encryption+2]
         Screen::DiskEncryption => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Down | KeyCode::Char('j') => {
                 state.cycle_disk_encryption();
@@ -316,7 +317,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         },
 
         Screen::Confirmation => match key.code {
-            KeyCode::Char('q') if state.confirm_input.is_empty() => return KeyAction::Quit,
+            KeyCode::Char('q') if state.confirm_input.is_empty() => return KeyAction::Reboot,
             KeyCode::Esc => {
                 state.confirm_input.clear();
                 state.go_back();
@@ -431,11 +432,11 @@ fn event_loop(
 
         match handle_key(key, state) {
             KeyAction::Continue => {}
-            KeyAction::Quit => break,
             // r[impl installer.no-reboot]
+            // r[impl installer.tui.reboot-feedback+2]
             KeyAction::Reboot => {
                 if !no_reboot {
-                    reboot();
+                    reboot(terminal);
                 }
                 break;
             }
@@ -449,7 +450,7 @@ fn event_loop(
                     besconf,
                 );
             }
-            // r[impl installer.tui.debug-shell]
+            // r[impl installer.tui.debug-shell+3]
             KeyAction::Shell => {
                 drop_to_shell(terminal)?;
             }
@@ -472,7 +473,7 @@ pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState 
         state.poll_github_keys();
 
         match handle_key(key, &mut state) {
-            KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot | KeyAction::Shell => {
+            KeyAction::StartWrite | KeyAction::Reboot | KeyAction::Shell => {
                 break;
             }
             KeyAction::Continue => {}
@@ -568,6 +569,25 @@ fn run_full_install(
         .randomize_filesystem_uuids()
         .context("randomizing filesystem UUIDs")?;
 
+    // r[impl installer.encryption.overview+3]
+    // Encryption enrollment + config writes (~93%) — must happen before
+    // rebuild_boot_config so dracut picks up the updated crypttab/keyfile.
+    if let Some(pp) = disk_writer.passphrase {
+        let mounted = firstboot::mount_target(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            disk_writer.passphrase,
+        )?;
+        encryption::enroll_and_configure_encryption(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            mounted.path(),
+            pp,
+        )
+        .context("encryption setup")?;
+        firstboot::unmount_target(mounted)?;
+    }
+
     // Rebuild boot config (~94%)
     disk_writer
         .rebuild_boot_config()
@@ -611,22 +631,8 @@ fn run_full_install(
         firstboot::unmount_target(mounted)?;
     }
 
-    // Encryption setup (~96-100%)
+    // Save recovery key + return passphrase
     let passphrase = if let Some(pp) = disk_writer.passphrase {
-        let mounted = firstboot::mount_target(
-            disk_writer.target,
-            disk_writer.disk_encryption,
-            disk_writer.passphrase,
-        )?;
-        encryption::run_encryption_setup(
-            disk_writer.target,
-            disk_writer.disk_encryption,
-            mounted.path(),
-            pp,
-        )
-        .context("encryption setup")?;
-        firstboot::unmount_target(mounted)?;
-
         // r[impl installer.config.save-recovery-keys]
         if besconf.save_recovery_keys() {
             let root_part = crate::util::partition_path(disk_writer.target, 3)?;
@@ -650,7 +656,7 @@ fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     terminal::disable_raw_mode()?;
 
     eprintln!("--- debug shell (type 'exit' to return to installer) ---");
-    let status = std::process::Command::new("/bin/bash")
+    let status = std::process::Command::new(paths::BASH)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -667,9 +673,40 @@ fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     Ok(())
 }
 
-fn reboot() {
+// r[impl installer.tui.reboot-feedback+2]
+fn reboot(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
     tracing::info!("rebooting system");
-    let _ = std::process::Command::new("reboot").status();
+
+    // Leave the TUI so the user sees plain text feedback immediately.
+    terminal::disable_raw_mode().ok();
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show).ok();
+
+    println!("Rebooting...");
+
+    // Switch back to tty1 so systemd shutdown output is visible.
+    let _ = std::process::Command::new(paths::CHVT).arg("1").status();
+
+    // Try `reboot` first (provided by systemd-sysv), fall back to `systemctl reboot`.
+    match std::process::Command::new(paths::REBOOT).status() {
+        Ok(s) if s.success() => return,
+        Ok(s) => tracing::warn!("reboot exited with {s}, trying systemctl"),
+        Err(e) => tracing::warn!("reboot not found ({e}), trying systemctl"),
+    }
+
+    match std::process::Command::new(paths::SYSTEMCTL)
+        .arg("reboot")
+        .status()
+    {
+        Ok(s) if s.success() => return,
+        Ok(s) => tracing::error!("systemctl reboot exited with {s}"),
+        Err(e) => tracing::error!("systemctl reboot failed: {e}"),
+    }
+
+    eprintln!("Failed to reboot. Press Ctrl-Alt-F1 for a shell, then run: reboot -f");
+    // Block so the user can read the message and the service doesn't restart in a loop.
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
+    }
 }
 
 #[cfg(test)]
@@ -830,11 +867,24 @@ mod tests {
 
     // r[verify installer.dryrun.script.headless]
     #[test]
-    fn scripted_quit_on_welcome() {
+    fn scripted_reboot_on_welcome() {
         let state = make_state();
         let events = vec![press(KeyCode::Char('q'))];
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Welcome);
+    }
+
+    // r[verify installer.tui.welcome+5]
+    #[test]
+    fn welcome_q_triggers_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Welcome;
+        let action = handle_key(press(KeyCode::Char('q')), &mut state);
+        assert!(
+            matches!(action, KeyAction::Reboot),
+            "expected Reboot for 'q' on Welcome screen, got {:?}",
+            action,
+        );
     }
 
     // r[verify installer.dryrun.script.headless]
@@ -1435,7 +1485,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.tui.debug-shell]
+    // r[verify installer.tui.debug-shell+3]
     #[test]
     fn ctrl_alt_d_returns_shell_action() {
         let mut state = make_state();
@@ -1445,7 +1495,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.debug-shell]
+    // r[verify installer.tui.debug-shell+3]
     #[test]
     fn ctrl_alt_d_breaks_scripted_loop() {
         let state = make_state();
@@ -1868,5 +1918,36 @@ mod tests {
         let final_state = run_tui_scripted(state, events);
         // run_tui_scripted breaks on KeyAction::Reboot, preserving the Error screen
         assert!(matches!(final_state.screen, Screen::Error(_)));
+    }
+
+    // r[verify installer.tui.reboot-feedback+2]
+    #[test]
+    fn done_screen_enter_triggers_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Done;
+
+        let action = handle_key(press(KeyCode::Enter), &mut state);
+        assert!(
+            matches!(action, KeyAction::Reboot),
+            "expected Reboot for Enter on Done screen, got {:?}",
+            action,
+        );
+    }
+
+    // r[verify installer.tui.reboot-feedback+2]
+    #[test]
+    fn done_screen_non_enter_does_not_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Done;
+
+        for code in [KeyCode::Char('a'), KeyCode::Esc, KeyCode::Backspace] {
+            let action = handle_key(press(code), &mut state);
+            assert!(
+                matches!(action, KeyAction::Continue),
+                "expected Continue for {:?} on Done screen, got {:?}",
+                code,
+                action,
+            );
+        }
     }
 }

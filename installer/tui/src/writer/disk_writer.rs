@@ -7,6 +7,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 
 use crate::config::DiskEncryption;
+use crate::paths;
 
 use super::device::{partition_path, reread_partition_table, run_command, sync_device};
 use super::luks::{
@@ -40,7 +41,7 @@ impl<'a> DiskWriter<'a> {
     pub fn wipe_disk(&self) -> Result<()> {
         tracing::info!("wiping existing signatures on {}", self.target.display());
 
-        let wipefs_status = Command::new("wipefs")
+        let wipefs_status = Command::new(paths::WIPEFS)
             .args(["--all", "--force"])
             .arg(self.target)
             .output()
@@ -51,7 +52,7 @@ impl<'a> DiskWriter<'a> {
             tracing::warn!("wipefs failed (non-fatal): {stderr}");
         }
 
-        let sgdisk_status = Command::new("sgdisk")
+        let sgdisk_status = Command::new(paths::SGDISK)
             .arg("--zap-all")
             .arg(self.target)
             .output()
@@ -108,7 +109,7 @@ impl<'a> DiskWriter<'a> {
 
         args.push(target_str.to_string());
 
-        let output = Command::new("sgdisk")
+        let output = Command::new(paths::SGDISK)
             .args(&args)
             .output()
             .context("running sgdisk to create partition table")?;
@@ -254,7 +255,7 @@ impl<'a> DiskWriter<'a> {
 
             tracing::info!("resizing LUKS container to fill partition");
             let keyfile = create_passphrase_keyfile(pp)?;
-            let output = Command::new("cryptsetup")
+            let output = Command::new(paths::CRYPTSETUP)
                 .args([
                     "resize",
                     "--key-file",
@@ -278,7 +279,7 @@ impl<'a> DiskWriter<'a> {
         fs::create_dir_all(&mount_path).context("creating mount point")?;
 
         run_command(
-            "mount",
+            paths::MOUNT,
             &[
                 "-t",
                 "btrfs",
@@ -292,7 +293,7 @@ impl<'a> DiskWriter<'a> {
 
         tracing::info!("resizing btrfs filesystem to fill partition");
         let resize_result = run_command(
-            "btrfs",
+            paths::BTRFS,
             &[
                 "filesystem",
                 "resize",
@@ -301,7 +302,7 @@ impl<'a> DiskWriter<'a> {
             ],
         );
 
-        let _ = run_command("umount", &[mount_path.to_str().unwrap_or_default()]);
+        let _ = run_command(paths::UMOUNT, &[mount_path.to_str().unwrap_or_default()]);
 
         if self.disk_encryption.is_encrypted() {
             let _ = close_luks_root();
@@ -327,7 +328,7 @@ impl<'a> DiskWriter<'a> {
         super::device::ensure_partition_devices(self.target)
             .context("ensuring partition devices before UUID randomization")?;
 
-        match Command::new("mlabel")
+        match Command::new(paths::MLABEL)
             .args(["-n", "-i", efi_part.to_str().unwrap_or_default(), "::"])
             .output()
         {
@@ -346,7 +347,7 @@ impl<'a> DiskWriter<'a> {
         }
 
         // tune2fs -U requires a freshly checked filesystem; run e2fsck first.
-        let e2fsck_result = Command::new("e2fsck")
+        let e2fsck_result = Command::new(paths::E2FSCK)
             .args(["-f", "-y", xboot_part.to_str().unwrap_or_default()])
             .output()
             .context("running e2fsck on xboot before UUID randomization")?;
@@ -359,7 +360,7 @@ impl<'a> DiskWriter<'a> {
             );
         }
 
-        let xboot_result = Command::new("tune2fs")
+        let xboot_result = Command::new(paths::TUNE2FS)
             .args(["-U", "random", xboot_part.to_str().unwrap_or_default()])
             .output()
             .context("running tune2fs to randomize xboot UUID")?;
@@ -378,7 +379,7 @@ impl<'a> DiskWriter<'a> {
             root_part.clone()
         };
 
-        let btrfs_result = Command::new("btrfstune")
+        let btrfs_result = Command::new(paths::BTRFSTUNE)
             .args(["-f", "-u", btrfs_dev.to_str().unwrap_or_default()])
             .output()
             .context("running btrfstune to randomize root UUID")?;
@@ -400,15 +401,25 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.rebuild-boot-config]
+    // r[impl installer.write.rebuild-boot-config+3]
     pub fn rebuild_boot_config(&self) -> Result<()> {
         tracing::info!("rebuilding boot config (initramfs + grub)");
 
         let root_part = partition_path(self.target, 3)?;
         let xboot_part = partition_path(self.target, 2)?;
         let efi_part = partition_path(self.target, 1)?;
+        let is_encrypted = self.disk_encryption.is_encrypted();
 
-        let luks_opened = if self.disk_encryption.is_encrypted() {
+        let luks_uuid = if is_encrypted {
+            Some(
+                blkid_value(&root_part, "UUID")
+                    .context("reading LUKS UUID from raw root partition")?,
+            )
+        } else {
+            None
+        };
+
+        let luks_opened = if is_encrypted {
             let _ = open_luks_root(&root_part, self.passphrase.unwrap_or_default())?;
             true
         } else {
@@ -429,7 +440,7 @@ impl<'a> DiskWriter<'a> {
         fs::create_dir_all(&mount_path).context("creating mount point")?;
 
         run_command(
-            "mount",
+            paths::MOUNT,
             &[
                 "-t",
                 "btrfs",
@@ -444,7 +455,7 @@ impl<'a> DiskWriter<'a> {
         let xboot_mount = mount_path.join("boot");
         fs::create_dir_all(&xboot_mount).ok();
         let mount_xboot_result = run_command(
-            "mount",
+            paths::MOUNT,
             &[
                 xboot_part.to_str().unwrap_or_default(),
                 xboot_mount.to_str().unwrap_or_default(),
@@ -455,7 +466,7 @@ impl<'a> DiskWriter<'a> {
         let efi_mount = mount_path.join("boot/efi");
         fs::create_dir_all(&efi_mount).ok();
         let mount_efi_result = run_command(
-            "mount",
+            paths::MOUNT,
             &[
                 efi_part.to_str().unwrap_or_default(),
                 efi_mount.to_str().unwrap_or_default(),
@@ -468,15 +479,15 @@ impl<'a> DiskWriter<'a> {
         let dev_path = mount_path.join("dev");
 
         let _ = run_command(
-            "mount",
+            paths::MOUNT,
             &["--bind", "/proc", proc_path.to_str().unwrap_or_default()],
         );
         let _ = run_command(
-            "mount",
+            paths::MOUNT,
             &["--bind", "/sys", sys_path.to_str().unwrap_or_default()],
         );
         let _ = run_command(
-            "mount",
+            paths::MOUNT,
             &["--bind", "/dev", dev_path.to_str().unwrap_or_default()],
         );
 
@@ -501,14 +512,22 @@ impl<'a> DiskWriter<'a> {
 
         let dracut_result = if let Some(ref kver) = kernel_version {
             tracing::info!("rebuilding initramfs for kernel {kver}");
-            run_command("chroot", &[mount_str, "dracut", "--force", "--kver", kver])
+            run_command(
+                paths::CHROOT,
+                &[mount_str, paths::DRACUT, "--force", "--kver", kver],
+            )
         } else {
             tracing::warn!("no kernel version found in target, running dracut without --kver");
             run_command(
-                "chroot",
-                &[mount_str, "dracut", "--force", "--regenerate-all"],
+                paths::CHROOT,
+                &[mount_str, paths::DRACUT, "--force", "--regenerate-all"],
             )
         };
+
+        if let Some(ref luks_id) = luks_uuid {
+            patch_grub_defaults_for_luks(&mount_path, luks_id)
+                .context("patching /etc/default/grub for LUKS")?;
+        }
 
         let grub_probe_backup = install_grub_probe_wrapper(
             &mount_path,
@@ -517,23 +536,24 @@ impl<'a> DiskWriter<'a> {
             &xboot_part,
             &xboot_uuid,
             &efi_part,
+            is_encrypted,
         )
         .context("installing grub-probe wrapper")?;
 
-        let grub_result = run_command("chroot", &[mount_str, "update-grub"]);
+        let grub_result = run_command(paths::CHROOT, &[mount_str, "update-grub"]);
 
         remove_grub_probe_wrapper(&mount_path, grub_probe_backup);
 
-        let _ = run_command("umount", &[dev_path.to_str().unwrap_or_default()]);
-        let _ = run_command("umount", &[sys_path.to_str().unwrap_or_default()]);
-        let _ = run_command("umount", &[proc_path.to_str().unwrap_or_default()]);
+        let _ = run_command(paths::UMOUNT, &[dev_path.to_str().unwrap_or_default()]);
+        let _ = run_command(paths::UMOUNT, &[sys_path.to_str().unwrap_or_default()]);
+        let _ = run_command(paths::UMOUNT, &[proc_path.to_str().unwrap_or_default()]);
         if efi_mounted {
-            let _ = run_command("umount", &[efi_mount.to_str().unwrap_or_default()]);
+            let _ = run_command(paths::UMOUNT, &[efi_mount.to_str().unwrap_or_default()]);
         }
         if xboot_mounted {
-            let _ = run_command("umount", &[xboot_mount.to_str().unwrap_or_default()]);
+            let _ = run_command(paths::UMOUNT, &[xboot_mount.to_str().unwrap_or_default()]);
         }
-        let _ = run_command("umount", &[mount_path.to_str().unwrap_or_default()]);
+        let _ = run_command(paths::UMOUNT, &[mount_path.to_str().unwrap_or_default()]);
 
         if luks_opened {
             let _ = close_luks_root();
@@ -548,7 +568,7 @@ impl<'a> DiskWriter<'a> {
 
     // r[impl installer.write.partitions+2]
     pub fn verify_partition_table(&self) -> Result<()> {
-        let output = Command::new("sfdisk")
+        let output = Command::new(paths::SFDISK)
             .args(["--json", self.target.to_str().unwrap_or_default()])
             .output()
             .context("running sfdisk --json to verify partitions")?;
@@ -594,7 +614,7 @@ impl<'a> DiskWriter<'a> {
 }
 
 fn blkid_value(device: &Path, tag: &str) -> Result<String> {
-    let output = Command::new("blkid")
+    let output = Command::new(paths::BLKID)
         .args([
             "-s",
             tag,
@@ -609,6 +629,58 @@ fn blkid_value(device: &Path, tag: &str) -> Result<String> {
         bail!("blkid failed on {}: {stderr}", device.display());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Patch `/etc/default/grub` inside the target so `update-grub` produces a
+/// kernel command line that tells dracut to unlock the LUKS root volume.
+fn patch_grub_defaults_for_luks(mount_path: &Path, luks_uuid: &str) -> Result<()> {
+    let grub_defaults = mount_path.join("etc/default/grub");
+    let contents = fs::read_to_string(&grub_defaults).context("reading /etc/default/grub")?;
+
+    let luks_cmdline = format!("rd.luks.name={luks_uuid}=root rd.luks.options=discard");
+
+    let mut new_lines: Vec<String> = Vec::new();
+    let mut found_cmdline_linux = false;
+    let mut found_cmdline_default = false;
+
+    for line in contents.lines() {
+        if line.starts_with("GRUB_CMDLINE_LINUX=")
+            && !line.starts_with("GRUB_CMDLINE_LINUX_DEFAULT=")
+        {
+            new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{luks_cmdline}\""));
+            found_cmdline_linux = true;
+        } else if line.starts_with("GRUB_CMDLINE_LINUX_DEFAULT=") {
+            // Remove cloud-only serial console for metal installs
+            let patched = line
+                .replace("console=ttyS0,115200n8", "")
+                .replace("  ", " ");
+            // Clean up any trailing/leading spaces inside the quotes
+            let patched = patched.replace("\" ", "\"").replace(" \"", "\"");
+            new_lines.push(patched);
+            found_cmdline_default = true;
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    if !found_cmdline_linux {
+        new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{luks_cmdline}\""));
+    }
+
+    // Ensure there's a trailing newline
+    let mut output = new_lines.join("\n");
+    if !output.ends_with('\n') {
+        output.push('\n');
+    }
+
+    fs::write(&grub_defaults, &output).context("writing /etc/default/grub")?;
+
+    if found_cmdline_default {
+        tracing::info!("patched GRUB_CMDLINE_LINUX_DEFAULT (removed serial console)");
+    }
+    tracing::info!("set GRUB_CMDLINE_LINUX for LUKS: {luks_cmdline}");
+
+    Ok(())
 }
 
 /// Install a temporary wrapper script that replaces `grub-probe` inside the
@@ -629,6 +701,7 @@ fn install_grub_probe_wrapper(
     xboot_dev: &Path,
     xboot_uuid: &str,
     efi_dev: &Path,
+    is_encrypted: bool,
 ) -> Result<Option<PathBuf>> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -687,7 +760,7 @@ if [ -n "$PROBE_PATH" ]; then
                 device) echo "{root_dev_str}"; exit 0 ;;
                 fs_uuid) echo "{root_uuid}"; exit 0 ;;
                 fs) echo "btrfs"; exit 0 ;;
-                abstraction) echo ""; exit 0 ;;
+                abstraction) echo "{root_abstraction}"; exit 0 ;;
                 partuuid) ;; # fall through to real probe
                 *) ;;
             esac
@@ -718,7 +791,7 @@ if [ -n "$DEVICE" ]; then
             case "$TARGET" in
                 fs_uuid) echo "{root_uuid}"; exit 0 ;;
                 fs) echo "btrfs"; exit 0 ;;
-                abstraction) echo ""; exit 0 ;;
+                abstraction) echo "{root_abstraction}"; exit 0 ;;
                 *) ;;
             esac
             ;;
@@ -748,6 +821,7 @@ exit 1
 "##,
         root_dev_str = root_dev_str,
         root_uuid = root_uuid,
+        root_abstraction = if is_encrypted { "luks" } else { "" },
         xboot_dev_str = xboot_dev_str,
         xboot_uuid = xboot_uuid,
         efi_dev_str = efi_dev_str,
@@ -808,5 +882,68 @@ mod tests {
         assert_eq!(manifest.partitions.len(), 3);
         assert_eq!(manifest.partitions[0].size_mib, 512);
         assert_eq!(manifest.partitions[2].size_mib, 0);
+    }
+
+    // r[verify installer.write.rebuild-boot-config+3]
+    #[test]
+    fn patch_grub_defaults_sets_luks_cmdline() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc/default");
+        fs::create_dir_all(&etc).unwrap();
+        fs::write(
+            etc.join("grub"),
+            "GRUB_DEFAULT=0\n\
+             GRUB_CMDLINE_LINUX_DEFAULT=\"noresume console=ttyS0,115200n8\"\n\
+             GRUB_CMDLINE_LINUX=\"\"\n",
+        )
+        .unwrap();
+
+        let luks_uuid = "abcd1234-5678-9abc-def0-123456789abc";
+        patch_grub_defaults_for_luks(dir.path(), luks_uuid).unwrap();
+
+        let result = fs::read_to_string(etc.join("grub")).unwrap();
+
+        assert!(
+            result.contains(&format!("rd.luks.name={luks_uuid}=root")),
+            "should contain rd.luks.name: {result}",
+        );
+        assert!(
+            result.contains("rd.luks.options=discard"),
+            "should contain rd.luks.options=discard: {result}",
+        );
+        assert!(
+            !result.contains("console=ttyS0,115200n8"),
+            "should have removed serial console: {result}",
+        );
+        assert!(
+            result.contains("noresume"),
+            "should preserve noresume: {result}",
+        );
+    }
+
+    // r[verify installer.write.rebuild-boot-config+3]
+    #[test]
+    fn patch_grub_defaults_adds_cmdline_linux_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let etc = dir.path().join("etc/default");
+        fs::create_dir_all(&etc).unwrap();
+        fs::write(
+            etc.join("grub"),
+            "GRUB_DEFAULT=0\n\
+             GRUB_CMDLINE_LINUX_DEFAULT=\"noresume\"\n",
+        )
+        .unwrap();
+
+        let luks_uuid = "aaaa-bbbb-cccc";
+        patch_grub_defaults_for_luks(dir.path(), luks_uuid).unwrap();
+
+        let result = fs::read_to_string(etc.join("grub")).unwrap();
+
+        assert!(
+            result.contains(&format!(
+                "GRUB_CMDLINE_LINUX=\"rd.luks.name={luks_uuid}=root rd.luks.options=discard\""
+            )),
+            "should add GRUB_CMDLINE_LINUX when absent: {result}",
+        );
     }
 }
