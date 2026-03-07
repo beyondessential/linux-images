@@ -741,14 +741,6 @@ changes.
 
 
 
-> r[installer.encryption.configure-system+2]
-> The installer must not rebuild the initramfs as a separate encryption step.
-> Instead, the initramfs is rebuilt during
-> `r[installer.write.rebuild-boot-config]`, which runs after encryption
-> enrollment and configuration. This single rebuild picks up the updated
-> crypttab and (if keyfile mode) the new keyfile, because the encryption
-> config files are written before `rebuild-boot-config` executes.
-
 ## Install-Time Configuration
 
 r[installer.finalise.mount+4]

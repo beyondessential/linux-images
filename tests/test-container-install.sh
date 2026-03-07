@@ -110,6 +110,7 @@ cleanup() {
     set +e
 
     if [ -n "$VERIFY_MOUNT" ]; then
+        umount "$VERIFY_MOUNT/tmp" 2>/dev/null
         umount "$VERIFY_MOUNT/proc" 2>/dev/null
         umount "$VERIFY_MOUNT/boot" 2>/dev/null
         if mountpoint -q "$VERIFY_MOUNT" 2>/dev/null; then
@@ -775,16 +776,19 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
 
             # --- Initramfs crypttab verification (metal only) ---
-            # r[verify installer.encryption.configure-system+2]
+            # r[verify installer.encryption.overview+3]
             # The initramfs must contain the updated crypttab so the system
             # can unlock without a passphrase prompt at boot.
             if [ "$VARIANT" = "metal" ]; then
                 INITRD_FILE="$(ls "$BOOT_MNT"/initrd.img-* 2>/dev/null | head -1)"
                 if [ -n "$INITRD_FILE" ] && [ -f "$INITRD_FILE" ]; then
                     INITRD_BASENAME="/boot/$(basename "$INITRD_FILE")"
-                    # Use lsinitrd from the installed system via chroot
+                    # lsinitrd needs a writable /tmp for unpacking, but the
+                    # root is mounted read-only. Mount tmpfs + proc for chroot.
                     mount -t proc proc "$VERIFY_MOUNT/proc" 2>/dev/null || true
+                    mount -t tmpfs tmpfs "$VERIFY_MOUNT/tmp" 2>/dev/null || true
                     INITRD_CRYPTTAB="$(chroot "$VERIFY_MOUNT" lsinitrd -f /etc/crypttab "$INITRD_BASENAME" 2>/dev/null || true)"
+                    umount "$VERIFY_MOUNT/tmp" 2>/dev/null || true
                     umount "$VERIFY_MOUNT/proc" 2>/dev/null || true
 
                     if [ -n "$INITRD_CRYPTTAB" ]; then

@@ -529,7 +529,7 @@ fn recovery_passphrase_is_initial_luks_key() {
     );
 }
 
-// r[verify installer.encryption.configure-system+2]
+// r[verify installer.encryption.overview+3]
 #[test]
 fn configure_system_writes_expected_files() {
     // This test verifies the file-writing portion of configure_installed_system.
