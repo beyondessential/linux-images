@@ -575,25 +575,45 @@ must then create the GPT table and all three partitions (EFI, xboot, root)
 using the geometry from `partitions.json`. After writing all partition
 images, the installer must verify the partition table.
 
-r[installer.write.source+2]
-The installer must read `partitions.json` from the ISO filesystem to locate
-the partition images and their layout metadata. There is one set of partition
-images per architecture, not per variant. The installer must search the
-standard ISO mount paths (`/run/live/medium/images`, `/cdrom/images`, etc.)
-for the manifest file.
+> r[installer.write.source+3]
+> The installer must read `partitions.json` from the verity-protected images
+> partition to locate the partition images and their layout metadata. There is
+> one set of partition images per architecture, not per variant. The partition
+> images are raw (uncompressed) files inside a squashfs with transparent zstd
+> compression (see `r[iso.images-partition]`).
+>
+> The installer must locate the images partition by searching for a block
+> device with the filesystem label `BESIMAGES` (via `/dev/disk/by-label/`),
+> or as GPT partition 4 of the detected boot device. It must then read the
+> verity metadata from `/images-verity.json` on the ISO filesystem (search
+> paths: `/run/live/medium/images-verity.json`, `/cdrom/images-verity.json`),
+> open the partition with `veritysetup open` using the root hash and hash
+> offset from that file, mount the resulting dm-verity device as squashfs,
+> and read `partitions.json` and the raw image files from the mount point.
+>
+> As a fallback for development and testing, if a `partitions.json` file is
+> found in a pre-mounted directory (the legacy search paths
+> `/run/live/medium/images`, `/cdrom/images`), the installer may use it
+> directly without verity. This fallback must log a warning that integrity
+> verification is not active.
 
-r[installer.write.disk-size-check+2]
-Before writing, the installer must read the uncompressed size of each
-partition image from its `.size` sidecar file and verify that the target disk
-is at least as large as the sum of all partition sizes (plus GPT overhead).
-If the disk is too small, the installer must refuse to write and report the
-required size and disk size in the error message.
+r[installer.write.disk-size-check+3]
+Before writing, the installer must determine the uncompressed size of each
+partition image by calling `stat` on the raw image files (which are mounted
+from the images squashfs and appear at their real uncompressed size). It must
+verify that the target disk is at least as large as the sum of all partition
+sizes (plus GPT overhead). If the disk is too small, the installer must
+refuse to write and report the required size and disk size in the error
+message.
 
-r[installer.write.decompress-stream+2]
-The installer must stream-decompress each zstd-compressed partition image
-directly to its corresponding partition device (or to the opened LUKS mapper
-device for the root partition when encryption is enabled), avoiding the need
-to hold the uncompressed image in memory or on a temporary filesystem.
+r[installer.write.stream-copy]
+The installer must stream-copy each raw partition image directly to its
+corresponding partition device (or to the opened LUKS mapper device for the
+root partition when encryption is enabled), avoiding the need to hold the
+full image in memory. Since the images are stored in a squashfs with
+transparent compression, the kernel handles decompression on read; the
+installer performs a plain read/write copy loop. dm-verity verification
+also happens transparently on each block read.
 
 r[installer.write.luks-before-write+2]
 When disk encryption is not `"none"`, the installer must format the root

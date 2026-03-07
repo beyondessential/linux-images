@@ -25,10 +25,10 @@ packages so that the kernel can locate and mount the squashfs root via the
 `boot=live` parameter. The squashfs must be placed at `/live/filesystem.squashfs`
 inside the ISO, which is the default path `live-boot` searches.
 
-r[iso.minimal+2]
+r[iso.minimal+3]
 The live environment must include a kernel, an initramfs, and enough
-userspace to run the TUI installer (block device utilities, zstd, and
-cryptsetup for LUKS operations). The default debootstrap variant provides
+userspace to run the TUI installer (block device utilities and cryptsetup
+for LUKS and dm-verity operations). The default debootstrap variant provides
 the base; only packages not included in it need to be installed explicitly.
 
 r[iso.blacklist-drm]
@@ -64,14 +64,14 @@ r[iso.offline]
 The live ISO must be fully functional without network connectivity. No
 packages or data are downloaded during the installation process.
 
-r[iso.contents+2]
-The ISO must contain compressed partition images extracted from the cloud disk
-image, a `partitions.json` manifest describing the partition layout, and the
-TUI installer binary. There is one set of partition images per architecture,
-not per variant. The partition images are `efi.img.zst`, `xboot.img.zst`, and
-`root.img.zst`, each with a `.size` sidecar containing the uncompressed byte
-count. The installer reconstructs the GPT and writes each partition
-individually, setting up LUKS on the root partition when encryption is enabled.
+r[iso.contents+3]
+The ISO must contain a TUI installer binary and a `partitions.json` manifest
+describing the partition layout. There is one set of partition images per
+architecture, not per variant. The partition images (`efi.img`, `xboot.img`,
+`root.img`) are stored as raw (uncompressed) files inside a dedicated
+squashfs with transparent zstd compression (see `r[iso.images-partition]`).
+The installer reconstructs the GPT and writes each partition individually,
+setting up LUKS on the root partition when encryption is enabled.
 
 r[iso.boot.uefi]
 The ISO must be UEFI-bootable via an El Torito EFI boot catalog. The EFI
@@ -104,3 +104,71 @@ ISO contains only the images and installer binary for its architecture.
 r[iso.usb]
 The ISO must be writable to USB media using `dd` and must boot correctly on
 UEFI systems from that media.
+
+## Integrity Verification
+
+> r[iso.verity.squashfs]
+> The live rootfs squashfs (`/live/filesystem.squashfs`) must be protected by
+> dm-verity. At build time, `veritysetup format` must be run on the squashfs
+> to produce a hash tree file. The hash tree must be placed at
+> `/live/filesystem.squashfs.verity` inside the ISO. The root hash must be
+> embedded in the GRUB kernel command line as
+> `live.verity.roothash=<hex>`.
+>
+> At boot, a custom initramfs premount script must read the root hash from
+> `/proc/cmdline`, set up a loop device on the squashfs file, run
+> `veritysetup open` with the hash tree file, and mount the resulting
+> dm-verity device as the live root instead of mounting the squashfs directly.
+>
+> If the `live.verity.roothash=` parameter is absent from the kernel command
+> line, the hook must be skipped and boot must proceed without verification
+> (graceful fallback for development builds).
+
+> r[iso.verity.initramfs-hook]
+> The live rootfs must include an initramfs hook at
+> `/usr/share/initramfs-tools/hooks/verity` that copies `veritysetup` and its
+> runtime dependencies (shared libraries, `libcryptsetup`, `libdevmapper`)
+> into the initramfs. A premount script at
+> `/usr/share/initramfs-tools/scripts/live-premount/verity` must implement
+> the dm-verity setup described in `r[iso.verity.squashfs]`.
+
+> r[iso.images-partition]
+> The ISO must include a read-only squashfs partition appended as GPT
+> partition 4 via `xorriso --append_partition`. This squashfs must contain
+> the raw (uncompressed) partition images (`efi.img`, `xboot.img`,
+> `root.img`) and the `partitions.json` manifest. The squashfs must use zstd
+> compression so that the kernel decompresses data transparently on read.
+> The filesystem label must be `BESIMAGES`.
+
+> r[iso.verity.images]
+> The images squashfs partition must be protected by dm-verity. At build
+> time, `veritysetup format` must be run on the squashfs to produce a hash
+> tree. The hash tree must be appended to the squashfs blob (concatenated
+> after the squashfs data), and `veritysetup open` must be called with
+> `--hash-offset` set to the original squashfs size. The root hash and hash
+> offset must be stored in a JSON metadata file at `/images-verity.json`
+> inside the ISO, with the schema:
+>
+> ```json
+> {
+>   "root_hash": "<hex>",
+>   "hash_offset": <bytes>
+> }
+> ```
+>
+> At runtime, the installer must find the images partition (GPT partition 4
+> of the boot device, or by filesystem label `BESIMAGES`), run
+> `veritysetup open` with the stored root hash and hash offset, mount the
+> resulting dm-verity device as squashfs, and read partition images from it.
+
+> r[iso.verity.failure]
+> If dm-verity verification fails (either for the squashfs rootfs or the
+> images partition), the system must not silently use corrupted data. For the
+> squashfs rootfs, the kernel returns I/O errors on corrupted blocks, causing
+> boot to fail visibly. For the images partition, the installer must detect
+> the `veritysetup open` failure or subsequent I/O errors and display a clear
+> error message indicating that the installation media is corrupted.
+
+r[iso.verity.build-deps]
+The ISO build script must have `cryptsetup` (which provides `veritysetup`)
+available as a build-time dependency for computing dm-verity hash trees.
