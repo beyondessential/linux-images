@@ -249,7 +249,7 @@ impl RunContext {
             eprintln!("  password:   custom password set");
         }
 
-        // r[impl installer.write.disk-size-check+2]
+        // r[impl installer.write.disk-size-check+3]
         let total_image_size = writer::partition_images_total_size(&manifest, &images_dir)
             .context("reading partition image sizes")?;
         writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;

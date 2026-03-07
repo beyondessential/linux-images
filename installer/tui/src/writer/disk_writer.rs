@@ -1,5 +1,6 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
+use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
@@ -13,8 +14,9 @@ use super::device::{partition_path, reread_partition_table, run_command, sync_de
 use super::luks::{
     LUKS_NAME, close_luks_root, create_passphrase_keyfile, format_luks_for_root, open_luks_root,
 };
-use super::manifest::{PartitionManifest, partition_images_total_size};
+use super::manifest::{PartitionManifest, image_size, partition_images_total_size};
 use super::progress::{WriteProgress, format_size};
+use super::verity::splice_fd_to_fd;
 
 const MOUNT_BASE: &str = "/mnt/target";
 
@@ -123,47 +125,36 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.decompress-stream+2]
-    fn decompress_to_device(
+    // r[impl installer.write.stream-copy]
+    fn splice_to_device(
         &self,
         source: &Path,
         device: &Path,
         bytes_offset: u64,
         total_bytes: Option<u64>,
+        start: Instant,
         on_progress: &mut dyn FnMut(&WriteProgress),
     ) -> Result<u64> {
         let input = File::open(source)
             .with_context(|| format!("opening source image {}", source.display()))?;
+        let expected = image_size(source).ok();
 
-        let mut decoder = zstd::Decoder::new(input).context("initializing zstd decoder")?;
-
-        let mut output = OpenOptions::new()
+        let output = OpenOptions::new()
             .write(true)
             .open(device)
             .with_context(|| format!("opening target device {}", device.display()))?;
 
-        let mut buf = vec![0u8; 4 * 1024 * 1024];
-        let mut partition_bytes_written: u64 = 0;
-        let start = Instant::now();
+        let partition_bytes_written = splice_fd_to_fd(
+            input.as_raw_fd(),
+            output.as_raw_fd(),
+            expected,
+            bytes_offset,
+            total_bytes,
+            start,
+            on_progress,
+        )
+        .with_context(|| format!("splicing {} -> {}", source.display(), device.display()))?;
 
-        loop {
-            let n = decoder.read(&mut buf).context("reading from zstd stream")?;
-            if n == 0 {
-                break;
-            }
-            output
-                .write_all(&buf[..n])
-                .context("writing to target device")?;
-            partition_bytes_written += n as u64;
-
-            on_progress(&WriteProgress {
-                bytes_written: bytes_offset + partition_bytes_written,
-                total_bytes,
-                elapsed: start.elapsed(),
-            });
-        }
-
-        output.flush().context("flushing target device")?;
         sync_device(&output)?;
 
         tracing::info!(
@@ -182,7 +173,7 @@ impl<'a> DiskWriter<'a> {
     }
 
     // r[impl installer.write.partitions+2]
-    // r[impl installer.write.decompress-stream+2]
+    // r[impl installer.write.stream-copy]
     pub fn write_partitions(
         &self,
         manifest: &PartitionManifest,
@@ -197,6 +188,7 @@ impl<'a> DiskWriter<'a> {
             .context("creating partition table")?;
         reread_partition_table(self.target).context("re-reading partition table after creation")?;
 
+        let start = Instant::now();
         let mut bytes_offset: u64 = 0;
 
         for (i, entry) in manifest.partitions.iter().enumerate() {
@@ -219,11 +211,12 @@ impl<'a> DiskWriter<'a> {
             };
 
             let written = self
-                .decompress_to_device(
+                .splice_to_device(
                     &img_path,
                     &write_device,
                     bytes_offset,
                     total_bytes,
+                    start,
                     on_progress,
                 )
                 .with_context(|| format!("writing partition {}", entry.label))?;
@@ -238,7 +231,7 @@ impl<'a> DiskWriter<'a> {
         on_progress(&WriteProgress {
             bytes_written: bytes_offset,
             total_bytes: Some(bytes_offset),
-            elapsed: std::time::Duration::ZERO,
+            elapsed: start.elapsed(),
         });
 
         tracing::info!("all partitions written to {}", self.target.display());

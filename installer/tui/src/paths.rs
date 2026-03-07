@@ -23,8 +23,12 @@ pub const SGDISK: &str = "/usr/sbin/sgdisk";
 // parted
 pub const PARTPROBE: &str = "/usr/sbin/partprobe";
 
-// cryptsetup
+// cryptsetup / veritysetup
 pub const CRYPTSETUP: &str = "/usr/sbin/cryptsetup";
+pub const VERITYSETUP: &str = "/usr/sbin/veritysetup";
+
+// loop devices
+pub const LOSETUP: &str = "/usr/sbin/losetup";
 
 // filesystem tools
 pub const BTRFS: &str = "/usr/bin/btrfs";
@@ -66,6 +70,8 @@ const ISO_PATHS: &[(&str, &str)] = &[
     ("sgdisk", SGDISK),
     ("partprobe", PARTPROBE),
     ("cryptsetup", CRYPTSETUP),
+    ("veritysetup", VERITYSETUP),
+    ("losetup", LOSETUP),
     ("btrfs", BTRFS),
     ("btrfstune", BTRFSTUNE),
     ("e2fsck", E2FSCK),

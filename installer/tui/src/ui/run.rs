@@ -547,7 +547,7 @@ fn run_full_install(
     tx: &mpsc::Sender<WorkerMessage>,
     besconf: &BesconfState,
 ) -> Result<Option<String>> {
-    // r[impl installer.write.disk-size-check+2]
+    // r[impl installer.write.disk-size-check+3]
     let total_image_size = writer::partition_images_total_size(manifest, images_dir)
         .context("reading partition image sizes")?;
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;

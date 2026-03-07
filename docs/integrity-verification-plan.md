@@ -344,7 +344,7 @@ Status: done.
 - Update all stale `installer.write.source`, `installer.write.disk-size-check`,
   and `installer.write.decompress-stream` annotations.
 
-Status: not started.
+Status: done.
 
 ### Step 6: Test updates
 
