@@ -469,6 +469,26 @@ rm -rf "$MNT_ROOTFS"
 echo "    squashfs: $(du -h "$STAGING/live/filesystem.squashfs" | cut -f1)"
 
 # ============================================================
+# Phase 4b: Add verity to squashfs rootfs
+# ============================================================
+# r[impl iso.verity.squashfs]
+# r[impl iso.verity.layout]
+# r[impl iso.verity.build-deps]
+echo "==> Phase 4b: Adding verity to squashfs rootfs..."
+
+SQFS_HASHTREE="$WORK_DIR/filesystem.squashfs.hashtree"
+SQFS_VERITY_OUTPUT="$(veritysetup format "$STAGING/live/filesystem.squashfs" "$SQFS_HASHTREE" 2>&1)"
+LIVE_ROOTHASH="$(echo "$SQFS_VERITY_OUTPUT" | grep "Root hash:" | awk '{print $NF}')"
+echo "    live verity root hash: $LIVE_ROOTHASH"
+
+# Append hash tree + size trailer (self-describing verity layout)
+SQFS_HASHTREE_SIZE="$(stat --format='%s' "$SQFS_HASHTREE")"
+cat "$SQFS_HASHTREE" >> "$STAGING/live/filesystem.squashfs"
+rm -f "$SQFS_HASHTREE"
+python3 -c "import struct,sys; sys.stdout.buffer.write(struct.pack('<Q', $SQFS_HASHTREE_SIZE))" >> "$STAGING/live/filesystem.squashfs"
+echo "    squashfs blob (sqfs+verity): $(du -h "$STAGING/live/filesystem.squashfs" | cut -f1)"
+
+# ============================================================
 # Phase 5: Extract partition images from cloud image
 # ============================================================
 # r[impl iso.contents+3]
@@ -616,12 +636,12 @@ insmod all_video
 search --file --no-floppy --set=root /live/vmlinuz
 
 menuentry "BES Installer (${ARCH}, built ${BUILD_DATE})" {
-    linux /live/vmlinuz boot=live toram console=tty1 images.verity.roothash=${IMAGES_ROOTHASH}
+    linux /live/vmlinuz boot=live toram console=tty1 live.verity.roothash=${LIVE_ROOTHASH} images.verity.roothash=${IMAGES_ROOTHASH}
     initrd /live/initrd.img
 }
 
 menuentry "BES Installer (${ARCH}, built ${BUILD_DATE}) -- quiet" {
-    linux /live/vmlinuz boot=live toram quiet console=tty1 images.verity.roothash=${IMAGES_ROOTHASH}
+    linux /live/vmlinuz boot=live toram quiet console=tty1 live.verity.roothash=${LIVE_ROOTHASH} images.verity.roothash=${IMAGES_ROOTHASH}
     initrd /live/initrd.img
 }
 GRUBCFG

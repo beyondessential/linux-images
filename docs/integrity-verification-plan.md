@@ -313,7 +313,7 @@ Status: done.
 - Append hash tree + size trailer to produce the self-describing blob.
 - Add `live.verity.roothash=<hash>` to GRUB command line.
 
-Status: not started.
+Status: done.
 
 ### Step 4: Initramfs verity hook
 
