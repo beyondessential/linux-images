@@ -298,6 +298,7 @@ check-deps:
 # Remove all build artifacts
 clean:
     mkdir -p "{{ work_dir }}" "{{ output_arch_dir }}"
+    sudo rm -rf "{{ work_dir }}/iso-rootfs/live" || true
     rm -rf "{{ work_dir }}"/* "{{ output_arch_dir }}"/* || true
 
 # ============================================================
