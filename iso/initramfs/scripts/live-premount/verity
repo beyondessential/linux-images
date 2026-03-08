@@ -28,7 +28,7 @@ if [ -z "$ROOTHASH" ]; then
     exit 0
 fi
 
-log_begin_msg "Setting up dm-verity for live squashfs"
+echo "Setting up dm-verity for live squashfs"
 
 # live-boot mounts the ISO/USB at /run/live/medium (or /lib/live/mount/medium
 # on older versions). Find the squashfs.
@@ -44,8 +44,7 @@ for candidate in \
 done
 
 if [ -z "$SQFS" ]; then
-    log_warning_msg "verity: squashfs not found, skipping"
-    log_end_msg
+    echo "verity: squashfs not found, skipping"
     exit 0
 fi
 
@@ -80,5 +79,3 @@ mount -t squashfs -o ro /dev/mapper/live-verity /run/live/verity
 
 export LIVEFS="/run/live/verity"
 export LIVEFS_ROOT="/run/live/verity"
-
-log_end_msg
