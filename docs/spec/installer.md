@@ -668,7 +668,7 @@ unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
 changes.
 
-> r[installer.write.rebuild-boot-config+4]
+> r[installer.write.rebuild-boot-config+5]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
 > `r[installer.encryption.overview+3]`), the installer must unconditionally
@@ -676,9 +676,16 @@ changes.
 > system, regardless of encryption mode. This is required because the GRUB
 > config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
 > have been rotated, and because the encryption setup writes crypttab and
-> dracut configuration that must be baked into the initramfs. The installer
-> must run `dracut --force` and `update-grub` with `/proc`, `/sys`, and
-> `/dev` bind-mounted into the target.
+> dracut configuration that must be baked into the initramfs. Before running
+> dracut, the installer must delete all existing initramfs files from
+> `/boot` (matching `initrd.img*` and `initramfs-*`). This is necessary
+> because dracut's `hostonly` mode reads the existing initramfs to discover
+> host devices; the image-build initramfs contains UUIDs from the build
+> environment that no longer exist after UUID randomization, and leaving it
+> in place causes the new initramfs to inherit stale device references that
+> will hang at boot. The installer must then run `dracut --force` and
+> `update-grub` with `/proc`, `/sys`, and `/dev` bind-mounted into the
+> target.
 >
 > When disk encryption is enabled, the installer must also, before running
 > `update-grub`:
@@ -697,7 +704,7 @@ changes.
 
 > r[installer.encryption.overview+3]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+4]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+5]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -708,7 +715,7 @@ changes.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config+4]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+5]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created

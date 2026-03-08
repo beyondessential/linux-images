@@ -394,7 +394,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.rebuild-boot-config+4]
+    // r[impl installer.write.rebuild-boot-config+5]
     pub fn rebuild_boot_config(&self) -> Result<()> {
         tracing::info!("rebuilding boot config (initramfs + grub)");
 
@@ -502,6 +502,25 @@ impl<'a> DiskWriter<'a> {
         } else {
             None
         };
+
+        // Delete the old initramfs before running dracut. The image-build
+        // initramfs was created with hostonly=yes against the build host's
+        // loop devices. dracut's hostonly logic reads the *existing* initramfs
+        // to discover host devices, so if we leave the stale one in place the
+        // new initramfs inherits pre-randomization UUIDs that no longer exist
+        // on the target disk, causing the boot to hang forever waiting for a
+        // device that will never appear.
+        let boot_dir = mount_path.join("boot");
+        if let Ok(entries) = fs::read_dir(&boot_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("initrd.img") || name_str.starts_with("initramfs-") {
+                    tracing::info!("removing stale initramfs: {}", entry.path().display());
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
 
         let dracut_result = if let Some(ref kver) = kernel_version {
             tracing::info!("rebuilding initramfs for kernel {kver}");
@@ -877,7 +896,7 @@ mod tests {
         assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 
-    // r[verify installer.write.rebuild-boot-config+4]
+    // r[verify installer.write.rebuild-boot-config+5]
     #[test]
     fn patch_grub_defaults_sets_luks_cmdline() {
         let dir = tempfile::tempdir().unwrap();
@@ -914,7 +933,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.write.rebuild-boot-config+4]
+    // r[verify installer.write.rebuild-boot-config+5]
     #[test]
     fn patch_grub_defaults_adds_cmdline_linux_when_missing() {
         let dir = tempfile::tempdir().unwrap();
