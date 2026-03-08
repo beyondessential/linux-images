@@ -69,18 +69,19 @@ qemu_firmvars := if arch == "amd64" { work_dir / "OVMF_VARS.fd" } else if arch =
 
 # Build the TUI installer binary (static musl)
 installer-build: _validate-arch
-    cd installer/tui && cargo build --release --target {{ cargo_target }}
+    cargo build -p bes-installer --release --target {{ cargo_target }}
 
 # Run installer unit tests
 installer-test:
-    cd installer/tui && cargo test
+    cargo test -p bes-installer
 
 # Run clippy and fmt checks on the installer
 installer-lint:
-    cd installer/tui && cargo fmt --check && cargo clippy -- -D warnings
+    cargo fmt --check && cargo clippy -- -D warnings
 
 # Regenerate .sh copies of .yml files so tracey can parse YAML annotations.
 # The copies are committed alongside the .yml files. Run this after changing
+
 # any .yml file under .github/, then commit the updated .sh copies too.
 tracey-setup:
     #!/usr/bin/env bash
