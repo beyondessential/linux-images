@@ -230,7 +230,7 @@ iso-besconf: _validate-arch
     fi
 
     mkdir -p "$MNT"
-    sudo mount "$PART" "$MNT"
+    sudo mount -o "uid=$(id -u),gid=$(id -g)" "$PART" "$MNT"
 
     echo ""
     echo "BESCONF mounted at: $MNT"
