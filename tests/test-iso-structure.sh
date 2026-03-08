@@ -255,6 +255,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
             pass "bes-installer --check-paths (ISO binaries) against squashfs"
         else
             fail "bes-installer --check-paths (ISO binaries) against squashfs"
+            # shellcheck disable=SC2001 # sed is correct here for multi-line prefix indentation
             echo "$CHECK_OUTPUT" | sed 's/^/    /'
         fi
     else
@@ -442,10 +443,9 @@ echo "--- Images Partition ---"
 # r[verify iso.images-partition+2]
 # r[verify iso.verity.images+4]
 # r[verify iso.verity.layout+3]
-# Find the images partition by GPT type UUID (Linux filesystem).
+# Find the images partition by GPT type code 8300 (Linux filesystem).
 # We cannot use a hardcoded partition number because xorriso may renumber
 # partitions relative to the -append_partition arguments.
-GPT_TYPE_LINUX_FILESYSTEM="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 IMAGES_PART=""
 while IFS= read -r line; do
     # sgdisk -p output: "   N  start  end  size  code  name"

@@ -31,6 +31,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=nspawn-opts.sh
 source "$SCRIPT_DIR/nspawn-opts.sh"
 
 DISK_ENCRYPTION="${1:?Usage: $0 <disk-encryption> <arch>}"
@@ -310,6 +311,7 @@ fi
 # device nodes only appear on the host's devtmpfs — the installer handles
 # this by reading /sys/class/block/ and creating missing nodes via mknod
 # (see r[installer.container.partition-devices+2]).
+# shellcheck disable=SC2119 # intentionally called without args; uses PRIVATE_NETWORK env var
 nspawn_opts
 nspawn_installer_binds "$LOOP_DEV" "$IMAGES_DIR" "$DEVICES_JSON" \
     "$CONFIG_TOML" ""
@@ -346,7 +348,7 @@ if [ -f "$SCENARIO_ROOTFS/tmp/installer.log" ]; then
 fi
 
 echo ""
-if [ $INSTALLER_RC -ne 0 ]; then
+if [ "$INSTALLER_RC" -ne 0 ]; then
     echo "!!! Installer exited with code $INSTALLER_RC"
     if [ -f "$INSTALLER_LOG" ]; then
         echo ""
@@ -795,7 +797,7 @@ if [ -n "$BTRFS_DEV" ]; then
             # The initramfs must contain the updated crypttab so the system
             # can unlock without a passphrase prompt at boot.
             if [ "$IS_ENCRYPTED" -eq 1 ]; then
-                INITRD_FILE="$(ls "$BOOT_MNT"/initrd.img-* 2>/dev/null | head -1)"
+                INITRD_FILE="$(find "$BOOT_MNT" -maxdepth 1 -name 'initrd.img-*' -print -quit 2>/dev/null)"
                 if [ -n "$INITRD_FILE" ] && [ -f "$INITRD_FILE" ]; then
                     INITRD_BASENAME="/boot/$(basename "$INITRD_FILE")"
                     # lsinitrd needs a writable /tmp for unpacking, but the
