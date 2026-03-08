@@ -54,7 +54,7 @@ iso_rootfs_dir := work_dir / "iso-rootfs"
 # --- Rust installer settings ---
 
 cargo_target := if arch == "amd64" { "x86_64-unknown-linux-musl" } else if arch == "arm64" { "aarch64-unknown-linux-musl" } else { error("Unsupported architecture") }
-installer_bin := "installer/tui/target" / cargo_target / "release" / "bes-installer"
+installer_bin := "target" / cargo_target / "release" / "bes-installer"
 
 # --- QEMU settings for boot tests ---
 
