@@ -405,7 +405,7 @@ fn partition_path(loop_dev: &str, part_num: u32) -> PathBuf {
 // Tests
 // ---------------------------------------------------------------------------
 
-// r[verify installer.encryption.keyfile-enroll+2]
+// r[verify installer.encryption.keyfile-enroll+3]
 #[test]
 fn keyfile_enrollment_adds_working_slot() {
     let mut fix = LuksFixture::setup();
@@ -462,7 +462,7 @@ fn keyfile_enrollment_adds_working_slot() {
     let crypttab = fix.mount_path.join("etc/crypttab");
     // Overwrite with keyfile-style crypttab
     let new_crypttab = "# <name> <device>                    <keyfile>         <options>\n\
-         root     /dev/disk/by-partlabel/root /etc/luks/keyfile  force,luks,discard,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root /etc/luks/keyfile  force,luks,discard,timeout=30\n";
     fs::write(&crypttab, new_crypttab).expect("writing crypttab");
 
     let dracut_conf = fix
@@ -478,7 +478,7 @@ fn keyfile_enrollment_adds_working_slot() {
     assert!(final_crypttab.contains("/etc/luks/keyfile"));
 }
 
-// r[verify installer.encryption.tpm-enroll+3]
+// r[verify installer.encryption.tpm-enroll+4]
 #[test]
 fn tpm_enrollment_updates_crypttab() {
     // We can't actually enroll a TPM without hardware, but we can verify
@@ -491,7 +491,7 @@ fn tpm_enrollment_updates_crypttab() {
     let crypttab_path = config_dir.join("crypttab");
 
     let tpm_crypttab = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,timeout=30\n";
     fs::write(&crypttab_path, tpm_crypttab).expect("writing TPM crypttab");
 
     let content = fs::read_to_string(&crypttab_path).unwrap();
@@ -551,7 +551,7 @@ fn configure_system_writes_expected_files() {
 
     // Simulate keyfile enrollment config writes
     let keyfile_crypttab = "# <name> <device>                    <keyfile>         <options>\n\
-         root     /dev/disk/by-partlabel/root /etc/luks/keyfile  force,luks,discard,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root /etc/luks/keyfile  force,luks,discard,timeout=30\n";
     fs::write(&crypttab_path, keyfile_crypttab).expect("writing crypttab");
 
     let dracut_content = "install_items+=\" /etc/luks/keyfile \"\n";
@@ -576,7 +576,7 @@ fn configure_system_writes_expected_files() {
 
     // Simulate TPM enrollment config writes
     let tpm_crypttab = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,timeout=30\n";
     fs::write(&crypttab_path, tpm_crypttab).expect("writing TPM crypttab");
 
     let ct = fs::read_to_string(&crypttab_path).unwrap();
@@ -587,7 +587,7 @@ fn configure_system_writes_expected_files() {
     );
 }
 
-// r[verify installer.encryption.keyfile-enroll+2]
+// r[verify installer.encryption.keyfile-enroll+3]
 // r[verify installer.encryption.recovery-passphrase+3]
 #[test]
 fn full_keyfile_encryption_flow() {
