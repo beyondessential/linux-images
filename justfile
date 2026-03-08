@@ -308,6 +308,51 @@ check-deps:
       echo "Optional tools are only needed for specific tasks — see labels above."
     fi
 
+tmpfs_size := "75%"
+
+# Mount a tmpfs over the working directory to keep intermediate build artifacts in RAM.
+
+# Default size is 75% of physical RAM; override with: just tmpfs_size=32G setup-workdir
+setup-workdir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WORKDIR="{{ work_dir }}"
+    mkdir -p "$WORKDIR"
+    if mountpoint -q "$WORKDIR"; then
+      echo "tmpfs is already mounted on $WORKDIR"
+      mount | grep " on $(realpath "$WORKDIR") "
+      exit 0
+    fi
+    sudo mount -t tmpfs -o size={{ tmpfs_size }},mode=0755 tmpfs "$WORKDIR"
+    echo "Mounted tmpfs (size={{ tmpfs_size }}) on $WORKDIR"
+    echo ""
+    echo "To also redirect temp files from build scripts, export TMPDIR:"
+    echo "  export TMPDIR=\"$(realpath "$WORKDIR")\""
+    echo ""
+    echo "To unmount later: just teardown-workdir"
+
+# Unmount the tmpfs from the working directory. Warns if builds left mounts inside.
+teardown-workdir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WORKDIR="{{ work_dir }}"
+    if ! mountpoint -q "$WORKDIR"; then
+      echo "$WORKDIR is not a mountpoint — nothing to do"
+      exit 0
+    fi
+    # Check for child mounts (e.g. leftover chroot bind-mounts)
+    CHILD_MOUNTS="$(findmnt -R -n -o TARGET "$WORKDIR" | tail -n +2 || true)"
+    if [ -n "$CHILD_MOUNTS" ]; then
+      echo "WARNING: child mounts still exist under $WORKDIR:"
+      echo "$CHILD_MOUNTS"
+      echo ""
+      echo "Clean them up first (e.g. just clean) or force with:"
+      echo "  sudo umount -R $WORKDIR"
+      exit 1
+    fi
+    sudo umount "$WORKDIR"
+    echo "Unmounted tmpfs from $WORKDIR"
+
 # Remove all build artifacts
 clean:
     mkdir -p "{{ work_dir }}" "{{ output_arch_dir }}"
