@@ -80,7 +80,7 @@ if [ ! -f "$SOURCE_IMAGE" ]; then
 fi
 
 MISSING=()
-for cmd in mksquashfs sfdisk mkfs.vfat losetup grub-mkimage xorriso zstd jq veritysetup sgdisk; do
+for cmd in mksquashfs sfdisk mkfs.vfat losetup grub-mkimage xorriso zstd jq veritysetup; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -380,38 +380,39 @@ xorriso -as mkisofs \
     "$STAGING"
 
 # ============================================================
-# Phase 6: Stamp well-known PARTUUIDs via sgdisk
+# Phase 6: Stamp well-known PARTUUIDs via sfdisk
 # ============================================================
 # r[impl iso.images-partition+2]
 # r[impl iso.config-partition+2]
 echo "==> Phase 6: Stamping well-known PARTUUIDs..."
 
-# Find partition numbers by scanning sgdisk output for the type codes.
+# Find partition numbers by scanning the sfdisk JSON output for type UUIDs.
 # xorriso may insert gap partitions, so we cannot assume fixed numbers.
-IMAGES_PARTNUM=""
-BESCONF_PARTNUM=""
-while IFS= read -r line; do
-    PARTNUM="$(echo "$line" | awk '{print $1}')"
-    CODE="$(echo "$line" | awk '{print $6}')"
-    case "$CODE" in
-        8300) IMAGES_PARTNUM="$PARTNUM" ;;
-        0700) BESCONF_PARTNUM="$PARTNUM" ;;
-    esac
-done < <(sgdisk -p "$OUTPUT" 2>/dev/null | grep '^ *[0-9]')
+# The "node" field ends with the partition number (e.g. "…iso3" -> 3).
+SFDISK_ISO_JSON="$(sfdisk --json "$OUTPUT")"
+echo "    sfdisk JSON:"
+echo "$SFDISK_ISO_JSON" | jq .
+echo ""
+IMAGES_PARTNUM="$(echo "$SFDISK_ISO_JSON" | jq -r \
+    '.partitiontable.partitions[] | select(.type == "0FC63DAF-8483-4772-8E79-3D69D8477DE4") | .node' \
+    | head -1 | grep -o '[0-9]*$')"
+BESCONF_PARTNUM="$(echo "$SFDISK_ISO_JSON" | jq -r \
+    '.partitiontable.partitions[] | select(.type == "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7") | .node' \
+    | head -1 | grep -o '[0-9]*$')"
 
 if [ -z "$IMAGES_PARTNUM" ]; then
-    echo "ERROR: could not find images partition (type 8300) in ISO GPT"
+    echo "ERROR: could not find images partition (Linux filesystem) in ISO GPT"
     exit 1
 fi
 if [ -z "$BESCONF_PARTNUM" ]; then
-    echo "ERROR: could not find BESCONF partition (type 0700) in ISO GPT"
+    echo "ERROR: could not find BESCONF partition (Microsoft basic data) in ISO GPT"
     exit 1
 fi
 
-sgdisk -u "${IMAGES_PARTNUM}:${IMAGES_PARTUUID}" "$OUTPUT" >/dev/null
+sfdisk --part-uuid "$OUTPUT" "$IMAGES_PARTNUM" "$IMAGES_PARTUUID"
 echo "    images  partition ${IMAGES_PARTNUM}: PARTUUID=${IMAGES_PARTUUID}"
 
-sgdisk -u "${BESCONF_PARTNUM}:${BESCONF_PARTUUID}" "$OUTPUT" >/dev/null
+sfdisk --part-uuid "$OUTPUT" "$BESCONF_PARTNUM" "$BESCONF_PARTUUID"
 echo "    besconf partition ${BESCONF_PARTNUM}: PARTUUID=${BESCONF_PARTUUID}"
 
 # Clean up working directory
