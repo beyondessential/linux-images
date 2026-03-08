@@ -26,7 +26,7 @@ case "$ARCH" in
         ;;
 esac
 
-# r[image.variant.types+2]
+# r[image.variant.types+3]
 case "$VARIANT" in
     metal|cloud) ;;
     *)
@@ -218,7 +218,7 @@ else
     BTRFS_DEV="$ROOT_PART"
 fi
 
-# r[image.btrfs.format]
+# r[image.btrfs.format+2]
 echo "==> Formatting root as BTRFS..."
 mkfs.btrfs --quiet \
     --label ROOT \

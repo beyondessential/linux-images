@@ -211,7 +211,7 @@ impl AppState {
     }
 
     // r[impl installer.tui.disk-encryption+2]
-    // r[impl installer.tui.hostname+5]
+    // r[impl installer.tui.hostname+6]
     // r[impl installer.tui.tailscale+3]
     // r[impl installer.tui.ssh-keys+5]
     // r[impl installer.tui.password+4]
@@ -490,7 +490,7 @@ impl AppState {
     }
 
     // r[impl installer.tui.disk-encryption+2]
-    // r[impl installer.tui.hostname+5]
+    // r[impl installer.tui.hostname+6]
     // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
@@ -570,7 +570,7 @@ impl AppState {
             .eq_ignore_ascii_case(self.confirmation_text())
     }
 
-    // r[impl installer.tui.hostname+5]
+    // r[impl installer.tui.hostname+6]
     pub fn hostname_required(&self) -> bool {
         !self.hostname_from_dhcp
     }
@@ -1103,7 +1103,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Error("test".into()));
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_prefilled_defaults_to_static() {
         use crate::disk::TransportType;
@@ -1131,7 +1131,7 @@ mod tests {
         assert!(!state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn none_encryption_defaults_to_dhcp() {
         let state = make_state();
@@ -1159,7 +1159,7 @@ mod tests {
         assert!(none_enc.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1248,7 +1248,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn install_config_from_inputs() {
         let mut state = make_state();
@@ -1281,7 +1281,7 @@ mod tests {
         assert!(cfg.password_hash.is_none());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn install_config_empty_strings_are_none() {
         let mut state = make_state();
@@ -1349,7 +1349,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_required_for_encrypted() {
         let mut state = make_state();
@@ -1357,7 +1357,7 @@ mod tests {
         assert!(state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_required_for_none_static() {
         let mut state = make_state();
@@ -1366,7 +1366,7 @@ mod tests {
         assert!(state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_not_required_for_none_dhcp() {
         let mut state = make_state();
@@ -1375,7 +1375,7 @@ mod tests {
         assert!(!state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_not_required_for_encrypted_with_dhcp() {
         let mut state = make_state();

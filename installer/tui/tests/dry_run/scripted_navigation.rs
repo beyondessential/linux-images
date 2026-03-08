@@ -223,7 +223,7 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/sda");
 }
 
-// r[verify installer.tui.hostname+5]
+// r[verify installer.tui.hostname+6]
 #[test]
 fn scripted_hostname_with_backspace_correction() {
     let f = Fixture::new();

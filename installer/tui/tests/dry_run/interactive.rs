@@ -130,7 +130,7 @@ enter
     assert_eq!(plan["disk_encryption"], "none");
 }
 
-// r[verify installer.tui.hostname+5]
+// r[verify installer.tui.hostname+6]
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 #[test]
@@ -205,7 +205,7 @@ enter
     assert_eq!(plan["install_config"]["timezone"], "UTC");
 }
 
-// r[verify installer.tui.hostname+5]
+// r[verify installer.tui.hostname+6]
 // r[verify installer.tui.tailscale+3]
 // r[verify installer.tui.ssh-keys+5]
 // r[verify installer.tui.password+4]

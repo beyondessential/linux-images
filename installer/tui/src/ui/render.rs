@@ -512,7 +512,7 @@ fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, chunks[1]);
 }
 
-// r[impl installer.tui.hostname+5]
+// r[impl installer.tui.hostname+6]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
     let network_label = "Network-assigned (DHCP)";
 
@@ -547,7 +547,7 @@ fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.hostname+5]
+// r[impl installer.tui.hostname+6]
 fn render_hostname_input(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),

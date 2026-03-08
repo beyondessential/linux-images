@@ -3,7 +3,7 @@ use serde_json::Value;
 use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
 // r[verify installer.config.hostname]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
 fn auto_encrypted_hostname_from_dhcp() {
     let f = Fixture::new();
@@ -48,7 +48,7 @@ fn auto_encrypted_hostname_from_dhcp() {
 }
 
 // r[verify installer.config.hostname-template]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
 fn auto_encrypted_hostname_template() {
     let f = Fixture::new();
@@ -303,7 +303,7 @@ fn auto_invalid_hostname_template_emits_warning() {
         .failure();
 }
 
-// r[verify installer.tui.hostname+5]
+// r[verify installer.tui.hostname+6]
 #[test]
 fn scripted_encrypted_dhcp_toggle_produces_dhcp_sentinel() {
     let f = Fixture::new();

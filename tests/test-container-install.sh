@@ -750,7 +750,7 @@ if [ -n "$BTRFS_DEV" ]; then
 
         # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
         # r[verify installer.write.randomize-uuids+2]
-        # r[verify installer.write.rebuild-boot-config+3]
+        # r[verify installer.write.rebuild-boot-config+4]
         # Mount /boot under the verify root so we can read grub.cfg and
         # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"

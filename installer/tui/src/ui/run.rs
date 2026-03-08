@@ -112,7 +112,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+5]
+        // r[impl installer.tui.hostname+6]
         Screen::Hostname => match key.code {
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Down => {
@@ -122,7 +122,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+5]
+        // r[impl installer.tui.hostname+6]
         Screen::HostnameInput => match key.code {
             KeyCode::Esc => {
                 state.hostname_error = None;
@@ -1130,7 +1130,7 @@ mod tests {
         assert!(!final_state.password_confirming);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -1151,7 +1151,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_hostname_typed_allows_advance() {
         let state = make_state();
@@ -1174,7 +1174,7 @@ mod tests {
         assert_eq!(final_state.hostname_input, "srv");
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_encryption_network_assigned_default_advances_to_login() {
         let state = make_state();
@@ -1199,7 +1199,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_encryption_static_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -1227,7 +1227,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_selected_advances_to_login() {
         let state = make_state();
@@ -1247,7 +1247,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_then_static_requires_hostname() {
         let state = make_state();
@@ -1270,7 +1270,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_skips_text_input() {
         let state = make_state();
@@ -1289,7 +1289,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_input_esc_returns_to_selector() {
         let state = make_state();
@@ -1308,7 +1308,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Hostname);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_selector_navigation() {
         let state = make_state();
@@ -1335,7 +1335,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_invalid_hostname_chars_blocks_advance() {
         let state = make_state();
@@ -1365,7 +1365,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_leading_hyphen_hostname_blocks_advance() {
         let state = make_state();
@@ -1396,7 +1396,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_valid_hostname_advances() {
         let state = make_state();
@@ -1426,7 +1426,7 @@ mod tests {
         assert!(final_state.hostname_error.is_none());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_error_cleared_on_typing() {
         let state = make_state();
@@ -1449,7 +1449,7 @@ mod tests {
         assert!(final_state.hostname_error.is_none());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_error_shown_live_on_keystroke() {
         let state = make_state();

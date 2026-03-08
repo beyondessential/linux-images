@@ -4,7 +4,7 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 
 // r[verify installer.dryrun]
 // r[verify installer.dryrun.output]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.mode.auto+4]
 #[test]
 fn auto_full_config_produces_correct_plan() {
@@ -58,7 +58,7 @@ fn auto_full_config_produces_correct_plan() {
     assert!(plan["config_warnings"].as_array().unwrap().is_empty());
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.config.disk]
 #[test]
 fn auto_disk_path_resolves_correctly() {
@@ -94,8 +94,8 @@ fn auto_disk_path_resolves_correctly() {
     assert_eq!(plan["disk"]["model"], "WD Blue");
 }
 
-// r[verify installer.dryrun.schema+5]
-// r[verify installer.config.disk-encryption]
+// r[verify installer.dryrun.schema+6]
+// r[verify installer.config.disk-encryption+2]
 #[test]
 fn auto_keyfile_encryption_mode() {
     let f = Fixture::new();
@@ -129,7 +129,7 @@ fn auto_keyfile_encryption_mode() {
     assert_eq!(plan["disk_encryption"], "keyfile");
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.dryrun.fake-tpm]
 #[test]
 fn auto_fake_tpm_reflected_in_plan() {
@@ -166,7 +166,7 @@ fn auto_fake_tpm_reflected_in_plan() {
     assert_eq!(plan["disk_encryption"], "tpm");
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
 fn auto_none_encryption_no_install_config() {
     let f = Fixture::new();

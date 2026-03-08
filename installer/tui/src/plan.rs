@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::config::{DiskEncryption, InstallConfig, OperatingMode};
 use crate::disk::BlockDevice;
 
-// r[impl installer.dryrun.schema+5]
+// r[impl installer.dryrun.schema+6]
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallPlan {
     pub mode: String,
@@ -27,7 +27,7 @@ pub struct DiskInfo {
     pub transport: String,
 }
 
-// r[impl installer.dryrun.schema+5]
+// r[impl installer.dryrun.schema+6]
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallConfigInfo {
     pub hostname: Option<String>,
@@ -221,7 +221,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn plan_serializes_full() {
         let dev = sample_device();
@@ -264,7 +264,7 @@ mod tests {
         assert!(json["config_warnings"].as_array().unwrap().is_empty());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn plan_serializes_minimal() {
         let plan = InstallPlan::builder(&OperatingMode::Interactive, DiskEncryption::None)
@@ -292,7 +292,7 @@ mod tests {
         assert!(!json["tpm_present"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn plan_copy_install_log_false() {
         let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::None)
@@ -303,7 +303,7 @@ mod tests {
         assert!(!json["copy_install_log"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_hides_authkey_value() {
         let cfg = InstallConfig {
@@ -318,7 +318,7 @@ mod tests {
         assert!(json["tailscale_authkey"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_no_authkey() {
         let cfg = InstallConfig {
@@ -330,7 +330,7 @@ mod tests {
         assert!(!info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_password_set_from_plaintext() {
         let cfg = InstallConfig {
@@ -341,7 +341,7 @@ mod tests {
         assert!(info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_password_set_from_hash() {
         let cfg = InstallConfig {
@@ -352,7 +352,7 @@ mod tests {
         assert!(info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn disk_info_from_block_device() {
         let dev = sample_device();
@@ -363,7 +363,7 @@ mod tests {
         assert_eq!(info.transport, "NVMe");
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn all_operating_modes_map_correctly() {
         let dev = sample_device();
@@ -409,7 +409,7 @@ mod tests {
         assert!(parsed["tpm_present"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_dhcp_hostname_sentinel() {
         let cfg = InstallConfig {
@@ -421,7 +421,7 @@ mod tests {
         assert!(!info.hostname_from_template);
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_template_flag() {
         let cfg = InstallConfig {
@@ -434,7 +434,7 @@ mod tests {
         assert_eq!(info.timezone, "Pacific/Auckland");
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_timezone_default() {
         let cfg = InstallConfig::default();

@@ -314,7 +314,7 @@ step6
 
 # r[verify installer.mode.auto+4]
 # r[verify installer.config.auto]
-# r[verify installer.config.disk-encryption]
+# r[verify installer.config.disk-encryption+2]
 # r[verify installer.config.disk]
 # r[verify installer.config.hostname]
 # r[verify installer.config.password]
@@ -390,13 +390,13 @@ MD
 }
 step8
 
-# r[verify image.variant.types+2]
+# r[verify image.variant.types+3]
 # r[verify image.boot.grub-install]
 # r[verify image.boot.grub-timeout]
 # r[verify image.boot.grub-cmdline]
 # r[verify image.boot.grub-uuids]
 # r[verify image.growth.service]
-# r[verify image.growth.script]
+# r[verify image.growth.script+2]
 step9() {
     cat << 'MD'
 ## Step 9: Direct Image Write Boot

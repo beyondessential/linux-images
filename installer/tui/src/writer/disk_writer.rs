@@ -394,7 +394,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.rebuild-boot-config+3]
+    // r[impl installer.write.rebuild-boot-config+4]
     pub fn rebuild_boot_config(&self) -> Result<()> {
         tracing::info!("rebuilding boot config (initramfs + grub)");
 
@@ -877,7 +877,7 @@ mod tests {
         assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 
-    // r[verify installer.write.rebuild-boot-config+3]
+    // r[verify installer.write.rebuild-boot-config+4]
     #[test]
     fn patch_grub_defaults_sets_luks_cmdline() {
         let dir = tempfile::tempdir().unwrap();
@@ -914,7 +914,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.write.rebuild-boot-config+3]
+    // r[verify installer.write.rebuild-boot-config+4]
     #[test]
     fn patch_grub_defaults_adds_cmdline_linux_when_missing() {
         let dir = tempfile::tempdir().unwrap();

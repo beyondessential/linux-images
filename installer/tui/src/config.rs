@@ -8,7 +8,7 @@ use crate::hostname_template;
 
 // r[impl installer.config.format]
 // r[impl installer.config.auto]
-// r[impl installer.config.disk-encryption]
+// r[impl installer.config.disk-encryption+2]
 // r[impl installer.config.disk]
 // r[impl installer.config.copy-install-log]
 // r[impl installer.config.hostname]
@@ -404,7 +404,7 @@ mod tests {
 
     // r[verify installer.config.format]
     // r[verify installer.config.auto]
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     // r[verify installer.config.disk]
     // r[verify installer.config.hostname]
     // r[verify installer.config.tailscale-authkey+3]
@@ -444,7 +444,7 @@ mod tests {
         assert!(!config.save_recovery_keys);
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn parse_disk_encryption_variants() {
         let tpm = InstallConfig::from_toml(r#"disk-encryption = "tpm""#).unwrap();
@@ -457,7 +457,7 @@ mod tests {
         assert_eq!(none.disk_encryption, Some(DiskEncryption::None));
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn parse_invalid_disk_encryption_rejected() {
         let result = InstallConfig::from_toml(r#"disk-encryption = "bad""#);
@@ -710,7 +710,7 @@ mod tests {
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn disk_encryption_display() {
         assert_eq!(DiskEncryption::Tpm.to_string(), "tpm");
@@ -718,7 +718,7 @@ mod tests {
         assert_eq!(DiskEncryption::None.to_string(), "none");
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn disk_encryption_image_variant_str() {
         assert_eq!(DiskEncryption::Tpm.image_variant_str(), "luks-tpm");
@@ -973,7 +973,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn disk_encryption_is_encrypted() {
         assert!(DiskEncryption::Tpm.is_encrypted());
