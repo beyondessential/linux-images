@@ -92,7 +92,7 @@ fi
 # ============================================================
 # Fake-LUKS detection
 # ============================================================
-# r[impl installer.container.fake-luks]
+# r[impl installer.container.fake-luks+2]
 if [ "$IS_ENCRYPTED" -eq 1 ]; then
     luks_detect_or_fake
 else
@@ -181,8 +181,7 @@ echo ""
 # ============================================================
 # Phase 1: Create loopback target disk
 # ============================================================
-# r[impl installer.tui.loop-device]: it's hard to implement a negative
-# r[verify installer.tui.loop-device]
+# r[depends installer.container.isolation+4]
 echo "==> Creating loopback target disk ($TARGET_DISK_SIZE)..."
 
 TARGET_IMG="$WORK_DIR/target.img"
@@ -280,8 +279,8 @@ done
 # ============================================================
 echo "==> Running installer in systemd-nspawn container..."
 
-# r[impl installer.container.swtpm]
-# r[verify installer.container.swtpm]
+# r[impl installer.container.swtpm+2]
+# r[verify installer.container.swtpm+2]
 # For TPM scenarios, start a software TPM emulator so that
 # systemd-cryptenroll --tpm2-device=auto has a real (emulated) TPM to talk to.
 # In fake-LUKS mode, swtpm is not needed (the shim handles cryptenroll).
@@ -292,8 +291,8 @@ elif [ "$DISK_ENCRYPTION" = "tpm" ] && [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
     echo "==> Skipping swtpm (fake-LUKS mode)"
 fi
 
-# r[impl installer.container.fake-luks]
-# r[verify installer.container.fake-luks]
+# r[impl installer.container.fake-luks+2]
+# r[verify installer.container.fake-luks+2]
 # Install fake cryptsetup/systemd-cryptenroll shims into the container rootfs
 # when the kernel keyring is unavailable for real LUKS operations.
 # Verification: a successful metal scenario with BES_FAKE_LUKS=1 proves the
@@ -304,12 +303,12 @@ if [ "${BES_FAKE_LUKS:-0}" = "1" ] && [ "$IS_ENCRYPTED" -eq 1 ]; then
     install_fake_luks_shims "$SCENARIO_ROOTFS"
 fi
 
-# r[impl installer.container.isolation+3]: build nspawn options and binds
+# r[impl installer.container.isolation+4]: build nspawn options and binds
 # from the shared library. The host /dev is never bind-mounted; the
 # container gets nspawn's own private /dev. After partprobe, partition
 # device nodes only appear on the host's devtmpfs — the installer handles
 # this by reading /sys/class/block/ and creating missing nodes via mknod
-# (see r[installer.container.partition-devices+2]).
+# (see r[installer.container.partition-devices+3]).
 nspawn_opts
 nspawn_installer_binds "$LOOP_DEV" "$IMAGES_DIR" "$DEVICES_JSON" \
     "$CONFIG_TOML" ""
@@ -320,9 +319,9 @@ INSTALLER_OUTPUT="$WORK_DIR/installer-output.txt"
 echo "    Running installer (disk-encryption=$DISK_ENCRYPTION, target=$LOOP_DEV)..."
 echo ""
 
-# r[impl installer.container.isolation+3] (layer 2): --fake-devices bypasses
+# r[impl installer.container.isolation+4] (layer 2): --fake-devices bypasses
 # lsblk discovery so the installer sees only the loop device.
-# r[impl installer.container.isolation+3] (layer 3): when PRIVATE_NETWORK is
+# r[impl installer.container.isolation+4] (layer 3): when PRIVATE_NETWORK is
 # enabled (the default), --private-network prevents any network side-effects
 # from the container. This also serves as the enforcement mechanism for
 # r[verify iso.offline]: a successful install with no network proves the ISO

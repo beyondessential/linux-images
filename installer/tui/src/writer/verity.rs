@@ -211,7 +211,7 @@ pub fn open_and_mount_images(boot_device: Option<&Path>) -> Result<Option<Images
 }
 
 // r[impl iso.verity.check]
-// r[impl installer.write.stream-copy]
+// r[impl installer.write.stream-copy+2]
 /// Splice data from `src_fd` through a pipe to `dst_fd` using `splice(2)`.
 ///
 /// Returns the total number of bytes transferred. Calls `on_progress` after
@@ -472,7 +472,7 @@ mod tests {
         assert_eq!(hash_size, trailer_hash_size);
     }
 
-    // r[verify installer.write.stream-copy]
+    // r[verify installer.write.stream-copy+2]
     #[test]
     fn splice_fd_to_fd_copies_data() {
         use std::os::unix::io::AsRawFd;
@@ -505,7 +505,7 @@ mod tests {
         assert_eq!(result, payload);
     }
 
-    // r[verify installer.write.stream-copy]
+    // r[verify installer.write.stream-copy+2]
     #[test]
     fn splice_fd_to_fd_empty_file() {
         use std::os::unix::io::AsRawFd;

@@ -81,14 +81,12 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub no_reboot: bool,
 
-    // r[related installer.hardcoded-paths]
     /// Verify that all hardcoded ISO-environment binary paths exist, then exit.
     /// Optionally takes a sysroot prefix (e.g. a mounted squashfs) to
     /// resolve paths against.
     #[arg(long, num_args = 0..=1, default_missing_value = "/")]
     pub check_paths: Option<PathBuf>,
 
-    // r[related installer.hardcoded-paths]
     /// Verify that all hardcoded chroot-target binary paths exist, then exit.
     /// These are binaries invoked inside a chroot into the installed system.
     /// Optionally takes a sysroot prefix to resolve paths against.
@@ -99,7 +97,6 @@ pub(crate) struct Cli {
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    // r[related installer.hardcoded-paths]
     if let Some(ref sysroot) = cli.check_paths {
         let root: &Path = sysroot.as_path();
         let sysroot_arg = if root == Path::new("/") {
@@ -119,7 +116,6 @@ fn main() -> ExitCode {
         }
     }
 
-    // r[related installer.hardcoded-paths]
     if let Some(ref sysroot) = cli.check_chroot_paths {
         let root: &Path = sysroot.as_path();
         let sysroot_arg = if root == Path::new("/") {
@@ -150,7 +146,6 @@ fn main() -> ExitCode {
     match run::RunContext::from_cli(cli).and_then(|ctx| ctx.run()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            // r[impl installer.container.error-logging]
             tracing::error!("{e:#}");
             eprintln!("error: {e:#}");
             ExitCode::FAILURE

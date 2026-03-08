@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use crate::paths;
 pub use crate::util::{partition_path, run_command};
 
-// r[impl installer.container.partition-devices+2]
+// r[impl installer.container.partition-devices+3]
 pub fn ensure_partition_devices(target: &Path) -> Result<()> {
     let dev_name = target
         .file_name()
@@ -172,7 +172,7 @@ pub(crate) fn sync_device(file: &std::fs::File) -> Result<()> {
 mod tests {
     use super::*;
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_valid() {
         let (major, minor) = parse_major_minor("259:22").unwrap();
@@ -180,7 +180,7 @@ mod tests {
         assert_eq!(minor, 22);
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_zero() {
         let (major, minor) = parse_major_minor("0:0").unwrap();
@@ -188,26 +188,26 @@ mod tests {
         assert_eq!(minor, 0);
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_missing_colon() {
         assert!(parse_major_minor("259").is_err());
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_non_numeric() {
         assert!(parse_major_minor("abc:22").is_err());
         assert!(parse_major_minor("259:xyz").is_err());
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_empty() {
         assert!(parse_major_minor("").is_err());
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn is_valid_block_device_nonexistent_path() {
         assert!(!is_valid_block_device(
@@ -217,7 +217,7 @@ mod tests {
         ));
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn is_valid_block_device_regular_file_is_not_block() {
         let dir = tempfile::tempdir().unwrap();
@@ -226,7 +226,7 @@ mod tests {
         assert!(!is_valid_block_device(&path, 8, 0));
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn ensure_partition_devices_via_sysfs_nonexistent_dir() {
         let count = ensure_partition_devices_via_sysfs("nonexistent_device_xyzzy_test").unwrap();

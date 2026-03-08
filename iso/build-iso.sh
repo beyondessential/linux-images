@@ -235,7 +235,6 @@ echo ""
 # r[impl iso.images-partition]
 # r[impl iso.verity.images+3]
 # r[impl iso.verity.layout+3]
-# r[impl iso.verity.build-deps]
 echo "==> Phase 2: Building images squashfs with verity..."
 
 IMAGES_SQFS="$WORK_DIR/images.squashfs"

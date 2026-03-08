@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(format_eta(Duration::from_secs(3661)), "61m01s");
     }
 
-    // r[verify installer.write.stream-copy]
+    // r[verify installer.write.stream-copy+2]
     #[test]
     fn size_formatting() {
         assert_eq!(format_size(0), "0.0 MiB");

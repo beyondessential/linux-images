@@ -218,15 +218,15 @@ be enabled.
 
 ## Disk Growth
 
-r[image.growth.service+3]
-A systemd service `grow-root-filesystem.service` must run early at boot
-(before user sessions, before LUKS re-encryption) to expand the root partition
-and filesystem if additional disk space is available. It must, in order:
-
-1. Move the GPT secondary header to the end of the disk.
-2. Expand the root partition to fill available space.
-3. If LUKS is active, resize the LUKS container.
-4. Resize the BTRFS filesystem to fill the partition (or LUKS volume).
+> r[image.growth.service+3]
+> A systemd service `grow-root-filesystem.service` must run early at boot
+> (before user sessions, before LUKS re-encryption) to expand the root partition
+> and filesystem if additional disk space is available. It must, in order:
+>
+> 1. Move the GPT secondary header to the end of the disk.
+> 2. Expand the root partition to fill available space.
+> 3. If LUKS is active, resize the LUKS container.
+> 4. Resize the BTRFS filesystem to fill the partition (or LUKS volume).
 
 ## Credentials
 

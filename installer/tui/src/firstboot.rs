@@ -32,7 +32,7 @@ pub fn mount_target(
     disk_encryption: DiskEncryption,
     passphrase: Option<&str>,
 ) -> Result<MountedTarget> {
-    // r[impl installer.container.partition-devices+2]
+    // r[impl installer.container.partition-devices+3]
     writer::ensure_partition_devices(target_device)
         .context("ensuring partition device nodes exist")?;
 

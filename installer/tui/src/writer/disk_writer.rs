@@ -125,7 +125,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.stream-copy]
+    // r[impl installer.write.stream-copy+2]
     fn splice_to_device(
         &self,
         source: &Path,
@@ -173,7 +173,7 @@ impl<'a> DiskWriter<'a> {
     }
 
     // r[impl installer.write.partitions+2]
-    // r[impl installer.write.stream-copy]
+    // r[impl installer.write.stream-copy+2]
     pub fn write_partitions(
         &self,
         manifest: &PartitionManifest,

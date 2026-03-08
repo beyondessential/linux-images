@@ -6,11 +6,11 @@
 #   - test-container-isolation.sh (isolation smoke test)
 #   - try-installer-interactive.sh (interactive trial)
 #
-# r[impl installer.container.isolation+3]: all container scripts share this
+# r[impl installer.container.isolation+4]: all container scripts share this
 # single file so that the isolation test validates the same nspawn
 # configuration that the installer tests and interactive trial use.
 
-# r[impl installer.container.fake-luks]
+# r[impl installer.container.fake-luks+2]
 # Directory containing shim scripts (relative to this file).
 _SHIMS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shims"
 
@@ -81,7 +81,7 @@ nspawn_opts() {
 # private /dev; only the loop device itself is bound in. After partprobe,
 # partition device nodes appear on the host's devtmpfs only — the installer
 # handles this by reading /sys/class/block/ and creating missing nodes via
-# mknod (see r[installer.container.partition-devices+2]).
+# mknod (see r[installer.container.partition-devices+3]).
 nspawn_installer_binds() {
     local loop_dev="${1:?nspawn_installer_binds: loop-dev required}"
     local images_dir="${2:?nspawn_installer_binds: images-dir required}"
@@ -121,7 +121,7 @@ nspawn_installer_binds() {
 # Software TPM helpers
 # ============================================================
 
-# r[impl installer.container.swtpm]
+# r[impl installer.container.swtpm+2]
 # Start a software TPM 2.0 emulator via swtpm chardev + vtpm-proxy.
 #
 # Usage:
@@ -296,7 +296,7 @@ swtpm_stop() {
 # Fake-LUKS helpers for CI environments
 # ============================================================
 
-# r[impl installer.container.fake-luks]
+# r[impl installer.container.fake-luks+2]
 # Detect whether real dm-crypt / kernel-keyring LUKS operations are
 # available. Sets BES_FAKE_LUKS=1 when they are not.
 #

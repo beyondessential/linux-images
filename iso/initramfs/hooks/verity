@@ -1,5 +1,5 @@
 #!/bin/sh
-# r[impl iso.verity.initramfs-hook]
+# r[depends iso.verity.squashfs+3]
 # Initramfs hook: copy veritysetup and its shared library dependencies
 # into the initramfs so the live-premount script can set up dm-verity.
 set -e
