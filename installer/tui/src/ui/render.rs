@@ -385,13 +385,11 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     description.push(Line::from(""));
     match state.verity_check {
         VerityCheckState::Running => {
-            description.push(Line::from(
-                "Verifying installation media... Press Enter to begin once complete.",
-            ));
+            description.push(Line::from("Verifying installation media..."));
         }
         VerityCheckState::Passed => {
             description.push(Line::from(
-                "Verification passed. Press Enter to begin, or 'n' for a network check.",
+                "Press Enter to begin, or 'n' for a network check.",
             ));
         }
         _ => {
