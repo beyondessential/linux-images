@@ -38,6 +38,11 @@ pub struct RunContext {
 
 impl RunContext {
     pub fn from_cli(cli: Cli) -> Result<Self> {
+        let build_info = read_build_info();
+        let version = crate::Bosion::CRATE_VERSION;
+        tracing::info!("bes-installer v{version} — {build_info}");
+        eprintln!("bes-installer v{version} — {build_info}");
+
         let (mut install_config, mode) = load_config(&cli)?;
 
         resolve_hostname_template(&mut install_config)?;
