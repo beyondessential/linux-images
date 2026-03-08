@@ -240,8 +240,8 @@ iso-besconf: _validate-arch
     echo "Contents:"
     ls -la "$MNT"
     echo ""
-    echo "Edit files under $MNT, then press Enter to unmount."
-    read -r
+    echo "Spawning shell in $MNT -- exit the shell to unmount."
+    (cd "$MNT" && "${SHELL:-/bin/sh}")
 
 # Force-rebuild the ISO base (removes cached tarball first)
 iso-base-rebuild: _validate-arch _ensure-dirs
