@@ -30,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Well-known GPT PARTUUIDs for ISO partitions
 # r[impl iso.images-partition+3]
 IMAGES_PARTUUID="ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b"
-# r[impl iso.config-partition+3]
+# r[impl iso.config-partition+4]
 BESCONF_PARTUUID="e2bac42b-03a7-5048-b8f5-3f6d22100e77"
 
 # Well-known GPT partition type UUIDs
@@ -339,7 +339,7 @@ echo "    GRUB target: $GRUB_TARGET ($GRUB_EFI_NAME)"
 # ============================================================
 # Phase 4: Build BESCONF FAT32 partition image
 # ============================================================
-# r[impl iso.config-partition+3]
+# r[impl iso.config-partition+4]
 echo "==> Phase 4: Building BESCONF partition image..."
 
 BESCONF_IMG="$WORK_DIR/besconf.img"
@@ -383,7 +383,7 @@ xorriso -as mkisofs \
 # Phase 6: Stamp well-known PARTUUIDs via sfdisk
 # ============================================================
 # r[impl iso.images-partition+3]
-# r[impl iso.config-partition+3]
+# r[impl iso.config-partition+4]
 echo "==> Phase 6: Stamping well-known PARTUUIDs..."
 
 # Find partition numbers by GPT partition name. xorriso names its appended

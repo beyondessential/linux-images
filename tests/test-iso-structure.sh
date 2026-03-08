@@ -347,23 +347,15 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
     check "resolv.conf is symlink to resolved stub" test -L "$SQFS_MNT/etc/resolv.conf"
 
-    # r[verify iso.config-partition+3]
-    check "run-besconf.mount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
-    check "run-besconf.automount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.automount"
-    if find "$SQFS_MNT/etc/systemd/system" -name "run-besconf.automount" -type l 2>/dev/null | grep -q .; then
-        pass "run-besconf.automount is enabled"
-    else
-        fail "run-besconf.automount is enabled"
-    fi
+    # r[verify iso.config-partition+4]
+    # BESCONF and images partitions are mounted by the installer at runtime,
+    # not by systemd units. Verify the old units are NOT present.
+    check "run-besconf.mount absent (installer owns mount)" test ! -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
+    check "run-besconf.automount absent (installer owns mount)" test ! -f "$SQFS_MNT/etc/systemd/system/run-besconf.automount"
 
-    # r[verify iso.cdrom-partscan+2]
-    check "bes-cdrom-partscan script exists" test -x "$SQFS_MNT/usr/local/bin/bes-cdrom-partscan"
-    check "bes-cdrom-partscan.service exists" test -f "$SQFS_MNT/etc/systemd/system/bes-cdrom-partscan.service"
-    if find "$SQFS_MNT/etc/systemd/system" -name "bes-cdrom-partscan.service" -type l 2>/dev/null | grep -q .; then
-        pass "bes-cdrom-partscan.service is enabled"
-    else
-        fail "bes-cdrom-partscan.service is enabled"
-    fi
+    # r[verify iso.cdrom-partscan+3]
+    # CD-ROM partscan is handled by the installer, not a boot service.
+    check "bes-cdrom-partscan.service absent (installer owns partscan)" test ! -f "$SQFS_MNT/etc/systemd/system/bes-cdrom-partscan.service"
 
     # Verify build info
     check "/etc/bes-build-info exists" test -f "$SQFS_MNT/etc/bes-build-info"
@@ -405,7 +397,7 @@ fi
 echo ""
 echo "--- BESCONF Partition ---"
 
-# r[verify iso.config-partition+3]
+# r[verify iso.config-partition+4]
 # Set up a loop device with partition scanning to find the appended BESCONF partition.
 LOOP_DEVICE="$(losetup -f --show -P "$ISO")"
 partprobe "$LOOP_DEVICE" 2>/dev/null || true

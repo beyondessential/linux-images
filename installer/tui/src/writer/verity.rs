@@ -65,8 +65,8 @@ fn cmdline_param(key: &str) -> Result<Option<String>> {
 
 // r[impl installer.write.source+5]
 // r[impl iso.images-partition+3]
-/// Find the images partition block device by its well-known GPT PARTUUID.
-fn find_images_device() -> Result<Option<PathBuf>> {
+/// Check whether the well-known images PARTUUID symlink exists and resolve it.
+fn check_images_partuuid() -> Result<Option<PathBuf>> {
     let by_partuuid = PathBuf::from(format!("/dev/disk/by-partuuid/{IMAGES_PARTUUID}"));
     if by_partuuid.exists() {
         let resolved = fs::canonicalize(&by_partuuid)
@@ -74,17 +74,139 @@ fn find_images_device() -> Result<Option<PathBuf>> {
         tracing::info!("images partition found by partuuid: {}", resolved.display());
         return Ok(Some(resolved));
     }
-
-    tracing::info!("images partition not found at {}", by_partuuid.display());
     Ok(None)
 }
 
+// r[impl iso.cdrom-partscan+3]
+/// Find the boot medium device (the ISO).
+///
+/// Tries `blkid` by filesystem label first (works even with `toram` where
+/// `/run/live/medium` is backed by tmpfs), then falls back to well-known
+/// CD-ROM device paths.
+fn find_boot_medium() -> Result<Option<PathBuf>> {
+    // Strategy 1: blkid by ISO label.
+    let output = Command::new(paths::BLKID)
+        .args(["-t", "LABEL=BES_INSTALLER", "-o", "device"])
+        .output()
+        .context("running blkid to find boot medium")?;
+    if output.status.success() {
+        let dev = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !dev.is_empty() {
+            let path = PathBuf::from(&dev);
+            if path.exists() {
+                tracing::info!("boot medium found by label: {}", path.display());
+                return Ok(Some(path));
+            }
+        }
+    }
+
+    // Strategy 2: well-known CD-ROM paths.
+    for candidate in &["/dev/sr0", "/dev/cdrom"] {
+        let path = PathBuf::from(candidate);
+        if path.exists() {
+            let resolved =
+                fs::canonicalize(&path).with_context(|| format!("resolving {}", path.display()))?;
+            tracing::info!("boot medium found at {}", resolved.display());
+            return Ok(Some(resolved));
+        }
+    }
+
+    Ok(None)
+}
+
+// r[impl iso.cdrom-partscan+3]
+/// On CD-ROM boot the kernel does not expose GPT appended partitions.
+/// Create a read-only loop device with partition scanning on the boot
+/// medium so that udev populates `/dev/disk/by-partuuid/`.
+///
+/// Returns `Ok(Some(loop_path))` if a loop device was created, or
+/// `Ok(None)` if no boot medium was found.
+fn cdrom_partscan() -> Result<Option<PathBuf>> {
+    let boot_dev = match find_boot_medium()? {
+        Some(d) => d,
+        None => {
+            tracing::info!("no boot medium found, skipping cdrom partscan");
+            return Ok(None);
+        }
+    };
+
+    tracing::info!(
+        "PARTUUID not found, attempting losetup --partscan on {}",
+        boot_dev.display()
+    );
+
+    let output = Command::new(paths::LOSETUP)
+        .args(["--find", "--show", "--partscan", "--read-only"])
+        .arg(&boot_dev)
+        .output()
+        .with_context(|| format!("running losetup --partscan on {}", boot_dev.display()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("losetup --partscan failed: {stderr}");
+    }
+
+    let loop_dev = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    tracing::info!("created loop device {} with partscan", loop_dev.display());
+
+    // Trigger partition scanning and wait for udev.
+    let _ = Command::new(paths::PARTPROBE).arg(&loop_dev).status();
+    let _ = Command::new(paths::UDEVADM)
+        .args(["settle", "--timeout=10"])
+        .status();
+
+    Ok(Some(loop_dev))
+}
+
+// r[impl installer.write.source+5]
+// r[impl iso.images-partition+3]
+// r[impl iso.cdrom-partscan+3]
+/// Find the images partition block device by its well-known GPT PARTUUID.
+///
+/// If the PARTUUID is not present (CD-ROM boot), attempts `losetup
+/// --partscan` on the boot medium to expose the GPT partitions, then
+/// retries the lookup.
+///
+/// Returns `(Some(device), Some(loop_device))` when partscan was needed,
+/// `(Some(device), None)` on USB/direct boot, or `(None, None)` when no
+/// images partition is found at all (development fallback).
+fn find_images_device() -> Result<(Option<PathBuf>, Option<PathBuf>)> {
+    if let Some(dev) = check_images_partuuid()? {
+        return Ok((Some(dev), None));
+    }
+
+    tracing::info!(
+        "images PARTUUID not found at /dev/disk/by-partuuid/{IMAGES_PARTUUID}, \
+         trying cdrom partscan"
+    );
+
+    let loop_dev = cdrom_partscan()?;
+
+    if let Some(dev) = check_images_partuuid()? {
+        return Ok((Some(dev), loop_dev));
+    }
+
+    if let Some(ref ld) = loop_dev {
+        tracing::warn!(
+            "partscan on {} did not produce the expected PARTUUID",
+            ld.display()
+        );
+    }
+
+    tracing::info!("images partition not found after partscan attempt");
+    Ok((None, loop_dev))
+}
+
 /// State tracking for the opened images verity device and mount.
+///
+/// On drop, unmounts the squashfs, closes the verity device, and detaches
+/// any loop device that was created for CD-ROM partition scanning.
 pub struct ImagesVerity {
     mount_point: PathBuf,
     verity_name: String,
     mounted: bool,
     verity_open: bool,
+    partscan_loop: Option<PathBuf>,
 }
 
 impl ImagesVerity {
@@ -126,6 +248,23 @@ impl Drop for ImagesVerity {
                 }
             }
         }
+        if let Some(ref loop_dev) = self.partscan_loop {
+            let status = Command::new(paths::LOSETUP)
+                .args(["-d"])
+                .arg(loop_dev)
+                .status();
+            match status {
+                Ok(s) if s.success() => {
+                    tracing::info!("detached partscan loop device {}", loop_dev.display());
+                }
+                Ok(s) => {
+                    tracing::warn!("losetup -d {} exited with {}", loop_dev.display(), s);
+                }
+                Err(e) => {
+                    tracing::warn!("losetup -d {} failed: {e}", loop_dev.display());
+                }
+            }
+        }
     }
 }
 
@@ -136,9 +275,9 @@ impl Drop for ImagesVerity {
 /// Returns `Ok(Some(ImagesVerity))` on success, or `Ok(None)` if there is
 /// no images partition (e.g. plain directory fallback for development).
 pub fn open_and_mount_images() -> Result<Option<ImagesVerity>> {
-    let device = match find_images_device()? {
-        Some(d) => d,
-        None => {
+    let (device, partscan_loop) = match find_images_device()? {
+        (Some(d), loop_dev) => (d, loop_dev),
+        (None, _) => {
             tracing::info!("no images partition found, verity not available");
             return Ok(None);
         }
@@ -199,6 +338,7 @@ pub fn open_and_mount_images() -> Result<Option<ImagesVerity>> {
         verity_name: VERITY_NAME.to_string(),
         mounted: true,
         verity_open: true,
+        partscan_loop,
     }))
 }
 

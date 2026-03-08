@@ -97,10 +97,11 @@ impl RunContext {
         }
 
         // r[impl installer.besconf.writable-detection]
+        // r[impl iso.config-partition+4]
         let besconf = if cli.dry_run {
             besconf::BesconfState::readonly()
         } else {
-            let state = besconf::detect_writable();
+            let (state, _mounted) = besconf::mount_and_detect();
             // r[impl installer.besconf.failure-log]
             besconf::rotate_failure_log(&state);
             besconf::with_save_recovery_keys(state, install_config.save_recovery_keys)
@@ -123,11 +124,17 @@ impl RunContext {
     pub fn run(self) -> Result<()> {
         let besconf = self.besconf.clone();
         let log_path = self.cli.log.clone();
+        let dry_run = self.cli.dry_run;
         let result = self.run_inner();
 
         // r[impl installer.besconf.failure-log]
         if result.is_err() {
             besconf::write_failure_log(&besconf, &log_path);
+        }
+
+        // r[impl iso.config-partition+4]
+        if !dry_run {
+            besconf::unmount();
         }
 
         result

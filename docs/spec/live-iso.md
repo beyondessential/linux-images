@@ -87,21 +87,27 @@ package must be installed in the live rootfs to provide `/usr/bin/chvt`.
 The `systemd-sysv` package must be installed to provide `/sbin/reboot`
 so that the installer's reboot action works.
 
-> r[iso.config-partition+3]
+> r[iso.config-partition+4]
 > The ISO must include an appended FAT32 partition (GPT type `Microsoft basic
 > data`) created via `xorriso --append_partition`. This partition is embedded
 > in the ISO file and becomes a real writable GPT partition after the ISO is
 > written to USB via `dd`. Its filesystem label must be `BESCONF`. The
 > partition must have a well-known GPT PARTUUID of
-> `e2bac42b-03a7-5048-b8f5-3f6d22100e77` so that the live environment can
-> locate it via `/dev/disk/by-partuuid/` without depending on a specific
-> partition number or risking label collisions with other disks. After
-> `xorriso` produces the ISO, the build script must use `sfdisk --part-uuid`
-> to stamp this PARTUUID onto the BESCONF partition.
+> `e2bac42b-03a7-5048-b8f5-3f6d22100e77` so that the installer can locate it
+> via `/dev/disk/by-partuuid/` without depending on a specific partition
+> number or risking label collisions with other disks. After `xorriso`
+> produces the ISO, the build script must use `sfdisk --part-uuid` to stamp
+> this PARTUUID onto the BESCONF partition.
+>
+> The installer is responsible for mounting the BESCONF partition at
+> `/run/besconf`. It must locate the partition by its well-known PARTUUID,
+> mount it read-only, then attempt a read-write remount to determine
+> writability. No systemd mount/automount units are used; the installer
+> owns the entire mount lifecycle and unmounts on exit.
 >
 > When booted from USB, this partition is writable and is the intended location
 > for users to place a `bes-install.toml` configuration file before booting.
-> When booted as optical media in a VM, the partition is still readable.
+> When booted as optical media in a VM, the partition is read-only.
 
 r[iso.per-arch]
 Separate ISO images must be produced per architecture (amd64, arm64). Each
@@ -120,7 +126,7 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 
 ## CD-ROM Partition Scanning
 
-> r[iso.cdrom-partscan+2]
+> r[iso.cdrom-partscan+3]
 > When the ISO is booted as optical media (e.g. `/dev/sr0` in a VM), the
 > Linux kernel does not parse the GPT appended partitions because the CD-ROM
 > block device driver exposes the device as a single block device with an
@@ -128,13 +134,14 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 > `sr0p4`) are never created and `/dev/disk/by-partuuid/` symlinks for the
 > appended BESIMAGES and BESCONF partitions do not appear.
 >
-> To handle this, the live environment must include a boot service that
-> detects whether the GPT appended partitions are accessible. If the
-> well-known PARTUUIDs are not present in `/dev/disk/by-partuuid/`, the
-> service must:
+> The installer must handle this transparently. When the well-known
+> PARTUUIDs are not present in `/dev/disk/by-partuuid/`, the installer
+> must:
 >
-> 1. Identify the boot device (from `/proc/cmdline` or by finding the
->    device backing `/run/live/medium`).
+> 1. Identify the boot device by running `blkid -t LABEL=BES_INSTALLER`
+>    (works even with `toram` where `/run/live/medium` is backed by
+>    tmpfs), falling back to well-known CD-ROM paths (`/dev/sr0`,
+>    `/dev/cdrom`).
 > 2. Run `losetup --find --show --partscan --read-only <device>` to create
 >    a loop device with partition scanning enabled.
 > 3. Run `partprobe` on the loop device and wait for udev to settle.
@@ -142,9 +149,10 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 >    device (e.g. `loop0p3`, `loop0p4`) and udev populates
 >    `/dev/disk/by-partuuid/` with the well-known PARTUUIDs.
 >
-> The service must run early (before the installer and before the BESCONF
-> automount) and must clean up the loop device on shutdown. On USB boot,
-> the PARTUUIDs are already visible and the service is a no-op.
+> This must happen early in the installer's startup, before any attempt to
+> mount BESCONF or open the images partition. The installer must detach the
+> loop device on exit. On USB boot, the PARTUUIDs are already visible and
+> this step is a no-op.
 
 ## Integrity Verification
 

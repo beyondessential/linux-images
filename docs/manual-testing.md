@@ -176,9 +176,9 @@ TUI launch -- none of which are tested by the container-based tests.
 **Acceptance criteria**: the ISO boots in EFI mode without network, the
 installer completes successfully, the installed system boots unattended (no
 manual LUKS passphrase entry for keyfile mode), and the basic system health
-checks above pass. On the debug shell (Alt+F1), `systemctl status
-bes-cdrom-partscan` should show the service ran successfully and
-`/dev/disk/by-partuuid/` should contain the BESIMAGES and BESCONF entries.
+checks above pass. The installer log (`/var/log/bes-installer.log`) should
+show that it found the images partition by PARTUUID (possibly after a
+`losetup --partscan` on `/dev/sr0` for CD-ROM boot).
 
 ### 5b: USB/hard-disk boot (VDI)
 
