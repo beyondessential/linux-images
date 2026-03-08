@@ -408,10 +408,12 @@ if [ -z "$BESCONF_PARTNUM" ]; then
 fi
 
 sfdisk --part-uuid "$OUTPUT" "$IMAGES_PARTNUM" "$IMAGES_PARTUUID"
-echo "    images  partition ${IMAGES_PARTNUM}: PARTUUID=${IMAGES_PARTUUID}"
+sfdisk --part-label "$OUTPUT" "$IMAGES_PARTNUM" "BESIMAGES"
+echo "    images  partition ${IMAGES_PARTNUM}: name=BESIMAGES PARTUUID=${IMAGES_PARTUUID}"
 
 sfdisk --part-uuid "$OUTPUT" "$BESCONF_PARTNUM" "$BESCONF_PARTUUID"
-echo "    besconf partition ${BESCONF_PARTNUM}: PARTUUID=${BESCONF_PARTUUID}"
+sfdisk --part-label "$OUTPUT" "$BESCONF_PARTNUM" "BESCONF"
+echo "    besconf partition ${BESCONF_PARTNUM}: name=BESCONF PARTUUID=${BESCONF_PARTUUID}"
 
 # Clean up working directory
 rm -rf "$WORK_DIR"
