@@ -672,10 +672,10 @@ changes. After all UUIDs have been changed, the installer must run
 These commands may fail in container environments without udevd; failures
 are non-fatal.
 
-> r[installer.write.rebuild-boot-config+7]
+> r[installer.write.rebuild-boot-config+8]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
-> `r[installer.encryption.overview+4]`), the installer must unconditionally
+> `r[installer.encryption.overview+5]`), the installer must unconditionally
 > rebuild the initramfs and GRUB configuration in a chroot of the installed
 > system, regardless of encryption mode. This is required because the GRUB
 > config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
@@ -713,10 +713,15 @@ are non-fatal.
 > When disk encryption is enabled, the installer must also, before running
 > `update-grub`:
 >
->   - Read the LUKS UUID from the raw root partition (via `blkid`).
->   - Set `GRUB_CMDLINE_LINUX` in `/etc/default/grub` to include
->     `rd.luks.name=<LUKS-UUID>=root rd.luks.options=discard` so the
->     initramfs knows to unlock the LUKS volume during early boot.
+>   - Clear `GRUB_CMDLINE_LINUX` in `/etc/default/grub` (ensure it is set
+>     to `""`). The installer must NOT place `rd.luks.name` or
+>     `rd.luks.options` on the kernel command line. The crypttab (with the
+>     `force` option) is the sole authority for LUKS unlock — it already
+>     contains the mapper name, device path, keyfile or `tpm2-device=auto`,
+>     and options like `discard`. If `rd.luks.name` appears on the cmdline,
+>     `systemd-cryptsetup-generator` treats it as an override: it creates a
+>     passphrase-prompt unit and skips the crypttab entry entirely, defeating
+>     keyfile and TPM-based auto-unlock.
 >   - Remove the serial console (`console=ttyS0,115200n8`) from
 >     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target
 >     bare-metal hardware where the serial console is not needed.
@@ -725,9 +730,9 @@ are non-fatal.
 
 ## Encryption Setup
 
-> r[installer.encryption.overview+4]
+> r[installer.encryption.overview+5]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+7]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+8]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -738,7 +743,7 @@ are non-fatal.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config+7]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+8]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created

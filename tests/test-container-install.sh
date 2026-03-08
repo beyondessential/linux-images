@@ -752,7 +752,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Encryption setup verification (encrypted only) ---
-        # r[verify installer.encryption.overview+4]
+        # r[verify installer.encryption.overview+5]
         if [ "$IS_ENCRYPTED" -eq 1 ]; then
             CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
             check "crypttab exists" test -f "$CRYPTTAB"
@@ -764,7 +764,7 @@ if [ -n "$BTRFS_DEV" ]; then
 
         # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
         # r[verify installer.write.randomize-uuids+3]
-        # r[verify installer.write.rebuild-boot-config+7]
+        # r[verify installer.write.rebuild-boot-config+8]
         # Mount /boot under the verify root so we can read grub.cfg and
         # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"
@@ -793,7 +793,7 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
 
             # --- Initramfs crypttab verification (metal only) ---
-            # r[verify installer.encryption.overview+4]
+            # r[verify installer.encryption.overview+5]
             # The initramfs must contain the updated crypttab so the system
             # can unlock without a passphrase prompt at boot.
             if [ "$IS_ENCRYPTED" -eq 1 ]; then
@@ -830,7 +830,7 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
 
             # --- Initramfs UUID and mapper-name consistency ---
-            # r[verify installer.write.rebuild-boot-config+7]
+            # r[verify installer.write.rebuild-boot-config+8]
             # The initramfs must not contain stale UUIDs from the image build
             # or the installer's internal LUKS mapper name.
             INITRD_FILE="$(find "$BOOT_MNT" -maxdepth 1 -name 'initrd.img-*' -print -quit 2>/dev/null)"

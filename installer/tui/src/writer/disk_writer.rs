@@ -408,7 +408,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.rebuild-boot-config+7]
+    // r[impl installer.write.rebuild-boot-config+8]
     pub fn rebuild_boot_config(&self) -> Result<()> {
         tracing::info!("rebuilding boot config (initramfs + grub)");
 
@@ -416,15 +416,6 @@ impl<'a> DiskWriter<'a> {
         let xboot_part = partition_path(self.target, 2)?;
         let efi_part = partition_path(self.target, 1)?;
         let is_encrypted = self.disk_encryption.is_encrypted();
-
-        let luks_uuid = if is_encrypted {
-            Some(
-                blkid_value(&root_part, "UUID")
-                    .context("reading LUKS UUID from raw root partition")?,
-            )
-        } else {
-            None
-        };
 
         // Open LUKS as "root" (matching the production mapper name in
         // crypttab and fstab) so that dracut's hostonly mode discovers
@@ -597,8 +588,8 @@ impl<'a> DiskWriter<'a> {
             tracing::info!("restored original fstab");
         }
 
-        if let Some(ref luks_id) = luks_uuid {
-            patch_grub_defaults_for_luks(&mount_path, luks_id)
+        if is_encrypted {
+            patch_grub_defaults_for_luks(&mount_path)
                 .context("patching /etc/default/grub for LUKS")?;
         }
 
@@ -704,24 +695,35 @@ fn blkid_value(device: &Path, tag: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Patch `/etc/default/grub` inside the target so `update-grub` produces a
-/// kernel command line that tells dracut to unlock the LUKS root volume.
-fn patch_grub_defaults_for_luks(mount_path: &Path, luks_uuid: &str) -> Result<()> {
+/// Patch `/etc/default/grub` inside the target for encrypted installs.
+///
+/// The crypttab (with the `force` option) is the sole authority for LUKS
+/// unlock — it already contains the mapper name, device path, keyfile (or
+/// `tpm2-device=auto`), and options like `discard`. We intentionally do NOT
+/// put `rd.luks.name` or `rd.luks.options` on the kernel command line
+/// because `systemd-cryptsetup-generator` treats cmdline parameters as
+/// overriding the crypttab: it creates a passphrase-prompt unit and skips
+/// the crypttab entry entirely (logging "Not creating device 'root' because
+/// it was not specified on the kernel command line"). That defeats keyfile
+/// and TPM-based auto-unlock.
+///
+/// What we do here:
+///   - Remove the serial console from GRUB_CMDLINE_LINUX_DEFAULT (encrypted
+///     installs target bare-metal hardware).
+///   - Clear GRUB_CMDLINE_LINUX (ensure no stale rd.luks.* parameters).
+fn patch_grub_defaults_for_luks(mount_path: &Path) -> Result<()> {
     let grub_defaults = mount_path.join("etc/default/grub");
     let contents = fs::read_to_string(&grub_defaults).context("reading /etc/default/grub")?;
 
-    let luks_cmdline = format!("rd.luks.name={luks_uuid}=root rd.luks.options=discard");
-
     let mut new_lines: Vec<String> = Vec::new();
-    let mut found_cmdline_linux = false;
     let mut found_cmdline_default = false;
 
     for line in contents.lines() {
         if line.starts_with("GRUB_CMDLINE_LINUX=")
             && !line.starts_with("GRUB_CMDLINE_LINUX_DEFAULT=")
         {
-            new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{luks_cmdline}\""));
-            found_cmdline_linux = true;
+            // Clear any existing rd.luks.* parameters
+            new_lines.push("GRUB_CMDLINE_LINUX=\"\"".to_string());
         } else if line.starts_with("GRUB_CMDLINE_LINUX_DEFAULT=") {
             // Remove serial console for encrypted installs
             let patched = line
@@ -736,10 +738,6 @@ fn patch_grub_defaults_for_luks(mount_path: &Path, luks_uuid: &str) -> Result<()
         }
     }
 
-    if !found_cmdline_linux {
-        new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{luks_cmdline}\""));
-    }
-
     // Ensure there's a trailing newline
     let mut output = new_lines.join("\n");
     if !output.ends_with('\n') {
@@ -751,7 +749,7 @@ fn patch_grub_defaults_for_luks(mount_path: &Path, luks_uuid: &str) -> Result<()
     if found_cmdline_default {
         tracing::info!("patched GRUB_CMDLINE_LINUX_DEFAULT (removed serial console)");
     }
-    tracing::info!("set GRUB_CMDLINE_LINUX for LUKS: {luks_cmdline}");
+    tracing::info!("cleared GRUB_CMDLINE_LINUX (crypttab drives LUKS unlock)");
 
     Ok(())
 }
@@ -957,9 +955,9 @@ mod tests {
         assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 
-    // r[verify installer.write.rebuild-boot-config+7]
+    // r[verify installer.write.rebuild-boot-config+8]
     #[test]
-    fn patch_grub_defaults_sets_luks_cmdline() {
+    fn patch_grub_defaults_clears_cmdline_linux_and_removes_console() {
         let dir = tempfile::tempdir().unwrap();
         let etc = dir.path().join("etc/default");
         fs::create_dir_all(&etc).unwrap();
@@ -967,22 +965,25 @@ mod tests {
             etc.join("grub"),
             "GRUB_DEFAULT=0\n\
              GRUB_CMDLINE_LINUX_DEFAULT=\"noresume console=ttyS0,115200n8\"\n\
-             GRUB_CMDLINE_LINUX=\"\"\n",
+             GRUB_CMDLINE_LINUX=\"rd.luks.name=old-uuid=root rd.luks.options=discard\"\n",
         )
         .unwrap();
 
-        let luks_uuid = "abcd1234-5678-9abc-def0-123456789abc";
-        patch_grub_defaults_for_luks(dir.path(), luks_uuid).unwrap();
+        patch_grub_defaults_for_luks(dir.path()).unwrap();
 
         let result = fs::read_to_string(etc.join("grub")).unwrap();
 
         assert!(
-            result.contains(&format!("rd.luks.name={luks_uuid}=root")),
-            "should contain rd.luks.name: {result}",
+            result.contains("GRUB_CMDLINE_LINUX=\"\""),
+            "should clear GRUB_CMDLINE_LINUX: {result}",
         );
         assert!(
-            result.contains("rd.luks.options=discard"),
-            "should contain rd.luks.options=discard: {result}",
+            !result.contains("rd.luks.name"),
+            "should not contain rd.luks.name: {result}",
+        );
+        assert!(
+            !result.contains("rd.luks.options"),
+            "should not contain rd.luks.options: {result}",
         );
         assert!(
             !result.contains("console=ttyS0,115200n8"),
@@ -994,29 +995,31 @@ mod tests {
         );
     }
 
-    // r[verify installer.write.rebuild-boot-config+7]
+    // r[verify installer.write.rebuild-boot-config+8]
     #[test]
-    fn patch_grub_defaults_adds_cmdline_linux_when_missing() {
+    fn patch_grub_defaults_preserves_empty_cmdline_linux() {
         let dir = tempfile::tempdir().unwrap();
         let etc = dir.path().join("etc/default");
         fs::create_dir_all(&etc).unwrap();
         fs::write(
             etc.join("grub"),
             "GRUB_DEFAULT=0\n\
-             GRUB_CMDLINE_LINUX_DEFAULT=\"noresume\"\n",
+             GRUB_CMDLINE_LINUX_DEFAULT=\"noresume\"\n\
+             GRUB_CMDLINE_LINUX=\"\"\n",
         )
         .unwrap();
 
-        let luks_uuid = "aaaa-bbbb-cccc";
-        patch_grub_defaults_for_luks(dir.path(), luks_uuid).unwrap();
+        patch_grub_defaults_for_luks(dir.path()).unwrap();
 
         let result = fs::read_to_string(etc.join("grub")).unwrap();
 
         assert!(
-            result.contains(&format!(
-                "GRUB_CMDLINE_LINUX=\"rd.luks.name={luks_uuid}=root rd.luks.options=discard\""
-            )),
-            "should add GRUB_CMDLINE_LINUX when absent: {result}",
+            result.contains("GRUB_CMDLINE_LINUX=\"\""),
+            "should keep GRUB_CMDLINE_LINUX empty: {result}",
+        );
+        assert!(
+            !result.contains("rd.luks"),
+            "should not contain any rd.luks parameters: {result}",
         );
     }
 }
