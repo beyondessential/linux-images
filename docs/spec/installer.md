@@ -672,7 +672,7 @@ changes. After all UUIDs have been changed, the installer must run
 These commands may fail in container environments without udevd; failures
 are non-fatal.
 
-> r[installer.write.rebuild-boot-config+6]
+> r[installer.write.rebuild-boot-config+7]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
 > `r[installer.encryption.overview+4]`), the installer must unconditionally
@@ -699,6 +699,13 @@ are non-fatal.
 >      no udevd), dracut discovers stale UUIDs and bakes them into systemd
 >      device-wait units. After dracut completes, the original fstab must be
 >      restored.
+>   3. When encryption is enabled, open the LUKS volume using the production
+>      mapper name `root` (not the installer's internal name) so that
+>      dracut's `hostonly` mode discovers `/dev/mapper/root`. If the volume
+>      is opened under a different name, dracut bakes that name into the
+>      initramfs cmdline and the boot fails because `systemd-cryptsetup`
+>      creates `/dev/mapper/root` (from the `rd.luks.name` parameter) while
+>      the initramfs expects the installer's internal name.
 >
 > The installer must then run `dracut --force` and `update-grub` with
 > `/proc`, `/sys`, and `/dev` bind-mounted into the target.
@@ -720,7 +727,7 @@ are non-fatal.
 
 > r[installer.encryption.overview+4]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+6]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+7]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -731,7 +738,7 @@ are non-fatal.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config+6]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+7]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created

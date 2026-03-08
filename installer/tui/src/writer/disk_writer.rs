@@ -12,7 +12,8 @@ use crate::paths;
 
 use super::device::{partition_path, reread_partition_table, run_command, sync_device};
 use super::luks::{
-    LUKS_NAME, close_luks_root, create_passphrase_keyfile, format_luks_for_root, open_luks_root,
+    LUKS_NAME, close_luks, close_luks_root, create_passphrase_keyfile, format_luks_for_root,
+    open_luks_root, open_luks_root_as,
 };
 use super::manifest::{PartitionManifest, image_size, partition_images_total_size};
 use super::progress::{WriteProgress, format_size};
@@ -407,7 +408,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.rebuild-boot-config+6]
+    // r[impl installer.write.rebuild-boot-config+7]
     pub fn rebuild_boot_config(&self) -> Result<()> {
         tracing::info!("rebuilding boot config (initramfs + grub)");
 
@@ -425,15 +426,27 @@ impl<'a> DiskWriter<'a> {
             None
         };
 
+        // Open LUKS as "root" (matching the production mapper name in
+        // crypttab and fstab) so that dracut's hostonly mode discovers
+        // /dev/mapper/root — not the installer's internal "bes-target-root"
+        // name. If the initramfs is built while the volume is open as
+        // "bes-target-root", dracut bakes that name into its cmdline config
+        // and the boot fails because systemd-cryptsetup creates
+        // /dev/mapper/root instead.
+        const BOOT_REBUILD_LUKS_NAME: &str = "root";
         let luks_opened = if is_encrypted {
-            let _ = open_luks_root(&root_part, self.passphrase.unwrap_or_default())?;
+            let _ = open_luks_root_as(
+                &root_part,
+                self.passphrase.unwrap_or_default(),
+                BOOT_REBUILD_LUKS_NAME,
+            )?;
             true
         } else {
             false
         };
 
         let btrfs_dev = if luks_opened {
-            PathBuf::from(format!("/dev/mapper/{LUKS_NAME}"))
+            PathBuf::from(format!("/dev/mapper/{BOOT_REBUILD_LUKS_NAME}"))
         } else {
             root_part.clone()
         };
@@ -616,7 +629,7 @@ impl<'a> DiskWriter<'a> {
         let _ = run_command(paths::UMOUNT, &[mount_path.to_str().unwrap_or_default()]);
 
         if luks_opened {
-            let _ = close_luks_root();
+            let _ = close_luks(BOOT_REBUILD_LUKS_NAME);
         }
 
         dracut_result.context("rebuilding initramfs with dracut in chroot")?;
@@ -944,7 +957,7 @@ mod tests {
         assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 
-    // r[verify installer.write.rebuild-boot-config+6]
+    // r[verify installer.write.rebuild-boot-config+7]
     #[test]
     fn patch_grub_defaults_sets_luks_cmdline() {
         let dir = tempfile::tempdir().unwrap();
@@ -981,7 +994,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.write.rebuild-boot-config+6]
+    // r[verify installer.write.rebuild-boot-config+7]
     #[test]
     fn patch_grub_defaults_adds_cmdline_linux_when_missing() {
         let dir = tempfile::tempdir().unwrap();
