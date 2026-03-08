@@ -149,58 +149,8 @@ jobs:
           retention-days: 1
           compression-level: 0
 
-  installer:
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-            cargo_target: x86_64-unknown-linux-musl
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            cargo_target: aarch64-unknown-linux-musl
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v6
-
-      # r[impl ci.rust-stable] r[verify ci.rust-stable]
-      - name: Install Rust toolchain via rustup
-        run: |
-          rustup update stable
-          rustup default stable
-          rustup target add ${{ matrix.cargo_target }}
-
-      - name: Install musl tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends musl-tools
-
-      # r[impl ci.rust-cache] r[verify ci.rust-cache]
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Build release binary (static musl)
-        run: cargo build --release --target ${{ matrix.cargo_target }} -p bes-installer
-
-      - name: Verify binary is static
-        run: |
-          file target/${{ matrix.cargo_target }}/release/bes-installer
-          ldd target/${{ matrix.cargo_target }}/release/bes-installer 2>&1 | grep -q "not a dynamic" || \
-            ldd target/${{ matrix.cargo_target }}/release/bes-installer 2>&1 | grep -q "statically linked" || \
-            echo "::warning::Binary may not be fully static"
-
-      - name: Upload installer binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: installer-${{ matrix.arch }}
-          path: target/${{ matrix.cargo_target }}/release/bes-installer
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 0
-
   iso:
-    needs: [images-cloud, installer]
+    needs: [images-cloud]
     strategy:
       fail-fast: false
       matrix:
@@ -209,9 +159,11 @@ jobs:
           - arch: amd64
             runner: ubuntu-24.04
             grub_pkg: grub-efi-amd64-bin
+            cargo_target: x86_64-unknown-linux-musl
           - arch: arm64
             runner: ubuntu-24.04-arm
             grub_pkg: grub-efi-arm64-bin
+            cargo_target: aarch64-unknown-linux-musl
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -223,7 +175,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             debootstrap gdisk dosfstools e2fsprogs squashfs-tools \
             ${{ matrix.grub_pkg }} grub-common \
-            parted util-linux zstd cryptsetup xorriso jq
+            parted util-linux zstd cryptsetup xorriso jq musl-tools
+
+      # r[impl ci.rust-stable] r[verify ci.rust-stable]
+      - name: Install Rust toolchain via rustup
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup target add ${{ matrix.cargo_target }}
+
+      # r[impl ci.rust-cache] r[verify ci.rust-cache]
+      - uses: Swatinem/rust-cache@v2
 
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
@@ -231,39 +193,17 @@ jobs:
           name: image-raw-cloud-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/cloud/
 
-      - name: Download installer binary
-        uses: actions/download-artifact@v8
-        with:
-          name: installer-${{ matrix.arch }}
-          path: installer-bin/
-
-      - name: Make installer binary executable
-        run: chmod +x installer-bin/bes-installer
-
       - name: List inputs
         run: |
           echo "=== Cloud Image ==="
           ls -lhR output/${{ matrix.arch }}/cloud/ || true
-          echo "=== Installer ==="
-          ls -lh installer-bin/
 
       - name: Build ISO
-        run: |
-          SOURCE_IMAGE="$(find output/${{ matrix.arch }}/cloud/ -name '*.raw.zst' | head -1)"
-          if [ -z "$SOURCE_IMAGE" ]; then
-            echo "ERROR: no cloud .raw.zst found under output/${{ matrix.arch }}/cloud/"
-            exit 1
-          fi
-          sudo ARCH=${{ matrix.arch }} \
-               OUTPUT=output/${{ matrix.arch }}/bes-installer-${{ matrix.arch }}.iso \
-               INSTALLER_BIN=installer-bin/bes-installer \
-               SOURCE_IMAGE="$SOURCE_IMAGE" \
-               UBUNTU_SUITE=${{ env.UBUNTU_SUITE }} \
-               iso/build-iso.sh
+        run: just arch=${{ matrix.arch }} iso
         timeout-minutes: 30
 
       - name: Test ISO structure
-        run: just arch=${{ matrix.arch }} installer_bin=installer-bin/bes-installer iso-test-structure
+        run: just arch=${{ matrix.arch }} iso-test-structure
 
       - name: Upload ISO
         uses: actions/upload-artifact@v7
