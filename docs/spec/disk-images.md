@@ -247,6 +247,15 @@ r[image.credentials.ssh-keys-only]
 SSH password authentication must be disabled. Only key-based authentication
 is permitted over SSH.
 
+r[image.credentials.no-host-keys]
+The image must not contain SSH host keys (`/etc/ssh/ssh_host_*`). The
+openssh-server package generates host keys at install time, but these must
+be deleted during the image build so that each deployed instance generates
+its own unique keys on first boot. Shipping shared host keys is a security
+risk (enables MITM) and leaks the build machine's hostname in the key
+comment. cloud-init's `ssh` module and Ubuntu's `sshd-keygen` generator
+both regenerate missing host keys automatically.
+
 ## Cloud-Init
 
 r[image.cloud-init.enabled]
