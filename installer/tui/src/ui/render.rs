@@ -8,7 +8,7 @@ use crate::disk::BlockDevice;
 use crate::net::CheckPhase;
 use crate::writer::format_eta;
 
-use super::{AppState, NetPane, Screen};
+use super::{AppState, NetPane, Screen, VerityCheckState};
 
 pub fn render(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
@@ -325,9 +325,15 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.welcome+5]
+// r[impl installer.tui.welcome+7]
 // r[impl installer.tui.ascii-rendering]
+// r[impl iso.verity.check+5]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
+    let needs_verity_bar = !matches!(state.verity_check, VerityCheckState::NotNeeded);
+    let verity_height: u16 = if needs_verity_bar { 4 } else { 0 };
+    let chunks =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(verity_height)]).split(area);
+
     let mut description = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -377,9 +383,23 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     description.push(Line::from(""));
-    description.push(Line::from(
-        "Press Enter to begin, or 'n' for a network check.",
-    ));
+    match state.verity_check {
+        VerityCheckState::Running => {
+            description.push(Line::from(
+                "Verifying installation media... Press Enter to begin once complete.",
+            ));
+        }
+        VerityCheckState::Passed => {
+            description.push(Line::from(
+                "Verification passed. Press Enter to begin, or 'n' for a network check.",
+            ));
+        }
+        _ => {
+            description.push(Line::from(
+                "Press Enter to begin, or 'n' for a network check.",
+            ));
+        }
+    }
 
     frame.render_widget(
         Paragraph::new(description)
@@ -390,8 +410,68 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
                     .border_style(Style::default().fg(Color::White)),
             )
             .wrap(Wrap { trim: true }),
-        area,
+        chunks[0],
     );
+
+    if needs_verity_bar {
+        match &state.verity_check {
+            VerityCheckState::Running => {
+                let (fraction, label) = if let Some(ref p) = state.verity_progress {
+                    let frac = p
+                        .total_bytes
+                        .map(|t| {
+                            if t == 0 {
+                                0.0
+                            } else {
+                                (p.bytes_written as f64 / t as f64).min(1.0)
+                            }
+                        })
+                        .unwrap_or(0.0);
+                    let eta_str = p.eta.map(format_eta).unwrap_or_default();
+                    let lbl = format!(
+                        "Verifying installation media... {:.1} MiB/s | ETA: {}",
+                        p.throughput_mbps,
+                        if eta_str.is_empty() { "..." } else { &eta_str },
+                    );
+                    (frac, lbl)
+                } else {
+                    (0.0, "Verifying installation media...".into())
+                };
+                let gauge = Gauge::default()
+                    .block(
+                        Block::default()
+                            .title(format!(" {label} "))
+                            .borders(Borders::ALL),
+                    )
+                    .gauge_style(Style::default().fg(Color::Yellow))
+                    .ratio(fraction);
+                frame.render_widget(gauge, chunks[1]);
+            }
+            VerityCheckState::Passed => {
+                let gauge = Gauge::default()
+                    .block(
+                        Block::default()
+                            .title(" Verification passed ")
+                            .borders(Borders::ALL),
+                    )
+                    .gauge_style(Style::default().fg(Color::Green))
+                    .ratio(1.0);
+                frame.render_widget(gauge, chunks[1]);
+            }
+            VerityCheckState::Failed(_) => {
+                let gauge = Gauge::default()
+                    .block(
+                        Block::default()
+                            .title(" Verification FAILED ")
+                            .borders(Borders::ALL),
+                    )
+                    .gauge_style(Style::default().fg(Color::Red))
+                    .ratio(1.0);
+                frame.render_widget(gauge, chunks[1]);
+            }
+            VerityCheckState::NotNeeded => {}
+        }
+    }
 }
 
 // r[impl installer.tui.disk-detection+3]
@@ -1017,7 +1097,7 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.progress+3]
+// r[impl installer.tui.progress+4]
 fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(area);
 
@@ -1061,7 +1141,7 @@ fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
-// r[impl installer.tui.progress+3]
+// r[impl installer.tui.progress+4]
 fn render_done(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
@@ -1162,6 +1242,7 @@ mod tests {
             None,
             String::new(),
             vec!["UTC".into(), "America/New_York".into()],
+            false,
         )
     }
 

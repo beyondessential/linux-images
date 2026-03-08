@@ -285,7 +285,7 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome+5]
+r[installer.tui.welcome+7]
 The TUI must open with a welcome screen that displays a description of what
 the image is for, contact information, and instructions on how to proceed.
 The user presses Enter to proceed to the disk selection screen. The welcome
@@ -294,6 +294,18 @@ Pressing `q` triggers a reboot (same as the Done/Error screens). The footer
 must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
 debug shell without leaving the installer permanently (this is the only
 screen where the hint is shown, though the keybind works everywhere).
+
+When the images partition was opened via dm-verity (see `r[iso.verity.check]`),
+the welcome screen must display a progress bar at the bottom labelled
+"Verifying installation media..." while the integrity check runs in the
+background. The user must not be allowed to advance past the welcome screen
+(Enter is ignored) until the check completes successfully. Once complete,
+the progress bar is replaced with a "Verification passed" message. If the
+check fails, the installer transitions to the error screen with the
+pre-write corruption message from `r[iso.verity.failure]`. The `n` (network
+check), `q` (reboot), and `Ctrl+Alt+d` (shell) keybinds remain available
+during the check. If verity is not active, no progress bar is shown and
+Enter works immediately.
 
 > r[installer.tui.network-check+4]
 > The TUI must perform network connectivity checks in the background,
@@ -532,18 +544,20 @@ rather than exiting (which would leave the machine on a dead TTY).
 This prevents the appearance of the installer being stuck between the
 keypress and the screen blanking.
 
-r[installer.tui.progress+3]
+r[installer.tui.progress+4]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
 `Installing` screen from the moment the user confirms until all steps
-complete. Partition image writes (which have byte-level progress) occupy
-approximately 90% of the bar. Each post-write step (filesystem expansion,
-UUID randomization, boot config rebuild, partition verification, install-time
-configuration, and encryption setup) occupies a small fixed slice of the
-remaining 10%, advancing the bar when the step completes. After all steps
-finish, the TUI transitions to a completion screen. For encrypted installs,
-the completion screen also displays the recovery passphrase (replacing the
-separate recovery passphrase screen).
+complete. The integrity check (see `r[iso.verity.check]`) is **not** part of
+this progress bar -- it runs earlier on the welcome screen. The Installing
+screen begins with partition image writes (which have byte-level progress)
+occupying approximately 90% of the bar. Each post-write step (filesystem
+expansion, UUID randomization, boot config rebuild, partition verification,
+install-time configuration, and encryption setup) occupies a small fixed
+slice of the remaining 10%, advancing the bar when the step completes. After
+all steps finish, the TUI transitions to a completion screen. For encrypted
+installs, the completion screen also displays the recovery passphrase
+(replacing the separate recovery passphrase screen).
 
 r[installer.tui.debug-shell+3]
 Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an

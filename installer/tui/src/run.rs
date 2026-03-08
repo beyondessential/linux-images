@@ -280,7 +280,7 @@ impl RunContext {
             .context("reading partition image sizes")?;
         writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
 
-        // r[impl iso.verity.check]
+        // r[impl iso.verity.check+5]
         // r[impl iso.verity.failure]
         if _images_verity.is_some() {
             eprintln!("verifying installation media integrity...");
@@ -510,6 +510,7 @@ impl RunContext {
 
         let hostname_from_template = self.install_config.hostname_template.is_some();
 
+        let verity_active = _images_verity.is_some();
         let mut state = ui::AppState::new(
             self.devices,
             disk_encryption,
@@ -519,6 +520,7 @@ impl RunContext {
             default_disk_index,
             build_info,
             self.available_timezones,
+            verity_active,
         );
 
         // r[impl installer.config.recovery-passphrase]

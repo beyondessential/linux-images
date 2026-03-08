@@ -304,15 +304,32 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 >   written and cannot be used, and that the only recourse is to write a new
 >   copy of the installation medium.
 
-> r[iso.verity.check]
+> r[iso.verity.check+5]
 > On boot, after the images partition is opened via dm-verity, the installer
 > must perform a full sequential read of every partition image file into
 > `/dev/null` using `splice(2)` before beginning the installation. This
 > forces dm-verity to verify every block of the images partition up front,
-> catching corruption before any data is written to the target disk. The
-> installer must display progress during this check. If any read returns an
-> I/O error, the installer must display the pre-write corruption error
-> described in `r[iso.verity.failure]`.
+> catching corruption before any data is written to the target disk.
+>
+> In interactive (TUI) mode, the integrity check must run in the background
+> while the welcome screen is displayed, starting automatically when the
+> welcome screen is first shown. A progress bar labelled
+> "Verifying installation media..." must be rendered at the bottom of the
+> welcome screen. The user must not be allowed to advance past the welcome
+> screen until the integrity check completes successfully. If the check
+> fails, the installer must display the pre-write corruption error described
+> in `r[iso.verity.failure]`. The `n` (network check) and `q` (reboot)
+> keybinds remain available during the check.
+>
+> In automatic mode, the integrity check runs sequentially before the
+> installation begins, with progress printed to stderr.
+>
+> If verity is not active (e.g. development builds using the fallback
+> manifest path), the integrity check is skipped and the welcome screen
+> does not block advancement.
+>
+> If any read returns an I/O error, the installer must display the pre-write
+> corruption error described in `r[iso.verity.failure]`.
 
 r[iso.verity.build-deps]
 The ISO build script must have `cryptsetup` (which provides `veritysetup`)

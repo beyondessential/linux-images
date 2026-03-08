@@ -54,7 +54,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     }
 
     match &state.screen {
-        // r[impl installer.tui.welcome+5]
+        // r[impl installer.tui.welcome+7]
         Screen::Welcome => match key.code {
             KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Char('n') => state.open_network_check(),
@@ -339,7 +339,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         Screen::Installing => {}
 
-        // r[impl installer.tui.progress+3]
+        // r[impl installer.tui.progress+4]
         Screen::Done => {
             if key.code == KeyCode::Enter {
                 return KeyAction::Reboot;
@@ -363,6 +363,10 @@ pub fn run_tui(
     no_reboot: bool,
     besconf: &BesconfState,
 ) -> Result<()> {
+    // r[impl iso.verity.check+5]
+    // r[impl installer.tui.welcome+7]
+    state.start_verity_check(manifest, images_dir);
+
     terminal::enable_raw_mode().context("enabling raw mode")?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
@@ -398,10 +402,20 @@ fn event_loop(
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
 
     loop {
-        // Poll async results for network screens and GitHub key fetch
+        // Poll async results for network screens, GitHub key fetch, and verity check
         state.poll_net_checks();
         state.poll_tailscale_netcheck();
         state.poll_github_keys();
+        state.poll_verity_check();
+
+        // r[impl iso.verity.check+5]
+        if let super::VerityCheckState::Failed(ref msg) = state.verity_check {
+            state.screen = Screen::Error(format!(
+                "Installation media integrity check failed -- \
+                 the target disk has NOT been written to -- \
+                 write a new copy of the installation medium.\n\n{msg}"
+            ));
+        }
 
         terminal.draw(|f| render(f, state))?;
 
@@ -551,17 +565,6 @@ fn run_full_install(
     let total_image_size = writer::partition_images_total_size(manifest, images_dir)
         .context("reading partition image sizes")?;
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
-
-    // r[impl iso.verity.check]
-    // r[impl iso.verity.failure]
-    // Upfront integrity check: splice every image to /dev/null so dm-verity
-    // verifies every block before we touch the target disk.
-    let image_files = writer::image_file_sizes(manifest, images_dir)
-        .context("reading image file sizes for integrity check")?;
-    writer::integrity_check(images_dir, &image_files, &mut |progress| {
-        let _ = tx.send(WorkerMessage::Progress(progress.into()));
-    })
-    .context("installation media integrity check failed — the target disk has NOT been written to — write a new copy of the installation medium")?;
 
     // Write partitions (~90% of progress)
     disk_writer
@@ -796,6 +799,7 @@ mod tests {
                 "Pacific/Auckland".into(),
                 "UTC".into(),
             ],
+            false,
         )
     }
 
@@ -891,7 +895,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.welcome+5]
+    // r[verify installer.tui.welcome+7]
     #[test]
     fn welcome_q_triggers_reboot() {
         let mut state = make_state();
@@ -958,6 +962,7 @@ mod tests {
                 "Pacific/Auckland".into(),
                 "UTC".into(),
             ],
+            false,
         );
 
         let events = vec![

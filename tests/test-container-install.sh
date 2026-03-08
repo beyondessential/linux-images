@@ -449,7 +449,7 @@ check "root partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"r
 # r[verify installer.mode.auto.progress]
 check "non-interactive write summary printed" grep -q "write complete:.*MiB in.*MiB/s" "$INSTALLER_OUTPUT"
 
-# r[verify iso.verity.check]
+# r[verify iso.verity.check+5]
 # r[verify iso.verity.failure]
 # The integrity check only runs when the installer opens the images partition
 # via dm-verity (real ISO boot). In the container test the images directory is

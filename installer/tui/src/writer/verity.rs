@@ -342,7 +342,7 @@ pub fn open_and_mount_images() -> Result<Option<ImagesVerity>> {
     }))
 }
 
-// r[impl iso.verity.check]
+// r[impl iso.verity.check+5]
 // r[impl installer.write.stream-copy]
 /// Splice data from `src_fd` through a pipe to `dst_fd` using `splice(2)`.
 ///
@@ -444,7 +444,7 @@ pub fn splice_fd_to_fd(
     result
 }
 
-// r[impl iso.verity.check]
+// r[impl iso.verity.check+5]
 /// Run the upfront integrity check: splice every partition image to
 /// `/dev/null`, forcing dm-verity to verify every block.
 ///
