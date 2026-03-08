@@ -111,15 +111,21 @@ from a cryptographically secure random source.
 
 ## BESCONF Partition Interaction
 
-r[installer.besconf.writable-detection]
-At startup, after locating the configuration file, the installer must
-detect whether the BESCONF partition at `/run/besconf` is writable. It
-does this by attempting to remount the partition read-write
+r[installer.besconf.writable-detection+2]
+At startup, before loading the configuration file, the installer must
+mount the BESCONF partition and detect whether it is writable. Because the
+configuration file lives on the BESCONF partition
+(`/run/besconf/bes-install.toml`), BESCONF must be mounted first. When an
+explicit `--config` path is provided, the installer must still mount
+BESCONF (for failure logging and recovery key saving) but reads the
+config from the provided path instead. The installer locates the BESCONF
+partition by its well-known PARTUUID, mounts it read-only at
+`/run/besconf`, then attempts a read-write remount
 (`mount -o remount,rw /run/besconf`). If the remount succeeds, BESCONF is
-considered writable for the duration of the install. If the remount fails
-(e.g. optical media, partition absent, permissions), BESCONF is considered
-read-only and all write operations to it are silently skipped. The
-installer must track this state.
+considered writable for the duration of the install. If the partition is
+not found or the mount fails (e.g. optical media, partition absent,
+permissions), BESCONF is considered read-only and all write operations to
+it are silently skipped. The installer must track this state.
 
 r[installer.besconf.failure-log]
 When the BESCONF partition is writable and the installer encounters a fatal

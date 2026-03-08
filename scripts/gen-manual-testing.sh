@@ -462,7 +462,7 @@ step9
 
 # r[verify installer.config.recovery-passphrase]
 # r[verify installer.config.save-recovery-keys]
-# r[verify installer.besconf.writable-detection]
+# r[verify installer.besconf.writable-detection+2]
 # r[verify installer.besconf.failure-log]
 step10() {
     cat << 'MD'

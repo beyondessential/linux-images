@@ -44,7 +44,23 @@ impl RunContext {
         tracing::info!("bes-installer v{version} — {build_info}");
         eprintln!("bes-installer v{version} — {build_info}");
 
+        // r[impl installer.besconf.writable-detection+2]
+        // r[impl iso.config-partition+4]
+        // Mount BESCONF before loading config: the config file lives on
+        // BESCONF at /run/besconf/bes-install.toml.
+        let mut besconf = if cli.dry_run {
+            besconf::BesconfState::readonly()
+        } else {
+            let (state, _mounted) = besconf::mount_and_detect();
+            // r[impl installer.besconf.failure-log]
+            besconf::rotate_failure_log(&state);
+            state
+        };
+
         let (mut install_config, mode) = load_config(&cli)?;
+
+        // Apply save_recovery_keys from the now-loaded config.
+        besconf = besconf::with_save_recovery_keys(besconf, install_config.save_recovery_keys);
 
         resolve_hostname_template(&mut install_config)?;
 
@@ -96,17 +112,6 @@ impl RunContext {
         for w in &config_warnings {
             tracing::warn!("config: {w}");
         }
-
-        // r[impl installer.besconf.writable-detection]
-        // r[impl iso.config-partition+4]
-        let besconf = if cli.dry_run {
-            besconf::BesconfState::readonly()
-        } else {
-            let (state, _mounted) = besconf::mount_and_detect();
-            // r[impl installer.besconf.failure-log]
-            besconf::rotate_failure_log(&state);
-            besconf::with_save_recovery_keys(state, install_config.save_recovery_keys)
-        };
 
         Ok(Self {
             cli,
