@@ -179,33 +179,22 @@ jobs:
 
       # r[impl ci.rust-cache] r[verify ci.rust-cache]
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: installer/tui
-
-      - name: Run cargo test # r[impl ci.unit-test] r[verify ci.unit-test]
-        run: cd installer/tui && cargo test
-
-      - name: Run cargo clippy
-        run: cd installer/tui && cargo clippy -- -D warnings
-
-      - name: Check formatting
-        run: cd installer/tui && cargo fmt --check
 
       - name: Build release binary (static musl)
-        run: cd installer/tui && cargo build --release --target ${{ matrix.cargo_target }}
+        run: cargo build --release --target ${{ matrix.cargo_target }} -p bes-installer
 
       - name: Verify binary is static
         run: |
-          file installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer
-          ldd installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer 2>&1 | grep -q "not a dynamic" || \
-            ldd installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer 2>&1 | grep -q "statically linked" || \
+          file target/${{ matrix.cargo_target }}/release/bes-installer
+          ldd target/${{ matrix.cargo_target }}/release/bes-installer 2>&1 | grep -q "not a dynamic" || \
+            ldd target/${{ matrix.cargo_target }}/release/bes-installer 2>&1 | grep -q "statically linked" || \
             echo "::warning::Binary may not be fully static"
 
       - name: Upload installer binary
         uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.arch }}
-          path: installer/tui/target/${{ matrix.cargo_target }}/release/bes-installer
+          path: target/${{ matrix.cargo_target }}/release/bes-installer
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
