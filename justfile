@@ -70,6 +70,7 @@ qemu_firmvars := if arch == "amd64" { work_dir / "OVMF_VARS.fd" } else if arch =
 
 # Build the TUI installer binary
 installer-build: _validate-arch
+    cargo clean
     cargo build -p bes-installer --release --target {{ cargo_target }}
 
 # Run installer unit tests
