@@ -178,13 +178,13 @@ impl RunContext {
 
         let target = disk::resolve_disk(disk_selector, &self.devices, self.boot_device.as_ref())?;
 
-        // r[impl installer.write.source+4]
+        // r[impl installer.write.source+5]
         // Open the images partition via dm-verity before searching for the manifest.
         // The verity mount at /run/bes-images is the primary search path.
         let _images_verity = if self.cli.dry_run {
             None
         } else {
-            match writer::open_and_mount_images(self.boot_device.as_deref()) {
+            match writer::open_and_mount_images() {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!("failed to open images verity: {e:#}");
@@ -471,12 +471,12 @@ impl RunContext {
                 .and_then(|resolved| self.devices.iter().position(|d| d.path == resolved.path))
         });
 
-        // r[impl installer.write.source+4]
+        // r[impl installer.write.source+5]
         // Open the images partition via dm-verity before searching for the manifest.
         let _images_verity = if self.cli.dry_run {
             None
         } else {
-            match writer::open_and_mount_images(self.boot_device.as_deref()) {
+            match writer::open_and_mount_images() {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!("failed to open images verity: {e:#}");

@@ -27,6 +27,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Well-known GPT PARTUUIDs for ISO partitions
+# r[impl iso.images-partition+2]
+IMAGES_PARTUUID="ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b"
+# r[impl iso.config-partition+2]
+BESCONF_PARTUUID="e2bac42b-03a7-5048-b8f5-3f6d22100e77"
+
 # Well-known GPT partition type UUIDs
 GPT_TYPE_MICROSOFT_BASIC_DATA="EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
 GPT_TYPE_LINUX_FILESYSTEM="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
@@ -74,7 +80,7 @@ if [ ! -f "$SOURCE_IMAGE" ]; then
 fi
 
 MISSING=()
-for cmd in mksquashfs sfdisk mkfs.vfat losetup grub-mkimage xorriso zstd jq veritysetup; do
+for cmd in mksquashfs sfdisk mkfs.vfat losetup grub-mkimage xorriso zstd jq veritysetup sgdisk; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -141,7 +147,7 @@ cp -a "$ROOTFS_DIR/live" "$STAGING/live"
 # Phase 1: Extract partition images from source image
 # ============================================================
 # r[impl iso.contents+3]
-# r[impl iso.images-partition]
+# r[impl iso.images-partition+2]
 echo "==> Phase 1: Extracting partition images from source image..."
 IMAGES_STAGING="$WORK_DIR/images-staging"
 mkdir -p "$IMAGES_STAGING"
@@ -232,8 +238,8 @@ echo ""
 # ============================================================
 # Phase 2: Build images squashfs with verity
 # ============================================================
-# r[impl iso.images-partition]
-# r[impl iso.verity.images+3]
+# r[impl iso.images-partition+2]
+# r[impl iso.verity.images+4]
 # r[impl iso.verity.layout+3]
 # r[impl iso.verity.build-deps]
 echo "==> Phase 2: Building images squashfs with verity..."
@@ -333,7 +339,7 @@ echo "    GRUB target: $GRUB_TARGET ($GRUB_EFI_NAME)"
 # ============================================================
 # Phase 4: Build BESCONF FAT32 partition image
 # ============================================================
-# r[impl iso.config-partition]
+# r[impl iso.config-partition+2]
 echo "==> Phase 4: Building BESCONF partition image..."
 
 BESCONF_IMG="$WORK_DIR/besconf.img"
@@ -373,6 +379,41 @@ xorriso -as mkisofs \
     \
     "$STAGING"
 
+# ============================================================
+# Phase 6: Stamp well-known PARTUUIDs via sgdisk
+# ============================================================
+# r[impl iso.images-partition+2]
+# r[impl iso.config-partition+2]
+echo "==> Phase 6: Stamping well-known PARTUUIDs..."
+
+# Find partition numbers by scanning sgdisk output for the type codes.
+# xorriso may insert gap partitions, so we cannot assume fixed numbers.
+IMAGES_PARTNUM=""
+BESCONF_PARTNUM=""
+while IFS= read -r line; do
+    PARTNUM="$(echo "$line" | awk '{print $1}')"
+    CODE="$(echo "$line" | awk '{print $6}')"
+    case "$CODE" in
+        8300) IMAGES_PARTNUM="$PARTNUM" ;;
+        0700) BESCONF_PARTNUM="$PARTNUM" ;;
+    esac
+done < <(sgdisk -p "$OUTPUT" 2>/dev/null | grep '^ *[0-9]')
+
+if [ -z "$IMAGES_PARTNUM" ]; then
+    echo "ERROR: could not find images partition (type 8300) in ISO GPT"
+    exit 1
+fi
+if [ -z "$BESCONF_PARTNUM" ]; then
+    echo "ERROR: could not find BESCONF partition (type 0700) in ISO GPT"
+    exit 1
+fi
+
+sgdisk -u "${IMAGES_PARTNUM}:${IMAGES_PARTUUID}" "$OUTPUT" >/dev/null
+echo "    images  partition ${IMAGES_PARTNUM}: PARTUUID=${IMAGES_PARTUUID}"
+
+sgdisk -u "${BESCONF_PARTNUM}:${BESCONF_PARTUUID}" "$OUTPUT" >/dev/null
+echo "    besconf partition ${BESCONF_PARTNUM}: PARTUUID=${BESCONF_PARTUUID}"
+
 # Clean up working directory
 rm -rf "$WORK_DIR"
 WORK_DIR=""
@@ -394,6 +435,6 @@ echo "Write to USB:"
 echo "  sudo dd if=$OUTPUT of=/dev/sdX bs=4M status=progress"
 echo ""
 echo "To pre-configure on USB, mount the BESCONF partition and place bes-install.toml:"
-echo "  lsblk -o NAME,LABEL /dev/sdX   # find the BESCONF partition"
+echo "  blkid -t PARTUUID=${BESCONF_PARTUUID}   # find the BESCONF partition"
 echo "  mount /dev/sdXN /mnt && cp bes-install.toml /mnt/ && umount /mnt"
 echo "=============================="

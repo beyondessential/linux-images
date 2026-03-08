@@ -571,16 +571,16 @@ must then create the GPT table and all three partitions (EFI, xboot, root)
 using the geometry from `partitions.json`. After writing all partition
 images, the installer must verify the partition table.
 
-> r[installer.write.source+4]
+> r[installer.write.source+5]
 > The installer must read `partitions.json` from the verity-protected images
 > partition to locate the partition images and their layout metadata. There is
 > one set of partition images per architecture, not per variant. The partition
 > images are raw (uncompressed) files inside a squashfs with transparent zstd
 > compression (see `r[iso.images-partition]`).
 >
-> The installer must locate the images partition by searching for a block
-> device with the filesystem label `BESIMAGES` (via `/dev/disk/by-label/`),
-> or as GPT partition 4 of the detected boot device. The partition uses the
+> The installer must locate the images partition by its well-known GPT
+> PARTUUID (`ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`) via
+> `/dev/disk/by-partuuid/`. The partition uses the
 > self-describing verity layout from `r[iso.verity.layout]`: the installer
 > reads the last 8 bytes to recover the hash tree size, computes the hash
 > offset, reads the root hash from the `images.verity.roothash=` kernel

@@ -254,7 +254,7 @@ MD
 }
 step5
 
-# r[verify iso.config-partition]
+# r[verify iso.config-partition+2]
 # r[verify installer.config.location]
 # r[verify installer.mode.prefilled]
 step6() {

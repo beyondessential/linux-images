@@ -87,11 +87,17 @@ package must be installed in the live rootfs to provide `/usr/bin/chvt`.
 The `systemd-sysv` package must be installed to provide `/sbin/reboot`
 so that the installer's reboot action works.
 
-> r[iso.config-partition]
+> r[iso.config-partition+2]
 > The ISO must include an appended FAT32 partition (GPT type `Microsoft basic
 > data`) created via `xorriso --append_partition`. This partition is embedded
 > in the ISO file and becomes a real writable GPT partition after the ISO is
-> written to USB via `dd`. Its filesystem label must be `BESCONF`.
+> written to USB via `dd`. Its filesystem label must be `BESCONF`. The
+> partition must have a well-known GPT PARTUUID of
+> `e2bac42b-03a7-5048-b8f5-3f6d22100e77` so that the live environment can
+> locate it via `/dev/disk/by-partuuid/` without depending on a specific
+> partition number or risking label collisions with other disks. After
+> `xorriso` produces the ISO, the build script must use `sgdisk -u` to stamp
+> this PARTUUID onto the BESCONF partition.
 >
 > When booted from USB, this partition is writable and is the intended location
 > for users to place a `bes-install.toml` configuration file before booting.
@@ -187,15 +193,19 @@ UEFI systems from that media.
 > the dm-verity setup described in `r[iso.verity.squashfs]`, including the
 > trailer read to recover the hash offset.
 
-> r[iso.images-partition]
-> The ISO must include a read-only squashfs partition appended as GPT
-> partition 4 via `xorriso --append_partition`. This squashfs must contain
-> the raw (uncompressed) partition images (`efi.img`, `xboot.img`,
-> `root.img`) and the `partitions.json` manifest. The squashfs must use zstd
-> compression so that the kernel decompresses data transparently on read.
-> The filesystem label must be `BESIMAGES`.
+> r[iso.images-partition+2]
+> The ISO must include a read-only squashfs partition appended via
+> `xorriso --append_partition`. This squashfs must contain the raw
+> (uncompressed) partition images (`efi.img`, `xboot.img`, `root.img`) and
+> the `partitions.json` manifest. The squashfs must use zstd compression so
+> that the kernel decompresses data transparently on read. The partition
+> must have a well-known GPT PARTUUID of `ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`
+> so that the installer can locate it via `/dev/disk/by-partuuid/` without
+> depending on a specific partition number. After `xorriso` produces the
+> ISO, the build script must use `sgdisk -u` to stamp this PARTUUID onto
+> the images partition.
 
-> r[iso.verity.images+3]
+> r[iso.verity.images+4]
 > The images squashfs partition must be protected by dm-verity using the
 > layout described in `r[iso.verity.layout]`. At build time:
 >
@@ -210,11 +220,12 @@ UEFI systems from that media.
 > 7. Store the root hash in the GRUB kernel command line as
 >    `images.verity.roothash=<hex>`.
 >
-> At runtime, the installer must find the images partition (GPT partition 4
-> of the boot device, or by filesystem label `BESIMAGES`), read the last 8
-> bytes to recover the hash tree size and compute the hash offset, then run
-> `veritysetup open` with the root hash and `--hash-offset`, mount the
-> resulting dm-verity device as squashfs, and read partition images from it.
+> At runtime, the installer must find the images partition by its well-known
+> PARTUUID (`ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`) via
+> `/dev/disk/by-partuuid/`, read the last 8 bytes to recover the hash tree
+> size and compute the hash offset, then run `veritysetup open` with the
+> root hash and `--hash-offset`, mount the resulting dm-verity device as
+> squashfs, and read partition images from it.
 
 > r[iso.verity.failure]
 > If dm-verity verification fails, the system must not silently use corrupted

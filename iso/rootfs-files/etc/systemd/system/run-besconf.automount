@@ -1,6 +1,6 @@
 [Unit]
 Description=BES Configuration Partition Automount
-ConditionPathExists=/dev/disk/by-label/BESCONF
+ConditionPathExists=/dev/disk/by-partuuid/e2bac42b-03a7-5048-b8f5-3f6d22100e77
 
 [Automount]
 Where=/run/besconf

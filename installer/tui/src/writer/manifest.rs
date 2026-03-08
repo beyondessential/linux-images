@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use super::progress::format_size;
 
-// r[impl installer.write.source+4]
+// r[impl installer.write.source+5]
 #[derive(Debug, Clone, Deserialize)]
 pub struct PartitionManifest {
     #[cfg_attr(
@@ -28,7 +28,7 @@ pub struct PartitionEntry {
     pub image: String,
 }
 
-// r[impl installer.write.source+4]
+// r[impl installer.write.source+5]
 pub fn find_partition_manifest() -> Result<(PartitionManifest, PathBuf)> {
     let search_dirs = [
         "/run/bes-images",
@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(sizes[1], ("root.img".to_string(), 200));
     }
 
-    // r[verify installer.write.source+4]
+    // r[verify installer.write.source+5]
     #[test]
     fn parse_partition_manifest_valid() {
         let json = r#"{
@@ -268,14 +268,14 @@ mod tests {
         assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 
-    // r[verify installer.write.source+4]
+    // r[verify installer.write.source+5]
     #[test]
     fn parse_partition_manifest_missing_fields() {
         let json = r#"{ "arch": "amd64" }"#;
         assert!(serde_json::from_str::<PartitionManifest>(json).is_err());
     }
 
-    // r[verify installer.write.source+4]
+    // r[verify installer.write.source+5]
     #[test]
     fn parse_partition_manifest_bad_json() {
         assert!(serde_json::from_str::<PartitionManifest>("not json").is_err());

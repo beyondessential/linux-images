@@ -4,7 +4,7 @@ After=local-fs-pre.target
 DefaultDependencies=no
 
 [Mount]
-What=/dev/disk/by-label/BESCONF
+What=/dev/disk/by-partuuid/e2bac42b-03a7-5048-b8f5-3f6d22100e77
 Where=/run/besconf
 Type=vfat
 Options=ro,noatime,iocharset=ascii

@@ -9,11 +9,11 @@ use crate::paths;
 
 use super::progress::WriteProgress;
 
-const IMAGES_LABEL: &str = "BESIMAGES";
+const IMAGES_PARTUUID: &str = "ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b";
 const VERITY_NAME: &str = "besimages-verity";
 const IMAGES_MOUNT: &str = "/run/bes-images";
 
-// r[impl installer.write.source+4]
+// r[impl installer.write.source+5]
 // r[impl iso.verity.layout+3]
 /// Read the verity hash tree size from the 8-byte little-endian trailer
 /// at the end of a self-describing verity blob.
@@ -50,7 +50,7 @@ fn read_verity_trailer(path: &Path) -> Result<(u64, u64)> {
     Ok((hash_offset, hash_size))
 }
 
-// r[impl installer.write.source+4]
+// r[impl installer.write.source+5]
 /// Read a `key=value` parameter from `/proc/cmdline`.
 fn cmdline_param(key: &str) -> Result<Option<String>> {
     let cmdline = fs::read_to_string("/proc/cmdline").context("reading /proc/cmdline")?;
@@ -63,27 +63,19 @@ fn cmdline_param(key: &str) -> Result<Option<String>> {
     Ok(None)
 }
 
-/// Find the images partition block device.
-///
-/// Checks `/dev/disk/by-label/BESIMAGES` first, then falls back to
-/// partition 4 of the detected boot device.
-fn find_images_device(boot_device: Option<&Path>) -> Result<Option<PathBuf>> {
-    let by_label = PathBuf::from(format!("/dev/disk/by-label/{IMAGES_LABEL}"));
-    if by_label.exists() {
-        let resolved = fs::canonicalize(&by_label)
-            .with_context(|| format!("resolving {}", by_label.display()))?;
-        tracing::info!("images partition found by label: {}", resolved.display());
+// r[impl installer.write.source+5]
+// r[impl iso.images-partition+2]
+/// Find the images partition block device by its well-known GPT PARTUUID.
+fn find_images_device() -> Result<Option<PathBuf>> {
+    let by_partuuid = PathBuf::from(format!("/dev/disk/by-partuuid/{IMAGES_PARTUUID}"));
+    if by_partuuid.exists() {
+        let resolved = fs::canonicalize(&by_partuuid)
+            .with_context(|| format!("resolving {}", by_partuuid.display()))?;
+        tracing::info!("images partition found by partuuid: {}", resolved.display());
         return Ok(Some(resolved));
     }
 
-    if let Some(boot) = boot_device {
-        let p4 = crate::util::partition_path(boot, 4)?;
-        if p4.exists() {
-            tracing::info!("images partition found as partition 4: {}", p4.display());
-            return Ok(Some(p4));
-        }
-    }
-
+    tracing::info!("images partition not found at {}", by_partuuid.display());
     Ok(None)
 }
 
@@ -137,14 +129,14 @@ impl Drop for ImagesVerity {
     }
 }
 
-// r[impl iso.verity.images+3]
-// r[impl installer.write.source+4]
+// r[impl iso.verity.images+4]
+// r[impl installer.write.source+5]
 /// Open the images partition via dm-verity and mount it as squashfs.
 ///
 /// Returns `Ok(Some(ImagesVerity))` on success, or `Ok(None)` if there is
 /// no images partition (e.g. plain directory fallback for development).
-pub fn open_and_mount_images(boot_device: Option<&Path>) -> Result<Option<ImagesVerity>> {
-    let device = match find_images_device(boot_device)? {
+pub fn open_and_mount_images() -> Result<Option<ImagesVerity>> {
+    let device = match find_images_device()? {
         Some(d) => d,
         None => {
             tracing::info!("no images partition found, verity not available");
