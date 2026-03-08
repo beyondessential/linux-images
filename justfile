@@ -14,7 +14,7 @@ ubuntu_mirror := if arch == "arm64" { env("UBUNTU_PORTS_MIRROR", "http://ports.u
 
 _default:
     @echo "{{ BOLD }}You probably want to run {{ INVERT }}just build{{ NORMAL }}"
-    @echo ""
+    @echo "{{ linux_only }}"
     @just --list
     @echo ""
     @echo "Variable: arch={{ arch }} (amd64, arm64)"
