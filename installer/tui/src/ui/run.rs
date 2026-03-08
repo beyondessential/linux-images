@@ -20,7 +20,7 @@ use crate::writer;
 use crate::writer::PartitionManifest;
 
 use super::render::render;
-use super::{AppState, ProgressSnapshot, Screen};
+use super::{AppState, InstallPhase, ProgressSnapshot, Screen};
 
 enum WorkerMessage {
     Progress(ProgressSnapshot),
@@ -566,27 +566,41 @@ fn run_full_install(
         .context("reading partition image sizes")?;
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
 
-    // Write partitions (~90% of progress)
+    // r[impl installer.tui.progress+4]
+    let send_phase = |phase: InstallPhase| {
+        let _ = tx.send(WorkerMessage::Progress(ProgressSnapshot {
+            bytes_written: 0,
+            total_bytes: None,
+            throughput_mbps: 0.0,
+            eta: None,
+            phase,
+        }));
+    };
+
+    // Write partitions (0..90% of progress)
     disk_writer
         .write_partitions(manifest, images_dir, &mut |progress| {
             let _ = tx.send(WorkerMessage::Progress(progress.into()));
         })
         .context("writing partitions")?;
 
-    // Expand root filesystem (~91%)
+    // Expand root filesystem (90..92%)
+    send_phase(InstallPhase::Expanding);
     disk_writer
         .expand_root_filesystem()
         .context("expanding root filesystem")?;
 
-    // Randomize UUIDs (~92%)
+    // Randomize UUIDs (92..93%)
+    send_phase(InstallPhase::RandomizingUuids);
     disk_writer
         .randomize_filesystem_uuids()
         .context("randomizing filesystem UUIDs")?;
 
     // r[impl installer.encryption.overview+3]
-    // Encryption enrollment + config writes (~93%) — must happen before
+    // Encryption enrollment + config writes (93..94%) — must happen before
     // rebuild_boot_config so dracut picks up the updated crypttab/keyfile.
     if let Some(pp) = disk_writer.passphrase {
+        send_phase(InstallPhase::EncryptionSetup);
         let mounted = firstboot::mount_target(
             disk_writer.target,
             disk_writer.disk_encryption,
@@ -602,17 +616,20 @@ fn run_full_install(
         firstboot::unmount_target(mounted)?;
     }
 
-    // Rebuild boot config (~94%)
+    // Rebuild boot config (94..96%)
+    send_phase(InstallPhase::RebuildingBootConfig);
     disk_writer
         .rebuild_boot_config()
         .context("rebuilding boot config")?;
 
-    // Verify partition table (~95%)
+    // Verify partition table (96..97%)
+    send_phase(InstallPhase::VerifyingPartitions);
     disk_writer
         .verify_partition_table()
         .context("verifying partition table")?;
 
-    // Firstboot (~96%)
+    // Firstboot (97..100%)
+    send_phase(InstallPhase::ApplyingConfig);
     {
         let mounted = firstboot::mount_target(
             disk_writer.target,
