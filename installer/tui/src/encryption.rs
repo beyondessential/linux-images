@@ -44,8 +44,8 @@ pub fn enroll_and_configure_encryption(
 
     let root_part = partition_path(target_device, 3)?;
 
-    // r[impl installer.encryption.tpm-enroll+4]
-    // r[impl installer.encryption.keyfile-enroll+3]
+    // r[impl installer.encryption.tpm-enroll+5]
+    // r[impl installer.encryption.keyfile-enroll+4]
     enroll_unlock_mechanism(&root_part, disk_encryption, mount_path, recovery_passphrase)?;
 
     // Force dracut to include the crypt module and crypttab in the initramfs.
@@ -83,7 +83,7 @@ fn enroll_unlock_mechanism(
     Ok(())
 }
 
-// r[impl installer.encryption.tpm-enroll+4]
+// r[impl installer.encryption.tpm-enroll+5]
 fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) -> Result<()> {
     tracing::info!("enrolling TPM with PCR 1");
 
@@ -108,7 +108,7 @@ fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) ->
 
     let crypttab_path = mount_path.join(CRYPTTAB_PATH.strip_prefix('/').unwrap_or(CRYPTTAB_PATH));
     let crypttab_content = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,token-timeout=30\n";
     fs::write(&crypttab_path, crypttab_content)
         .with_context(|| format!("writing crypttab at {}", crypttab_path.display()))?;
 
@@ -116,7 +116,7 @@ fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) ->
     Ok(())
 }
 
-// r[impl installer.encryption.keyfile-enroll+3]
+// r[impl installer.encryption.keyfile-enroll+4]
 fn enroll_keyfile(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) -> Result<()> {
     tracing::info!("generating and enrolling random keyfile");
 
@@ -179,7 +179,7 @@ fn enroll_keyfile(root_part: &Path, mount_path: &Path, recovery_passphrase: &str
     let crypttab_path = mount_path.join(CRYPTTAB_PATH.strip_prefix('/').unwrap_or(CRYPTTAB_PATH));
     let crypttab_content = format!(
         "# <name> <device>                    <keyfile>         <options>\n\
-         root     /dev/disk/by-partlabel/root {KEYFILE_PATH}  force,luks,discard,timeout=30\n"
+         root     /dev/disk/by-partlabel/root {KEYFILE_PATH}  force,luks,discard,keyfile-timeout=30\n"
     );
     fs::write(&crypttab_path, &crypttab_content)
         .with_context(|| format!("writing crypttab at {}", crypttab_path.display()))?;

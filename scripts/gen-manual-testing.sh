@@ -389,7 +389,7 @@ MD
 step7
 
 # r[verify iso.hybrid]
-# r[verify installer.encryption.tpm-enroll+4]
+# r[verify installer.encryption.tpm-enroll+5]
 # r[verify image.firewall.policy]
 # r[verify image.firewall.ssh]
 # r[verify image.tailscale.service-enabled]

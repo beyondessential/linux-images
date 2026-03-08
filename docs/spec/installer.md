@@ -752,30 +752,38 @@ are non-fatal.
 
 
 
-> r[installer.encryption.tpm-enroll+4]
+> r[installer.encryption.tpm-enroll+5]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
 > `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
 > recovery passphrase. PCR 1 covers hardware identity (motherboard model,
 > CPU, RAM model and serials). The installer must update `/etc/crypttab` to
-> use `tpm2-device=auto` with `timeout=30` and the `force` option (so dracut
-> includes the entry in the initramfs even when the build-time root is not a
-> `crypto_LUKS` device). The `force` option is consumed by dracut only;
+> use `tpm2-device=auto` with `token-timeout=30` and the `force` option (so
+> dracut includes the entry in the initramfs even when the build-time root is
+> not a `crypto_LUKS` device). `token-timeout=` (systemd v250+) controls how
+> long to wait for the TPM token to unseal before falling back to a
+> passphrase prompt. The `timeout=` option must be omitted (defaults to 0 =
+> unlimited) so the user has enough time to type the recovery passphrase when
+> fallback occurs. The `force` option is consumed by dracut only;
 > `systemd-cryptsetup` ignores it at runtime. The crypttab must NOT include
 > `headless=true` — when TPM unsealing fails (hardware change, VM, etc.)
 > `systemd-cryptsetup` must fall back to prompting for the recovery
 > passphrase.
 
-> r[installer.encryption.keyfile-enroll+3]
+> r[installer.encryption.keyfile-enroll+4]
 > When disk encryption is `"keyfile"`, the installer must generate a random
 > keyfile (4096 bytes from `/dev/urandom`), enroll it via
 > `cryptsetup luksAddKey` unlocking with the recovery passphrase, and
 > install it at `/etc/luks/keyfile` (mode 000) on the installed system. The
 > installer must update `/etc/crypttab` to reference the keyfile with
-> `timeout=30` and the `force` option, and update the dracut configuration
-> to include the new keyfile in the initramfs. The crypttab must NOT include
-> `headless=true` — if the keyfile fails for any reason,
-> `systemd-cryptsetup` must fall back to prompting for the recovery
-> passphrase.
+> `keyfile-timeout=30` and the `force` option, and update the dracut
+> configuration to include the new keyfile in the initramfs.
+> `keyfile-timeout=` (systemd v243+) controls how long to wait for the
+> keyfile to become available before falling back to a passphrase prompt.
+> The `timeout=` option must be omitted (defaults to 0 = unlimited) so the
+> user has enough time to type the recovery passphrase when fallback occurs.
+> The crypttab must NOT include `headless=true` — if the keyfile fails for
+> any reason, `systemd-cryptsetup` must fall back to prompting for the
+> recovery passphrase.
 
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the
