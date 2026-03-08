@@ -114,6 +114,15 @@ contain at least one placeholder, literal portions must consist only of
 fully expanded hostname must not exceed 63 characters. Values are generated
 from a cryptographically secure random source.
 
+r[installer.config.template]
+The BESCONF partition template file (`iso/bes-install.toml.template`) must
+contain a commented-out entry for every field recognised by `InstallConfig`.
+Each entry must include a brief description and an example value. This
+ensures users can discover all available options by reading the file on the
+USB stick. A test must verify that every `InstallConfig` field name (using
+the TOML key, i.e. the `rename` form where applicable) appears in the
+template.
+
 ## BESCONF Partition Interaction
 
 r[installer.besconf.writable-detection]

@@ -340,6 +340,7 @@ echo "    GRUB target: $GRUB_TARGET ($GRUB_EFI_NAME)"
 # Phase 4: Build BESCONF FAT32 partition image
 # ============================================================
 # r[impl iso.config-partition+4]
+# r[impl installer.config.template]
 echo "==> Phase 4: Building BESCONF partition image..."
 
 BESCONF_IMG="$WORK_DIR/besconf.img"
