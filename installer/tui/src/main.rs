@@ -24,8 +24,6 @@ mod ui;
 mod util;
 mod writer;
 
-include!(env!("BOSION_PATH"));
-
 pub(crate) const DEFAULT_LOG_PATH: &str = "/var/log/bes-installer.log";
 
 #[derive(Parser)]

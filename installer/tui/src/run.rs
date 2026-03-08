@@ -40,7 +40,7 @@ pub struct RunContext {
 impl RunContext {
     pub fn from_cli(cli: Cli) -> Result<Self> {
         let build_info = read_build_info();
-        let version = crate::Bosion::CRATE_VERSION;
+        let version = env!("CARGO_PKG_VERSION");
         tracing::info!("bes-installer v{version} — {build_info}");
         eprintln!("bes-installer v{version} — {build_info}");
 
@@ -659,8 +659,8 @@ fn emit_plan(plan: &plan::InstallPlan, cli: &Cli) -> Result<()> {
 }
 
 fn read_build_info() -> String {
-    let commit = crate::Bosion::GIT_COMMIT_SHORTHASH;
-    let bosion_date = crate::Bosion::BUILD_DATE;
+    let commit = option_env!("VERGEN_GIT_SHA").unwrap_or("");
+    let vergen_date = option_env!("VERGEN_BUILD_DATE").unwrap_or("");
 
     let (date, arch) = match fs::read_to_string("/etc/bes-build-info") {
         Ok(contents) => {
@@ -678,7 +678,7 @@ fn read_build_info() -> String {
         Err(_) => (None, None),
     };
 
-    let date = date.unwrap_or_else(|| bosion_date.to_string());
+    let date = date.unwrap_or_else(|| vergen_date.to_string());
     let arch = arch.unwrap_or_else(detect_arch);
 
     if commit.is_empty() {
