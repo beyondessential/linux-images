@@ -31,49 +31,71 @@ partuuids_present() {
     [ -e "/dev/disk/by-partuuid/$BESCONF_PARTUUID" ]
 }
 
-find_boot_device() {
-    # Try /proc/cmdline for a root= hint that points at the live medium,
-    # but the most reliable method is finding what backs /run/live/medium
-    # (where live-boot mounts the ISO filesystem).
-    local dev=""
-
-    if mountpoint -q /run/live/medium 2>/dev/null; then
-        dev="$(findmnt -n -o SOURCE /run/live/medium 2>/dev/null || true)"
-    fi
-
-    # findmnt may return e.g. /dev/sr0, /dev/loop0, or /dev/sda
-    if [ -z "$dev" ]; then
-        # Fallback: look for the ISO label
-        dev="$(blkid -t LABEL=BES_INSTALLER -o device 2>/dev/null | head -1 || true)"
-    fi
-
-    if [ -z "$dev" ]; then
-        return 1
-    fi
-
-    # Resolve to the whole-disk device (strip partition suffix if any)
-    dev="$(lsblk -ndo PKNAME "$dev" 2>/dev/null || echo "$dev")"
-    # lsblk PKNAME is empty when the device IS the whole disk
-    if [ -z "$dev" ]; then
-        dev="$(findmnt -n -o SOURCE /run/live/medium 2>/dev/null || true)"
-    fi
+resolve_to_block_device() {
+    local dev="$1"
 
     # Resolve /dev/disk/by-* symlinks
     if [ -L "$dev" ]; then
         dev="$(readlink -f "$dev")"
     fi
 
-    # Make sure it's a block device
+    # Already a block device path?
     if [ -b "$dev" ]; then
         echo "$dev"
         return 0
     fi
 
-    # If dev is a path like "sr0" without /dev prefix
+    # Bare name like "sr0" without /dev prefix?
     if [ -b "/dev/$dev" ]; then
         echo "/dev/$dev"
         return 0
     fi
+
+    return 1
+}
+
+find_boot_device() {
+    # Strategy 1: blkid by filesystem label. This is the most reliable
+    # method because it works regardless of toram (which replaces the
+    # /run/live/medium mount source with tmpfs) and does not depend on
+    # the device still being mounted.
+    local dev=""
+    dev="$(blkid -t LABEL=BES_INSTALLER -o device 2>/dev/null | head -1 || true)"
+    if [ -n "$dev" ]; then
+        if resolve_to_block_device "$dev"; then
+            return 0
+        fi
+    fi
+
+    # Strategy 2: findmnt on /run/live/medium. With toram, live-boot
+    # copies the squashfs to RAM and remounts /run/live/medium as tmpfs,
+    # so the source may be /dev/shm instead of a block device. Only use
+    # this result if it resolves to an actual block device.
+    if mountpoint -q /run/live/medium 2>/dev/null; then
+        dev="$(findmnt -n -o SOURCE /run/live/medium 2>/dev/null || true)"
+        if [ -n "$dev" ] && [ -b "$dev" ]; then
+            # Resolve to whole-disk device (strip partition suffix)
+            local parent
+            parent="$(lsblk -ndo PKNAME "$dev" 2>/dev/null || true)"
+            if [ -n "$parent" ]; then
+                dev="$parent"
+            fi
+            if resolve_to_block_device "$dev"; then
+                return 0
+            fi
+        fi
+    fi
+
+    # Strategy 3: look for /dev/sr0 or /dev/cdrom directly.
+    for candidate in /dev/sr0 /dev/cdrom; do
+        if [ -b "$candidate" ]; then
+            dev="$(readlink -f "$candidate")"
+            if [ -b "$dev" ]; then
+                echo "$dev"
+                return 0
+            fi
+        fi
+    done
 
     return 1
 }
