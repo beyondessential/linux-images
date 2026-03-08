@@ -1,5 +1,5 @@
-output/
-working/
-.tracey/
-target/
+/output
+/working
+/.tracey
+/target
 TODO.*
