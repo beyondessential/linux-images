@@ -79,6 +79,18 @@ installer-test:
 installer-lint:
     cd installer/tui && cargo fmt --check && cargo clippy -- -D warnings
 
+# Regenerate .sh copies of .yml files so tracey can parse YAML annotations.
+# The copies are committed alongside the .yml files. Run this after changing
+# any .yml file under .github/, then commit the updated .sh copies too.
+tracey-setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for f in .github/workflows/*.yml .github/*.yml; do
+        [ -f "$f" ] && cp "$f" "${f%.yml}.sh"
+    done
+    tracey kill 2>/dev/null || true
+    echo "Done. Commit the .sh files if they changed."
+
 # ============================================================
 # Live ISO
 # ============================================================
