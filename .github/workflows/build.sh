@@ -156,14 +156,19 @@ jobs:
       matrix:
         arch: [amd64, arm64]
         include:
+          # r[impl ci.installer-target] r[verify ci.installer-target]
+          # The installer links against the runner's glibc, which must be <=
+          # the glibc in the live ISO rootfs (currently noble / 24.04, glibc 2.39).
+          # When upgrading UBUNTU_SUITE, verify the runner's glibc does not
+          # exceed the new suite's glibc before merging.
           - arch: amd64
             runner: ubuntu-24.04
             grub_pkg: grub-efi-amd64-bin
-            cargo_target: x86_64-unknown-linux-musl
+            cargo_target: x86_64-unknown-linux-gnu
           - arch: arm64
             runner: ubuntu-24.04-arm
             grub_pkg: grub-efi-arm64-bin
-            cargo_target: aarch64-unknown-linux-musl
+            cargo_target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -175,7 +180,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             debootstrap gdisk dosfstools e2fsprogs squashfs-tools \
             ${{ matrix.grub_pkg }} grub-common \
-            parted util-linux zstd cryptsetup xorriso jq musl-tools
+            parted util-linux zstd cryptsetup xorriso jq
 
       # r[impl ci.rust-stable] r[verify ci.rust-stable]
       - name: Install Rust toolchain via rustup

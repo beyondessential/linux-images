@@ -53,7 +53,7 @@ iso_rootfs_dir := work_dir / "iso-rootfs"
 
 # --- Rust installer settings ---
 
-cargo_target := if arch == "amd64" { "x86_64-unknown-linux-musl" } else if arch == "arm64" { "aarch64-unknown-linux-musl" } else { error("Unsupported architecture") }
+cargo_target := if arch == "amd64" { "x86_64-unknown-linux-gnu" } else if arch == "arm64" { "aarch64-unknown-linux-gnu" } else { error("Unsupported architecture") }
 installer_bin := "target" / cargo_target / "release" / "bes-installer"
 
 # --- QEMU settings for boot tests ---
@@ -67,7 +67,7 @@ qemu_firmvars := if arch == "amd64" { work_dir / "OVMF_VARS.fd" } else if arch =
 # Installer (Rust TUI)
 # ============================================================
 
-# Build the TUI installer binary (static musl)
+# Build the TUI installer binary
 installer-build: _validate-arch
     cargo build -p bes-installer --release --target {{ cargo_target }}
 
