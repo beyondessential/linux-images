@@ -328,6 +328,16 @@ rm -rf "$MNT/etc/cloud/cloud.cfg.d/90-installer-network.cfg"
 
 rm -rf "$MNT/etc/update-motd.d/60-unminimize"
 
+# r[impl image.cleanup.logs]
+find "$MNT/var/log" -type f -delete
+
+# r[impl image.cleanup.passwd-backups]
+rm -f "$MNT/etc/passwd-" "$MNT/etc/shadow-" "$MNT/etc/group-" \
+      "$MNT/etc/gshadow-" "$MNT/etc/subuid-" "$MNT/etc/subgid-"
+
+# r[impl image.cleanup.dhcp-leases]
+rm -rf "$MNT/var/lib/dhcp/"*
+
 # Clean temporary build files
 rm -rf "$MNT/tmp/"*
 rm -rf "$MNT/var/cache/apt/archives/"*.deb

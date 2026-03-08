@@ -260,6 +260,16 @@ CHROOT_MOUNTS_ACTIVE=0
 rm -f "$MNT_ROOTFS/etc/resolv.conf"
 ln -sf /run/systemd/resolve/stub-resolv.conf "$MNT_ROOTFS/etc/resolv.conf"
 
+# r[impl iso.cleanup.logs]
+find "$MNT_ROOTFS/var/log" -type f -delete
+
+# r[impl iso.cleanup.passwd-backups]
+rm -f "$MNT_ROOTFS/etc/passwd-" "$MNT_ROOTFS/etc/shadow-" "$MNT_ROOTFS/etc/group-" \
+      "$MNT_ROOTFS/etc/gshadow-" "$MNT_ROOTFS/etc/subuid-" "$MNT_ROOTFS/etc/subgid-"
+
+# r[impl iso.cleanup.dhcp-leases]
+rm -rf "$MNT_ROOTFS/var/lib/dhcp/"*
+
 rm -rf "$MNT_ROOTFS/tmp/"*
 rm -rf "$MNT_ROOTFS/var/cache/apt/archives/"*.deb
 rm -rf "$MNT_ROOTFS/var/lib/apt/lists/"*

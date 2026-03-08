@@ -64,6 +64,20 @@ r[iso.offline]
 The live ISO must be fully functional without network connectivity. No
 packages or data are downloaded during the installation process.
 
+## Build Cleanup
+
+r[iso.cleanup.logs]
+All log files under `/var/log` must be removed or truncated so the live
+rootfs does not ship build-time log content.
+
+r[iso.cleanup.passwd-backups]
+The passwd/shadow backup files (`/etc/passwd-`, `/etc/shadow-`, `/etc/group-`,
+`/etc/gshadow-`, `/etc/subuid-`, `/etc/subgid-`) must be removed.
+
+r[iso.cleanup.dhcp-leases]
+Any DHCP client lease files under `/var/lib/dhcp` must be removed so the
+live rootfs does not ship build-time lease state.
+
 r[iso.contents+3]
 The ISO must contain a TUI installer binary and a `partitions.json` manifest
 describing the partition layout. There is one set of partition images per
