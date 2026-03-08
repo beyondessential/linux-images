@@ -310,9 +310,6 @@ impl AppState {
                 _ => DiskEncryption::Keyfile,
             };
         }
-        if self.hostname_input.trim().is_empty() && !self.hostname_from_template {
-            self.hostname_from_dhcp = !self.disk_encryption.is_encrypted();
-        }
     }
 
     pub fn cycle_disk_encryption_reverse(&mut self) {
@@ -327,9 +324,6 @@ impl AppState {
                 DiskEncryption::Keyfile => DiskEncryption::None,
                 _ => DiskEncryption::Keyfile,
             };
-        }
-        if self.hostname_input.trim().is_empty() && !self.hostname_from_template {
-            self.hostname_from_dhcp = !self.disk_encryption.is_encrypted();
         }
     }
 
@@ -918,9 +912,8 @@ mod tests {
         assert_eq!(state.screen, Screen::DiskEncryption);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
-        // Static is default for encrypted (hostname_from_dhcp = false), advance to HostnameInput
-        state.advance();
-        assert_eq!(state.screen, Screen::HostnameInput);
+        // Network-assigned (DHCP) is the default regardless of encryption,
+        // so advance skips HostnameInput and goes to Login directly.
         state.advance();
         assert_eq!(state.screen, Screen::Login);
         state.advance();
@@ -996,9 +989,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
-        // Encrypted: hostname_from_dhcp is false, so Login goes back to HostnameInput
-        state.go_back();
-        assert_eq!(state.screen, Screen::HostnameInput);
+        // hostname_from_dhcp is true (always the default), so Login goes back to Hostname selector
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
@@ -1133,11 +1124,12 @@ mod tests {
 
     // r[verify installer.tui.hostname+6]
     #[test]
-    fn none_encryption_defaults_to_dhcp() {
+    fn default_config_always_defaults_to_dhcp() {
+        // With no static hostname configured, hostname_from_dhcp is always true
+        // regardless of encryption type.
         let state = make_state();
-        // make_state creates Tpm (encrypted) which defaults to false
-        assert!(!state.hostname_from_dhcp);
-        // Construct a none-encryption state properly.
+        assert!(state.hostname_from_dhcp);
+
         use crate::disk::TransportType;
         let devices = vec![BlockDevice {
             path: PathBuf::from("/dev/sda"),
@@ -1252,8 +1244,12 @@ mod tests {
     #[test]
     fn install_config_from_inputs() {
         let mut state = make_state();
+        // hostname_from_dhcp is true by default, so install_config_fields always
+        // returns Some (DHCP counts as configured). Disable it to test None.
+        state.hostname_from_dhcp = false;
         assert!(state.install_config_fields().is_none());
 
+        state.hostname_from_dhcp = false;
         state.hostname_input = "server-01".into();
         let cfg = state.install_config_fields().unwrap();
         assert_eq!(cfg.hostname.as_deref(), Some("server-01"));
@@ -1268,6 +1264,7 @@ mod tests {
     #[test]
     fn install_config_all_fields() {
         let mut state = make_state();
+        state.hostname_from_dhcp = false;
         state.hostname_input = "host".into();
         state.tailscale_input = "tskey-auth-123".into();
         state.ssh_keys = vec!["ssh-ed25519 AAAA".into(), "ssh-rsa BBBB".into()];
@@ -1286,8 +1283,9 @@ mod tests {
     fn install_config_empty_strings_are_none() {
         let mut state = make_state();
         state.hostname_input = "   ".into();
+        state.hostname_from_dhcp = false;
         state.tailscale_input = "  ".into();
-        state.ssh_keys = vec![String::new(), "  ".into()];
+        // No password, no hash, not DHCP. All fields empty → None.
         assert!(state.install_config_fields().is_none());
     }
 
@@ -1354,6 +1352,10 @@ mod tests {
     fn hostname_required_for_encrypted() {
         let mut state = make_state();
         state.disk_encryption = DiskEncryption::Tpm;
+        // hostname_from_dhcp is true by default (encryption no longer matters),
+        // so hostname is not required unless the user toggles to Static.
+        assert!(!state.hostname_required());
+        state.hostname_from_dhcp = false;
         assert!(state.hostname_required());
     }
 

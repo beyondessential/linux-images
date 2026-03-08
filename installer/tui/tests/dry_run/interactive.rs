@@ -14,8 +14,8 @@ enter
 enter
 # DiskEncryption: accept default (keyfile)
 enter
-# Hostname selector: Network-assigned is default, Up to select Static
-up
+# Hostname selector: DHCP is default, toggle to Static
+down
 enter
 # HostnameInput: type hostname then advance
 type:my-server
@@ -146,8 +146,8 @@ enter
 # DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: Network-assigned is default, Up to select Static
-up
+# Hostname selector: DHCP is default, toggle to Static
+down
 enter
 # HostnameInput: type hostname then advance
 type:my-host
@@ -294,10 +294,10 @@ down
 enter
 # DiskEncryption: accept default (keyfile)
 enter
-# Hostname selector: Network-assigned is default, Up to select Static
-up
+# Hostname selector: DHCP is default, toggle to Static
+down
 enter
-# HostnameInput: type 'h' (required for encrypted)
+# HostnameInput: type 'h'
 type:h
 enter
 # Login: type password

@@ -810,7 +810,8 @@ mod tests {
             press(KeyCode::Enter),
             // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
-            // Hostname selector: Static is default for encrypted, Enter -> HostnameInput
+            // Hostname selector: Network-assigned (DHCP) is default, toggle to Static
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "myhost" then advance -> Login
             press(KeyCode::Char('m')),
@@ -858,7 +859,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none encryption,
+            // Hostname selector: network-assigned is default,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
             // Login: type password + confirm + advance
@@ -995,7 +996,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1025,7 +1027,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1057,9 +1060,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: type password
@@ -1088,9 +1092,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: Enter moves to confirm, then Enter again with empty fields
@@ -1113,9 +1118,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: type password
@@ -1140,7 +1146,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static is default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: press Enter with empty input — should NOT advance
             press(KeyCode::Enter),
@@ -1161,7 +1168,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static is default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type a name then advance
             press(KeyCode::Char('s')),
@@ -1189,7 +1197,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none encryption,
+            // Hostname selector: network-assigned is default,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
         ];
@@ -1214,7 +1222,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none,
+            // Hostname selector: network-assigned is default,
             // Up to select Static -> Enter -> HostnameInput
             press(KeyCode::Up),
             press(KeyCode::Enter),
@@ -1237,8 +1245,7 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down to select DHCP, then Enter -> Login
-            press(KeyCode::Down),
+            // Hostname selector: DHCP is already the default, Enter -> Login
             press(KeyCode::Enter),
         ];
 
@@ -1257,9 +1264,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down (DHCP) -> Up (Static) -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, Down toggles to Static, Enter -> HostnameInput
             press(KeyCode::Down),
-            press(KeyCode::Up),
             press(KeyCode::Enter),
             // HostnameInput: empty -> Enter should NOT advance
             press(KeyCode::Enter),
@@ -1280,8 +1286,7 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down to select DHCP, then Enter -> Login directly
-            press(KeyCode::Down),
+            // Hostname selector: DHCP is already the default, Enter -> Login directly
             press(KeyCode::Enter),
         ];
 
@@ -1299,7 +1304,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: Esc -> back to Hostname selector
             press(KeyCode::Esc),
@@ -1323,7 +1329,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none,
+            // Hostname selector: network-assigned is default,
             // Up toggles to Static, Down toggles back to network-assigned,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Up),
@@ -1345,7 +1351,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type invalid hostname then try to advance
             press(KeyCode::Char('!')),
@@ -1375,7 +1382,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type hostname starting with hyphen
             press(KeyCode::Char('-')),
@@ -1406,7 +1414,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type valid hostname
             press(KeyCode::Char('m')),
@@ -1436,7 +1445,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type a leading hyphen (error set live), then delete it
             // and type a valid char — error should be cleared
@@ -1459,7 +1469,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type an invalid character — error should appear without Enter
             press(KeyCode::Char('!')),
@@ -1533,7 +1544,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1560,7 +1572,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1590,7 +1603,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1621,7 +1635,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1656,7 +1671,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1682,7 +1698,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1717,7 +1734,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1751,7 +1769,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1783,7 +1802,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1812,7 +1832,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1854,7 +1875,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
