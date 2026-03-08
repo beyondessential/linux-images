@@ -66,24 +66,12 @@ packages or data are downloaded during the installation process.
 
 ## Build Cleanup
 
-r[iso.cleanup.logs]
-All log files under `/var/log` must be removed or truncated so the live
-rootfs does not ship build-time log content.
-
-r[iso.cleanup.passwd-backups]
-The passwd/shadow backup files (`/etc/passwd-`, `/etc/shadow-`, `/etc/group-`,
-`/etc/gshadow-`, `/etc/subuid-`, `/etc/subgid-`) must be removed.
-
-r[iso.cleanup.dhcp-leases]
-Any DHCP client lease files under `/var/lib/dhcp` must be removed so the
-live rootfs does not ship build-time lease state.
-
 r[iso.contents+3]
 The ISO must contain a TUI installer binary and a `partitions.json` manifest
 describing the partition layout. There is one set of partition images per
 architecture, not per variant. The partition images (`efi.img`, `xboot.img`,
 `root.img`) are stored as raw (uncompressed) files inside a dedicated
-squashfs with transparent zstd compression (see `r[iso.images-partition]`).
+squashfs with transparent zstd compression (see `r[iso.images-partition+3]`).
 The installer reconstructs the GPT and writes each partition individually,
 setting up LUKS on the root partition when encryption is enabled.
 
@@ -210,7 +198,7 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 
 > r[iso.verity.squashfs+2]
 > The live rootfs squashfs (`/live/filesystem.squashfs`) must be protected by
-> dm-verity using the layout described in `r[iso.verity.layout]`. At build
+> dm-verity using the layout described in `r[iso.verity.layout+3]`. At build
 > time:
 >
 > 1. Run `mksquashfs` to produce the squashfs.
@@ -218,7 +206,7 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 >    and a root hash.
 > 3. Append the hash tree to the squashfs file.
 > 4. Pad the blob to 4096-byte alignment and write the trailer as described
->    in `r[iso.verity.layout]`.
+>    in `r[iso.verity.layout+3]`.
 > 5. Embed the root hash in the GRUB kernel command line as
 >    `live.verity.roothash=<hex>`.
 >
@@ -247,7 +235,7 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 > runtime dependencies (shared libraries, `libcryptsetup`, `libdevmapper`)
 > into the initramfs. A premount script at
 > `/usr/share/initramfs-tools/scripts/live-premount/verity` must implement
-> the dm-verity setup described in `r[iso.verity.squashfs]`, including the
+> the dm-verity setup described in `r[iso.verity.squashfs+2]`, including the
 > trailer read to recover the hash offset.
 
 > r[iso.images-partition+3]
@@ -261,12 +249,12 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 > depending on a specific partition number. After `xorriso` produces the
 > ISO, the build script must use `sfdisk --part-uuid` to stamp this PARTUUID
 > onto the images partition. On CD-ROM boot, the partition scanning service
-> described in `r[iso.cdrom-partscan]` ensures these PARTUUIDs become
+> described in `r[iso.cdrom-partscan+3]` ensures these PARTUUIDs become
 > available.
 
 > r[iso.verity.images+4]
 > The images squashfs partition must be protected by dm-verity using the
-> layout described in `r[iso.verity.layout]`. At build time:
+> layout described in `r[iso.verity.layout+3]`. At build time:
 >
 > 1. Run `mksquashfs` to produce the images squashfs.
 > 2. Record the squashfs data size.
@@ -274,7 +262,7 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 >    and a root hash.
 > 4. Append the hash tree to the squashfs file.
 > 5. Pad the blob to 4096-byte alignment and write the trailer as described
->    in `r[iso.verity.layout]`.
+>    in `r[iso.verity.layout+3]`.
 > 6. Append the combined blob as a GPT partition via xorriso.
 > 7. Store the root hash in the GRUB kernel command line as
 >    `images.verity.roothash=<hex>`.

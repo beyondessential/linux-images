@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::IsTerminal;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -594,12 +595,14 @@ fn resolve_hostname_template(cfg: &mut config::InstallConfig) -> Result<()> {
 }
 
 fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMode)> {
-    let config_path = cli.config.clone().or_else(config::find_config_file);
+    let config_path = cli
+        .config
+        .as_deref()
+        // r[impl installer.config.location]
+        .unwrap_or(Path::new("/run/besconf/bes-install.toml"));
 
-    match config_path {
-        Some(path) => {
-            let cfg = config::InstallConfig::load_from_file(&path)?.unwrap_or_default();
-
+    match config::InstallConfig::load_from_file(&config_path)? {
+        Some(cfg) => {
             let mode = cfg.mode();
             tracing::info!("operating mode: {mode}");
             Ok((cfg, mode))
@@ -691,5 +694,58 @@ fn detect_arch() -> String {
         "x86_64" => "amd64".into(),
         "aarch64" => "arm64".into(),
         other => other.into(),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+
+    use crate::config::{DiskEncryption, DiskSelector, DiskStrategy};
+
+    fn make_cli(config: Option<PathBuf>) -> crate::Cli {
+        crate::Cli {
+            config,
+            log: crate::DEFAULT_LOG_PATH.into(),
+            dry_run: false,
+            dry_run_output: None,
+            fake_devices: None,
+            input_script: None,
+            fake_timezones: None,
+            fake_tpm: false,
+            no_reboot: false,
+            check_paths: None,
+            check_chroot_paths: None,
+        }
+    }
+
+    // r[verify installer.config.location]
+    #[test]
+    fn load_valid_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bes-install.toml");
+        std::fs::write(
+            &path,
+            r#"
+            disk-encryption = "none"
+            disk = "smallest"
+        "#,
+        )
+        .unwrap();
+        let (config, _) = super::load_config(&make_cli(Some(path))).unwrap();
+        assert_eq!(config.disk_encryption, Some(DiskEncryption::None));
+        assert_eq!(
+            config.disk,
+            Some(DiskSelector::Strategy(DiskStrategy::Smallest))
+        );
+    }
+
+    // r[verify installer.config.format]
+    #[test]
+    fn load_invalid_toml_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bes-install.toml");
+        std::fs::write(&path, "this is not valid toml {{{{").unwrap();
+        assert!(super::load_config(&make_cli(Some(path))).is_err());
     }
 }

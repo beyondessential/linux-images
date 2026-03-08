@@ -301,20 +301,6 @@ Dracut must be configured to include this keyfile in the initramfs.
 r[image.luks.crypttab]
 `/etc/crypttab` must be configured to automatically decrypt the root on boot.
 
-## Build Cleanup
-
-r[image.cleanup.logs]
-All log files under `/var/log` must be removed or truncated so the image
-does not ship build-time log content.
-
-r[image.cleanup.passwd-backups]
-The passwd/shadow backup files (`/etc/passwd-`, `/etc/shadow-`, `/etc/group-`,
-`/etc/gshadow-`, `/etc/subuid-`, `/etc/subgid-`) must be removed.
-
-r[image.cleanup.dhcp-leases]
-Any DHCP client lease files under `/var/lib/dhcp` must be removed so the
-image does not ship build-time lease state.
-
 ## Output
 
 r[image.output.raw]

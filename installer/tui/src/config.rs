@@ -381,28 +381,6 @@ impl InstallConfig {
     }
 }
 
-pub fn find_config_file() -> Option<PathBuf> {
-    // r[impl installer.config.location]
-    let candidates = [
-        // BESCONF partition (appended FAT32 partition on USB-booted ISO)
-        PathBuf::from("/run/besconf/bes-install.toml"),
-        // ISO filesystem root (mounted by live-boot)
-        PathBuf::from("/run/live/medium/bes-install.toml"),
-        // Legacy / manual placement paths
-        PathBuf::from("/boot/efi/bes-install.toml"),
-    ];
-
-    for candidate in &candidates {
-        if candidate.exists() {
-            tracing::info!("found config file at {}", candidate.display());
-            return Some(candidate.clone());
-        }
-    }
-
-    tracing::info!("no config file found at any known location");
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

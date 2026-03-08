@@ -2,23 +2,18 @@
 
 ## Configuration File
 
-> r[installer.config.location]
-> The installer must look for a TOML configuration file named
-> `bes-install.toml`. It searches the following locations in order, using
-> the first file found:
->
-> 1. The BESCONF partition (mounted at `/run/besconf/` by a udev rule or
->    mount unit in the live environment).
-> 2. `/run/live/medium/bes-install.toml` (the ISO filesystem root, as
->    mounted by `live-boot`).
-> 3. `/boot/efi/bes-install.toml` (fallback for manual placement).
-
 r[installer.config.format]
-The configuration file is in TOML format. All fields are top-level
-(no tables or sections) and all fields are optional. The installer must
-reject unknown fields with a parse error. The file configures both the
-installation process (disk selection, encryption, automation) and the
-install-time system setup (hostname, credentials, services).
+The configuration file must be in TOML format.
+The installer must reject unknown fields with a parse error.
+
+r[installer.config.location]
+The installer must look for a `bes-install.toml` file at the root of the
+BESCONF partition. If the file does not exist, it must consider it empty.
+
+r[installer.config.template]
+The BESCONF partition must have a `bes-install.toml` file containing a
+commented-out entry for every known config field. Each entry must include
+a brief description and an example value.
 
 r[installer.config.auto]
 The `auto` field is a boolean. When `true`, the installer runs fully
@@ -113,15 +108,6 @@ contain at least one placeholder, literal portions must consist only of
 `[a-z0-9-]`, the template must not start or end with a hyphen, and the
 fully expanded hostname must not exceed 63 characters. Values are generated
 from a cryptographically secure random source.
-
-r[installer.config.template]
-The BESCONF partition template file (`iso/bes-install.toml.template`) must
-contain a commented-out entry for every field recognised by `InstallConfig`.
-Each entry must include a brief description and an example value. This
-ensures users can discover all available options by reading the file on the
-USB stick. A test must verify that every `InstallConfig` field name (using
-the TOML key, i.e. the `rename` form where applicable) appears in the
-template.
 
 ## BESCONF Partition Interaction
 
@@ -304,7 +290,7 @@ must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
 debug shell without leaving the installer permanently (this is the only
 screen where the hint is shown, though the keybind works everywhere).
 
-When the images partition was opened via dm-verity (see `r[iso.verity.check]`),
+When the images partition was opened via dm-verity (see `r[iso.verity.check+5]`),
 the welcome screen must display a progress bar at the bottom labelled
 "Verifying installation media..." while the integrity check runs in the
 background. The user must not be allowed to advance past the welcome screen
@@ -557,7 +543,7 @@ r[installer.tui.progress+4]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
 `Installing` screen from the moment the user confirms until all steps
-complete. The integrity check (see `r[iso.verity.check]`) is **not** part of
+complete. The integrity check (see `r[iso.verity.check+5]`) is **not** part of
 this progress bar -- it runs earlier on the welcome screen. The Installing
 screen begins with partition image writes (which have byte-level progress)
 occupying approximately 90% of the bar. Each post-write step (filesystem
@@ -599,12 +585,12 @@ images, the installer must verify the partition table.
 > partition to locate the partition images and their layout metadata. There is
 > one set of partition images per architecture, not per variant. The partition
 > images are raw (uncompressed) files inside a squashfs with transparent zstd
-> compression (see `r[iso.images-partition]`).
+> compression (see `r[iso.images-partition+3]`).
 >
 > The installer must locate the images partition by its well-known GPT
 > PARTUUID (`ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`) via
 > `/dev/disk/by-partuuid/`. The partition uses the
-> self-describing verity layout from `r[iso.verity.layout]`: the installer
+> self-describing verity layout from `r[iso.verity.layout+3]`: the installer
 > reads the last 8 bytes to recover the hash tree size, computes the hash
 > offset, reads the root hash from the `images.verity.roothash=` kernel
 > command line parameter, and calls `veritysetup open` with `--hash-offset`.
@@ -685,7 +671,7 @@ changes.
 > r[installer.write.rebuild-boot-config+4]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
-> `r[installer.encryption.overview]`), the installer must unconditionally
+> `r[installer.encryption.overview+3]`), the installer must unconditionally
 > rebuild the initramfs and GRUB configuration in a chroot of the installed
 > system, regardless of encryption mode. This is required because the GRUB
 > config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
@@ -711,7 +697,7 @@ changes.
 
 > r[installer.encryption.overview+3]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+4]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -722,7 +708,7 @@ changes.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+4]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created
@@ -752,7 +738,7 @@ changes.
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the
 > write phase begins. This passphrase is used as the initial LUKS key when
-> formatting the root partition (see `r[installer.write.luks-before-write]`),
+> formatting the root partition (see `r[installer.write.luks-before-write+2]`),
 > so it is already enrolled as a LUKS password slot — no separate
 > `luksAddKey` step is required. In interactive mode, the passphrase must be
 > generated at confirmation time and displayed on the confirmation screen so
@@ -781,7 +767,7 @@ installer must leave `/etc/hostname` as-is.
 
 r[installer.finalise.tailscale-auth]
 If `tailscale-authkey` is set and the installer knows that tailscale
-netcheck passed (i.e. `r[installer.tui.tailscale-netcheck]` completed
+netcheck passed (i.e. `r[installer.tui.tailscale-netcheck+2]` completed
 successfully), the installer must attempt to authenticate with Tailscale
 directly by chrooting into the mounted target filesystem and running
 `tailscale up --auth-key=<key> --ssh`. The installer must log the outcome

@@ -26,7 +26,7 @@ mod writer;
 
 include!(env!("BOSION_PATH"));
 
-const DEFAULT_LOG_PATH: &str = "/var/log/bes-installer.log";
+pub(crate) const DEFAULT_LOG_PATH: &str = "/var/log/bes-installer.log";
 
 #[derive(Parser)]
 #[command(name = "bes-installer", about = "BES Linux Images Installer")]
