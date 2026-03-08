@@ -347,7 +347,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
     check "resolv.conf is symlink to resolved stub" test -L "$SQFS_MNT/etc/resolv.conf"
 
-    # r[verify iso.config-partition+2]
+    # r[verify iso.config-partition+3]
     check "run-besconf.mount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
     check "run-besconf.automount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.automount"
     if find "$SQFS_MNT/etc/systemd/system" -name "run-besconf.automount" -type l 2>/dev/null | grep -q .; then
@@ -396,7 +396,7 @@ fi
 echo ""
 echo "--- BESCONF Partition ---"
 
-# r[verify iso.config-partition+2]
+# r[verify iso.config-partition+3]
 # Set up a loop device with partition scanning to find the appended BESCONF partition.
 LOOP_DEVICE="$(losetup -f --show -P "$ISO")"
 partprobe "$LOOP_DEVICE" 2>/dev/null || true
@@ -440,7 +440,7 @@ fi
 echo ""
 echo "--- Images Partition ---"
 
-# r[verify iso.images-partition+2]
+# r[verify iso.images-partition+3]
 # r[verify iso.verity.images+4]
 # r[verify iso.verity.layout+3]
 # Find the images partition by GPT type code 8300 (Linux filesystem).
@@ -697,7 +697,7 @@ else
     fail "dd output contains BESCONF partition"
 fi
 
-# r[verify iso.images-partition+2]
+# r[verify iso.images-partition+3]
 # Images partition must also survive the dd — find by type UUID, not number
 DD_IMAGES_FOUND=0
 while IFS= read -r line; do

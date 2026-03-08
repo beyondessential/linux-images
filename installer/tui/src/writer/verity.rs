@@ -64,7 +64,7 @@ fn cmdline_param(key: &str) -> Result<Option<String>> {
 }
 
 // r[impl installer.write.source+5]
-// r[impl iso.images-partition+2]
+// r[impl iso.images-partition+3]
 /// Find the images partition block device by its well-known GPT PARTUUID.
 fn find_images_device() -> Result<Option<PathBuf>> {
     let by_partuuid = PathBuf::from(format!("/dev/disk/by-partuuid/{IMAGES_PARTUUID}"));

@@ -87,7 +87,7 @@ package must be installed in the live rootfs to provide `/usr/bin/chvt`.
 The `systemd-sysv` package must be installed to provide `/sbin/reboot`
 so that the installer's reboot action works.
 
-> r[iso.config-partition+2]
+> r[iso.config-partition+3]
 > The ISO must include an appended FAT32 partition (GPT type `Microsoft basic
 > data`) created via `xorriso --append_partition`. This partition is embedded
 > in the ISO file and becomes a real writable GPT partition after the ISO is
@@ -96,8 +96,8 @@ so that the installer's reboot action works.
 > `e2bac42b-03a7-5048-b8f5-3f6d22100e77` so that the live environment can
 > locate it via `/dev/disk/by-partuuid/` without depending on a specific
 > partition number or risking label collisions with other disks. After
-> `xorriso` produces the ISO, the build script must use `sgdisk -u` to stamp
-> this PARTUUID onto the BESCONF partition.
+> `xorriso` produces the ISO, the build script must use `sfdisk --part-uuid`
+> to stamp this PARTUUID onto the BESCONF partition.
 >
 > When booted from USB, this partition is writable and is the intended location
 > for users to place a `bes-install.toml` configuration file before booting.
@@ -110,6 +110,41 @@ ISO contains only the images and installer binary for its architecture.
 r[iso.usb]
 The ISO must be writable to USB media using `dd` and must boot correctly on
 UEFI systems from that media.
+
+r[iso.vdi]
+The build system must provide a recipe to convert the hybrid ISO to a VDI
+(VirtualBox Disk Image) so that it can be attached as a USB/hard-disk
+device in VirtualBox for testing. The conversion uses `qemu-img convert`
+from raw to VDI format. The resulting `.vdi` file is byte-equivalent to
+the ISO but in a container format that VirtualBox recognises as a hard disk.
+
+## CD-ROM Partition Scanning
+
+> r[iso.cdrom-partscan+2]
+> When the ISO is booted as optical media (e.g. `/dev/sr0` in a VM), the
+> Linux kernel does not parse the GPT appended partitions because the CD-ROM
+> block device driver exposes the device as a single block device with an
+> ISO 9660 filesystem. As a result, partition device nodes (e.g. `sr0p3`,
+> `sr0p4`) are never created and `/dev/disk/by-partuuid/` symlinks for the
+> appended BESIMAGES and BESCONF partitions do not appear.
+>
+> To handle this, the live environment must include a boot service that
+> detects whether the GPT appended partitions are accessible. If the
+> well-known PARTUUIDs are not present in `/dev/disk/by-partuuid/`, the
+> service must:
+>
+> 1. Identify the boot device (from `/proc/cmdline` or by finding the
+>    device backing `/run/live/medium`).
+> 2. Run `losetup --find --show --partscan --read-only <device>` to create
+>    a loop device with partition scanning enabled.
+> 3. Run `partprobe` on the loop device and wait for udev to settle.
+> 4. After this, the kernel creates partition device nodes on the loop
+>    device (e.g. `loop0p3`, `loop0p4`) and udev populates
+>    `/dev/disk/by-partuuid/` with the well-known PARTUUIDs.
+>
+> The service must run early (before the installer and before the BESCONF
+> automount) and must clean up the loop device on shutdown. On USB boot,
+> the PARTUUIDs are already visible and the service is a no-op.
 
 ## Integrity Verification
 
@@ -193,7 +228,7 @@ UEFI systems from that media.
 > the dm-verity setup described in `r[iso.verity.squashfs]`, including the
 > trailer read to recover the hash offset.
 
-> r[iso.images-partition+2]
+> r[iso.images-partition+3]
 > The ISO must include a read-only squashfs partition appended via
 > `xorriso --append_partition`. This squashfs must contain the raw
 > (uncompressed) partition images (`efi.img`, `xboot.img`, `root.img`) and
@@ -202,8 +237,10 @@ UEFI systems from that media.
 > must have a well-known GPT PARTUUID of `ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`
 > so that the installer can locate it via `/dev/disk/by-partuuid/` without
 > depending on a specific partition number. After `xorriso` produces the
-> ISO, the build script must use `sgdisk -u` to stamp this PARTUUID onto
-> the images partition.
+> ISO, the build script must use `sfdisk --part-uuid` to stamp this PARTUUID
+> onto the images partition. On CD-ROM boot, the partition scanning service
+> described in `r[iso.cdrom-partscan]` ensures these PARTUUIDs become
+> available.
 
 > r[iso.verity.images+4]
 > The images squashfs partition must be protected by dm-verity using the

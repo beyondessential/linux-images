@@ -243,7 +243,7 @@ run_in_chroot passwd -d root
 install -D -m 644 "$ROOTFS_FILES/etc/systemd/logind.conf.d/reserve-tty2.conf" \
     "$MNT_ROOTFS/etc/systemd/logind.conf.d/reserve-tty2.conf"
 
-# r[impl iso.config-partition+2]
+# r[impl iso.config-partition+3]
 install -D -m 644 "$ROOTFS_FILES/etc/systemd/system/run-besconf.mount" \
     "$MNT_ROOTFS/etc/systemd/system/run-besconf.mount"
 
