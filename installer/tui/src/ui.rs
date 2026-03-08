@@ -132,8 +132,6 @@ impl AppState {
     ) -> Self {
         let endpoints = net::default_endpoints();
         let net_check_total = net::total_check_count(&endpoints);
-        let variant = disk_encryption.variant();
-
         let keys: Vec<String> = install_config
             .ssh_authorized_keys
             .iter()
@@ -150,13 +148,7 @@ impl AppState {
             .as_ref()
             .is_some_and(|h| !h.trim().is_empty())
             || install_config.hostname_template.is_some();
-        let hostname_from_dhcp = if has_static_hostname {
-            false
-        } else if install_config.hostname_from_dhcp {
-            true
-        } else {
-            variant == crate::config::Variant::Cloud
-        };
+        let hostname_from_dhcp = !has_static_hostname;
         let hostname_input = install_config.hostname.clone().unwrap_or_default();
         let hostname_from_template = install_config.hostname_template.is_some();
         let tailscale_input = install_config.tailscale_authkey.clone().unwrap_or_default();

@@ -405,7 +405,7 @@ mod tests {
     fn read_verity_trailer_too_small() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tiny");
-        std::fs::write(&path, &[0u8; 4]).unwrap();
+        std::fs::write(&path, [0u8; 4]).unwrap();
 
         assert!(read_verity_trailer(&path).is_err());
     }
@@ -449,7 +449,7 @@ mod tests {
         // current_size = 6144, need to fit + 8 byte trailer, round up to 4096
         // (6144 + 8) = 6152, round up to 8192
         let current_size = data_size + hash_tree_size;
-        let total_needed = ((current_size + 8 + 4095) / 4096) * 4096;
+        let total_needed = (current_size + 8).div_ceil(4096) * 4096;
         let padding = total_needed - current_size - 8;
         assert_eq!(total_needed, 8192);
         assert_eq!(padding, 2040);
@@ -514,7 +514,7 @@ mod tests {
         let src_path = dir.path().join("empty");
         let dst_path = dir.path().join("dst");
 
-        std::fs::write(&src_path, &[]).unwrap();
+        std::fs::write(&src_path, []).unwrap();
 
         let src = File::open(&src_path).unwrap();
         let dst = File::create(&dst_path).unwrap();

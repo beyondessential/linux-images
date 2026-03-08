@@ -514,13 +514,7 @@ fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
 
 // r[impl installer.tui.hostname+5]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
-    let is_encrypted = state.disk_encryption.is_encrypted();
-
-    let network_label = if is_encrypted {
-        "Network-assigned (DHCP)"
-    } else {
-        "Network-assigned (DHCP / cloud-init)"
-    };
+    let network_label = "Network-assigned (DHCP)";
 
     let options = ["Static hostname", network_label];
     let selected_index = if state.hostname_from_dhcp { 1 } else { 0 };

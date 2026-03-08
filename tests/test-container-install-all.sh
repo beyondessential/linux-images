@@ -6,8 +6,8 @@
 # Usage: test-container-install-all.sh <iso> <arch> [filter]
 #   arch: amd64 | arm64
 #   filter: one of the following (omit to run all scenarios):
-#     "metal"              — run only metal-variant scenarios (tpm/keyfile)
-#     "cloud"              — run only cloud-variant scenarios (none)
+#     "encrypted"          — run only encrypted scenarios (tpm/keyfile)
+#     "plain"              — run only plain (unencrypted) scenarios
 #     "<scenario-name>"    — run a single scenario by exact name
 #     "<substring>"        — run all scenarios whose name contains the string
 #
@@ -122,14 +122,14 @@ fi
 # Helper: read a string field from a scenario JSON object, defaulting to "".
 jq_str() { echo "$1" | jq -r "$2 // empty"; }
 
-# Apply filter if specified. Accepts variant names ("metal"/"cloud"),
+# Apply filter if specified. Accepts category names ("encrypted"/"plain"),
 # an exact scenario name, or a substring match.
 if [ -n "$FILTER" ]; then
     case "$FILTER" in
-        metal)
+        encrypted|metal)
             SCENARIOS_FILTERED=$(jq -c '[.[] | select(."disk-encryption" == "tpm" or ."disk-encryption" == "keyfile")]' "$SCENARIOS_JSON")
             ;;
-        cloud)
+        plain|cloud)
             SCENARIOS_FILTERED=$(jq -c '[.[] | select(."disk-encryption" == "none")]' "$SCENARIOS_JSON")
             ;;
         *)

@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 // ---------------------------------------------------------------------------
-// Test fixture: a loop-backed LUKS2 volume mimicking the metal image layout
+// Test fixture: a loop-backed LUKS2 volume mimicking the encrypted image layout
 // ---------------------------------------------------------------------------
 
 struct LuksFixture {

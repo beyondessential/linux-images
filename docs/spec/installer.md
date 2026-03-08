@@ -26,12 +26,12 @@ automatically without interactive prompts. Automatic mode requires at
 minimum `disk-encryption` and `disk` to be set; if they are missing the
 installer must report a validation error.
 
-r[installer.config.disk-encryption]
+r[installer.config.disk-encryption+2]
 The `disk-encryption` field is a string selecting the disk encryption
 mode. Valid values are `"tpm"` (LUKS + TPM PCR 1; requires a TPM and is
 the default when a TPM is present), `"keyfile"` (LUKS + keyfile on the
 boot partition; default when no TPM is present), or `"none"` (no
-encryption, producing a cloud image).
+encryption).
 
 r[installer.config.disk]
 The `disk` field is a string selecting the target disk. It may be a
@@ -209,14 +209,13 @@ r[installer.dryrun.output]
 The `--dry-run-output <path>` flag specifies the path for the JSON install
 plan. If omitted, the plan is written to stdout.
 
-> r[installer.dryrun.schema+5]
+> r[installer.dryrun.schema+6]
 > The install plan JSON has the following structure:
 >
 > ```json
 > {
 >   "mode": "auto | prefilled | interactive | auto-incomplete",
 >   "disk_encryption": "tpm | keyfile | none",
->   "variant": "metal | cloud",
 >   "disk": {
 >     "path": "/dev/nvme0n1",
 >     "model": "Samsung 980 PRO",
@@ -238,10 +237,8 @@ plan. If omitted, the plan is written to stdout.
 > }
 > ```
 >
-> `disk_encryption` is the user's chosen encryption mode. `variant` is a
-> derived field: `"metal"` when `disk_encryption` is `"tpm"` or `"keyfile"`,
-> `"cloud"` when `"none"`. `tpm_present` indicates whether a TPM was
-> detected (or faked via `--fake-tpm`).
+> `disk_encryption` is the user's chosen encryption mode. `tpm_present`
+> indicates whether a TPM was detected (or faked via `--fake-tpm`).
 >
 > The `install_config` field is `null` when no install-time configuration
 > fields (hostname, tailscale, SSH keys, password, or timezone) are set.
@@ -389,24 +386,22 @@ name, and transport type (SSD, HDD, NVMe, USB, etc.).
 
 
 
-> r[installer.tui.hostname+5]
+> r[installer.tui.hostname+6]
 > After disk encryption selection, the TUI presents a hostname selection
 > screen. The screen offers two options via an Up/Down selector:
 >
 > - **Static hostname**
-> - **Network-assigned (DHCP)** (metal variant) or **Network-assigned
->   (DHCP / cloud-init)** (cloud variant)
+> - **Network-assigned (DHCP)**
 >
-> When encryption is selected, "Static hostname" is selected by default.
-> Otherwise, the network-assigned option is selected by default.
+> "Network-assigned (DHCP)" is selected by default.
 >
 > Enter confirms the selection. If "Static hostname" is chosen, a second
 > sub-screen (`HostnameInput`) presents a text input for the hostname. The
 > field may be pre-filled from the configuration file or a resolved hostname
 > template. The hostname is required: the user must enter a non-empty value
 > to advance, and an inline error is shown if the field is empty on Enter.
-> This applies to both variants — choosing "Static hostname" is an explicit
-> decision to set a hostname, so an empty value is never accepted.
+> Choosing "Static hostname" is an explicit decision to set a hostname, so
+> an empty value is never accepted.
 >
 > The hostname is also validated: it must contain only ASCII
 > letters, digits, and hyphens (`a-z`, `0-9`, `-`), must not start or end
@@ -417,11 +412,12 @@ name, and transport type (SSD, HDD, NVMe, USB, etc.).
 > If the network-assigned option is chosen, the TUI advances directly to
 > the Login screen with `hostname_from_dhcp` set to true and no text input
 > step. Esc from the selection screen returns to the previous screen
-> (TpmToggle for metal, VariantSelection for cloud).
+> (the disk encryption screen).
 >
 > When a `hostname-template` is present in the configuration, the template
 > is resolved to a concrete hostname at startup, pre-fills the text input,
-> and the selector defaults to "Static hostname" regardless of variant.
+> and the selector defaults to "Static hostname" regardless of encryption
+> mode.
 
 r[installer.tui.tailscale+3]
 After the hostname screen, the TUI presents a Login screen. The Login screen
@@ -637,10 +633,11 @@ When disk encryption is not `"none"`, the installer must rewrite `/etc/fstab`
 on the installed system to reference `/dev/mapper/root` instead of
 `/dev/disk/by-partlabel/root` for the root and postgresql mount entries.
 
-r[installer.write.variant-fixup]
-The installer must write the correct variant name to `/etc/bes/image-variant`
-on the installed system: `metal` when disk encryption is not `"none"`, `cloud`
-when disk encryption is `"none"`.
+r[installer.write.variant-fixup+2]
+The installer must write the chosen disk-encryption mode to
+`/etc/bes/image-variant` on the installed system: `luks-tpm` when disk
+encryption is `"tpm"`, `luks-keyfile` when `"keyfile"`, or `plain` when
+`"none"`.
 
 r[installer.write.expand-root]
 After writing the root partition image, the installer must expand the root
@@ -662,7 +659,7 @@ unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
 changes.
 
-> r[installer.write.rebuild-boot-config+3]
+> r[installer.write.rebuild-boot-config+4]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
 > `r[installer.encryption.overview]`), the installer must unconditionally
@@ -681,9 +678,9 @@ changes.
 >   - Set `GRUB_CMDLINE_LINUX` in `/etc/default/grub` to include
 >     `rd.luks.name=<LUKS-UUID>=root rd.luks.options=discard` so the
 >     initramfs knows to unlock the LUKS volume during early boot.
->   - Remove the cloud-only serial console (`console=ttyS0,115200n8`) from
->     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target bare-metal
->     hardware.
+>   - Remove the serial console (`console=ttyS0,115200n8`) from
+>     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target
+>     bare-metal hardware where the serial console is not needed.
 >   - Have the `grub-probe` wrapper return `"luks"` for `--target=abstraction`
 >     queries on `/`, so `grub-mkconfig` emits the correct LUKS stanza.
 

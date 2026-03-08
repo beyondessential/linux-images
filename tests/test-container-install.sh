@@ -36,15 +36,18 @@ source "$SCRIPT_DIR/nspawn-opts.sh"
 DISK_ENCRYPTION="${1:?Usage: $0 <disk-encryption> <arch>}"
 ARCH="${2:?Usage: $0 <disk-encryption> <arch>}"
 
-# Derive variant from disk-encryption mode
+# Derive image-variant string from disk-encryption mode
 case "$DISK_ENCRYPTION" in
-    tpm|keyfile) VARIANT="metal" ;;
-    none)        VARIANT="cloud" ;;
+    tpm)     IMAGE_VARIANT="luks-tpm" ;;
+    keyfile) IMAGE_VARIANT="luks-keyfile" ;;
+    none)    IMAGE_VARIANT="plain" ;;
     *)
         echo "ERROR: disk-encryption must be tpm, keyfile, or none (got: $DISK_ENCRYPTION)"
         exit 1
         ;;
 esac
+IS_ENCRYPTED=0
+[ "$DISK_ENCRYPTION" != "none" ] && IS_ENCRYPTED=1
 
 ROOTFS_DIR="${ROOTFS_DIR:?ROOTFS_DIR must be set}"
 IMAGES_DIR="${IMAGES_DIR:?IMAGES_DIR must be set}"
@@ -90,7 +93,7 @@ fi
 # Fake-LUKS detection
 # ============================================================
 # r[impl installer.container.fake-luks]
-if [ "$VARIANT" = "metal" ]; then
+if [ "$IS_ENCRYPTED" -eq 1 ]; then
     luks_detect_or_fake
 else
     BES_FAKE_LUKS=0
@@ -159,7 +162,7 @@ WORK_DIR="$(mktemp -d -t bes-container-test-XXXXXX)"
 echo "----------------------------------------------------------------------"
 echo "Scenario: $SCENARIO_NAME"
 echo "----------------------------------------------------------------------"
-echo "  disk-encrypt:  $DISK_ENCRYPTION (variant: $VARIANT)"
+echo "  disk-encrypt:  $DISK_ENCRYPTION (image-variant: $IMAGE_VARIANT)"
 echo "  arch:          $ARCH"
 echo "  hostname:      ${SET_HOSTNAME:-(not set)}"
 echo "  hostname-dhcp: ${SET_HOSTNAME_FROM_DHCP:-(not set)}"
@@ -296,7 +299,7 @@ fi
 # Verification: a successful metal scenario with BES_FAKE_LUKS=1 proves the
 # shims work end-to-end (partitioning, image write, encryption config,
 # initramfs rebuild, grub config, and post-install verification all pass).
-if [ "${BES_FAKE_LUKS:-0}" = "1" ] && [ "$VARIANT" = "metal" ]; then
+if [ "${BES_FAKE_LUKS:-0}" = "1" ] && [ "$IS_ENCRYPTED" -eq 1 ]; then
     echo "==> Installing fake-LUKS shims into container rootfs..."
     install_fake_luks_shims "$SCENARIO_ROOTFS"
 fi
@@ -389,7 +392,7 @@ fi
 echo "    PASS: no stale mounts from ${LOOP_DEV}"
 
 # r[verify installer.write.luks-before-write+2]
-if [ "$VARIANT" = "metal" ]; then
+if [ "$IS_ENCRYPTED" -eq 1 ]; then
     if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
         # In fake mode, check that the symlink was removed by the shim's close.
         if [ -L /dev/mapper/bes-target-root ]; then
@@ -459,7 +462,7 @@ mkdir -p "$VERIFY_MOUNT"
 ROOT_PART="${LOOP_DEV}p3"
 
 # r[verify installer.write.luks-before-write+2]
-if [ "$VARIANT" = "metal" ]; then
+if [ "$IS_ENCRYPTED" -eq 1 ]; then
     echo "    Opening LUKS volume..."
 
     if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
@@ -687,7 +690,7 @@ if [ -n "$BTRFS_DEV" ]; then
 
         # --- /etc/fstab references ---
         # r[verify installer.write.fstab-fixup]
-        if [ "$VARIANT" = "metal" ]; then
+        if [ "$IS_ENCRYPTED" -eq 1 ]; then
             FSTAB="$VERIFY_MOUNT/etc/fstab"
             if [ -f "$FSTAB" ]; then
                 check "fstab root entry uses /dev/mapper/root" \
@@ -700,7 +703,7 @@ if [ -n "$BTRFS_DEV" ]; then
         else
             FSTAB="$VERIFY_MOUNT/etc/fstab"
             if [ -f "$FSTAB" ]; then
-                check "fstab root entry uses by-partlabel/root (cloud)" \
+                check "fstab root entry uses by-partlabel/root (plain)" \
                     grep -q 'by-partlabel/root' "$FSTAB"
             else
                 check "fstab exists" false
@@ -708,12 +711,12 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- /etc/bes/image-variant ---
-        # r[verify installer.write.variant-fixup]
+        # r[verify installer.write.variant-fixup+2]
         VARIANT_FILE="$VERIFY_MOUNT/etc/bes/image-variant"
         if [ -f "$VARIANT_FILE" ]; then
             ACTUAL_VARIANT="$(tr -d '[:space:]' < "$VARIANT_FILE")"
-            check "image-variant is '$VARIANT'" \
-                test "$ACTUAL_VARIANT" = "$VARIANT"
+            check "image-variant is '$IMAGE_VARIANT'" \
+                test "$ACTUAL_VARIANT" = "$IMAGE_VARIANT"
         else
             check "image-variant file exists" false
         fi
@@ -734,9 +737,9 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
         fi
 
-        # --- Encryption setup verification (metal only) ---
+        # --- Encryption setup verification (encrypted only) ---
         # r[verify installer.encryption.overview+3]
-        if [ "$VARIANT" = "metal" ]; then
+        if [ "$IS_ENCRYPTED" -eq 1 ]; then
             CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
             check "crypttab exists" test -f "$CRYPTTAB"
             if [ -f "$CRYPTTAB" ]; then
@@ -779,7 +782,7 @@ if [ -n "$BTRFS_DEV" ]; then
             # r[verify installer.encryption.overview+3]
             # The initramfs must contain the updated crypttab so the system
             # can unlock without a passphrase prompt at boot.
-            if [ "$VARIANT" = "metal" ]; then
+            if [ "$IS_ENCRYPTED" -eq 1 ]; then
                 INITRD_FILE="$(ls "$BOOT_MNT"/initrd.img-* 2>/dev/null | head -1)"
                 if [ -n "$INITRD_FILE" ] && [ -f "$INITRD_FILE" ]; then
                     INITRD_BASENAME="/boot/$(basename "$INITRD_FILE")"
@@ -824,7 +827,7 @@ if [ -n "$BTRFS_DEV" ]; then
         echo "    Cannot mount btrfs root; skipping file checks."
     fi
 
-    if [ "$VARIANT" = "metal" ] && [ -e "/dev/mapper/$LUKS_NAME" ]; then
+    if [ "$IS_ENCRYPTED" -eq 1 ] && [ -e "/dev/mapper/$LUKS_NAME" ]; then
         host_luks_close "$LUKS_NAME"
     fi
 fi

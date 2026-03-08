@@ -94,10 +94,11 @@ pub enum DiskEncryption {
 }
 
 impl DiskEncryption {
-    pub fn variant(self) -> Variant {
+    pub fn image_variant_str(self) -> &'static str {
         match self {
-            DiskEncryption::Tpm | DiskEncryption::Keyfile => Variant::Metal,
-            DiskEncryption::None => Variant::Cloud,
+            DiskEncryption::Tpm => "luks-tpm",
+            DiskEncryption::Keyfile => "luks-keyfile",
+            DiskEncryption::None => "plain",
         }
     }
 
@@ -130,21 +131,6 @@ impl<'de> Deserialize<'de> for DiskEncryption {
                 other,
                 &["tpm", "keyfile", "none"],
             )),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Variant {
-    Metal,
-    Cloud,
-}
-
-impl fmt::Display for Variant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Variant::Metal => write!(f, "metal"),
-            Variant::Cloud => write!(f, "cloud"),
         }
     }
 }
@@ -363,13 +349,9 @@ impl InstallConfig {
             issues.push(format!("hostname-template: {e}"));
         }
 
-        if self.hostname_from_dhcp
-            && self
-                .disk_encryption
-                .is_some_and(|de| de == DiskEncryption::None)
-        {
+        if self.hostname_from_dhcp {
             issues.push(
-                "hostname-from-dhcp has no special effect with disk-encryption = \"none\" (DHCP hostname is already the default)".into(),
+                "hostname-from-dhcp has no special effect (network-assigned is already the default)".into(),
             );
         }
 
@@ -738,17 +720,10 @@ mod tests {
 
     // r[verify installer.config.disk-encryption]
     #[test]
-    fn disk_encryption_variant_derivation() {
-        assert_eq!(DiskEncryption::Tpm.variant(), Variant::Metal);
-        assert_eq!(DiskEncryption::Keyfile.variant(), Variant::Metal);
-        assert_eq!(DiskEncryption::None.variant(), Variant::Cloud);
-    }
-
-    // r[verify installer.config.disk-encryption]
-    #[test]
-    fn variant_display() {
-        assert_eq!(Variant::Metal.to_string(), "metal");
-        assert_eq!(Variant::Cloud.to_string(), "cloud");
+    fn disk_encryption_image_variant_str() {
+        assert_eq!(DiskEncryption::Tpm.image_variant_str(), "luks-tpm");
+        assert_eq!(DiskEncryption::Keyfile.image_variant_str(), "luks-keyfile");
+        assert_eq!(DiskEncryption::None.image_variant_str(), "plain");
     }
 
     // r[verify installer.config.disk]
@@ -893,15 +868,27 @@ mod tests {
     }
 
     #[test]
-    fn validate_dhcp_on_none_encryption_warns() {
+    fn validate_dhcp_always_warns() {
         let config = InstallConfig {
-            disk_encryption: Some(DiskEncryption::None),
+            disk_encryption: Some(DiskEncryption::Tpm),
             hostname_from_dhcp: true,
             ..Default::default()
         };
         let issues = config.validate();
         assert!(
             issues
+                .iter()
+                .any(|i| i.contains("hostname-from-dhcp has no special effect"))
+        );
+
+        let config_none = InstallConfig {
+            disk_encryption: Some(DiskEncryption::None),
+            hostname_from_dhcp: true,
+            ..Default::default()
+        };
+        let issues_none = config_none.validate();
+        assert!(
+            issues_none
                 .iter()
                 .any(|i| i.contains("hostname-from-dhcp has no special effect"))
         );

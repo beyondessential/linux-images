@@ -3,7 +3,7 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 // r[verify installer.mode.interactive+2]
 // r[verify installer.dryrun.script.headless]
 #[test]
-fn interactive_metal_full_flow() {
+fn interactive_keyfile_full_flow() {
     let f = Fixture::new();
     let devices = f.write_devices(TWO_DISK_DEVICES);
     let script = f.write_script(
@@ -14,7 +14,8 @@ enter
 enter
 # DiskEncryption: accept default (keyfile)
 enter
-# Hostname selector: Static is default for encrypted, Enter -> HostnameInput
+# Hostname selector: Network-assigned is default, Up to select Static
+up
 enter
 # HostnameInput: type hostname then advance
 type:my-server
@@ -63,7 +64,6 @@ enter
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
     assert_eq!(plan["disk_encryption"], "keyfile");
-    assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
     assert_eq!(plan["install_config"]["hostname"], "my-server");
     assert!(
@@ -92,7 +92,7 @@ enter
 # DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: network-assigned is default for none, Enter -> Login
+# Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -128,7 +128,6 @@ enter
 
     let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "none");
-    assert_eq!(plan["variant"], "cloud");
 }
 
 // r[verify installer.tui.hostname+5]
@@ -147,7 +146,7 @@ enter
 # DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: network-assigned is default for none, Up to select Static
+# Hostname selector: Network-assigned is default, Up to select Static
 up
 enter
 # HostnameInput: type hostname then advance
@@ -226,7 +225,7 @@ enter
 # DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: network-assigned is default for none, Enter -> Login
+# Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password (required)
 type:pw
@@ -295,7 +294,8 @@ down
 enter
 # DiskEncryption: accept default (keyfile)
 enter
-# Hostname selector: Static is default for encrypted, Enter -> HostnameInput
+# Hostname selector: Network-assigned is default, Up to select Static
+up
 enter
 # HostnameInput: type 'h' (required for encrypted)
 type:h
@@ -363,7 +363,6 @@ fn interactive_quit_early_still_produces_plan() {
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
     assert_eq!(plan["disk_encryption"], "keyfile");
-    assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
@@ -392,7 +391,6 @@ fn interactive_empty_script_uses_initial_state() {
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
     assert_eq!(plan["disk_encryption"], "keyfile");
-    assert_eq!(plan["variant"], "metal");
 }
 
 // r[verify installer.tui.confirmation+7]
@@ -411,7 +409,7 @@ enter
 # DiskEncryption: cycle Keyfile -> None
 down
 enter
-# Hostname selector: network-assigned is default for none, Enter -> Login
+# Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password
 type:pw

@@ -111,7 +111,6 @@ fn plan_contains_all_required_fields() {
     let required_top = [
         "mode",
         "disk_encryption",
-        "variant",
         "disk",
         "tpm_present",
         "install_config",

@@ -10,7 +10,6 @@ use crate::disk::BlockDevice;
 pub struct InstallPlan {
     pub mode: String,
     pub disk_encryption: String,
-    pub variant: String,
     pub disk: Option<DiskInfo>,
     pub tpm_present: bool,
     pub install_config: Option<InstallConfigInfo>,
@@ -160,7 +159,6 @@ impl<'a> InstallPlanBuilder<'a> {
         InstallPlan {
             mode: mode_str.to_string(),
             disk_encryption: self.disk_encryption.to_string(),
-            variant: self.disk_encryption.variant().to_string(),
             disk: self.disk.map(DiskInfo::from),
             tpm_present: self.tpm_present,
             install_config: self.install_config.map(|cfg| {
@@ -239,7 +237,6 @@ mod tests {
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["mode"], "auto");
         assert_eq!(json["disk_encryption"], "tpm");
-        assert_eq!(json["variant"], "metal");
         assert_eq!(json["disk"]["path"], "/dev/nvme0n1");
         assert_eq!(json["disk"]["model"], "Samsung 980 PRO");
         assert_eq!(json["disk"]["size_bytes"], 1_000_204_886_016u64);
@@ -277,7 +274,6 @@ mod tests {
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["mode"], "interactive");
         assert_eq!(json["disk_encryption"], "none");
-        assert_eq!(json["variant"], "cloud");
         assert!(json["disk"].is_null());
         assert!(!json["tpm_present"].as_bool().unwrap());
         assert!(json["install_config"].is_null());
@@ -286,14 +282,13 @@ mod tests {
         assert_eq!(json["config_warnings"][0], "some warning");
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
-    fn plan_keyfile_derives_metal_variant() {
+    fn plan_keyfile_encryption() {
         let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::Keyfile).build();
 
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["disk_encryption"], "keyfile");
-        assert_eq!(json["variant"], "metal");
         assert!(!json["tpm_present"].as_bool().unwrap());
     }
 
@@ -410,7 +405,6 @@ mod tests {
         let contents = std::fs::read_to_string(&path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
         assert_eq!(parsed["mode"], "auto");
-        assert_eq!(parsed["variant"], "metal");
         assert_eq!(parsed["disk_encryption"], "tpm");
         assert!(parsed["tpm_present"].as_bool().unwrap());
     }

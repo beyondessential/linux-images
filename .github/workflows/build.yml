@@ -260,15 +260,15 @@ jobs:
 
       - name: Build ISO
         run: |
-          CLOUD_IMAGE="$(find output/${{ matrix.arch }}/cloud/ -name '*.raw.zst' | head -1)"
-          if [ -z "$CLOUD_IMAGE" ]; then
+          SOURCE_IMAGE="$(find output/${{ matrix.arch }}/cloud/ -name '*.raw.zst' | head -1)"
+          if [ -z "$SOURCE_IMAGE" ]; then
             echo "ERROR: no cloud .raw.zst found under output/${{ matrix.arch }}/cloud/"
             exit 1
           fi
           sudo ARCH=${{ matrix.arch }} \
                OUTPUT=output/${{ matrix.arch }}/bes-installer-${{ matrix.arch }}.iso \
                INSTALLER_BIN=installer-bin/bes-installer \
-               CLOUD_IMAGE="$CLOUD_IMAGE" \
+               SOURCE_IMAGE="$SOURCE_IMAGE" \
                UBUNTU_SUITE=${{ env.UBUNTU_SUITE }} \
                iso/build-iso.sh
         timeout-minutes: 30

@@ -1,12 +1,12 @@
 #!/bin/bash
 #
 # Assemble a hybrid live installer ISO from a pre-built rootfs staging
-# directory (produced by build-iso-rootfs.sh) and a cloud disk image.
+# directory (produced by build-iso-rootfs.sh) and a source disk image.
 #
 # Inputs:
 #   - ROOTFS_DIR: staging directory with live/vmlinuz, live/initrd.img,
 #     live/filesystem.squashfs (with verity), live/verity-roothash
-#   - CLOUD_IMAGE: cloud .raw or .raw.zst to extract partition images from
+#   - SOURCE_IMAGE: disk image (.raw or .raw.zst) to extract partition images from
 #
 # Output: a hybrid ISO9660 + GPT image with:
 #   - ISO9660 filesystem (bootable in VMs as optical media)
@@ -21,7 +21,7 @@
 #     ARCH            - amd64 or arm64 (default: amd64)
 #     OUTPUT          - output file path (default: output/<arch>/bes-installer-<arch>.iso)
 #     ROOTFS_DIR      - path to the rootfs staging directory (required)
-#     CLOUD_IMAGE     - path to the cloud image (.raw or .raw.zst) (required)
+#     SOURCE_IMAGE    - path to the source disk image (.raw or .raw.zst) (required)
 #     BESCONF_SIZE_MB - BESCONF partition size in MiB (default: 4)
 set -euo pipefail
 
@@ -35,7 +35,7 @@ ARCH="${ARCH:-amd64}"
 BESCONF_SIZE_MB="${BESCONF_SIZE_MB:-4}"
 BUILD_DATE="$(date -u +%Y-%m-%d)"
 ROOTFS_DIR="${ROOTFS_DIR:?ROOTFS_DIR must point to the rootfs staging directory}"
-CLOUD_IMAGE="${CLOUD_IMAGE:?CLOUD_IMAGE must point to the cloud image (.raw or .raw.zst)}"
+SOURCE_IMAGE="${SOURCE_IMAGE:?SOURCE_IMAGE must point to the source disk image (.raw or .raw.zst)}"
 OUTPUT="${OUTPUT:-output/${ARCH}/bes-installer-${ARCH}.iso}"
 
 # r[impl iso.per-arch]
@@ -68,8 +68,8 @@ for f in live/vmlinuz live/initrd.img live/filesystem.squashfs live/verity-rooth
     fi
 done
 
-if [ ! -f "$CLOUD_IMAGE" ]; then
-    echo "ERROR: cloud image not found: $CLOUD_IMAGE"
+if [ ! -f "$SOURCE_IMAGE" ]; then
+    echo "ERROR: source image not found: $SOURCE_IMAGE"
     exit 1
 fi
 
@@ -90,7 +90,7 @@ echo "=============================="
 echo "Architecture:  $ARCH"
 echo "Output:        $OUTPUT"
 echo "Rootfs dir:    $ROOTFS_DIR"
-echo "Cloud image:   $CLOUD_IMAGE"
+echo "Source image:  $SOURCE_IMAGE"
 echo "BESCONF size:  ${BESCONF_SIZE_MB} MiB"
 echo "Build date:    $BUILD_DATE"
 echo "Live roothash: $LIVE_ROOTHASH"
@@ -138,24 +138,24 @@ mkdir -p "$MNT_ESP" "$STAGING"
 cp -a "$ROOTFS_DIR/live" "$STAGING/live"
 
 # ============================================================
-# Phase 1: Extract partition images from cloud image
+# Phase 1: Extract partition images from source image
 # ============================================================
 # r[impl iso.contents+3]
 # r[impl iso.images-partition]
-echo "==> Phase 1: Extracting partition images from cloud image..."
+echo "==> Phase 1: Extracting partition images from source image..."
 IMAGES_STAGING="$WORK_DIR/images-staging"
 mkdir -p "$IMAGES_STAGING"
 
-CLOUD_RAW="$WORK_DIR/cloud.raw"
-if [[ "$CLOUD_IMAGE" == *.zst ]]; then
-    echo "    Decompressing $CLOUD_IMAGE ..."
-    zstd -d "$CLOUD_IMAGE" -o "$CLOUD_RAW"
+SOURCE_RAW="$WORK_DIR/source.raw"
+if [[ "$SOURCE_IMAGE" == *.zst ]]; then
+    echo "    Decompressing $SOURCE_IMAGE ..."
+    zstd -d "$SOURCE_IMAGE" -o "$SOURCE_RAW"
 else
-    echo "    Copying $CLOUD_IMAGE (already uncompressed)..."
-    cp "$CLOUD_IMAGE" "$CLOUD_RAW"
+    echo "    Copying $SOURCE_IMAGE (already uncompressed)..."
+    cp "$SOURCE_IMAGE" "$SOURCE_RAW"
 fi
 
-EXTRACT_LOOP="$(losetup -f --show -P "$CLOUD_RAW")"
+EXTRACT_LOOP="$(losetup -f --show -P "$SOURCE_RAW")"
 echo "    Loop device: $EXTRACT_LOOP"
 partprobe "$EXTRACT_LOOP"
 udevadm settle
@@ -163,7 +163,7 @@ sleep 1
 
 PART_COUNT="$(lsblk -ln -o NAME "$EXTRACT_LOOP" | grep -c "^$(basename "$EXTRACT_LOOP")p")"
 if [ "$PART_COUNT" -ne 3 ]; then
-    echo "ERROR: expected 3 partitions in cloud image, got $PART_COUNT"
+    echo "ERROR: expected 3 partitions in source image, got $PART_COUNT"
     exit 1
 fi
 
@@ -204,7 +204,7 @@ done
 
 losetup -d "$EXTRACT_LOOP"
 EXTRACT_LOOP=""
-rm -f "$CLOUD_RAW"
+rm -f "$SOURCE_RAW"
 
 # Generate partitions.json
 echo "    Generating partitions.json ..."

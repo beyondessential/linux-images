@@ -11,7 +11,7 @@
 # Disk encryption mode: "tpm", "keyfile", or "none".
 #   tpm     - LUKS + TPM PCR 1 (requires a TPM; default when TPM present)
 #   keyfile - LUKS + keyfile on boot partition (default when no TPM)
-#   none    - No encryption (cloud image)
+#   none    - No encryption
 # disk-encryption = "tpm"
 
 # Target disk: a device path (e.g. "/dev/sda") or a selection strategy.

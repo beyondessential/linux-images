@@ -166,7 +166,6 @@ impl RunContext {
             .install_config
             .disk_encryption
             .expect("auto mode requires disk-encryption");
-        let variant = disk_encryption.variant();
         let disk_selector = self
             .install_config
             .disk
@@ -230,7 +229,6 @@ impl RunContext {
 
         eprintln!("BES Installer -- automatic mode");
         eprintln!("  encryption: {disk_encryption}");
-        eprintln!("  variant:    {variant}");
         eprintln!(
             "  target:     {} ({})",
             target.path.display(),
@@ -388,10 +386,12 @@ impl RunContext {
                 recovery_passphrase.as_deref(),
             )?;
 
+            // r[impl installer.write.variant-fixup+2]
+            firstboot::write_image_variant(mounted.path(), disk_encryption.image_variant_str())?;
+
             // r[impl installer.write.fstab-fixup]
-            // r[impl installer.write.variant-fixup]
             if disk_encryption.is_encrypted() {
-                firstboot::fixup_for_metal_variant(&mounted, &self.install_config)?;
+                firstboot::fixup_for_encrypted_install(&mounted, &self.install_config)?;
             }
 
             if self.install_config.has_install_config_fields() {

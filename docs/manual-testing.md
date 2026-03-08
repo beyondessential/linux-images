@@ -165,7 +165,7 @@ TUI launch -- none of which are tested by the container-based tests.
    - Log in as `ubuntu` with the password you set.
    - Run `systemctl --failed` and confirm no unexpected failed units.
    - Run `cat /etc/bes/image-variant` and confirm it matches your
-     encryption choice (`metal` or `cloud`).
+     encryption choice (`luks-tpm`, `luks-keyfile`, or `plain`).
    - Run `df -h /` and confirm the root filesystem has been expanded
      beyond the base image size.
    - Run `btrfs subvolume list /` and confirm `@` and `@postgres`
@@ -254,7 +254,7 @@ USB.
    - Hostname is `auto-test` (`hostnamectl`).
    - Log in with password `testpass` (should not prompt for password
      change).
-   - Variant is `metal` (`cat /etc/bes/image-variant`).
+   - Variant is `luks-keyfile` (`cat /etc/bes/image-variant`).
 
 **Acceptance criteria**: the install completes with zero human
 interaction. The installed system reflects the configuration from the
@@ -296,7 +296,8 @@ a disk, without using the ISO installer.
    - GRUB menu appears with a 5-second timeout.
    - The system boots to a login prompt.
    - Log in as `ubuntu` with password `bes` (will be forced to change it).
-   - `cat /etc/bes/image-variant` shows `cloud`.
+   - `cat /etc/bes/image-variant` shows `cloud` (this is the build-time
+     cloud image, not an installer-produced system).
    - `df -h /` shows the root filesystem has been expanded beyond the
      base image size.
    - `btrfs subvolume list /` shows `@` and `@postgres`.

@@ -643,7 +643,7 @@ fn patch_grub_defaults_for_luks(mount_path: &Path, luks_uuid: &str) -> Result<()
             new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{luks_cmdline}\""));
             found_cmdline_linux = true;
         } else if line.starts_with("GRUB_CMDLINE_LINUX_DEFAULT=") {
-            // Remove cloud-only serial console for metal installs
+            // Remove serial console for encrypted installs
             let patched = line
                 .replace("console=ttyS0,115200n8", "")
                 .replace("  ", " ");

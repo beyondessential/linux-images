@@ -115,17 +115,17 @@ iso-rootfs: _validate-arch iso-base installer-build _ensure-dirs
          INSTALLER_BIN="{{ installer_bin }}" \
          iso/build-iso-rootfs.sh
 
-# Assemble the live installer ISO from the cached rootfs + cloud image.
+# Assemble the live installer ISO from the cached rootfs + source image.
 iso: _validate-arch iso-rootfs
     #!/usr/bin/env bash
     set -euo pipefail
 
-    CLOUD_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw.zst' | head -1)"
-    if [ -z "$CLOUD_IMAGE" ]; then
-      CLOUD_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw' | head -1)"
+    SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw.zst' | head -1)"
+    if [ -z "$SOURCE_IMAGE" ]; then
+      SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw' | head -1)"
     fi
 
-    if [ -z "$CLOUD_IMAGE" ]; then
+    if [ -z "$SOURCE_IMAGE" ]; then
       echo "ERROR: need a cloud .raw or .raw.zst image under {{ output_arch_dir }}"
       echo "Run 'just arch={{ arch }} variant=cloud raw' first."
       exit 1
@@ -134,7 +134,7 @@ iso: _validate-arch iso-rootfs
     sudo ARCH="{{ arch }}" \
          OUTPUT="{{ output_iso }}" \
          ROOTFS_DIR="{{ iso_rootfs_dir }}" \
-         CLOUD_IMAGE="$CLOUD_IMAGE" \
+         SOURCE_IMAGE="$SOURCE_IMAGE" \
          iso/build-iso.sh
 
 # Force-rebuild the ISO base (removes cached tarball first)

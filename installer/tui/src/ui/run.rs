@@ -616,14 +616,19 @@ fn run_full_install(
             disk_writer.passphrase,
         )?;
 
+        // r[impl installer.write.variant-fixup+2]
+        firstboot::write_image_variant(
+            mounted.path(),
+            disk_writer.disk_encryption.image_variant_str(),
+        )?;
+
         // r[impl installer.write.fstab-fixup]
-        // r[impl installer.write.variant-fixup]
         if disk_writer.disk_encryption.is_encrypted() {
             if let Some(cfg) = install_config {
-                firstboot::fixup_for_metal_variant(&mounted, cfg)?;
+                firstboot::fixup_for_encrypted_install(&mounted, cfg)?;
             } else {
                 let default_cfg = crate::config::InstallConfig::default();
-                firstboot::fixup_for_metal_variant(&mounted, &default_cfg)?;
+                firstboot::fixup_for_encrypted_install(&mounted, &default_cfg)?;
             }
         }
 
