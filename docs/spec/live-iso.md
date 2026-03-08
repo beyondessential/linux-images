@@ -79,13 +79,11 @@ boot image is a FAT32 filesystem image containing a GRUB EFI binary at
 the default removable media path (`EFI/BOOT/BOOTX64.EFI` for amd64,
 `EFI/BOOT/BOOTAA64.EFI` for arm64).
 
-r[iso.boot.autostart+3]
-On boot, the live environment must automatically launch the TUI installer on
-tty2. A separate oneshot service must switch the active VT to tty2 before
-the installer starts, so the user sees the installer immediately. The `kbd`
-package must be installed in the live rootfs to provide `/usr/bin/chvt`.
-The `systemd-sysv` package must be installed to provide `/sbin/reboot`
-so that the installer's reboot action works.
+r[iso.boot.autostart+4]
+On boot, the live environment must automatically launch the TUI installer
+and switch the active virtual terminal so the user sees it immediately.
+The `reboot` command must be functional in the live environment so the
+installer's reboot action works.
 
 > r[iso.config-partition]
 > The ISO must include an appended FAT32 partition (GPT type `Microsoft basic
@@ -145,7 +143,7 @@ UEFI systems from that media.
 > the only piece of information that must be stored externally (it is the
 > trust anchor).
 
-> r[iso.verity.squashfs+2]
+> r[iso.verity.squashfs+3]
 > The live rootfs squashfs (`/live/filesystem.squashfs`) must be protected by
 > dm-verity using the layout described in `r[iso.verity.layout]`. At build
 > time:
@@ -163,7 +161,9 @@ UEFI systems from that media.
 > `[squashfs | hash tree | padding | hash_size_le64]` as a single
 > sector-aligned blob.
 >
-> At boot, a custom initramfs premount script must:
+> The initramfs must include `veritysetup` and its runtime dependencies so
+> that dm-verity can be set up during early boot. At boot, an initramfs
+> premount script must:
 >
 > 1. Read the `live.verity.roothash=` parameter from `/proc/cmdline`.
 > 2. Read the last 8 bytes of the squashfs file to recover the hash tree
@@ -177,15 +177,6 @@ UEFI systems from that media.
 > If the `live.verity.roothash=` parameter is absent from the kernel command
 > line, the hook must be skipped and boot must proceed without verification
 > (graceful fallback for development builds).
-
-> r[iso.verity.initramfs-hook]
-> The live rootfs must include an initramfs hook at
-> `/usr/share/initramfs-tools/hooks/verity` that copies `veritysetup` and its
-> runtime dependencies (shared libraries, `libcryptsetup`, `libdevmapper`)
-> into the initramfs. A premount script at
-> `/usr/share/initramfs-tools/scripts/live-premount/verity` must implement
-> the dm-verity setup described in `r[iso.verity.squashfs]`, including the
-> trailer read to recover the hash offset.
 
 > r[iso.images-partition]
 > The ISO must include a read-only squashfs partition appended as GPT
@@ -244,6 +235,3 @@ UEFI systems from that media.
 > I/O error, the installer must display the pre-write corruption error
 > described in `r[iso.verity.failure]`.
 
-r[iso.verity.build-deps]
-The ISO build script must have `cryptsetup` (which provides `veritysetup`)
-available as a build-time dependency for computing dm-verity hash trees.

@@ -114,11 +114,10 @@ r[image.boot.dracut]
 The initramfs must be generated using dracut, not initramfs-tools. Dracut must
 be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 
-> r[image.boot.hardware-drivers+2]
-> Both variants must include a dracut configuration at
-> `/etc/dracut.conf.d/03-hardware-drivers.conf` that force-includes kernel
-> modules into the initramfs for hardware not present at image-build time.
-> The following module categories must be included:
+> r[image.boot.hardware-drivers+3]
+> Both variants must force-include kernel modules into the initramfs for
+> hardware not present at image-build time. The following module categories
+> must be included:
 >
 > - **NVMe:** `nvme`, `nvme_core`
 > - **SATA/AHCI:** `ahci`
@@ -131,10 +130,9 @@ be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 > - **USB storage:** `usb_storage`, `uas`
 > - **Hyper-V:** `hv_storvsc`, `hv_netvsc`, `hv_vmbus`
 
-> r[image.boot.cloud-drivers+4]
-> The cloud variant must include a dracut configuration at
-> `/etc/dracut.conf.d/04-cloud-drivers.conf` that force-includes
-> cloud-specific kernel modules into the initramfs:
+> r[image.boot.cloud-drivers+5]
+> The cloud variant must additionally force-include cloud-specific kernel
+> modules into the initramfs:
 >
 > - **AWS:** `ena`, `xen_blkfront`
 > - **GCP:** `gve`
@@ -220,19 +218,15 @@ be enabled.
 
 ## Disk Growth
 
-r[image.growth.service]
+r[image.growth.service+3]
 A systemd service `grow-root-filesystem.service` must run early at boot
 (before user sessions, before LUKS re-encryption) to expand the root partition
-and filesystem if additional disk space is available.
+and filesystem if additional disk space is available. It must, in order:
 
-> r[image.growth.script+2]
-> The growth script at `/usr/local/bin/grow-root-filesystem` must, in order:
->
-> 1. Move the GPT secondary header to the end of the disk.
-> 2. Run `growpart` on the root partition.
-> 3. If LUKS is active (i.e. `/dev/mapper/root` exists), run
->    `cryptsetup resize root`.
-> 4. Run `btrfs filesystem resize max /`.
+1. Move the GPT secondary header to the end of the disk.
+2. Expand the root partition to fill available space.
+3. If LUKS is active, resize the LUKS container.
+4. Resize the BTRFS filesystem to fill the partition (or LUKS volume).
 
 ## Credentials
 
