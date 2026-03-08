@@ -115,7 +115,7 @@ fi
 # ============================================================
 # Variant identification
 # ============================================================
-# r[image.variant.types+2]
+# r[image.variant.types+3]
 mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 
@@ -220,7 +220,7 @@ systemctl enable bes-tailscale-firstboot-auth.service
 # ============================================================
 # Network
 # ============================================================
-# r[image.base.network]
+# r[image.base.network+2]
 mkdir -p /etc/netplan
 install -m 600 /tmp/files/netplan/01-all-en-dhcp.yaml /etc/netplan/01-all-en-dhcp.yaml
 
@@ -243,7 +243,7 @@ bash /tmp/scripts/setup-snapper.sh
 # ============================================================
 # Disk growth service
 # ============================================================
-# r[image.growth.service] r[image.growth.script]
+# r[image.growth.service] r[image.growth.script+2]
 install -m 755 /tmp/files/grow-root-filesystem /usr/local/bin/grow-root-filesystem
 install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/system/grow-root-filesystem.service
 systemctl enable grow-root-filesystem.service
@@ -321,12 +321,12 @@ grub-install \
 # Hostname
 # ============================================================
 if [ "$VARIANT" = "metal" ]; then
-    # r[image.hostname.metal-dhcp]
+    # r[image.hostname.metal-dhcp+2]
     : > /etc/hostname
     echo "127.0.0.1 localhost" > /etc/hosts
     echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
 else
-    # r[image.hostname.cloud-default]
+    # r[image.hostname.cloud-default+2]
     echo "ubuntu" > /etc/hostname
     echo "127.0.0.1 localhost" > /etc/hosts
     echo "127.0.1.1 ubuntu" >> /etc/hosts

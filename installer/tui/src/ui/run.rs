@@ -54,7 +54,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     }
 
     match &state.screen {
-        // r[impl installer.tui.welcome+5]
+        // r[impl installer.tui.welcome+7]
         Screen::Welcome => match key.code {
             KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Char('n') => state.open_network_check(),
@@ -112,7 +112,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+5]
+        // r[impl installer.tui.hostname+6]
         Screen::Hostname => match key.code {
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Down => {
@@ -122,7 +122,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+5]
+        // r[impl installer.tui.hostname+6]
         Screen::HostnameInput => match key.code {
             KeyCode::Esc => {
                 state.hostname_error = None;
@@ -339,7 +339,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         Screen::Installing => {}
 
-        // r[impl installer.tui.progress+3]
+        // r[impl installer.tui.progress+4]
         Screen::Done => {
             if key.code == KeyCode::Enter {
                 return KeyAction::Reboot;
@@ -363,6 +363,10 @@ pub fn run_tui(
     no_reboot: bool,
     besconf: &BesconfState,
 ) -> Result<()> {
+    // r[impl iso.verity.check+5]
+    // r[impl installer.tui.welcome+7]
+    state.start_verity_check(manifest, images_dir);
+
     terminal::enable_raw_mode().context("enabling raw mode")?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
@@ -398,10 +402,20 @@ fn event_loop(
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
 
     loop {
-        // Poll async results for network screens and GitHub key fetch
+        // Poll async results for network screens, GitHub key fetch, and verity check
         state.poll_net_checks();
         state.poll_tailscale_netcheck();
         state.poll_github_keys();
+        state.poll_verity_check();
+
+        // r[impl iso.verity.check+5]
+        if let super::VerityCheckState::Failed(ref msg) = state.verity_check {
+            state.screen = Screen::Error(format!(
+                "Installation media integrity check failed -- \
+                 the target disk has NOT been written to -- \
+                 write a new copy of the installation medium.\n\n{msg}"
+            ));
+        }
 
         terminal.draw(|f| render(f, state))?;
 
@@ -547,7 +561,7 @@ fn run_full_install(
     tx: &mpsc::Sender<WorkerMessage>,
     besconf: &BesconfState,
 ) -> Result<Option<String>> {
-    // r[impl installer.write.disk-size-check+2]
+    // r[impl installer.write.disk-size-check+3]
     let total_image_size = writer::partition_images_total_size(manifest, images_dir)
         .context("reading partition image sizes")?;
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
@@ -606,14 +620,19 @@ fn run_full_install(
             disk_writer.passphrase,
         )?;
 
+        // r[impl installer.write.variant-fixup+2]
+        firstboot::write_image_variant(
+            mounted.path(),
+            disk_writer.disk_encryption.image_variant_str(),
+        )?;
+
         // r[impl installer.write.fstab-fixup]
-        // r[impl installer.write.variant-fixup]
         if disk_writer.disk_encryption.is_encrypted() {
             if let Some(cfg) = install_config {
-                firstboot::fixup_for_metal_variant(&mounted, cfg)?;
+                firstboot::fixup_for_encrypted_install(&mounted, cfg)?;
             } else {
                 let default_cfg = crate::config::InstallConfig::default();
-                firstboot::fixup_for_metal_variant(&mounted, &default_cfg)?;
+                firstboot::fixup_for_encrypted_install(&mounted, &default_cfg)?;
             }
         }
 
@@ -780,6 +799,7 @@ mod tests {
                 "Pacific/Auckland".into(),
                 "UTC".into(),
             ],
+            false,
         )
     }
 
@@ -794,7 +814,8 @@ mod tests {
             press(KeyCode::Enter),
             // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
-            // Hostname selector: Static is default for encrypted, Enter -> HostnameInput
+            // Hostname selector: Network-assigned (DHCP) is default, toggle to Static
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "myhost" then advance -> Login
             press(KeyCode::Char('m')),
@@ -842,7 +863,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none encryption,
+            // Hostname selector: network-assigned is default,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
             // Login: type password + confirm + advance
@@ -874,7 +895,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.welcome+5]
+    // r[verify installer.tui.welcome+7]
     #[test]
     fn welcome_q_triggers_reboot() {
         let mut state = make_state();
@@ -941,6 +962,7 @@ mod tests {
                 "Pacific/Auckland".into(),
                 "UTC".into(),
             ],
+            false,
         );
 
         let events = vec![
@@ -979,7 +1001,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1009,7 +1032,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1041,9 +1065,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: type password
@@ -1072,9 +1097,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: Enter moves to confirm, then Enter again with empty fields
@@ -1097,9 +1123,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: type password
@@ -1115,7 +1142,7 @@ mod tests {
         assert!(!final_state.password_confirming);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -1124,7 +1151,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static is default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: press Enter with empty input — should NOT advance
             press(KeyCode::Enter),
@@ -1136,7 +1164,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_hostname_typed_allows_advance() {
         let state = make_state();
@@ -1145,7 +1173,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static is default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type a name then advance
             press(KeyCode::Char('s')),
@@ -1159,7 +1188,7 @@ mod tests {
         assert_eq!(final_state.hostname_input, "srv");
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_encryption_network_assigned_default_advances_to_login() {
         let state = make_state();
@@ -1173,7 +1202,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none encryption,
+            // Hostname selector: network-assigned is default,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
         ];
@@ -1184,7 +1213,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_encryption_static_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -1198,7 +1227,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none,
+            // Hostname selector: network-assigned is default,
             // Up to select Static -> Enter -> HostnameInput
             press(KeyCode::Up),
             press(KeyCode::Enter),
@@ -1212,7 +1241,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_selected_advances_to_login() {
         let state = make_state();
@@ -1221,8 +1250,7 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down to select DHCP, then Enter -> Login
-            press(KeyCode::Down),
+            // Hostname selector: DHCP is already the default, Enter -> Login
             press(KeyCode::Enter),
         ];
 
@@ -1232,7 +1260,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_then_static_requires_hostname() {
         let state = make_state();
@@ -1241,9 +1269,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down (DHCP) -> Up (Static) -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, Down toggles to Static, Enter -> HostnameInput
             press(KeyCode::Down),
-            press(KeyCode::Up),
             press(KeyCode::Enter),
             // HostnameInput: empty -> Enter should NOT advance
             press(KeyCode::Enter),
@@ -1255,7 +1282,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_skips_text_input() {
         let state = make_state();
@@ -1264,8 +1291,7 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down to select DHCP, then Enter -> Login directly
-            press(KeyCode::Down),
+            // Hostname selector: DHCP is already the default, Enter -> Login directly
             press(KeyCode::Enter),
         ];
 
@@ -1274,7 +1300,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_input_esc_returns_to_selector() {
         let state = make_state();
@@ -1283,7 +1309,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: Esc -> back to Hostname selector
             press(KeyCode::Esc),
@@ -1293,7 +1320,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Hostname);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_selector_navigation() {
         let state = make_state();
@@ -1307,7 +1334,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none,
+            // Hostname selector: network-assigned is default,
             // Up toggles to Static, Down toggles back to network-assigned,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Up),
@@ -1320,7 +1347,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_invalid_hostname_chars_blocks_advance() {
         let state = make_state();
@@ -1329,7 +1356,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type invalid hostname then try to advance
             press(KeyCode::Char('!')),
@@ -1350,7 +1378,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_leading_hyphen_hostname_blocks_advance() {
         let state = make_state();
@@ -1359,7 +1387,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type hostname starting with hyphen
             press(KeyCode::Char('-')),
@@ -1381,7 +1410,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_valid_hostname_advances() {
         let state = make_state();
@@ -1390,7 +1419,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type valid hostname
             press(KeyCode::Char('m')),
@@ -1411,7 +1441,7 @@ mod tests {
         assert!(final_state.hostname_error.is_none());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_error_cleared_on_typing() {
         let state = make_state();
@@ -1420,7 +1450,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type a leading hyphen (error set live), then delete it
             // and type a valid char — error should be cleared
@@ -1434,7 +1465,7 @@ mod tests {
         assert!(final_state.hostname_error.is_none());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_error_shown_live_on_keystroke() {
         let state = make_state();
@@ -1443,7 +1474,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type an invalid character — error should appear without Enter
             press(KeyCode::Char('!')),
@@ -1517,7 +1549,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1544,7 +1577,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1574,7 +1608,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1605,7 +1640,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1640,7 +1676,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1666,7 +1703,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1701,7 +1739,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1735,7 +1774,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1767,7 +1807,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1796,7 +1837,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1838,7 +1880,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),

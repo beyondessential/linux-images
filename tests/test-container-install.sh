@@ -14,7 +14,7 @@
 #
 # Required environment:
 #   ROOTFS_DIR   — path to pre-extracted live rootfs
-#   IMAGES_DIR   — path to directory containing partitions.json and .img.zst images
+#   IMAGES_DIR   — path to directory containing partitions.json and raw .img files
 #
 # Scenario environment (all optional):
 #   SCENARIO_NAME  — human-readable name (default: "unnamed")
@@ -31,20 +31,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=nspawn-opts.sh
 source "$SCRIPT_DIR/nspawn-opts.sh"
 
 DISK_ENCRYPTION="${1:?Usage: $0 <disk-encryption> <arch>}"
 ARCH="${2:?Usage: $0 <disk-encryption> <arch>}"
 
-# Derive variant from disk-encryption mode
+# Derive image-variant string from disk-encryption mode
 case "$DISK_ENCRYPTION" in
-    tpm|keyfile) VARIANT="metal" ;;
-    none)        VARIANT="cloud" ;;
+    tpm)     IMAGE_VARIANT="luks-tpm" ;;
+    keyfile) IMAGE_VARIANT="luks-keyfile" ;;
+    none)    IMAGE_VARIANT="plain" ;;
     *)
         echo "ERROR: disk-encryption must be tpm, keyfile, or none (got: $DISK_ENCRYPTION)"
         exit 1
         ;;
 esac
+IS_ENCRYPTED=0
+[ "$DISK_ENCRYPTION" != "none" ] && IS_ENCRYPTED=1
 
 ROOTFS_DIR="${ROOTFS_DIR:?ROOTFS_DIR must be set}"
 IMAGES_DIR="${IMAGES_DIR:?IMAGES_DIR must be set}"
@@ -90,7 +94,7 @@ fi
 # Fake-LUKS detection
 # ============================================================
 # r[impl installer.container.fake-luks]
-if [ "$VARIANT" = "metal" ]; then
+if [ "$IS_ENCRYPTED" -eq 1 ]; then
     luks_detect_or_fake
 else
     BES_FAKE_LUKS=0
@@ -110,6 +114,7 @@ cleanup() {
     set +e
 
     if [ -n "$VERIFY_MOUNT" ]; then
+        umount "$VERIFY_MOUNT/tmp" 2>/dev/null
         umount "$VERIFY_MOUNT/proc" 2>/dev/null
         umount "$VERIFY_MOUNT/boot" 2>/dev/null
         if mountpoint -q "$VERIFY_MOUNT" 2>/dev/null; then
@@ -158,7 +163,7 @@ WORK_DIR="$(mktemp -d -t bes-container-test-XXXXXX)"
 echo "----------------------------------------------------------------------"
 echo "Scenario: $SCENARIO_NAME"
 echo "----------------------------------------------------------------------"
-echo "  disk-encrypt:  $DISK_ENCRYPTION (variant: $VARIANT)"
+echo "  disk-encrypt:  $DISK_ENCRYPTION (image-variant: $IMAGE_VARIANT)"
 echo "  arch:          $ARCH"
 echo "  hostname:      ${SET_HOSTNAME:-(not set)}"
 echo "  hostname-dhcp: ${SET_HOSTNAME_FROM_DHCP:-(not set)}"
@@ -295,7 +300,7 @@ fi
 # Verification: a successful metal scenario with BES_FAKE_LUKS=1 proves the
 # shims work end-to-end (partitioning, image write, encryption config,
 # initramfs rebuild, grub config, and post-install verification all pass).
-if [ "${BES_FAKE_LUKS:-0}" = "1" ] && [ "$VARIANT" = "metal" ]; then
+if [ "${BES_FAKE_LUKS:-0}" = "1" ] && [ "$IS_ENCRYPTED" -eq 1 ]; then
     echo "==> Installing fake-LUKS shims into container rootfs..."
     install_fake_luks_shims "$SCENARIO_ROOTFS"
 fi
@@ -306,6 +311,7 @@ fi
 # device nodes only appear on the host's devtmpfs — the installer handles
 # this by reading /sys/class/block/ and creating missing nodes via mknod
 # (see r[installer.container.partition-devices+2]).
+# shellcheck disable=SC2119 # intentionally called without args; uses PRIVATE_NETWORK env var
 nspawn_opts
 nspawn_installer_binds "$LOOP_DEV" "$IMAGES_DIR" "$DEVICES_JSON" \
     "$CONFIG_TOML" ""
@@ -342,7 +348,7 @@ if [ -f "$SCENARIO_ROOTFS/tmp/installer.log" ]; then
 fi
 
 echo ""
-if [ $INSTALLER_RC -ne 0 ]; then
+if [ "$INSTALLER_RC" -ne 0 ]; then
     echo "!!! Installer exited with code $INSTALLER_RC"
     if [ -f "$INSTALLER_LOG" ]; then
         echo ""
@@ -388,7 +394,7 @@ fi
 echo "    PASS: no stale mounts from ${LOOP_DEV}"
 
 # r[verify installer.write.luks-before-write+2]
-if [ "$VARIANT" = "metal" ]; then
+if [ "$IS_ENCRYPTED" -eq 1 ]; then
     if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
         # In fake mode, check that the symlink was removed by the shim's close.
         if [ -L /dev/mapper/bes-target-root ]; then
@@ -443,6 +449,18 @@ check "root partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"r
 # r[verify installer.mode.auto.progress]
 check "non-interactive write summary printed" grep -q "write complete:.*MiB in.*MiB/s" "$INSTALLER_OUTPUT"
 
+# r[verify iso.verity.check+5]
+# r[verify iso.verity.failure]
+# The integrity check only runs when the installer opens the images partition
+# via dm-verity (real ISO boot). In the container test the images directory is
+# bind-mounted, so verity is not active and the check is correctly skipped.
+# Verify it passed only when the installer actually attempted it.
+if grep -q "verifying installation media integrity" "$INSTALLER_OUTPUT"; then
+    check "integrity check passed before writing" grep -q "integrity check passed" "$INSTALLER_OUTPUT"
+else
+    echo "    SKIP: integrity check (verity not active in container — verified by test harness)"
+fi
+
 # r[verify installer.write.partitions+2]
 # r[verify installer.write.expand-root]
 ROOT_PART_SIZE=$(lsblk --bytes --noheadings --output SIZE "${LOOP_DEV}p3" 2>/dev/null | tr -d '[:space:]')
@@ -458,7 +476,7 @@ mkdir -p "$VERIFY_MOUNT"
 ROOT_PART="${LOOP_DEV}p3"
 
 # r[verify installer.write.luks-before-write+2]
-if [ "$VARIANT" = "metal" ]; then
+if [ "$IS_ENCRYPTED" -eq 1 ]; then
     echo "    Opening LUKS volume..."
 
     if [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
@@ -686,7 +704,7 @@ if [ -n "$BTRFS_DEV" ]; then
 
         # --- /etc/fstab references ---
         # r[verify installer.write.fstab-fixup]
-        if [ "$VARIANT" = "metal" ]; then
+        if [ "$IS_ENCRYPTED" -eq 1 ]; then
             FSTAB="$VERIFY_MOUNT/etc/fstab"
             if [ -f "$FSTAB" ]; then
                 check "fstab root entry uses /dev/mapper/root" \
@@ -699,7 +717,7 @@ if [ -n "$BTRFS_DEV" ]; then
         else
             FSTAB="$VERIFY_MOUNT/etc/fstab"
             if [ -f "$FSTAB" ]; then
-                check "fstab root entry uses by-partlabel/root (cloud)" \
+                check "fstab root entry uses by-partlabel/root (plain)" \
                     grep -q 'by-partlabel/root' "$FSTAB"
             else
                 check "fstab exists" false
@@ -707,12 +725,12 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- /etc/bes/image-variant ---
-        # r[verify installer.write.variant-fixup]
+        # r[verify installer.write.variant-fixup+2]
         VARIANT_FILE="$VERIFY_MOUNT/etc/bes/image-variant"
         if [ -f "$VARIANT_FILE" ]; then
             ACTUAL_VARIANT="$(tr -d '[:space:]' < "$VARIANT_FILE")"
-            check "image-variant is '$VARIANT'" \
-                test "$ACTUAL_VARIANT" = "$VARIANT"
+            check "image-variant is '$IMAGE_VARIANT'" \
+                test "$ACTUAL_VARIANT" = "$IMAGE_VARIANT"
         else
             check "image-variant file exists" false
         fi
@@ -733,9 +751,9 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
         fi
 
-        # --- Encryption setup verification (metal only) ---
+        # --- Encryption setup verification (encrypted only) ---
         # r[verify installer.encryption.overview+3]
-        if [ "$VARIANT" = "metal" ]; then
+        if [ "$IS_ENCRYPTED" -eq 1 ]; then
             CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
             check "crypttab exists" test -f "$CRYPTTAB"
             if [ -f "$CRYPTTAB" ]; then
@@ -746,7 +764,7 @@ if [ -n "$BTRFS_DEV" ]; then
 
         # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
         # r[verify installer.write.randomize-uuids+2]
-        # r[verify installer.write.rebuild-boot-config+3]
+        # r[verify installer.write.rebuild-boot-config+4]
         # Mount /boot under the verify root so we can read grub.cfg and
         # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"
@@ -775,16 +793,19 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
 
             # --- Initramfs crypttab verification (metal only) ---
-            # r[verify installer.encryption.configure-system+2]
+            # r[verify installer.encryption.overview+3]
             # The initramfs must contain the updated crypttab so the system
             # can unlock without a passphrase prompt at boot.
-            if [ "$VARIANT" = "metal" ]; then
-                INITRD_FILE="$(ls "$BOOT_MNT"/initrd.img-* 2>/dev/null | head -1)"
+            if [ "$IS_ENCRYPTED" -eq 1 ]; then
+                INITRD_FILE="$(find "$BOOT_MNT" -maxdepth 1 -name 'initrd.img-*' -print -quit 2>/dev/null)"
                 if [ -n "$INITRD_FILE" ] && [ -f "$INITRD_FILE" ]; then
                     INITRD_BASENAME="/boot/$(basename "$INITRD_FILE")"
-                    # Use lsinitrd from the installed system via chroot
+                    # lsinitrd needs a writable /tmp for unpacking, but the
+                    # root is mounted read-only. Mount tmpfs + proc for chroot.
                     mount -t proc proc "$VERIFY_MOUNT/proc" 2>/dev/null || true
+                    mount -t tmpfs tmpfs "$VERIFY_MOUNT/tmp" 2>/dev/null || true
                     INITRD_CRYPTTAB="$(chroot "$VERIFY_MOUNT" lsinitrd -f /etc/crypttab "$INITRD_BASENAME" 2>/dev/null || true)"
+                    umount "$VERIFY_MOUNT/tmp" 2>/dev/null || true
                     umount "$VERIFY_MOUNT/proc" 2>/dev/null || true
 
                     if [ -n "$INITRD_CRYPTTAB" ]; then
@@ -820,7 +841,7 @@ if [ -n "$BTRFS_DEV" ]; then
         echo "    Cannot mount btrfs root; skipping file checks."
     fi
 
-    if [ "$VARIANT" = "metal" ] && [ -e "/dev/mapper/$LUKS_NAME" ]; then
+    if [ "$IS_ENCRYPTED" -eq 1 ] && [ -e "/dev/mapper/$LUKS_NAME" ]; then
         host_luks_close "$LUKS_NAME"
     fi
 fi

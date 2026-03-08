@@ -2,23 +2,18 @@
 
 ## Configuration File
 
-> r[installer.config.location]
-> The installer must look for a TOML configuration file named
-> `bes-install.toml`. It searches the following locations in order, using
-> the first file found:
->
-> 1. The BESCONF partition (mounted at `/run/besconf/` by a udev rule or
->    mount unit in the live environment).
-> 2. `/run/live/medium/bes-install.toml` (the ISO filesystem root, as
->    mounted by `live-boot`).
-> 3. `/boot/efi/bes-install.toml` (fallback for manual placement).
-
 r[installer.config.format]
-The configuration file is in TOML format. All fields are top-level
-(no tables or sections) and all fields are optional. The installer must
-reject unknown fields with a parse error. The file configures both the
-installation process (disk selection, encryption, automation) and the
-install-time system setup (hostname, credentials, services).
+The configuration file must be in TOML format.
+The installer must reject unknown fields with a parse error.
+
+r[installer.config.location]
+The installer must look for a `bes-install.toml` file at the root of the
+BESCONF partition. If the file does not exist, it must consider it empty.
+
+r[installer.config.template]
+The BESCONF partition must have a `bes-install.toml` file containing a
+commented-out entry for every known config field. Each entry must include
+a brief description and an example value.
 
 r[installer.config.auto]
 The `auto` field is a boolean. When `true`, the installer runs fully
@@ -26,12 +21,12 @@ automatically without interactive prompts. Automatic mode requires at
 minimum `disk-encryption` and `disk` to be set; if they are missing the
 installer must report a validation error.
 
-r[installer.config.disk-encryption]
+r[installer.config.disk-encryption+2]
 The `disk-encryption` field is a string selecting the disk encryption
 mode. Valid values are `"tpm"` (LUKS + TPM PCR 1; requires a TPM and is
 the default when a TPM is present), `"keyfile"` (LUKS + keyfile on the
 boot partition; default when no TPM is present), or `"none"` (no
-encryption, producing a cloud image).
+encryption).
 
 r[installer.config.disk]
 The `disk` field is a string selecting the target disk. It may be a
@@ -209,14 +204,13 @@ r[installer.dryrun.output]
 The `--dry-run-output <path>` flag specifies the path for the JSON install
 plan. If omitted, the plan is written to stdout.
 
-> r[installer.dryrun.schema+5]
+> r[installer.dryrun.schema+6]
 > The install plan JSON has the following structure:
 >
 > ```json
 > {
 >   "mode": "auto | prefilled | interactive | auto-incomplete",
 >   "disk_encryption": "tpm | keyfile | none",
->   "variant": "metal | cloud",
 >   "disk": {
 >     "path": "/dev/nvme0n1",
 >     "model": "Samsung 980 PRO",
@@ -238,10 +232,8 @@ plan. If omitted, the plan is written to stdout.
 > }
 > ```
 >
-> `disk_encryption` is the user's chosen encryption mode. `variant` is a
-> derived field: `"metal"` when `disk_encryption` is `"tpm"` or `"keyfile"`,
-> `"cloud"` when `"none"`. `tpm_present` indicates whether a TPM was
-> detected (or faked via `--fake-tpm`).
+> `disk_encryption` is the user's chosen encryption mode. `tpm_present`
+> indicates whether a TPM was detected (or faked via `--fake-tpm`).
 >
 > The `install_config` field is `null` when no install-time configuration
 > fields (hostname, tailscale, SSH keys, password, or timezone) are set.
@@ -288,7 +280,7 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome+5]
+r[installer.tui.welcome+7]
 The TUI must open with a welcome screen that displays a description of what
 the image is for, contact information, and instructions on how to proceed.
 The user presses Enter to proceed to the disk selection screen. The welcome
@@ -297,6 +289,18 @@ Pressing `q` triggers a reboot (same as the Done/Error screens). The footer
 must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
 debug shell without leaving the installer permanently (this is the only
 screen where the hint is shown, though the keybind works everywhere).
+
+When the images partition was opened via dm-verity (see `r[iso.verity.check+5]`),
+the welcome screen must display a progress bar at the bottom labelled
+"Verifying installation media..." while the integrity check runs in the
+background. The user must not be allowed to advance past the welcome screen
+(Enter is ignored) until the check completes successfully. Once complete,
+the progress bar is replaced with a "Verification passed" message. If the
+check fails, the installer transitions to the error screen with the
+pre-write corruption message from `r[iso.verity.failure]`. The `n` (network
+check), `q` (reboot), and `Ctrl+Alt+d` (shell) keybinds remain available
+during the check. If verity is not active, no progress bar is shown and
+Enter works immediately.
 
 > r[installer.tui.network-check+4]
 > The TUI must perform network connectivity checks in the background,
@@ -389,24 +393,22 @@ name, and transport type (SSD, HDD, NVMe, USB, etc.).
 
 
 
-> r[installer.tui.hostname+5]
+> r[installer.tui.hostname+6]
 > After disk encryption selection, the TUI presents a hostname selection
 > screen. The screen offers two options via an Up/Down selector:
 >
 > - **Static hostname**
-> - **Network-assigned (DHCP)** (metal variant) or **Network-assigned
->   (DHCP / cloud-init)** (cloud variant)
+> - **Network-assigned (DHCP)**
 >
-> When encryption is selected, "Static hostname" is selected by default.
-> Otherwise, the network-assigned option is selected by default.
+> "Network-assigned (DHCP)" is selected by default.
 >
 > Enter confirms the selection. If "Static hostname" is chosen, a second
 > sub-screen (`HostnameInput`) presents a text input for the hostname. The
 > field may be pre-filled from the configuration file or a resolved hostname
 > template. The hostname is required: the user must enter a non-empty value
 > to advance, and an inline error is shown if the field is empty on Enter.
-> This applies to both variants — choosing "Static hostname" is an explicit
-> decision to set a hostname, so an empty value is never accepted.
+> Choosing "Static hostname" is an explicit decision to set a hostname, so
+> an empty value is never accepted.
 >
 > The hostname is also validated: it must contain only ASCII
 > letters, digits, and hyphens (`a-z`, `0-9`, `-`), must not start or end
@@ -417,11 +419,12 @@ name, and transport type (SSD, HDD, NVMe, USB, etc.).
 > If the network-assigned option is chosen, the TUI advances directly to
 > the Login screen with `hostname_from_dhcp` set to true and no text input
 > step. Esc from the selection screen returns to the previous screen
-> (TpmToggle for metal, VariantSelection for cloud).
+> (the disk encryption screen).
 >
 > When a `hostname-template` is present in the configuration, the template
 > is resolved to a concrete hostname at startup, pre-fills the text input,
-> and the selector defaults to "Static hostname" regardless of variant.
+> and the selector defaults to "Static hostname" regardless of encryption
+> mode.
 
 r[installer.tui.tailscale+3]
 After the hostname screen, the TUI presents a Login screen. The Login screen
@@ -536,18 +539,20 @@ rather than exiting (which would leave the machine on a dead TTY).
 This prevents the appearance of the installer being stuck between the
 keypress and the screen blanking.
 
-r[installer.tui.progress+3]
+r[installer.tui.progress+4]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
 `Installing` screen from the moment the user confirms until all steps
-complete. Partition image writes (which have byte-level progress) occupy
-approximately 90% of the bar. Each post-write step (filesystem expansion,
-UUID randomization, boot config rebuild, partition verification, install-time
-configuration, and encryption setup) occupies a small fixed slice of the
-remaining 10%, advancing the bar when the step completes. After all steps
-finish, the TUI transitions to a completion screen. For encrypted installs,
-the completion screen also displays the recovery passphrase (replacing the
-separate recovery passphrase screen).
+complete. The integrity check (see `r[iso.verity.check+5]`) is **not** part of
+this progress bar -- it runs earlier on the welcome screen. The Installing
+screen begins with partition image writes (which have byte-level progress)
+occupying approximately 90% of the bar. Each post-write step (filesystem
+expansion, UUID randomization, boot config rebuild, partition verification,
+install-time configuration, and encryption setup) occupies a small fixed
+slice of the remaining 10%, advancing the bar when the step completes. After
+all steps finish, the TUI transitions to a completion screen. For encrypted
+installs, the completion screen also displays the recovery passphrase
+(replacing the separate recovery passphrase screen).
 
 r[installer.tui.debug-shell+3]
 Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
@@ -575,25 +580,50 @@ must then create the GPT table and all three partitions (EFI, xboot, root)
 using the geometry from `partitions.json`. After writing all partition
 images, the installer must verify the partition table.
 
-r[installer.write.source+2]
-The installer must read `partitions.json` from the ISO filesystem to locate
-the partition images and their layout metadata. There is one set of partition
-images per architecture, not per variant. The installer must search the
-standard ISO mount paths (`/run/live/medium/images`, `/cdrom/images`, etc.)
-for the manifest file.
+> r[installer.write.source+5]
+> The installer must read `partitions.json` from the verity-protected images
+> partition to locate the partition images and their layout metadata. There is
+> one set of partition images per architecture, not per variant. The partition
+> images are raw (uncompressed) files inside a squashfs with transparent zstd
+> compression (see `r[iso.images-partition+3]`).
+>
+> The installer must locate the images partition by its well-known GPT
+> PARTUUID (`ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`) via
+> `/dev/disk/by-partuuid/`. The partition uses the
+> self-describing verity layout from `r[iso.verity.layout+3]`: the installer
+> reads the last 8 bytes to recover the hash tree size, computes the hash
+> offset, reads the root hash from the `images.verity.roothash=` kernel
+> command line parameter, and calls `veritysetup open` with `--hash-offset`.
+> It then mounts the resulting dm-verity device as squashfs and reads
+> `partitions.json` and the raw image files from the mount point.
+>
+> As a fallback for development and testing, if a `partitions.json` file is
+> found in a pre-mounted directory (the legacy search paths
+> `/run/live/medium/images`, `/cdrom/images`), the installer may use it
+> directly without verity. This fallback must log a warning that integrity
+> verification is not active.
 
-r[installer.write.disk-size-check+2]
-Before writing, the installer must read the uncompressed size of each
-partition image from its `.size` sidecar file and verify that the target disk
-is at least as large as the sum of all partition sizes (plus GPT overhead).
-If the disk is too small, the installer must refuse to write and report the
-required size and disk size in the error message.
+r[installer.write.disk-size-check+3]
+Before writing, the installer must determine the uncompressed size of each
+partition image by calling `stat` on the raw image files (which are mounted
+from the images squashfs and appear at their real uncompressed size). It must
+verify that the target disk is at least as large as the sum of all partition
+sizes (plus GPT overhead). If the disk is too small, the installer must
+refuse to write and report the required size and disk size in the error
+message.
 
-r[installer.write.decompress-stream+2]
-The installer must stream-decompress each zstd-compressed partition image
-directly to its corresponding partition device (or to the opened LUKS mapper
-device for the root partition when encryption is enabled), avoiding the need
-to hold the uncompressed image in memory or on a temporary filesystem.
+r[installer.write.stream-copy]
+The installer must stream-copy each raw partition image directly to its
+corresponding partition device (or to the opened LUKS mapper device for the
+root partition when encryption is enabled) using `splice(2)` for zero-copy
+kernel-side transfer. The installer creates a pipe, splices data from the
+source file descriptor into the pipe, then splices from the pipe to the
+target block device. The pipe buffer must be resized to at least 1 MiB via
+`fcntl(F_SETPIPE_SZ)` to reduce the number of splice calls. Progress is
+tracked from the return values of each splice call. Since the images are
+stored in a squashfs with transparent compression, the kernel handles
+decompression on read; dm-verity verification also happens transparently
+on each block read. Data never transits through userspace.
 
 r[installer.write.luks-before-write+2]
 When disk encryption is not `"none"`, the installer must format the root
@@ -612,10 +642,11 @@ When disk encryption is not `"none"`, the installer must rewrite `/etc/fstab`
 on the installed system to reference `/dev/mapper/root` instead of
 `/dev/disk/by-partlabel/root` for the root and postgresql mount entries.
 
-r[installer.write.variant-fixup]
-The installer must write the correct variant name to `/etc/bes/image-variant`
-on the installed system: `metal` when disk encryption is not `"none"`, `cloud`
-when disk encryption is `"none"`.
+r[installer.write.variant-fixup+2]
+The installer must write the chosen disk-encryption mode to
+`/etc/bes/image-variant` on the installed system: `luks-tpm` when disk
+encryption is `"tpm"`, `luks-keyfile` when `"keyfile"`, or `plain` when
+`"none"`.
 
 r[installer.write.expand-root]
 After writing the root partition image, the installer must expand the root
@@ -637,10 +668,10 @@ unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
 changes.
 
-> r[installer.write.rebuild-boot-config+3]
+> r[installer.write.rebuild-boot-config+4]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
-> `r[installer.encryption.overview]`), the installer must unconditionally
+> `r[installer.encryption.overview+3]`), the installer must unconditionally
 > rebuild the initramfs and GRUB configuration in a chroot of the installed
 > system, regardless of encryption mode. This is required because the GRUB
 > config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
@@ -656,9 +687,9 @@ changes.
 >   - Set `GRUB_CMDLINE_LINUX` in `/etc/default/grub` to include
 >     `rd.luks.name=<LUKS-UUID>=root rd.luks.options=discard` so the
 >     initramfs knows to unlock the LUKS volume during early boot.
->   - Remove the cloud-only serial console (`console=ttyS0,115200n8`) from
->     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target bare-metal
->     hardware.
+>   - Remove the serial console (`console=ttyS0,115200n8`) from
+>     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target
+>     bare-metal hardware where the serial console is not needed.
 >   - Have the `grub-probe` wrapper return `"luks"` for `--target=abstraction`
 >     queries on `/`, so `grub-mkconfig` emits the correct LUKS stanza.
 
@@ -666,7 +697,7 @@ changes.
 
 > r[installer.encryption.overview+3]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+4]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -677,7 +708,7 @@ changes.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+4]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created
@@ -686,12 +717,14 @@ changes.
 
 
 
-> r[installer.encryption.tpm-enroll+2]
+> r[installer.encryption.tpm-enroll+3]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
 > `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
 > recovery passphrase. PCR 1 covers hardware identity (motherboard model,
 > CPU, RAM model and serials). The installer must update `/etc/crypttab` to
-> use `tpm2-device=auto` with a passphrase timeout fallback.
+> use `tpm2-device=auto` with a passphrase timeout fallback and the `force`
+> option (so dracut includes the entry in the initramfs even when the
+> build-time root is not a `crypto_LUKS` device).
 
 > r[installer.encryption.keyfile-enroll+2]
 > When disk encryption is `"keyfile"`, the installer must generate a random
@@ -705,7 +738,7 @@ changes.
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the
 > write phase begins. This passphrase is used as the initial LUKS key when
-> formatting the root partition (see `r[installer.write.luks-before-write]`),
+> formatting the root partition (see `r[installer.write.luks-before-write+2]`),
 > so it is already enrolled as a LUKS password slot — no separate
 > `luksAddKey` step is required. In interactive mode, the passphrase must be
 > generated at confirmation time and displayed on the confirmation screen so
@@ -715,14 +748,6 @@ changes.
 > write phase and printed to stderr after install completes.
 
 
-
-> r[installer.encryption.configure-system+2]
-> The installer must not rebuild the initramfs as a separate encryption step.
-> Instead, the initramfs is rebuilt during
-> `r[installer.write.rebuild-boot-config]`, which runs after encryption
-> enrollment and configuration. This single rebuild picks up the updated
-> crypttab and (if keyfile mode) the new keyfile, because the encryption
-> config files are written before `rebuild-boot-config` executes.
 
 ## Install-Time Configuration
 
@@ -742,7 +767,7 @@ installer must leave `/etc/hostname` as-is.
 
 r[installer.finalise.tailscale-auth]
 If `tailscale-authkey` is set and the installer knows that tailscale
-netcheck passed (i.e. `r[installer.tui.tailscale-netcheck]` completed
+netcheck passed (i.e. `r[installer.tui.tailscale-netcheck+2]` completed
 successfully), the installer must attempt to authenticate with Tailscale
 directly by chrooting into the mounted target filesystem and running
 `tailscale up --auth-key=<key> --ssh`. The installer must log the outcome
@@ -844,43 +869,44 @@ and the device cleaned up when the test scenario finishes. The shared
 nspawn helpers must support an optional TPM device bind-mount so that only
 TPM scenarios pay the setup cost.
 
-r[installer.container.fake-luks]
-Container-based integration tests must be able to run metal (encrypted)
-scenarios in CI environments where the kernel keyring is not available
-(e.g. `systemd-nspawn` on GitHub Actions runners, where `cryptsetup open`
-fails with "Failed to load key in kernel keyring"). This is achieved by
-replacing `cryptsetup` and `systemd-cryptenroll` inside the container with
-shim scripts that simulate LUKS operations without `dm-crypt`:
-
-- `luksFormat`: no-op (the partition remains raw, unencrypted).
-- `open <device> <name>`: creates a symlink `/dev/mapper/<name>` pointing
-  to the raw partition device, so the installer can write to and mount the
-  "opened" volume transparently.
-- `close <name>`: removes the symlink.
-- `luksAddKey`, `luksChangeKey`: no-op.
-- `systemd-cryptenroll`: no-op.
-
-Because the partition is not actually encrypted, the btrfs filesystem is
-written directly to the raw partition. The installer's full code path still
-executes: partitioning, image writing, `crypttab` generation, dracut
-keyfile configuration, initramfs rebuild, and grub configuration. The only
-difference is that no real encryption or key enrollment occurs.
-
-Detection is automatic: before running a metal scenario, the test harness
-attempts a real `cryptsetup luksFormat` + `open` + `close` cycle on a
-temporary loopback device. If this probe fails, `BES_FAKE_LUKS` is set to
-`1` and the shims are installed. The caller can also force fake mode by
-setting `BES_FAKE_LUKS=1` or force real mode with `BES_FAKE_LUKS=0`.
-
-When fake-LUKS mode is active for a TPM scenario, `swtpm` is not started
-(the `systemd-cryptenroll` shim does not need a real or emulated TPM).
-
-The host-side verification phase (mounting the installed filesystem to check
-its contents) must also account for fake mode: instead of calling
-`cryptsetup open` on the host, it creates a symlink to the raw partition.
-The shared nspawn helpers (`nspawn-opts.sh`) provide `host_luks_open`,
-`host_luks_close`, and `host_luks_cleanup` functions that dispatch to real
-`cryptsetup` or symlink operations depending on `BES_FAKE_LUKS`.
+> r[installer.container.fake-luks]
+> Container-based integration tests must be able to run metal (encrypted)
+> scenarios in CI environments where the kernel keyring is not available
+> (e.g. `systemd-nspawn` on GitHub Actions runners, where `cryptsetup open`
+> fails with "Failed to load key in kernel keyring"). This is achieved by
+> replacing `cryptsetup` and `systemd-cryptenroll` inside the container with
+> shim scripts that simulate LUKS operations without `dm-crypt`:
+> 
+> - `luksFormat`: no-op (the partition remains raw, unencrypted).
+> - `open <device> <name>`: creates a symlink `/dev/mapper/<name>` pointing
+>   to the raw partition device, so the installer can write to and mount the
+>   "opened" volume transparently.
+> - `close <name>`: removes the symlink.
+> - `luksAddKey`, `luksChangeKey`: no-op.
+> - `systemd-cryptenroll`: no-op.
+> 
+> Because the partition is not actually encrypted, the btrfs filesystem is
+> written directly to the raw partition. The installer's full code path still
+> executes: partitioning, image writing, `crypttab` generation, dracut
+> keyfile configuration, initramfs rebuild, and grub configuration. The only
+> difference is that no real encryption or key enrollment occurs.
+> 
+> Detection is automatic: before running a metal scenario, the test harness
+> attempts a real `cryptsetup luksFormat` + `open` + `close` cycle on a
+> temporary loopback device. If this probe fails, `BES_FAKE_LUKS` is set to
+> `1` and the shims are installed. The caller can also force fake mode by
+> setting `BES_FAKE_LUKS=1` or force real mode with `BES_FAKE_LUKS=0`.
+> 
+> When fake-LUKS mode is active for a TPM scenario, `swtpm` is not started
+> (the `systemd-cryptenroll` shim does not need a real or emulated TPM).
+> 
+> The host-side verification phase (mounting the installed filesystem to check
+> its contents) must also account for fake mode: instead of calling
+> `cryptsetup open` on the host, it creates a symlink to the raw partition.
+> The shared nspawn helpers (`nspawn-opts.sh`) provide `host_luks_open`,
+> `host_luks_close`, and `host_luks_cleanup` functions that dispatch to real
+> `cryptsetup` or symlink operations depending on `BES_FAKE_LUKS`.
+> 
 
 r[installer.container.error-logging]
 Fatal errors that propagate to the installer's top-level must be logged via

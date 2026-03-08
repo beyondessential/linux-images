@@ -227,7 +227,7 @@ else
     BTRFS_DEV="$ROOT_PART"
 fi
 
-# r[verify image.btrfs.format]
+# r[verify image.btrfs.format+2]
 BTRFS_LABEL="$(blkid -o value -s LABEL "$BTRFS_DEV" 2>/dev/null || true)"
 check "BTRFS label is 'ROOT'" [ "$BTRFS_LABEL" = "ROOT" ]
 
@@ -285,7 +285,7 @@ EFI_MOUNTED=1
 # r[verify image.base.debootstrap]
 check "/etc/fstab exists" test -f "$MNT/etc/fstab"
 
-# r[verify image.variant.types+2]
+# r[verify image.variant.types+3]
 check "/etc/bes/image-variant exists" test -f "$MNT/etc/bes/image-variant"
 
 # r[verify image.tailscale.ts-up]
@@ -293,13 +293,13 @@ check "/usr/local/bin/ts-up exists" test -x "$MNT/usr/local/bin/ts-up"
 # r[verify image.tailscale.firstboot-auth]
 check "/usr/local/bin/bes-tailscale-firstboot-auth exists" test -x "$MNT/usr/local/bin/bes-tailscale-firstboot-auth"
 
-# r[verify image.growth.script]
+# r[verify image.growth.script+2]
 check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/grow-root-filesystem"
 
 # r[verify image.growth.service]
 check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/etc/systemd/system/grow-root-filesystem.service"
 
-# r[verify image.variant.types+2]
+# r[verify image.variant.types+3]
 ACTUAL_VARIANT="$(cat "$MNT/etc/bes/image-variant" 2>/dev/null || true)"
 check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 
@@ -307,7 +307,7 @@ check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing")"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
 
-# r[verify image.hostname.metal-dhcp] r[verify image.hostname.cloud-default]
+# r[verify image.hostname.metal-dhcp+2] r[verify image.hostname.cloud-default+2]
 if [ "$VARIANT" = "metal" ]; then
     HOSTNAME_SIZE="$(stat -c%s "$MNT/etc/hostname" 2>/dev/null || echo "missing")"
     check "/etc/hostname is empty for metal (size=0)" [ "$HOSTNAME_SIZE" = "0" ]
@@ -322,7 +322,7 @@ check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
 check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/systemd/resolve/stub-resolv.conf" ]
 
-# r[verify image.base.network]
+# r[verify image.base.network+2]
 check "netplan config exists" test -f "$MNT/etc/netplan/01-all-en-dhcp.yaml"
 NETPLAN_MODE="$(stat -c%a "$MNT/etc/netplan/01-all-en-dhcp.yaml" 2>/dev/null || true)"
 check "netplan config has mode 600" [ "$NETPLAN_MODE" = "600" ]
@@ -386,6 +386,10 @@ fi
 # r[verify image.credentials.ssh-keys-only]
 check "SSH no-password config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
 check "SSH no-password config correct" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
+
+# r[verify image.credentials.no-host-keys]
+HOST_KEY_COUNT="$(find "$MNT/etc/ssh" -name 'ssh_host_*' 2>/dev/null | wc -l)"
+check "no SSH host keys in image" test "$HOST_KEY_COUNT" -eq 0
 
 # r[verify image.cloud-init.no-hostname-file]
 check "cloud-init BES config exists" test -f "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"

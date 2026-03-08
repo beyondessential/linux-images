@@ -3,9 +3,9 @@ use serde_json::Value;
 use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
 // r[verify installer.config.hostname]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
-fn auto_metal_hostname_from_dhcp() {
+fn auto_encrypted_hostname_from_dhcp() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -48,9 +48,9 @@ fn auto_metal_hostname_from_dhcp() {
 }
 
 // r[verify installer.config.hostname-template]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
-fn auto_metal_hostname_template() {
+fn auto_encrypted_hostname_template() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -107,7 +107,7 @@ fn auto_metal_hostname_template() {
 
 // r[verify installer.config.hostname-template]
 #[test]
-fn auto_metal_hostname_template_num() {
+fn auto_encrypted_hostname_template_num() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -233,7 +233,7 @@ fn auto_hostname_and_template_mutually_exclusive() {
 
 // r[verify installer.config.hostname]
 #[test]
-fn auto_dhcp_on_cloud_emits_warning() {
+fn auto_dhcp_always_emits_warning() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -268,7 +268,7 @@ fn auto_dhcp_on_cloud_emits_warning() {
             .as_str()
             .unwrap()
             .contains("hostname-from-dhcp has no special effect")),
-        "should warn about dhcp on cloud, got: {warnings:?}"
+        "should warn about redundant hostname-from-dhcp, got: {warnings:?}"
     );
 }
 
@@ -303,20 +303,19 @@ fn auto_invalid_hostname_template_emits_warning() {
         .failure();
 }
 
-// r[verify installer.tui.hostname+5]
+// r[verify installer.tui.hostname+6]
 #[test]
-fn scripted_metal_dhcp_toggle_produces_dhcp_sentinel() {
+fn scripted_encrypted_dhcp_toggle_produces_dhcp_sentinel() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let script = f.write_script(
         "# Welcome -> DiskSelection
 enter
-# DiskSelection -> DiskEncryptionScreen (default Keyfile / metal)
+# DiskSelection -> DiskEncryptionScreen (default Keyfile)
 enter
 # DiskEncryptionScreen -> Hostname selector
 enter
-# Hostname selector: Static is default for metal, Down to select DHCP, Enter -> Login
-down
+# Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -356,7 +355,7 @@ enter
 
 // r[verify installer.config.hostname-template]
 #[test]
-fn auto_metal_hostname_template_two_runs_differ() {
+fn auto_encrypted_hostname_template_two_runs_differ() {
     let f = Fixture::new();
     let devices_path = f.write_devices(SINGLE_SSD_DEVICE);
     let config_path = f.write_config(

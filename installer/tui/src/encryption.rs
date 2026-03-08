@@ -11,6 +11,7 @@ use crate::util::{create_passphrase_keyfile, partition_path, run_command};
 
 const KEYFILE_PATH: &str = "/etc/luks/keyfile";
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
+const DRACUT_CRYPT_CONF: &str = "/etc/dracut.conf.d/01-luks-crypt.conf";
 const DRACUT_KEYFILE_CONF: &str = "/etc/dracut.conf.d/02-luks-keyfile.conf";
 const PASSPHRASE_WORD_COUNT: usize = 6;
 
@@ -30,7 +31,7 @@ const PASSPHRASE_WORD_COUNT: usize = 6;
 /// The initramfs is NOT rebuilt here — that is handled by
 /// `rebuild_boot_config`, which runs afterwards.
 // r[impl installer.encryption.overview+3]
-// r[impl installer.encryption.configure-system+2]
+// r[related installer.encryption.overview+3]
 pub fn enroll_and_configure_encryption(
     target_device: &Path,
     disk_encryption: DiskEncryption,
@@ -43,9 +44,27 @@ pub fn enroll_and_configure_encryption(
 
     let root_part = partition_path(target_device, 3)?;
 
-    // r[impl installer.encryption.tpm-enroll+2]
+    // r[impl installer.encryption.tpm-enroll+3]
     // r[impl installer.encryption.keyfile-enroll+2]
     enroll_unlock_mechanism(&root_part, disk_encryption, mount_path, recovery_passphrase)?;
+
+    // Force dracut to include the crypt module and crypttab in the initramfs.
+    // Without this, dracut in host-only mode may skip the crypt module when
+    // the current root is not actually a LUKS device (e.g. in container tests
+    // or when running from a live environment).
+    let dracut_crypt_path = mount_path.join(
+        DRACUT_CRYPT_CONF
+            .strip_prefix('/')
+            .unwrap_or(DRACUT_CRYPT_CONF),
+    );
+    if let Some(parent) = dracut_crypt_path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    fs::write(
+        &dracut_crypt_path,
+        "# Force crypt module so crypttab is always included in the initramfs\nadd_dracutmodules+=\" crypt \"\n",
+    )
+    .with_context(|| format!("writing dracut crypt config at {}", dracut_crypt_path.display()))?;
 
     Ok(())
 }
@@ -64,7 +83,7 @@ fn enroll_unlock_mechanism(
     Ok(())
 }
 
-// r[impl installer.encryption.tpm-enroll+2]
+// r[impl installer.encryption.tpm-enroll+3]
 fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) -> Result<()> {
     tracing::info!("enrolling TPM with PCR 1");
 
@@ -89,7 +108,7 @@ fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) ->
 
     let crypttab_path = mount_path.join(CRYPTTAB_PATH.strip_prefix('/').unwrap_or(CRYPTTAB_PATH));
     let crypttab_content = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
     fs::write(&crypttab_path, crypttab_content)
         .with_context(|| format!("writing crypttab at {}", crypttab_path.display()))?;
 

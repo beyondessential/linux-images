@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 // ---------------------------------------------------------------------------
-// Test fixture: a loop-backed LUKS2 volume mimicking the metal image layout
+// Test fixture: a loop-backed LUKS2 volume mimicking the encrypted image layout
 // ---------------------------------------------------------------------------
 
 struct LuksFixture {
@@ -478,7 +478,7 @@ fn keyfile_enrollment_adds_working_slot() {
     assert!(final_crypttab.contains("/etc/luks/keyfile"));
 }
 
-// r[verify installer.encryption.tpm-enroll+2]
+// r[verify installer.encryption.tpm-enroll+3]
 #[test]
 fn tpm_enrollment_updates_crypttab() {
     // We can't actually enroll a TPM without hardware, but we can verify
@@ -491,7 +491,7 @@ fn tpm_enrollment_updates_crypttab() {
     let crypttab_path = config_dir.join("crypttab");
 
     let tpm_crypttab = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
     fs::write(&crypttab_path, tpm_crypttab).expect("writing TPM crypttab");
 
     let content = fs::read_to_string(&crypttab_path).unwrap();
@@ -506,6 +506,10 @@ fn tpm_enrollment_updates_crypttab() {
     assert!(
         content.contains("none"),
         "crypttab keyfile field should be 'none' for TPM mode"
+    );
+    assert!(
+        content.contains("force"),
+        "crypttab should have 'force' option so dracut includes it in initramfs"
     );
 }
 
@@ -529,7 +533,7 @@ fn recovery_passphrase_is_initial_luks_key() {
     );
 }
 
-// r[verify installer.encryption.configure-system+2]
+// r[verify installer.encryption.overview+3]
 #[test]
 fn configure_system_writes_expected_files() {
     // This test verifies the file-writing portion of configure_installed_system.

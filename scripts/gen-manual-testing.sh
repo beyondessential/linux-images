@@ -187,13 +187,15 @@ step4
 # r[verify iso.boot.autostart+3]
 # r[verify iso.live-boot]
 # r[verify iso.offline]
-# r[verify installer.tui.welcome+5]
+# r[verify installer.tui.welcome+7]
 # r[verify installer.tui.confirmation+7]
 # r[verify installer.tui.ascii-rendering]
 # r[verify installer.tui.error-reboot]
 # r[verify installer.write.expand-root]
 # r[verify image.growth.service]
 # r[verify image.boot.grub-uuids]
+# r[verify iso.vdi]
+# r[verify iso.cdrom-partscan+3]
 step5() {
     cat << 'MD'
 ## Step 5: ISO in a Full VM (VirtualBox)
@@ -201,6 +203,8 @@ step5() {
 This verifies the ISO boots correctly in a real UEFI VM environment, which
 exercises the El Torito EFI boot path, GRUB, live-boot, and the automatic
 TUI launch -- none of which are tested by the container-based tests.
+
+### 5a: CD-ROM boot (optical media)
 
 1. Create a new VM in VirtualBox:
    - Type: Linux, Ubuntu (64-bit)
@@ -239,7 +243,7 @@ TUI launch -- none of which are tested by the container-based tests.
    - Log in as `ubuntu` with the password you set.
    - Run `systemctl --failed` and confirm no unexpected failed units.
    - Run `cat /etc/bes/image-variant` and confirm it matches your
-     encryption choice (`metal` or `cloud`).
+     encryption choice (`luks-tpm`, `luks-keyfile`, or `plain`).
    - Run `df -h /` and confirm the root filesystem has been expanded
      beyond the base image size.
    - Run `btrfs subvolume list /` and confirm `@` and `@postgres`
@@ -248,13 +252,35 @@ TUI launch -- none of which are tested by the container-based tests.
 **Acceptance criteria**: the ISO boots in EFI mode without network, the
 installer completes successfully, the installed system boots unattended (no
 manual LUKS passphrase entry for keyfile mode), and the basic system health
-checks above pass.
+checks above pass. The installer log (`/var/log/bes-installer.log`) should
+show that it found the images partition by PARTUUID (possibly after a
+`losetup --partscan` on `/dev/sr0` for CD-ROM boot).
+
+### 5b: USB/hard-disk boot (VDI)
+
+This verifies the ISO works when booted as a hard disk (simulating a USB
+stick written via `dd`), which exercises the GPT partition table directly
+without the CD-ROM partition scanning workaround.
+
+1. Build the VDI: `just iso-vdi`
+2. Create a new VM in VirtualBox (same settings as 5a).
+3. Instead of attaching an optical disc, attach the `.vdi` file as a
+   **second hard disk** (Settings > Storage > SATA controller > add hard
+   disk). Keep the 10 GB target disk as the first disk.
+4. Boot from the VDI disk (change boot order if needed).
+5. The installer should find the images partition directly by PARTUUID
+   without needing the CD-ROM partscan service.
+6. Complete the installation to the target disk and verify as in 5a.
+
+**Acceptance criteria**: the VDI boots in EFI mode, the installer finds
+`partitions.json` via the PARTUUID-based lookup (no partscan fallback
+needed), and the installation completes successfully.
 
 MD
 }
 step5
 
-# r[verify iso.config-partition]
+# r[verify iso.config-partition+4]
 # r[verify installer.config.location]
 # r[verify installer.mode.prefilled]
 step6() {
@@ -314,7 +340,7 @@ step6
 
 # r[verify installer.mode.auto+4]
 # r[verify installer.config.auto]
-# r[verify installer.config.disk-encryption]
+# r[verify installer.config.disk-encryption+2]
 # r[verify installer.config.disk]
 # r[verify installer.config.hostname]
 # r[verify installer.config.password]
@@ -352,7 +378,7 @@ USB.
    - Hostname is `auto-test` (`hostnamectl`).
    - Log in with password `testpass` (should not prompt for password
      change).
-   - Variant is `metal` (`cat /etc/bes/image-variant`).
+   - Variant is `luks-keyfile` (`cat /etc/bes/image-variant`).
 
 **Acceptance criteria**: the install completes with zero human
 interaction. The installed system reflects the configuration from the
@@ -363,7 +389,7 @@ MD
 step7
 
 # r[verify iso.hybrid]
-# r[verify installer.encryption.tpm-enroll+2]
+# r[verify installer.encryption.tpm-enroll+3]
 # r[verify image.firewall.policy]
 # r[verify image.firewall.ssh]
 # r[verify image.tailscale.service-enabled]
@@ -390,13 +416,13 @@ MD
 }
 step8
 
-# r[verify image.variant.types+2]
+# r[verify image.variant.types+3]
 # r[verify image.boot.grub-install]
 # r[verify image.boot.grub-timeout]
 # r[verify image.boot.grub-cmdline]
 # r[verify image.boot.grub-uuids]
 # r[verify image.growth.service]
-# r[verify image.growth.script]
+# r[verify image.growth.script+2]
 step9() {
     cat << 'MD'
 ## Step 9: Direct Image Write Boot
@@ -418,7 +444,8 @@ a disk, without using the ISO installer.
    - GRUB menu appears with a 5-second timeout.
    - The system boots to a login prompt.
    - Log in as `ubuntu` with password `bes` (will be forced to change it).
-   - `cat /etc/bes/image-variant` shows `cloud`.
+   - `cat /etc/bes/image-variant` shows `cloud` (this is the build-time
+     cloud image, not an installer-produced system).
    - `df -h /` shows the root filesystem has been expanded beyond the
      base image size.
    - `btrfs subvolume list /` shows `@` and `@postgres`.
@@ -569,7 +596,8 @@ After completing all steps, confirm:
 - [ ] Step 2: Automated tests passed.
 - [ ] Step 3: All container install scenarios passed (including metal).
 - [ ] Step 4: Interactive TUI works, Tailscale auth key accepted.
-- [ ] Step 5: ISO boots in VM, installed system is healthy.
+- [ ] Step 5a: ISO boots in VM (CD-ROM), installed system is healthy.
+- [ ] Step 5b: ISO boots in VM (VDI/USB), installed system is healthy.
 - [ ] Step 6: BESCONF prefilled defaults appear in TUI.
 - [ ] Step 7: Automatic mode installs without interaction.
 - [ ] Step 8: Bare-metal hardware boot works.
