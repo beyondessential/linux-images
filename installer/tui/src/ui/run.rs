@@ -596,7 +596,7 @@ fn run_full_install(
         .randomize_filesystem_uuids()
         .context("randomizing filesystem UUIDs")?;
 
-    // r[impl installer.encryption.overview+3]
+    // r[impl installer.encryption.overview+4]
     // Encryption enrollment + config writes (93..94%) — must happen before
     // rebuild_boot_config so dracut picks up the updated crypttab/keyfile.
     if let Some(pp) = disk_writer.passphrase {

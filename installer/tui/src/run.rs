@@ -365,7 +365,7 @@ impl RunContext {
             .randomize_filesystem_uuids()
             .context("randomizing filesystem UUIDs")?;
 
-        // r[impl installer.encryption.overview+3]
+        // r[impl installer.encryption.overview+4]
         if let Some(ref passphrase) = recovery_passphrase {
             eprintln!("setting up disk encryption...");
             let mounted = firstboot::mount_target(

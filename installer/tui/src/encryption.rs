@@ -30,8 +30,8 @@ const PASSPHRASE_WORD_COUNT: usize = 6;
 /// and writes crypttab (and dracut keyfile config for keyfile mode).
 /// The initramfs is NOT rebuilt here — that is handled by
 /// `rebuild_boot_config`, which runs afterwards.
-// r[impl installer.encryption.overview+3]
-// r[related installer.encryption.overview+3]
+// r[impl installer.encryption.overview+4]
+// r[related installer.encryption.overview+4]
 pub fn enroll_and_configure_encryption(
     target_device: &Path,
     disk_encryption: DiskEncryption,

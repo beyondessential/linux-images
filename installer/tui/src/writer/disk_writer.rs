@@ -307,7 +307,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.randomize-uuids+2]
+    // r[impl installer.write.randomize-uuids+3]
     pub fn randomize_filesystem_uuids(&self) -> Result<()> {
         tracing::info!("randomizing filesystem UUIDs on {}", self.target.display());
 
@@ -390,11 +390,24 @@ impl<'a> DiskWriter<'a> {
             );
         }
 
-        tracing::info!("filesystem UUIDs randomized");
+        tracing::info!("filesystem UUIDs randomized, refreshing udev symlinks");
+
+        // After changing filesystem UUIDs, the /dev/disk/by-uuid/ symlinks
+        // are stale. dracut's hostonly mode walks these symlinks to discover
+        // which devices the host needs, so if we don't refresh them the new
+        // initramfs will contain systemd device units for the old UUIDs and
+        // hang at boot waiting for devices that no longer exist.
+        let _ = Command::new(paths::UDEVADM)
+            .args(["trigger", "--subsystem-match=block"])
+            .status();
+        let _ = Command::new(paths::UDEVADM)
+            .args(["settle", "--timeout=10"])
+            .status();
+
         Ok(())
     }
 
-    // r[impl installer.write.rebuild-boot-config+5]
+    // r[impl installer.write.rebuild-boot-config+6]
     pub fn rebuild_boot_config(&self) -> Result<()> {
         tracing::info!("rebuilding boot config (initramfs + grub)");
 
@@ -428,6 +441,7 @@ impl<'a> DiskWriter<'a> {
         let root_uuid = blkid_value(&btrfs_dev, "UUID").context("reading root filesystem UUID")?;
         let xboot_uuid =
             blkid_value(&xboot_part, "UUID").context("reading xboot filesystem UUID")?;
+        let efi_uuid = blkid_value(&efi_part, "UUID").context("reading EFI filesystem UUID")?;
 
         let mount_path = PathBuf::from(MOUNT_BASE);
         fs::create_dir_all(&mount_path).context("creating mount point")?;
@@ -522,6 +536,34 @@ impl<'a> DiskWriter<'a> {
             }
         }
 
+        // Temporarily rewrite /etc/fstab with UUID= references for dracut.
+        // The production fstab uses /dev/disk/by-partlabel/ which is stable
+        // across UUID changes, but dracut's hostonly mode resolves those
+        // symlinks and then looks up UUIDs via /dev/disk/by-uuid/. If udev
+        // hasn't refreshed those symlinks after randomize_filesystem_uuids
+        // (e.g. inside a container with no udevd), dracut discovers stale
+        // UUIDs and bakes them into systemd device-wait units, causing boot
+        // to hang forever. Writing UUID= entries directly avoids the
+        // symlink resolution entirely.
+        let fstab_path = mount_path.join("etc/fstab");
+        let original_fstab = fs::read_to_string(&fstab_path).ok();
+
+        let root_device_fstab = if is_encrypted {
+            "/dev/mapper/root".to_string()
+        } else {
+            format!("UUID={root_uuid}")
+        };
+        let dracut_fstab = format!(
+            "# Temporary fstab for dracut initramfs generation\n\
+             {root_device_fstab}  /                    btrfs subvol=@,compress=zstd:6         0 1\n\
+             {root_device_fstab}  /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:6 0 2\n\
+             UUID={xboot_uuid}    /boot                ext4  defaults                         0 2\n\
+             UUID={efi_uuid}      /boot/efi            vfat  umask=0077                       0 1\n",
+        );
+        fs::write(&fstab_path, &dracut_fstab)
+            .context("writing temporary UUID-based fstab for dracut")?;
+        tracing::info!("wrote temporary UUID-based fstab for dracut");
+
         let dracut_result = if let Some(ref kver) = kernel_version {
             tracing::info!("rebuilding initramfs for kernel {kver}");
             run_command(
@@ -535,6 +577,12 @@ impl<'a> DiskWriter<'a> {
                 &[mount_str, paths::DRACUT, "--force", "--regenerate-all"],
             )
         };
+
+        // Restore the original fstab (by-partlabel references for production)
+        if let Some(ref original) = original_fstab {
+            fs::write(&fstab_path, original).context("restoring original fstab")?;
+            tracing::info!("restored original fstab");
+        }
 
         if let Some(ref luks_id) = luks_uuid {
             patch_grub_defaults_for_luks(&mount_path, luks_id)
@@ -896,7 +944,7 @@ mod tests {
         assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 
-    // r[verify installer.write.rebuild-boot-config+5]
+    // r[verify installer.write.rebuild-boot-config+6]
     #[test]
     fn patch_grub_defaults_sets_luks_cmdline() {
         let dir = tempfile::tempdir().unwrap();
@@ -933,7 +981,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.write.rebuild-boot-config+5]
+    // r[verify installer.write.rebuild-boot-config+6]
     #[test]
     fn patch_grub_defaults_adds_cmdline_linux_when_missing() {
         let dir = tempfile::tempdir().unwrap();

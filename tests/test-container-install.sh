@@ -752,7 +752,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Encryption setup verification (encrypted only) ---
-        # r[verify installer.encryption.overview+3]
+        # r[verify installer.encryption.overview+4]
         if [ "$IS_ENCRYPTED" -eq 1 ]; then
             CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
             check "crypttab exists" test -f "$CRYPTTAB"
@@ -763,8 +763,8 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
-        # r[verify installer.write.randomize-uuids+2]
-        # r[verify installer.write.rebuild-boot-config+5]
+        # r[verify installer.write.randomize-uuids+3]
+        # r[verify installer.write.rebuild-boot-config+6]
         # Mount /boot under the verify root so we can read grub.cfg and
         # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"
@@ -793,7 +793,7 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
 
             # --- Initramfs crypttab verification (metal only) ---
-            # r[verify installer.encryption.overview+3]
+            # r[verify installer.encryption.overview+4]
             # The initramfs must contain the updated crypttab so the system
             # can unlock without a passphrase prompt at boot.
             if [ "$IS_ENCRYPTED" -eq 1 ]; then
