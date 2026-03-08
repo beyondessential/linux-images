@@ -856,21 +856,13 @@ if [ -n "$BTRFS_DEV" ]; then
                     INITRD_CMDLINE_FILE="$WORK_DIR/initrd-cmdline"
                     printf '%s\n' "$INITRD_CMDLINE" > "$INITRD_CMDLINE_FILE"
 
-                    # The root device in the initramfs must reference the
-                    # actual btrfs UUID, not a stale one from image build.
-                    if [ -n "$ACTUAL_ROOT_UUID" ]; then
-                        check "initramfs cmdline references actual root UUID" \
-                            grep -q "$ACTUAL_ROOT_UUID" "$INITRD_CMDLINE_FILE"
-                    fi
-
-                    # Encrypted installs: the initramfs must use /dev/mapper/root,
-                    # not the installer's internal bes-target-root name.
-                    if [ "$IS_ENCRYPTED" -eq 1 ]; then
-                        check "initramfs cmdline uses /dev/mapper/root" \
-                            grep -q '/dev/mapper/root' "$INITRD_CMDLINE_FILE"
-                        check "initramfs cmdline does not reference bes-target-root" \
-                            test "$(grep -c 'bes-target-root' "$INITRD_CMDLINE_FILE")" -eq 0
-                    fi
+                    # Dracut on Ubuntu 24.04 only puts rootfstype and rootflags
+                    # in 95root-dev.conf — not a root= device reference. The
+                    # root device is specified via grub.cfg (already verified
+                    # above as "grub.cfg references actual root UUID"). We check
+                    # that 95root-dev.conf does not contain stale references.
+                    check "initramfs cmdline does not reference bes-target-root" \
+                        test "$(grep -c 'bes-target-root' "$INITRD_CMDLINE_FILE")" -eq 0
                 fi
 
                 # Verify device-wait units only reference current UUIDs.

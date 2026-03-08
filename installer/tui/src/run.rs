@@ -606,7 +606,7 @@ fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMod
         // r[impl installer.config.location]
         .unwrap_or(Path::new("/run/besconf/bes-install.toml"));
 
-    match config::InstallConfig::load_from_file(&config_path)? {
+    match config::InstallConfig::load_from_file(config_path)? {
         Some(cfg) => {
             let mode = cfg.mode();
             tracing::info!("operating mode: {mode}");
