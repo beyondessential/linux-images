@@ -243,6 +243,15 @@ run_in_chroot passwd -d root
 install -D -m 644 "$ROOTFS_FILES/etc/systemd/logind.conf.d/reserve-tty2.conf" \
     "$MNT_ROOTFS/etc/systemd/logind.conf.d/reserve-tty2.conf"
 
+# r[impl iso.cdrom-partscan+2]
+install -D -m 755 "$ROOTFS_FILES/usr/local/bin/bes-cdrom-partscan" \
+    "$MNT_ROOTFS/usr/local/bin/bes-cdrom-partscan"
+
+install -D -m 644 "$ROOTFS_FILES/etc/systemd/system/bes-cdrom-partscan.service" \
+    "$MNT_ROOTFS/etc/systemd/system/bes-cdrom-partscan.service"
+
+run_in_chroot systemctl enable bes-cdrom-partscan.service
+
 # r[impl iso.config-partition+3]
 install -D -m 644 "$ROOTFS_FILES/etc/systemd/system/run-besconf.mount" \
     "$MNT_ROOTFS/etc/systemd/system/run-besconf.mount"

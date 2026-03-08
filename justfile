@@ -48,6 +48,7 @@ output_raw := output_dir / filestem + ".raw"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
 output_iso := output_arch_dir / "bes-installer-" + arch + ".iso"
+output_iso_vdi := output_arch_dir / "bes-installer-" + arch + ".vdi"
 iso_base_tarball := work_dir / "iso-base.tar"
 iso_rootfs_dir := work_dir / "iso-rootfs"
 
@@ -149,6 +150,26 @@ iso: _validate-arch iso-rootfs
          ROOTFS_DIR="{{ iso_rootfs_dir }}" \
          SOURCE_IMAGE="$SOURCE_IMAGE" \
          iso/build-iso.sh
+
+# Convert the hybrid ISO to VDI for VirtualBox USB/hard-disk testing.
+
+# r[impl iso.vdi]
+iso-vdi: iso
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ISO="{{ output_iso }}"
+    VDI="{{ output_iso_vdi }}"
+    if [ ! -f "$ISO" ]; then
+      echo "ERROR: ISO not found: $ISO"
+      echo "Run 'just iso' first."
+      exit 1
+    fi
+    rm -f "$VDI"
+    echo "Converting $ISO -> $VDI ..."
+    qemu-img convert -f raw -O vdi "$ISO" "$VDI"
+    echo "VDI: $VDI ($(du -h "$VDI" | cut -f1))"
+    echo ""
+    echo "Attach in VirtualBox as a USB/hard-disk device (UEFI mode)."
 
 # Force-rebuild the ISO base (removes cached tarball first)
 iso-base-rebuild: _validate-arch _ensure-dirs

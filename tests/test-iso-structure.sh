@@ -356,6 +356,15 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fail "run-besconf.automount is enabled"
     fi
 
+    # r[verify iso.cdrom-partscan+2]
+    check "bes-cdrom-partscan script exists" test -x "$SQFS_MNT/usr/local/bin/bes-cdrom-partscan"
+    check "bes-cdrom-partscan.service exists" test -f "$SQFS_MNT/etc/systemd/system/bes-cdrom-partscan.service"
+    if find "$SQFS_MNT/etc/systemd/system" -name "bes-cdrom-partscan.service" -type l 2>/dev/null | grep -q .; then
+        pass "bes-cdrom-partscan.service is enabled"
+    else
+        fail "bes-cdrom-partscan.service is enabled"
+    fi
+
     # Verify build info
     check "/etc/bes-build-info exists" test -f "$SQFS_MNT/etc/bes-build-info"
     if [ -f "$SQFS_MNT/etc/bes-build-info" ]; then

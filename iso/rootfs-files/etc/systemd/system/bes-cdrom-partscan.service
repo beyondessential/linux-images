@@ -1,0 +1,14 @@
+[Unit]
+Description=CD-ROM GPT partition scanning for BES ISO
+DefaultDependencies=no
+After=systemd-udevd.service local-fs-pre.target
+Before=local-fs.target run-besconf.automount bes-installer.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/bes-cdrom-partscan start
+ExecStop=/usr/local/bin/bes-cdrom-partscan stop
+
+[Install]
+WantedBy=local-fs.target

@@ -1,0 +1,138 @@
+#!/bin/bash
+# r[impl iso.cdrom-partscan+2]
+#
+# CD-ROM partition scanning helper.
+#
+# When the ISO is booted as optical media (/dev/sr0), the Linux kernel does
+# not parse the GPT appended partitions — the CD-ROM block device driver
+# exposes the device as a single block device with an ISO 9660 filesystem.
+# As a result, /dev/disk/by-partuuid/ symlinks for the appended BESIMAGES
+# and BESCONF partitions are never created.
+#
+# This script detects whether the well-known PARTUUIDs are already present
+# (USB boot) and, if not, creates a read-only loop device with partition
+# scanning enabled on the boot device so that udev populates the symlinks.
+#
+# Usage: bes-cdrom-partscan [start|stop]
+#   start — create loop device if PARTUUIDs are missing
+#   stop  — detach loop device if one was created
+#
+# The loop device path is persisted in a state file so that stop can clean
+# up without re-scanning.
+
+set -euo pipefail
+
+IMAGES_PARTUUID="ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b"
+BESCONF_PARTUUID="e2bac42b-03a7-5048-b8f5-3f6d22100e77"
+STATE_FILE="/run/bes-cdrom-partscan.loop"
+
+partuuids_present() {
+    [ -e "/dev/disk/by-partuuid/$IMAGES_PARTUUID" ] &&
+    [ -e "/dev/disk/by-partuuid/$BESCONF_PARTUUID" ]
+}
+
+find_boot_device() {
+    # Try /proc/cmdline for a root= hint that points at the live medium,
+    # but the most reliable method is finding what backs /run/live/medium
+    # (where live-boot mounts the ISO filesystem).
+    local dev=""
+
+    if mountpoint -q /run/live/medium 2>/dev/null; then
+        dev="$(findmnt -n -o SOURCE /run/live/medium 2>/dev/null || true)"
+    fi
+
+    # findmnt may return e.g. /dev/sr0, /dev/loop0, or /dev/sda
+    if [ -z "$dev" ]; then
+        # Fallback: look for the ISO label
+        dev="$(blkid -t LABEL=BES_INSTALLER -o device 2>/dev/null | head -1 || true)"
+    fi
+
+    if [ -z "$dev" ]; then
+        return 1
+    fi
+
+    # Resolve to the whole-disk device (strip partition suffix if any)
+    dev="$(lsblk -ndo PKNAME "$dev" 2>/dev/null || echo "$dev")"
+    # lsblk PKNAME is empty when the device IS the whole disk
+    if [ -z "$dev" ]; then
+        dev="$(findmnt -n -o SOURCE /run/live/medium 2>/dev/null || true)"
+    fi
+
+    # Resolve /dev/disk/by-* symlinks
+    if [ -L "$dev" ]; then
+        dev="$(readlink -f "$dev")"
+    fi
+
+    # Make sure it's a block device
+    if [ -b "$dev" ]; then
+        echo "$dev"
+        return 0
+    fi
+
+    # If dev is a path like "sr0" without /dev prefix
+    if [ -b "/dev/$dev" ]; then
+        echo "/dev/$dev"
+        return 0
+    fi
+
+    return 1
+}
+
+do_start() {
+    # Already present (USB boot or previous run) — nothing to do.
+    if partuuids_present; then
+        echo "bes-cdrom-partscan: PARTUUIDs already present, no action needed"
+        exit 0
+    fi
+
+    local boot_dev
+    if ! boot_dev="$(find_boot_device)"; then
+        echo "bes-cdrom-partscan: could not determine boot device" >&2
+        exit 1
+    fi
+
+    echo "bes-cdrom-partscan: boot device is $boot_dev, creating loop with partscan"
+
+    local loop_dev
+    loop_dev="$(losetup --find --show --partscan --read-only "$boot_dev")"
+    echo "$loop_dev" > "$STATE_FILE"
+
+    echo "bes-cdrom-partscan: loop device $loop_dev created"
+
+    # Trigger partition scanning and wait for udev
+    partprobe "$loop_dev" 2>/dev/null || true
+    udevadm settle --timeout=10 2>/dev/null || true
+
+    # Verify
+    if partuuids_present; then
+        echo "bes-cdrom-partscan: PARTUUIDs are now available"
+    else
+        echo "bes-cdrom-partscan: warning: PARTUUIDs still not visible after partscan" >&2
+        echo "bes-cdrom-partscan: contents of /dev/disk/by-partuuid/:" >&2
+        ls -la /dev/disk/by-partuuid/ 2>&1 >&2 || true
+    fi
+}
+
+do_stop() {
+    if [ ! -f "$STATE_FILE" ]; then
+        exit 0
+    fi
+
+    local loop_dev
+    loop_dev="$(cat "$STATE_FILE")"
+    rm -f "$STATE_FILE"
+
+    if [ -n "$loop_dev" ] && [ -b "$loop_dev" ]; then
+        echo "bes-cdrom-partscan: detaching $loop_dev"
+        losetup -d "$loop_dev" 2>/dev/null || true
+    fi
+}
+
+case "${1:-start}" in
+    start) do_start ;;
+    stop)  do_stop ;;
+    *)
+        echo "Usage: $0 [start|stop]" >&2
+        exit 1
+        ;;
+esac
