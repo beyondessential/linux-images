@@ -386,18 +386,16 @@ xorriso -as mkisofs \
 # r[impl iso.config-partition+2]
 echo "==> Phase 6: Stamping well-known PARTUUIDs..."
 
-# Find partition numbers by scanning the sfdisk JSON output for type UUIDs.
-# xorriso may insert gap partitions, so we cannot assume fixed numbers.
-# The "node" field ends with the partition number (e.g. "…iso3" -> 3).
+# Find partition numbers by GPT partition name. xorriso names its appended
+# partitions "Appended3" and "Appended4" (matching the -append_partition
+# numbers). We cannot match by type UUID because xorriso's gap partitions
+# share the same Microsoft basic data type as BESCONF.
 SFDISK_ISO_JSON="$(sfdisk --json "$OUTPUT")"
-echo "    sfdisk JSON:"
-echo "$SFDISK_ISO_JSON" | jq .
-echo ""
 IMAGES_PARTNUM="$(echo "$SFDISK_ISO_JSON" | jq -r \
-    '.partitiontable.partitions[] | select(.type == "0FC63DAF-8483-4772-8E79-3D69D8477DE4") | .node' \
+    '.partitiontable.partitions[] | select(.name == "Appended3") | .node' \
     | head -1 | grep -o '[0-9]*$')"
 BESCONF_PARTNUM="$(echo "$SFDISK_ISO_JSON" | jq -r \
-    '.partitiontable.partitions[] | select(.type == "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7") | .node' \
+    '.partitiontable.partitions[] | select(.name == "Appended4") | .node' \
     | head -1 | grep -o '[0-9]*$')"
 
 if [ -z "$IMAGES_PARTNUM" ]; then
