@@ -175,8 +175,8 @@ iso-vdi: iso
 iso-base-rebuild: _validate-arch _ensure-dirs
     #!/usr/bin/env bash
     set -euo pipefail
-    rm -f "{{ iso_base_tarball }}"
-    rm -rf "{{ iso_rootfs_dir }}"
+    sudo rm -f "{{ iso_base_tarball }}"
+    sudo rm -rf "{{ iso_rootfs_dir }}"
     sudo ARCH="{{ arch }}" \
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
@@ -187,7 +187,7 @@ iso-base-rebuild: _validate-arch _ensure-dirs
 iso-rootfs-rebuild: _validate-arch iso-base installer-build _ensure-dirs
     #!/usr/bin/env bash
     set -euo pipefail
-    rm -rf "{{ iso_rootfs_dir }}"
+    sudo rm -rf "{{ iso_rootfs_dir }}"
     sudo ARCH="{{ arch }}" \
          OUTPUT_DIR="{{ iso_rootfs_dir }}" \
          BASE_TARBALL="{{ iso_base_tarball }}" \
