@@ -171,6 +171,78 @@ iso-vdi: iso
     echo ""
     echo "Attach in VirtualBox as a USB/hard-disk device (UEFI mode)."
 
+# Requires: qemu-nbd (qemu-utils), nbd kernel module.
+
+# Mount the BESCONF partition from the VDI for editing (simulates USB workflow).
+iso-besconf: _validate-arch
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VDI="{{ output_iso_vdi }}"
+    BESCONF_PARTUUID="e2bac42b-03a7-5048-b8f5-3f6d22100e77"
+    MNT="{{ work_dir }}/besconf-mnt"
+
+    if [ ! -f "$VDI" ]; then
+      echo "ERROR: VDI not found: $VDI"
+      echo "Run 'just iso-vdi' first."
+      exit 1
+    fi
+
+    if ! command -v qemu-nbd &>/dev/null; then
+      echo "ERROR: qemu-nbd not found (install qemu-utils)"
+      exit 1
+    fi
+
+    sudo modprobe nbd max_part=16
+
+    # Find a free /dev/nbdN (size 0 in sysfs means disconnected)
+    NBD=""
+    for dev in /dev/nbd{0..15}; do
+      if [ -b "$dev" ] && [ "$(cat "/sys/block/$(basename "$dev")/size" 2>/dev/null)" = "0" ]; then
+        NBD="$dev"
+        break
+      fi
+    done
+    if [ -z "$NBD" ]; then
+      echo "ERROR: no free /dev/nbdN device found"
+      exit 1
+    fi
+
+    cleanup() {
+      echo ""
+      echo "Unmounting and disconnecting..."
+      sudo umount "$MNT" 2>/dev/null || true
+      sudo qemu-nbd --disconnect "$NBD" 2>/dev/null || true
+      rmdir "$MNT" 2>/dev/null || true
+    }
+    trap cleanup EXIT
+
+    sudo qemu-nbd --connect="$NBD" "$VDI"
+    sleep 0.5
+    sudo partprobe "$NBD"
+    sudo udevadm settle --timeout=5
+
+    # Find the BESCONF partition via the well-known PARTUUID symlink
+    PART="/dev/disk/by-partuuid/$BESCONF_PARTUUID"
+    if [ ! -b "$PART" ]; then
+      echo "ERROR: BESCONF partition not found at $PART"
+      sudo fdisk -l "$NBD"
+      exit 1
+    fi
+
+    mkdir -p "$MNT"
+    sudo mount "$PART" "$MNT"
+
+    echo ""
+    echo "BESCONF mounted at: $MNT"
+    echo "  VDI:       $VDI"
+    echo "  Device:    $PART"
+    echo ""
+    echo "Contents:"
+    ls -la "$MNT"
+    echo ""
+    echo "Edit files under $MNT, then press Enter to unmount."
+    read -r
+
 # Force-rebuild the ISO base (removes cached tarball first)
 iso-base-rebuild: _validate-arch _ensure-dirs
     #!/usr/bin/env bash
