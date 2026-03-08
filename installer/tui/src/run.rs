@@ -269,6 +269,7 @@ impl RunContext {
         writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
 
         // r[impl iso.verity.check]
+        // r[impl iso.verity.failure]
         if _images_verity.is_some() {
             eprintln!("verifying installation media integrity...");
             let image_files = writer::image_file_sizes(&manifest, &images_dir)
@@ -285,7 +286,7 @@ impl RunContext {
                     eprint!("\r  {pct:5.1}% | {mbps:.1} MiB/s | ETA: {eta}    ");
                 }
             })
-            .context("installation media integrity check failed")?;
+            .context("installation media integrity check failed — the target disk has NOT been written to — write a new copy of the installation medium")?;
             if interactive {
                 eprintln!();
             }

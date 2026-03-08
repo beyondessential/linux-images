@@ -491,6 +491,7 @@ if [ -n "$IMAGES_PART" ]; then
     fi
     if [ -n "$IMAGES_ROOTHASH" ]; then
         HASH_OFFSET=$((IMAGES_TOTAL_SIZE - 8 - HASH_SIZE))
+        # r[verify iso.verity.build-deps]
         if veritysetup verify "$IMAGES_PART" "$IMAGES_PART" "$IMAGES_ROOTHASH" --hash-offset="$HASH_OFFSET" 2>/dev/null; then
             pass "images partition passes veritysetup verify"
         else

@@ -553,6 +553,7 @@ fn run_full_install(
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
 
     // r[impl iso.verity.check]
+    // r[impl iso.verity.failure]
     // Upfront integrity check: splice every image to /dev/null so dm-verity
     // verifies every block before we touch the target disk.
     let image_files = writer::image_file_sizes(manifest, images_dir)
@@ -560,7 +561,7 @@ fn run_full_install(
     writer::integrity_check(images_dir, &image_files, &mut |progress| {
         let _ = tx.send(WorkerMessage::Progress(progress.into()));
     })
-    .context("installation media integrity check failed — media may be corrupted")?;
+    .context("installation media integrity check failed — the target disk has NOT been written to — write a new copy of the installation medium")?;
 
     // Write partitions (~90% of progress)
     disk_writer

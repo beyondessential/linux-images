@@ -447,6 +447,10 @@ check "root partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"r
 # r[verify installer.mode.auto.progress]
 check "non-interactive write summary printed" grep -q "write complete:.*MiB in.*MiB/s" "$INSTALLER_OUTPUT"
 
+# r[verify iso.verity.check]
+# r[verify iso.verity.failure]
+check "integrity check passed before writing" grep -q "integrity check passed" "$INSTALLER_OUTPUT"
+
 # r[verify installer.write.partitions+2]
 # r[verify installer.write.expand-root]
 ROOT_PART_SIZE=$(lsblk --bytes --noheadings --output SIZE "${LOOP_DEV}p3" 2>/dev/null | tr -d '[:space:]')
