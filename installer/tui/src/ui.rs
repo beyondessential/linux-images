@@ -57,8 +57,7 @@ pub enum NetConfigFocus {
 }
 
 impl NetConfigFocus {
-    /// Which pane this focus field belongs to.
-    pub fn pane(self) -> NetConfigPane {
+    pub fn pane(&self) -> NetConfigPane {
         match self {
             Self::IsoMode
             | Self::IsoInterface
@@ -66,6 +65,7 @@ impl NetConfigFocus {
             | Self::IsoGateway
             | Self::IsoDns
             | Self::IsoDomain => NetConfigPane::Iso,
+
             Self::TargetMode
             | Self::TargetInterface
             | Self::TargetIp
@@ -75,8 +75,7 @@ impl NetConfigFocus {
         }
     }
 
-    /// Whether this focus is a text input field (as opposed to a radio/dropdown).
-    pub fn is_text_input(self) -> bool {
+    pub fn is_text_input(&self) -> bool {
         matches!(
             self,
             Self::IsoIp
@@ -1017,76 +1016,40 @@ impl AppState {
         fields
     }
 
-    /// Move focus forward (Tab). When at the end of a pane, switch to the
-    /// other pane.
+    /// All visible fields in tab order: ISO fields first, then Target fields.
+    fn all_visible_fields(&self) -> Vec<NetConfigFocus> {
+        let mut fields = self.iso_visible_fields();
+        fields.extend(self.target_visible_fields());
+        fields
+    }
+
+    /// Move focus forward (Tab). Navigates ISO fields top-to-bottom, then
+    /// Target fields top-to-bottom, wrapping back to the first ISO field.
     pub fn tab_focus_forward(&mut self) {
-        let fields = match self.net_config_pane {
-            NetConfigPane::Iso => self.iso_visible_fields(),
-            NetConfigPane::Target => self.target_visible_fields(),
-        };
-        if let Some(pos) = fields.iter().position(|f| *f == self.net_config_focus) {
-            if pos + 1 < fields.len() {
-                self.apply_cidr_auto_suffix();
-                self.net_config_focus = fields[pos + 1];
-            } else {
-                self.apply_cidr_auto_suffix();
-                self.switch_pane_forward();
-            }
+        self.apply_cidr_auto_suffix();
+        let all = self.all_visible_fields();
+        if let Some(pos) = all.iter().position(|f| *f == self.net_config_focus) {
+            let next = (pos + 1) % all.len();
+            self.net_config_focus = all[next];
         } else {
-            self.apply_cidr_auto_suffix();
-            self.switch_pane_forward();
+            self.net_config_focus = all[0];
         }
+        self.net_config_pane = self.net_config_focus.pane();
     }
 
-    /// Move focus backward (Shift+Tab). When at the start of a pane, switch
-    /// to the other pane.
+    /// Move focus backward (Shift+Tab). Reverse of `tab_focus_forward`:
+    /// navigates upward through Target fields then ISO fields, wrapping to
+    /// the last Target field from the first ISO field.
     pub fn tab_focus_backward(&mut self) {
-        let fields = match self.net_config_pane {
-            NetConfigPane::Iso => self.iso_visible_fields(),
-            NetConfigPane::Target => self.target_visible_fields(),
-        };
-        if let Some(pos) = fields.iter().position(|f| *f == self.net_config_focus) {
-            if pos > 0 {
-                self.apply_cidr_auto_suffix();
-                self.net_config_focus = fields[pos - 1];
-            } else {
-                self.apply_cidr_auto_suffix();
-                self.switch_pane_backward();
-            }
+        self.apply_cidr_auto_suffix();
+        let all = self.all_visible_fields();
+        if let Some(pos) = all.iter().position(|f| *f == self.net_config_focus) {
+            let prev = if pos == 0 { all.len() - 1 } else { pos - 1 };
+            self.net_config_focus = all[prev];
         } else {
-            self.apply_cidr_auto_suffix();
-            self.switch_pane_backward();
+            self.net_config_focus = *all.last().unwrap_or(&NetConfigFocus::TargetMode);
         }
-    }
-
-    fn switch_pane_forward(&mut self) {
-        match self.net_config_pane {
-            NetConfigPane::Iso => {
-                self.net_config_pane = NetConfigPane::Target;
-                let fields = self.target_visible_fields();
-                self.net_config_focus = fields[0];
-            }
-            NetConfigPane::Target => {
-                self.net_config_pane = NetConfigPane::Iso;
-                let fields = self.iso_visible_fields();
-                self.net_config_focus = fields[0];
-            }
-        }
-    }
-
-    fn switch_pane_backward(&mut self) {
-        match self.net_config_pane {
-            NetConfigPane::Iso => {
-                self.net_config_pane = NetConfigPane::Target;
-                let fields = self.target_visible_fields();
-                self.net_config_focus = *fields.last().unwrap_or(&NetConfigFocus::TargetMode);
-            }
-            NetConfigPane::Target => {
-                self.net_config_pane = NetConfigPane::Iso;
-                let fields = self.iso_visible_fields();
-                self.net_config_focus = *fields.last().unwrap_or(&NetConfigFocus::IsoMode);
-            }
-        }
+        self.net_config_pane = self.net_config_focus.pane();
     }
 
     /// Apply CIDR auto-suffix when leaving an IP field.
@@ -2989,10 +2952,15 @@ mod tests {
         state.net_config_focus = NetConfigFocus::IsoMode;
         state.iso_network_mode = NetworkMode::Dhcp;
 
-        // ISO pane has only IsoMode when DHCP, so Tab switches to target
+        // Tab from the only ISO field (DHCP) goes to the first target field
         state.tab_focus_forward();
         assert_eq!(state.net_config_pane, NetConfigPane::Target);
         assert_eq!(state.net_config_focus, NetConfigFocus::TargetMode);
+
+        // Tab from last target field wraps to first ISO field
+        state.tab_focus_forward();
+        assert_eq!(state.net_config_pane, NetConfigPane::Iso);
+        assert_eq!(state.net_config_focus, NetConfigFocus::IsoMode);
     }
 
     // r[verify installer.tui.network-config+13]
@@ -3030,7 +2998,7 @@ mod tests {
         state.net_config_focus = NetConfigFocus::TargetMode;
         state.iso_network_mode = NetworkMode::Dhcp;
 
-        // Shift+Tab from first target field goes to last ISO field (IsoMode for DHCP)
+        // Shift+Tab from first target field goes UP to last ISO field (IsoMode for DHCP)
         state.tab_focus_backward();
         assert_eq!(state.net_config_pane, NetConfigPane::Iso);
         assert_eq!(state.net_config_focus, NetConfigFocus::IsoMode);
@@ -3045,9 +3013,42 @@ mod tests {
         state.net_config_focus = NetConfigFocus::TargetMode;
         state.iso_network_mode = NetworkMode::StaticIp;
 
+        // Shift+Tab goes UP to the last ISO static field
         state.tab_focus_backward();
         assert_eq!(state.net_config_pane, NetConfigPane::Iso);
         assert_eq!(state.net_config_focus, NetConfigFocus::IsoDomain);
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn shift_tab_backward_from_iso_wraps_to_target_last() {
+        let mut state = make_state();
+        state.screen = Screen::NetworkConfig;
+        state.net_config_pane = NetConfigPane::Iso;
+        state.net_config_focus = NetConfigFocus::IsoMode;
+        state.iso_network_mode = NetworkMode::Dhcp;
+        state.target_network_mode = TargetNetworkMode::Dhcp;
+
+        // Shift+Tab from first overall field wraps to last Target field
+        state.tab_focus_backward();
+        assert_eq!(state.net_config_pane, NetConfigPane::Target);
+        assert_eq!(state.net_config_focus, NetConfigFocus::TargetMode);
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn shift_tab_backward_from_iso_wraps_to_target_static_last() {
+        let mut state = make_state();
+        state.screen = Screen::NetworkConfig;
+        state.net_config_pane = NetConfigPane::Iso;
+        state.net_config_focus = NetConfigFocus::IsoMode;
+        state.iso_network_mode = NetworkMode::Dhcp;
+        state.target_network_mode = TargetNetworkMode::StaticIp;
+
+        // Shift+Tab wraps to last Target static field
+        state.tab_focus_backward();
+        assert_eq!(state.net_config_pane, NetConfigPane::Target);
+        assert_eq!(state.net_config_focus, NetConfigFocus::TargetDomain);
     }
 
     // r[verify installer.tui.network-config+13]
