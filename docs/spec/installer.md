@@ -24,9 +24,8 @@ installer must report a validation error.
 r[installer.config.disk-encryption+2]
 The `disk-encryption` field is a string selecting the disk encryption
 mode. Valid values are `"tpm"` (LUKS + TPM PCR 1; requires a TPM and is
-the default when a TPM is present), `"keyfile"` (LUKS + keyfile on the
-boot partition; default when no TPM is present), or `"none"` (no
-encryption).
+marked experimental), `"keyfile"` (LUKS + keyfile on the boot partition;
+the default), or `"none"` (no encryption).
 
 r[installer.config.disk]
 The `disk` field is a string selecting the target disk. It may be a
@@ -349,14 +348,11 @@ verity is not active, no progress bar is shown and Enter works immediately.
 >
 > ### Navigation
 >
-> `Tab` moves focus forward through the fields in the active pane. When
-> focus is on the last field of the active pane, `Tab` switches the
-> accordion to the other pane (expanding it, collapsing the current one) and
-> focuses its first field. `Shift+Tab` moves focus backward; when focus is
-> on the first field, it switches to the other pane and focuses its last
-> field. `Enter` from the target pane advances to the disk selection screen.
+> `Tab` and `Shift+Tab` move focus through the fields in the active pane.
+> `Enter` from the ISO pane advances to the target pane directly.
+> `Enter` from the target pane advances to the disk selection screen.
 > `Esc` returns to the welcome screen. `Alt+c` opens the network check
-> screen (see `r[installer.tui.network-check]`).
+> screen (see `r[installer.tui.network-check+6]`).
 >
 > ### ISO pane
 >
@@ -643,7 +639,7 @@ highlighted timezone and advances to the next screen. The field defaults to
 > 
 > When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
 > screen must also generate and display the recovery passphrase. This gives
-> the user an opportunity to write it down **before** the destructive write
+> the user an opportunity to write it down before the destructive write
 > begins. The same passphrase is later enrolled into the LUKS volume during
 > encryption setup. The completion screen displays the recovery passphrase
 > again as a final reminder; the user must press Enter to acknowledge before
@@ -678,18 +674,15 @@ keypress and the screen blanking.
 
 r[installer.tui.progress+4]
 The TUI must display a single progress bar that covers the entire
-installation, not just the image write. The progress bar is shown on one
-`Installing` screen from the moment the user confirms until all steps
-complete. The integrity check (see `r[iso.verity.check+6]`) is **not** part of
-this progress bar -- it runs earlier on the welcome screen. The Installing
+installation. The progress bar is shown on the `Installing` screen from
+the moment the user confirms until all steps complete. The Installing
 screen begins with partition image writes (which have byte-level progress)
 occupying approximately 90% of the bar. Each post-write step (filesystem
 expansion, UUID randomization, boot config rebuild, partition verification,
 install-time configuration, and encryption setup) occupies a small fixed
 slice of the remaining 10%, advancing the bar when the step completes. After
 all steps finish, the TUI transitions to a completion screen. For encrypted
-installs, the completion screen also displays the recovery passphrase
-(replacing the separate recovery passphrase screen).
+installs, the completion screen also displays the recovery passphrase.
 
 r[installer.tui.debug-shell+3]
 Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
