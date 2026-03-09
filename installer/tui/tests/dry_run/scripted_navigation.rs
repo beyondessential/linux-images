@@ -11,7 +11,9 @@ fn scripted_encryption_cycle_twice_returns_to_default() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # DiskSelection
 enter
@@ -70,7 +72,9 @@ fn scripted_encryption_cycle_back_to_keyfile() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # DiskSelection
 enter
@@ -128,7 +132,9 @@ fn scripted_disk_wrap_around() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # Disk: down twice wraps back to index 0
 down
@@ -185,7 +191,9 @@ fn scripted_disk_up_wraps_to_last() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # Disk: up wraps to last
 up
@@ -241,7 +249,9 @@ fn scripted_hostname_with_backspace_correction() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # DiskSelection
 enter
@@ -301,7 +311,9 @@ fn scripted_multiline_ssh_keys() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # DiskSelection
 enter
@@ -362,7 +374,9 @@ fn scripted_wrong_confirmation_does_not_advance() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # DiskSelection
 enter
