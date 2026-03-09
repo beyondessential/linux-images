@@ -5,6 +5,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use serde::Deserialize;
+
 use crate::paths;
 
 /// An endpoint to check during the network connectivity screen.
@@ -45,6 +47,81 @@ pub struct GithubKeysResult {
     pub success: bool,
     pub keys: Vec<String>,
     pub error: Option<String>,
+}
+
+/// A detected network interface for the dropdown in the network config screen.
+#[derive(Debug, Clone)]
+pub struct NetInterface {
+    pub name: String,
+    pub mac: String,
+    pub state: String,
+}
+
+/// Connectivity status for the ISO pane status indicator.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NetConnectivityStatus {
+    Unknown,
+    Connected(String),
+    NoConnectivity,
+    Configuring,
+}
+
+/// JSON shape returned by `ip -j link show`.
+#[derive(Debug, Deserialize)]
+struct IpLinkEntry {
+    ifname: String,
+    address: Option<String>,
+    operstate: Option<String>,
+    link_type: Option<String>,
+}
+
+/// Detect physical network interfaces by running `ip -j link show` and
+/// filtering out virtual/loopback interfaces.
+pub fn detect_interfaces() -> Vec<NetInterface> {
+    let output = match Command::new(paths::IP)
+        .args(["-j", "link", "show"])
+        .output()
+    {
+        Ok(o) if o.status.success() => o.stdout,
+        Ok(o) => {
+            tracing::warn!(
+                "ip link show failed: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
+            return Vec::new();
+        }
+        Err(e) => {
+            tracing::warn!("failed to run ip: {e}");
+            return Vec::new();
+        }
+    };
+
+    let entries: Vec<IpLinkEntry> = match serde_json::from_slice(&output) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("failed to parse ip -j link show output: {e}");
+            return Vec::new();
+        }
+    };
+
+    entries
+        .into_iter()
+        .filter(|e| {
+            let name = e.ifname.as_str();
+            // Filter out loopback, virtual, and container interfaces
+            !matches!(name, "lo")
+                && !name.starts_with("docker")
+                && !name.starts_with("veth")
+                && !name.starts_with("br-")
+                && !name.starts_with("tailscale")
+                && e.link_type.as_deref() != Some("loopback")
+        })
+        .map(|e| NetInterface {
+            name: e.ifname,
+            mac: e.address.unwrap_or_default(),
+            state: e.operstate.unwrap_or_else(|| "UNKNOWN".into()),
+        })
+        .collect()
 }
 
 // r[impl installer.tui.network-check+4]
@@ -328,6 +405,34 @@ pub fn spawn_github_key_fetch(username: &str) -> mpsc::Receiver<GithubKeysResult
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn net_interface_fields_accessible() {
+        let iface = NetInterface {
+            name: "enp0s3".into(),
+            mac: "08:00:27:aa:bb:cc".into(),
+            state: "UP".into(),
+        };
+        assert_eq!(iface.name, "enp0s3");
+        assert_eq!(iface.mac, "08:00:27:aa:bb:cc");
+        assert_eq!(iface.state, "UP");
+    }
+
+    #[test]
+    fn net_connectivity_status_variants() {
+        assert_eq!(
+            NetConnectivityStatus::Unknown,
+            NetConnectivityStatus::Unknown
+        );
+        assert_ne!(
+            NetConnectivityStatus::Connected("test".into()),
+            NetConnectivityStatus::NoConnectivity
+        );
+        assert_eq!(
+            NetConnectivityStatus::Configuring,
+            NetConnectivityStatus::Configuring
+        );
+    }
 
     #[test]
     fn default_endpoints_has_expected_count() {
