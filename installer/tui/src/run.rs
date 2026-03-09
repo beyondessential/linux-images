@@ -479,11 +479,7 @@ impl RunContext {
         let disk_encryption = self
             .install_config
             .disk_encryption
-            .unwrap_or(if self.tpm_present {
-                config::DiskEncryption::Tpm
-            } else {
-                config::DiskEncryption::Keyfile
-            });
+            .unwrap_or(config::DiskEncryption::Keyfile);
 
         let copy_install_log = self.install_config.copy_install_log.unwrap_or(true);
 

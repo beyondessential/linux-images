@@ -10,7 +10,9 @@ fn interactive_keyfile_full_flow() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # Disk: accept first
 enter
@@ -89,7 +91,9 @@ fn interactive_none_encryption_flow() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # Disk
 enter
@@ -145,7 +149,9 @@ fn interactive_install_config_fields_captured() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # Disk
 enter
@@ -226,7 +232,9 @@ fn interactive_empty_install_config_is_null() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # Disk
 enter
@@ -297,7 +305,9 @@ fn interactive_selects_second_disk() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # Navigate to second disk
 down
@@ -414,7 +424,9 @@ fn interactive_go_back_from_confirmation_and_change() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # Disk
 enter

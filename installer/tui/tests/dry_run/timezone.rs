@@ -123,7 +123,9 @@ fn scripted_timezone_search_and_select() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # DiskSelection
 enter
@@ -181,7 +183,9 @@ fn scripted_timezone_navigate_and_select() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # DiskSelection
 enter

@@ -22,9 +22,11 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
 enter
-# Disk
+# NetworkConfig: Target -> DiskSelection
+enter
+# Disk: accept default
 enter
 # DiskEncryption: accept default (tpm)
 enter
@@ -101,9 +103,11 @@ fn prefilled_overriding_values_via_tui() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
 enter
-# Disk: move down to second, accept
+# NetworkConfig: Target -> DiskSelection
+enter
+# Disk: move down to second, accept (extra enter was already present via 'down' + 'enter')
 down
 enter
 # DiskEncryption: cycle Tpm -> Keyfile -> None
@@ -179,9 +183,11 @@ fn prefilled_timezone_from_config() {
         "\
 # Welcome
 enter
-# NetworkConfig
+# NetworkConfig: ISO -> Target
 enter
-# Disk
+# NetworkConfig: Target -> DiskSelection
+enter
+# Disk: accept default
 enter
 # DiskEncryption: accept default (none, from config)
 enter

@@ -577,7 +577,7 @@ fn render_text_field(
 
 fn render_offline_warning(frame: &mut Frame, area: Rect) {
     let dialog_width = 60u16.min(area.width.saturating_sub(4));
-    let dialog_height = 7u16;
+    let dialog_height = 8u16;
     let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
     let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
     let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
@@ -586,12 +586,12 @@ fn render_offline_warning(frame: &mut Frame, area: Rect) {
 
     let lines = vec![
         Line::from(""),
-        Line::from("  The target system will have no network configuration."),
-        Line::from("  It will not be reachable after reboot unless configured"),
-        Line::from("  manually."),
+        Line::from(
+            "The target system will have no network configuration. It will not be reachable after reboot unless configured manually.",
+        ),
         Line::from(""),
         Line::from(Span::styled(
-            "  Are you sure? (y/n)",
+            "Are you sure? (y/n)",
             Style::default().add_modifier(Modifier::BOLD),
         )),
     ];
@@ -599,8 +599,9 @@ fn render_offline_warning(frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(" Offline Warning ")
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(Style::default().fg(Color::Yellow));
-    let paragraph = Paragraph::new(lines).block(block);
+    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, dialog_area);
 }
 
@@ -848,27 +849,19 @@ fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
 fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
     use crate::config::DiskEncryption;
 
-    let options: Vec<(DiskEncryption, &str)> = if state.tpm_present {
-        vec![
-            (
-                DiskEncryption::Tpm,
-                "Full-disk encryption, bound to hardware",
-            ),
-            (
-                DiskEncryption::Keyfile,
-                "Full-disk encryption, not bound to hardware",
-            ),
-            (DiskEncryption::None, "No encryption"),
-        ]
-    } else {
-        vec![
-            (
-                DiskEncryption::Keyfile,
-                "Full-disk encryption, not bound to hardware",
-            ),
-            (DiskEncryption::None, "No encryption"),
-        ]
-    };
+    let mut options: Vec<(DiskEncryption, &str)> = vec![
+        (
+            DiskEncryption::Keyfile,
+            "Full-disk encryption, not bound to hardware",
+        ),
+        (DiskEncryption::None, "No encryption"),
+    ];
+    if state.tpm_present {
+        options.push((
+            DiskEncryption::Tpm,
+            "Full-disk encryption, bound to hardware [experimental]",
+        ));
+    }
 
     let items: Vec<ListItem> = options
         .iter()
@@ -888,6 +881,11 @@ fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let explanation = match state.disk_encryption {
         DiskEncryption::Tpm => vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "THIS IS EXPERIMENTAL AND COULD LEAVE YOUR INSTALL UNBOOTABLE.",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
             Line::from(
                 "The disk's encryption key will be sealed to this machine's TPM using PCR 1 (hardware identity: motherboard, CPU, and RAM model/serials). The system will boot unattended as long as the hardware stays the same. If you move the disk to different hardware, you will need the recovery passphrase. Changing the CPU or RAM may also require the recovery passphrase.",
@@ -1006,66 +1004,105 @@ fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
     ];
 
-    let password_label = if state.password_confirming {
-        Span::raw("  Password: ")
-    } else {
-        Span::styled(
-            "  Password: ",
-            Style::default().add_modifier(Modifier::BOLD),
-        )
-    };
-
-    let masked = mask(&state.password_input);
-    let mut password_line = vec![
-        password_label,
-        Span::styled(
-            masked,
+    if state.config_has_password {
+        let use_cfg_style = if state.use_config_password {
             Style::default()
                 .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    if !state.password_confirming {
-        password_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
-    }
-    lines.push(Line::from(password_line));
-
-    let confirm_label = if state.password_confirming {
-        Span::styled(
-            "  Confirm:  ",
-            Style::default().add_modifier(Modifier::BOLD),
-        )
-    } else {
-        Span::raw("  Confirm:  ")
-    };
-
-    let confirm_masked = mask(&state.password_confirm_input);
-    let mut confirm_line = vec![
-        confirm_label,
-        Span::styled(
-            confirm_masked,
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let set_new_style = if !state.use_config_password {
             Style::default()
                 .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    if state.password_confirming {
-        confirm_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
-    }
-    lines.push(Line::from(confirm_line));
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let use_cfg_marker = if state.use_config_password {
+            "(*)"
+        } else {
+            "( )"
+        };
+        let set_new_marker = if !state.use_config_password {
+            "(*)"
+        } else {
+            "( )"
+        };
 
-    if state.password_mismatch {
-        lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  Passwords do not match.",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            format!("  {use_cfg_marker} Use password from config"),
+            use_cfg_style,
         )));
-    } else if state.password_empty {
-        lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  Password is required.",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            format!("  {set_new_marker} Set new password"),
+            set_new_style,
         )));
+        lines.push(Line::from(""));
+    }
+
+    if !state.config_has_password || !state.use_config_password {
+        let password_label = if state.password_confirming {
+            Span::raw("  Password: ")
+        } else {
+            Span::styled(
+                "  Password: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            )
+        };
+
+        let masked = mask(&state.password_input);
+        let mut password_line = vec![
+            password_label,
+            Span::styled(
+                masked,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ];
+        if !state.password_confirming {
+            password_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+        }
+        lines.push(Line::from(password_line));
+
+        let confirm_label = if state.password_confirming {
+            Span::styled(
+                "  Confirm:  ",
+                Style::default().add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::raw("  Confirm:  ")
+        };
+
+        let confirm_masked = mask(&state.password_confirm_input);
+        let mut confirm_line = vec![
+            confirm_label,
+            Span::styled(
+                confirm_masked,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ];
+        if state.password_confirming {
+            confirm_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+        }
+        lines.push(Line::from(confirm_line));
+
+        if state.password_mismatch {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Passwords do not match.",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )));
+        } else if state.password_empty {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Password is required.",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )));
+        }
     }
 
     lines.push(Line::from(""));
@@ -1468,12 +1505,22 @@ fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
             String::new()
         };
 
-        let info_lines = vec![
-            Line::from(""),
-            Line::from(format!("  {phase_label}")),
-            Line::from(""),
-            Line::from(detail_line),
-        ];
+        let mut info_lines = vec![Line::from("")];
+
+        for done in &state.completed_phases {
+            info_lines.push(Line::from(Span::styled(
+                format!("  [done] {done}"),
+                Style::default().fg(Color::Green),
+            )));
+        }
+
+        info_lines.push(Line::from(format!("  {phase_label}")));
+
+        if !detail_line.is_empty() {
+            info_lines.push(Line::from(""));
+            info_lines.push(Line::from(detail_line));
+        }
+
         let info = Paragraph::new(info_lines);
         frame.render_widget(info, chunks[0]);
 

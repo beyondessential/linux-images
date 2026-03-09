@@ -57,8 +57,7 @@ pub enum NetConfigFocus {
 }
 
 impl NetConfigFocus {
-    /// Which pane this focus field belongs to.
-    pub fn pane(self) -> NetConfigPane {
+    pub fn pane(&self) -> NetConfigPane {
         match self {
             Self::IsoMode
             | Self::IsoInterface
@@ -66,6 +65,7 @@ impl NetConfigFocus {
             | Self::IsoGateway
             | Self::IsoDns
             | Self::IsoDomain => NetConfigPane::Iso,
+
             Self::TargetMode
             | Self::TargetInterface
             | Self::TargetIp
@@ -75,8 +75,7 @@ impl NetConfigFocus {
         }
     }
 
-    /// Whether this focus is a text input field (as opposed to a radio/dropdown).
-    pub fn is_text_input(self) -> bool {
+    pub fn is_text_input(&self) -> bool {
         matches!(
             self,
             Self::IsoIp
@@ -172,6 +171,7 @@ pub struct AppState {
     pub tpm_present: bool,
     pub boot_device: Option<PathBuf>,
     pub write_progress: Option<ProgressSnapshot>,
+    pub completed_phases: Vec<&'static str>,
     pub confirm_input: String,
     pub build_info: String,
     pub recovery_passphrase: Option<String>,
@@ -196,6 +196,12 @@ pub struct AppState {
     pub password_empty: bool,
     /// Pre-hashed password from config file (takes precedence over plaintext).
     pub config_password_hash: Option<String>,
+    /// Plaintext password from config file.
+    pub config_password: Option<String>,
+    /// Whether the config file supplied a password (plaintext or hash).
+    pub config_has_password: bool,
+    /// When true, use the password from the config file instead of prompting.
+    pub use_config_password: bool,
 
     // r[impl installer.tui.timezone]
     pub available_timezones: Vec<String>,
@@ -389,6 +395,8 @@ impl AppState {
         let hostname_from_template = install_config.hostname_template.is_some();
         let tailscale_input = install_config.tailscale_authkey.clone().unwrap_or_default();
         let config_password_hash = install_config.password_hash.clone();
+        let config_password = install_config.password.clone();
+        let config_has_password = config_password.is_some() || config_password_hash.is_some();
         let timezone_from_config = install_config.timezone.clone();
 
         let timezone_selected = timezone_from_config.unwrap_or_else(|| "UTC".to_string());
@@ -444,6 +452,7 @@ impl AppState {
             tpm_present,
             boot_device,
             write_progress: None,
+            completed_phases: Vec::new(),
             confirm_input: String::new(),
             build_info,
             hostname_input,
@@ -459,6 +468,9 @@ impl AppState {
             password_mismatch: false,
             password_empty: false,
             config_password_hash,
+            config_password,
+            config_has_password,
+            use_config_password: config_has_password,
             available_timezones,
             timezone_search: String::new(),
             timezone_selected,
@@ -599,13 +611,19 @@ impl AppState {
             .filter(|k| !k.is_empty())
             .collect();
 
-        let password = if self.password_input.is_empty() {
-            None
+        let (password, password_hash) = if self.config_has_password && self.use_config_password {
+            (
+                self.config_password.clone(),
+                self.config_password_hash.clone(),
+            )
         } else {
-            Some(self.password_input.clone())
+            let pw = if self.password_input.is_empty() {
+                None
+            } else {
+                Some(self.password_input.clone())
+            };
+            (pw, None)
         };
-
-        let password_hash = self.config_password_hash.clone();
 
         let timezone = if self.timezone_selected == "UTC" {
             None
@@ -701,9 +719,9 @@ impl AppState {
     pub fn cycle_disk_encryption(&mut self) {
         if self.tpm_present {
             self.disk_encryption = match self.disk_encryption {
-                DiskEncryption::Tpm => DiskEncryption::Keyfile,
                 DiskEncryption::Keyfile => DiskEncryption::None,
                 DiskEncryption::None => DiskEncryption::Tpm,
+                DiskEncryption::Tpm => DiskEncryption::Keyfile,
             };
         } else {
             self.disk_encryption = match self.disk_encryption {
@@ -716,8 +734,8 @@ impl AppState {
     pub fn cycle_disk_encryption_reverse(&mut self) {
         if self.tpm_present {
             self.disk_encryption = match self.disk_encryption {
-                DiskEncryption::Tpm => DiskEncryption::None,
                 DiskEncryption::Keyfile => DiskEncryption::Tpm,
+                DiskEncryption::Tpm => DiskEncryption::None,
                 DiskEncryption::None => DiskEncryption::Keyfile,
             };
         } else {
@@ -998,76 +1016,40 @@ impl AppState {
         fields
     }
 
-    /// Move focus forward (Tab). When at the end of a pane, switch to the
-    /// other pane.
+    /// All visible fields in tab order: ISO fields first, then Target fields.
+    fn all_visible_fields(&self) -> Vec<NetConfigFocus> {
+        let mut fields = self.iso_visible_fields();
+        fields.extend(self.target_visible_fields());
+        fields
+    }
+
+    /// Move focus forward (Tab). Navigates ISO fields top-to-bottom, then
+    /// Target fields top-to-bottom, wrapping back to the first ISO field.
     pub fn tab_focus_forward(&mut self) {
-        let fields = match self.net_config_pane {
-            NetConfigPane::Iso => self.iso_visible_fields(),
-            NetConfigPane::Target => self.target_visible_fields(),
-        };
-        if let Some(pos) = fields.iter().position(|f| *f == self.net_config_focus) {
-            if pos + 1 < fields.len() {
-                self.apply_cidr_auto_suffix();
-                self.net_config_focus = fields[pos + 1];
-            } else {
-                self.apply_cidr_auto_suffix();
-                self.switch_pane_forward();
-            }
+        self.apply_cidr_auto_suffix();
+        let all = self.all_visible_fields();
+        if let Some(pos) = all.iter().position(|f| *f == self.net_config_focus) {
+            let next = (pos + 1) % all.len();
+            self.net_config_focus = all[next];
         } else {
-            self.apply_cidr_auto_suffix();
-            self.switch_pane_forward();
+            self.net_config_focus = all[0];
         }
+        self.net_config_pane = self.net_config_focus.pane();
     }
 
-    /// Move focus backward (Shift+Tab). When at the start of a pane, switch
-    /// to the other pane.
+    /// Move focus backward (Shift+Tab). Reverse of `tab_focus_forward`:
+    /// navigates upward through Target fields then ISO fields, wrapping to
+    /// the last Target field from the first ISO field.
     pub fn tab_focus_backward(&mut self) {
-        let fields = match self.net_config_pane {
-            NetConfigPane::Iso => self.iso_visible_fields(),
-            NetConfigPane::Target => self.target_visible_fields(),
-        };
-        if let Some(pos) = fields.iter().position(|f| *f == self.net_config_focus) {
-            if pos > 0 {
-                self.apply_cidr_auto_suffix();
-                self.net_config_focus = fields[pos - 1];
-            } else {
-                self.apply_cidr_auto_suffix();
-                self.switch_pane_backward();
-            }
+        self.apply_cidr_auto_suffix();
+        let all = self.all_visible_fields();
+        if let Some(pos) = all.iter().position(|f| *f == self.net_config_focus) {
+            let prev = if pos == 0 { all.len() - 1 } else { pos - 1 };
+            self.net_config_focus = all[prev];
         } else {
-            self.apply_cidr_auto_suffix();
-            self.switch_pane_backward();
+            self.net_config_focus = *all.last().unwrap_or(&NetConfigFocus::TargetMode);
         }
-    }
-
-    fn switch_pane_forward(&mut self) {
-        match self.net_config_pane {
-            NetConfigPane::Iso => {
-                self.net_config_pane = NetConfigPane::Target;
-                let fields = self.target_visible_fields();
-                self.net_config_focus = fields[0];
-            }
-            NetConfigPane::Target => {
-                self.net_config_pane = NetConfigPane::Iso;
-                let fields = self.iso_visible_fields();
-                self.net_config_focus = fields[0];
-            }
-        }
-    }
-
-    fn switch_pane_backward(&mut self) {
-        match self.net_config_pane {
-            NetConfigPane::Iso => {
-                self.net_config_pane = NetConfigPane::Target;
-                let fields = self.target_visible_fields();
-                self.net_config_focus = *fields.last().unwrap_or(&NetConfigFocus::TargetMode);
-            }
-            NetConfigPane::Target => {
-                self.net_config_pane = NetConfigPane::Iso;
-                let fields = self.iso_visible_fields();
-                self.net_config_focus = *fields.last().unwrap_or(&NetConfigFocus::IsoMode);
-            }
-        }
+        self.net_config_pane = self.net_config_focus.pane();
     }
 
     /// Apply CIDR auto-suffix when leaving an IP field.
@@ -1550,11 +1532,7 @@ mod tests {
                 removable: false,
             },
         ];
-        let default_encryption = if tpm_present {
-            DiskEncryption::Tpm
-        } else {
-            DiskEncryption::Keyfile
-        };
+        let default_encryption = DiskEncryption::Keyfile;
         AppState::new(
             devices,
             default_encryption,
@@ -1574,7 +1552,7 @@ mod tests {
         let state = make_state();
         assert_eq!(state.screen, Screen::Welcome);
         assert_eq!(state.selected_disk_index, 0);
-        assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
+        assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
         assert!(state.tpm_present);
         assert_eq!(state.net_check_phase, CheckPhase::NotStarted);
         assert_eq!(state.netcheck_phase, CheckPhase::NotStarted);
@@ -1803,13 +1781,13 @@ mod tests {
     #[test]
     fn disk_encryption_cycle_with_tpm() {
         let mut state = make_state();
-        assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
-        state.cycle_disk_encryption();
         assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
         state.cycle_disk_encryption();
         assert_eq!(state.disk_encryption, DiskEncryption::None);
         state.cycle_disk_encryption();
         assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
+        state.cycle_disk_encryption();
+        assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
     }
 
     // r[verify installer.tui.disk-encryption+2]
@@ -2974,10 +2952,15 @@ mod tests {
         state.net_config_focus = NetConfigFocus::IsoMode;
         state.iso_network_mode = NetworkMode::Dhcp;
 
-        // ISO pane has only IsoMode when DHCP, so Tab switches to target
+        // Tab from the only ISO field (DHCP) goes to the first target field
         state.tab_focus_forward();
         assert_eq!(state.net_config_pane, NetConfigPane::Target);
         assert_eq!(state.net_config_focus, NetConfigFocus::TargetMode);
+
+        // Tab from last target field wraps to first ISO field
+        state.tab_focus_forward();
+        assert_eq!(state.net_config_pane, NetConfigPane::Iso);
+        assert_eq!(state.net_config_focus, NetConfigFocus::IsoMode);
     }
 
     // r[verify installer.tui.network-config+13]
@@ -3015,7 +2998,7 @@ mod tests {
         state.net_config_focus = NetConfigFocus::TargetMode;
         state.iso_network_mode = NetworkMode::Dhcp;
 
-        // Shift+Tab from first target field goes to last ISO field (IsoMode for DHCP)
+        // Shift+Tab from first target field goes UP to last ISO field (IsoMode for DHCP)
         state.tab_focus_backward();
         assert_eq!(state.net_config_pane, NetConfigPane::Iso);
         assert_eq!(state.net_config_focus, NetConfigFocus::IsoMode);
@@ -3030,9 +3013,42 @@ mod tests {
         state.net_config_focus = NetConfigFocus::TargetMode;
         state.iso_network_mode = NetworkMode::StaticIp;
 
+        // Shift+Tab goes UP to the last ISO static field
         state.tab_focus_backward();
         assert_eq!(state.net_config_pane, NetConfigPane::Iso);
         assert_eq!(state.net_config_focus, NetConfigFocus::IsoDomain);
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn shift_tab_backward_from_iso_wraps_to_target_last() {
+        let mut state = make_state();
+        state.screen = Screen::NetworkConfig;
+        state.net_config_pane = NetConfigPane::Iso;
+        state.net_config_focus = NetConfigFocus::IsoMode;
+        state.iso_network_mode = NetworkMode::Dhcp;
+        state.target_network_mode = TargetNetworkMode::Dhcp;
+
+        // Shift+Tab from first overall field wraps to last Target field
+        state.tab_focus_backward();
+        assert_eq!(state.net_config_pane, NetConfigPane::Target);
+        assert_eq!(state.net_config_focus, NetConfigFocus::TargetMode);
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn shift_tab_backward_from_iso_wraps_to_target_static_last() {
+        let mut state = make_state();
+        state.screen = Screen::NetworkConfig;
+        state.net_config_pane = NetConfigPane::Iso;
+        state.net_config_focus = NetConfigFocus::IsoMode;
+        state.iso_network_mode = NetworkMode::Dhcp;
+        state.target_network_mode = TargetNetworkMode::StaticIp;
+
+        // Shift+Tab wraps to last Target static field
+        state.tab_focus_backward();
+        assert_eq!(state.net_config_pane, NetConfigPane::Target);
+        assert_eq!(state.net_config_focus, NetConfigFocus::TargetDomain);
     }
 
     // r[verify installer.tui.network-config+13]
