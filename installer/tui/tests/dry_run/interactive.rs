@@ -1,13 +1,15 @@
-use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
+use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES};
 
 // r[verify installer.mode.interactive+2]
 // r[verify installer.dryrun.script.headless]
 #[test]
 fn interactive_keyfile_full_flow() {
     let f = Fixture::new();
-    let devices = f.write_devices(TWO_DISK_DEVICES);
-    let script = f.write_script(
-        "\
+    let plan = f
+        .scripted_run(TWO_DISK_DEVICES)
+        .timezones()
+        .script(
+            "\
 # Welcome
 enter
 # NetworkConfig: ISO -> Target
@@ -45,27 +47,10 @@ enter
 type:yes
 enter
 ",
-    );
-    let timezones = f.write_timezones();
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
     assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
@@ -84,19 +69,12 @@ enter
 #[test]
 fn interactive_none_encryption_flow() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // None encryption flow: welcome, disk, cycle encryption Keyfile->None,
-    // hostname, login, confirm. Single DiskEncryption screen.
-    let script = f.write_script(
-        "\
-# Welcome
-enter
-# NetworkConfig: ISO -> Target
-enter
-# NetworkConfig: Target -> DiskSelection
-enter
-# Disk
-enter
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .timezones()
+        .start_screen("disk-encryption")
+        .script(
+            "\
 # DiskEncryption: cycle Keyfile -> None
 down
 enter
@@ -114,27 +92,10 @@ enter
 type:yes
 enter
 ",
-    );
-    let timezones = f.write_timezones();
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "none");
 }
 
@@ -144,20 +105,12 @@ enter
 #[test]
 fn interactive_install_config_fields_captured() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let script = f.write_script(
-        "\
-# Welcome
-enter
-# NetworkConfig: ISO -> Target
-enter
-# NetworkConfig: Target -> DiskSelection
-enter
-# Disk
-enter
-# DiskEncryption: cycle Keyfile -> None
-down
-enter
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .timezones()
+        .start_screen("hostname")
+        .script(
+            "\
 # Hostname selector: DHCP is default, toggle to Static
 down
 enter
@@ -186,27 +139,10 @@ enter
 type:yes
 enter
 ",
-    );
-    let timezones = f.write_timezones();
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["install_config"]["hostname"], "my-host");
     assert!(
         plan["install_config"]["tailscale_authkey"]
@@ -224,25 +160,12 @@ enter
 #[test]
 fn interactive_empty_install_config_is_null() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Use none encryption — select network-assigned (the default for none) to
-    // skip hostname entirely. Password is the only required install config field
-    // in interactive mode.
-    let script = f.write_script(
-        "\
-# Welcome
-enter
-# NetworkConfig: ISO -> Target
-enter
-# NetworkConfig: Target -> DiskSelection
-enter
-# Disk
-enter
-# DiskEncryption: cycle Keyfile -> None
-down
-enter
-# Hostname selector: Network-assigned is default, Enter -> Login
-enter
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .timezones()
+        .start_screen("login")
+        .script(
+            "\
 # Login: type password (required)
 type:pw
 enter
@@ -255,27 +178,10 @@ enter
 type:yes
 enter
 ",
-    );
-    let timezones = f.write_timezones();
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     // Password is always set in interactive mode, so install_config is not null
     assert!(!plan["install_config"].is_null());
     assert!(plan["install_config"]["password_set"].as_bool().unwrap());
@@ -300,15 +206,12 @@ enter
 #[test]
 fn interactive_selects_second_disk() {
     let f = Fixture::new();
-    let devices = f.write_devices(TWO_DISK_DEVICES);
-    let script = f.write_script(
-        "\
-# Welcome
-enter
-# NetworkConfig: ISO -> Target
-enter
-# NetworkConfig: Target -> DiskSelection
-enter
+    let plan = f
+        .scripted_run(TWO_DISK_DEVICES)
+        .timezones()
+        .start_screen("disk-selection")
+        .script(
+            "\
 # Navigate to second disk
 down
 enter
@@ -332,27 +235,10 @@ enter
 type:yes
 enter
 ",
-    );
-    let timezones = f.write_timezones();
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["disk"]["path"], "/dev/sda");
     assert_eq!(plan["disk"]["model"], "WD Blue");
 }
@@ -361,26 +247,12 @@ enter
 #[test]
 fn interactive_quit_early_still_produces_plan() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Quit immediately on the welcome screen
-    let script = f.write_script("type:q\n");
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .script("type:q\n")
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
     assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
@@ -390,25 +262,12 @@ fn interactive_quit_early_still_produces_plan() {
 #[test]
 fn interactive_empty_script_uses_initial_state() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let script = f.write_script("");
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .script("")
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
     assert_eq!(plan["disk_encryption"], "keyfile");
 }
@@ -417,24 +276,12 @@ fn interactive_empty_script_uses_initial_state() {
 #[test]
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // Walk to confirmation, go back through timezone/password to tailscale,
-    // type a key, then walk forward again and confirm.
-    let script = f.write_script(
-        "\
-# Welcome
-enter
-# NetworkConfig: ISO -> Target
-enter
-# NetworkConfig: Target -> DiskSelection
-enter
-# Disk
-enter
-# DiskEncryption: cycle Keyfile -> None
-down
-enter
-# Hostname selector: Network-assigned is default, Enter -> Login
-enter
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .timezones()
+        .start_screen("login")
+        .script(
+            "\
 # Login: type password
 type:pw
 enter
@@ -467,27 +314,10 @@ enter
 type:yes
 enter
 ",
-    );
-    let timezones = f.write_timezones();
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert!(
         plan["install_config"]["tailscale_authkey"]
             .as_bool()

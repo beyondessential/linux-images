@@ -1,4 +1,4 @@
-use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
+use super::common::{Fixture, SINGLE_SSD_DEVICE};
 
 // r[verify installer.dryrun.devices]
 #[test]
@@ -6,7 +6,7 @@ fn error_no_devices_file() {
     let f = Fixture::new();
     let bad_path = f.path("nonexistent.json");
 
-    installer()
+    super::common::installer()
         .args([
             "--fake-devices",
             bad_path.to_str().unwrap(),
@@ -22,16 +22,9 @@ fn error_no_devices_file() {
 #[test]
 fn error_empty_devices_list() {
     let f = Fixture::new();
-    let devices = f.write_devices("[]");
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+    f.scripted_run("[]")
+        .build()
         .assert()
         .failure()
         .stderr(predicates::str::contains("no block devices"));
@@ -43,7 +36,7 @@ fn error_invalid_devices_json() {
     let f = Fixture::new();
     let devices = f.write("devices.json", "this is not json");
 
-    installer()
+    super::common::installer()
         .args([
             "--fake-devices",
             devices.to_str().unwrap(),
@@ -60,19 +53,10 @@ fn error_invalid_devices_json() {
 #[test]
 fn error_invalid_config_toml() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config("this is not valid toml {{{{");
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config("this is not valid toml {{{{")
+        .build()
         .assert()
         .failure()
         .stderr(predicates::str::contains("parsing config"));
@@ -82,19 +66,10 @@ fn error_invalid_config_toml() {
 #[test]
 fn error_unknown_config_field() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config("bogus = true\n");
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config("bogus = true\n")
+        .build()
         .assert()
         .failure()
         .stderr(predicates::str::contains("parsing config"));
@@ -104,19 +79,10 @@ fn error_unknown_config_field() {
 #[test]
 fn error_invalid_variant_in_config() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(r#"variant = "turbo""#);
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config(r#"variant = "turbo""#)
+        .build()
         .assert()
         .failure();
 }
@@ -125,19 +91,10 @@ fn error_invalid_variant_in_config() {
 #[test]
 fn error_bad_script_token() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let script = f.write_script("enter\nfoobar\n");
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .script("enter\nfoobar\n")
+        .build()
         .assert()
         .failure()
         .stderr(predicates::str::contains("foobar"));
@@ -150,7 +107,7 @@ fn error_nonexistent_script_file() {
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let bad_path = f.path("nonexistent.script");
 
-    installer()
+    super::common::installer()
         .args([
             "--fake-devices",
             devices.to_str().unwrap(),
@@ -168,27 +125,18 @@ fn error_nonexistent_script_file() {
 #[test]
 fn error_disk_path_not_found() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "/dev/nonexistent"
 
-        hostname = "test-host"
-    "#,
-    );
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "/dev/nonexistent"
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+            hostname = "test-host"
+        "#,
+        )
+        .build()
         .assert()
         .failure()
         .stderr(predicates::str::contains("not found"));
@@ -200,7 +148,7 @@ fn error_logged_to_file() {
     // Trigger a guaranteed error: no devices file at this path
     let bad_path = f.path("nonexistent.json");
 
-    installer()
+    super::common::installer()
         .args([
             "--fake-devices",
             bad_path.to_str().unwrap(),
@@ -223,31 +171,21 @@ fn error_logged_to_file() {
 #[test]
 fn error_no_ssds_for_largest_ssd_strategy() {
     let f = Fixture::new();
-    // Only SATA disks, no SSDs
-    let devices = f.write_devices(
+
+    f.scripted_run(
         r#"[{"path": "/dev/sda", "size_bytes": 1000000000000, "model": "HDD", "transport": "Sata"}]"#,
-    );
-    let config = f.write_config(
+    )
+    .config(
         r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-    "#,
-    );
-
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("SSD"));
+            hostname = "test-host"
+        "#,
+    )
+    .build()
+    .assert()
+    .failure()
+    .stderr(predicates::str::contains("SSD"));
 }

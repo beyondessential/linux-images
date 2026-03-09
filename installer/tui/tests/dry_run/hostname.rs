@@ -1,39 +1,26 @@
 use serde_json::Value;
 
-use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
+use super::common::{Fixture, SINGLE_SSD_DEVICE};
 
 // r[verify installer.config.hostname]
 // r[verify installer.dryrun.schema+6]
 #[test]
 fn auto_encrypted_hostname_from_dhcp() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname-from-dhcp = true
-    "#,
-    );
+            hostname-from-dhcp = true
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "tpm");
     assert_eq!(
@@ -52,33 +39,20 @@ fn auto_encrypted_hostname_from_dhcp() {
 #[test]
 fn auto_encrypted_hostname_template() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname-template = "test-{hex:6}"
-    "#,
-    );
+            hostname-template = "test-{hex:6}"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "tpm");
 
@@ -109,33 +83,20 @@ fn auto_encrypted_hostname_template() {
 #[test]
 fn auto_encrypted_hostname_template_num() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname-template = "node-{num:4}"
-    "#,
-    );
+            hostname-template = "node-{num:4}"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     let hostname = plan["install_config"]["hostname"].as_str().unwrap();
     assert!(
         hostname.starts_with("node-"),
@@ -153,34 +114,21 @@ fn auto_encrypted_hostname_template_num() {
 #[test]
 fn auto_hostname_and_dhcp_mutually_exclusive() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "server-01"
-        hostname-from-dhcp = true
-    "#,
-    );
+            hostname = "server-01"
+            hostname-from-dhcp = true
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
         warnings
@@ -194,34 +142,21 @@ fn auto_hostname_and_dhcp_mutually_exclusive() {
 #[test]
 fn auto_hostname_and_template_mutually_exclusive() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "server-01"
-        hostname-template = "srv-{hex:6}"
-    "#,
-    );
+            hostname = "server-01"
+            hostname-template = "srv-{hex:6}"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
         warnings
@@ -235,33 +170,20 @@ fn auto_hostname_and_template_mutually_exclusive() {
 #[test]
 fn auto_dhcp_always_emits_warning() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
 
-        hostname-from-dhcp = true
-    "#,
-    );
+            hostname-from-dhcp = true
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
         warnings.iter().any(|w| w
@@ -276,29 +198,17 @@ fn auto_dhcp_always_emits_warning() {
 #[test]
 fn auto_invalid_hostname_template_emits_warning() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname-template = "no-placeholder"
-    "#,
-    );
-
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+            hostname-template = "no-placeholder"
+        "#,
+        )
+        .build()
         .assert()
         .failure();
 }
@@ -307,16 +217,11 @@ fn auto_invalid_hostname_template_emits_warning() {
 #[test]
 fn scripted_encrypted_dhcp_toggle_produces_dhcp_sentinel() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let script = f.write_script(
-        "# Welcome -> NetworkConfig
-enter
-# NetworkConfig -> DiskSelection
-enter
-# DiskSelection -> DiskEncryptionScreen (default Keyfile)
-enter
-# DiskEncryptionScreen -> Hostname selector
-enter
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .start_screen("hostname")
+        .script(
+            "\
 # Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password
@@ -331,24 +236,10 @@ enter
 type:yes
 enter
 ",
-    );
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(
         plan["install_config"]["hostname"], "dhcp",
         "hostname should be sentinel 'dhcp' when DHCP toggle is active"
@@ -373,7 +264,7 @@ fn auto_encrypted_hostname_template_two_runs_differ() {
     let plan1_path = f.path("plan1.json");
     let plan2_path = f.path("plan2.json");
 
-    installer()
+    super::common::installer()
         .args([
             "--config",
             config_path.to_str().unwrap(),
@@ -388,7 +279,7 @@ fn auto_encrypted_hostname_template_two_runs_differ() {
         .assert()
         .success();
 
-    installer()
+    super::common::installer()
         .args([
             "--config",
             config_path.to_str().unwrap(),

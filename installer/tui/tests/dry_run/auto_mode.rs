@@ -1,6 +1,6 @@
 use predicates::prelude::*;
 
-use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
+use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES};
 
 // r[verify installer.dryrun]
 // r[verify installer.dryrun.output]
@@ -9,38 +9,25 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 #[test]
 fn auto_full_config_produces_correct_plan() {
     let f = Fixture::new();
-    let devices = f.write_devices(TWO_DISK_DEVICES);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(TWO_DISK_DEVICES)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "server-01"
-        tailscale-authkey = "tskey-auth-xxxxx"
-        ssh-authorized-keys = [
-            "ssh-ed25519 AAAA admin@example.com",
-            "ssh-rsa BBBB backup@example.com",
-        ]
-    "#,
-    );
+            hostname = "server-01"
+            tailscale-authkey = "tskey-auth-xxxxx"
+            ssh-authorized-keys = [
+                "ssh-ed25519 AAAA admin@example.com",
+                "ssh-rsa BBBB backup@example.com",
+            ]
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "tpm");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
@@ -63,31 +50,18 @@ fn auto_full_config_produces_correct_plan() {
 #[test]
 fn auto_disk_path_resolves_correctly() {
     let f = Fixture::new();
-    let devices = f.write_devices(TWO_DISK_DEVICES);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "/dev/sda"
-    "#,
-    );
+    let plan = f
+        .scripted_run(TWO_DISK_DEVICES)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "/dev/sda"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
@@ -99,33 +73,20 @@ fn auto_disk_path_resolves_correctly() {
 #[test]
 fn auto_keyfile_encryption_mode() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "keyfile"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "keyfile"
+            disk = "largest-ssd"
 
-        hostname = "test-keyfile"
-    "#,
-    );
+            hostname = "test-keyfile"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "keyfile");
 }
 
@@ -134,34 +95,21 @@ fn auto_keyfile_encryption_mode() {
 #[test]
 fn auto_fake_tpm_reflected_in_plan() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "test-tpm"
-    "#,
-    );
+            hostname = "test-tpm"
+        "#,
+        )
+        .fake_tpm()
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-tpm",
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert!(plan["tpm_present"].as_bool().unwrap());
     assert_eq!(plan["disk_encryption"], "tpm");
 }
@@ -170,31 +118,18 @@ fn auto_fake_tpm_reflected_in_plan() {
 #[test]
 fn auto_none_encryption_no_install_config() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
-    "#,
-    );
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "none");
     assert!(plan["install_config"].is_null());
     assert!(!plan["tpm_present"].as_bool().unwrap());
@@ -204,33 +139,20 @@ fn auto_none_encryption_no_install_config() {
 #[test]
 fn auto_bad_hostname_emits_warning() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
 
-        hostname = "-invalid-"
-    "#,
-    );
+            hostname = "-invalid-"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
         warnings.iter().any(|w| w
@@ -245,34 +167,18 @@ fn auto_bad_hostname_emits_warning() {
 #[test]
 fn auto_incomplete_missing_disk_encryption_falls_back() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk = "largest-ssd"
-    "#,
-    );
-    let script = f.write_script(
-        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
-    );
-    let timezones = f.write_timezones();
-
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk = "largest-ssd"
+        "#,
+        )
+        .timezones()
+        .script(
+            "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
+        )
+        .build()
         .assert()
         .success()
         .stderr(predicates::str::contains("disk-encryption"));
@@ -285,34 +191,18 @@ fn auto_incomplete_missing_disk_encryption_falls_back() {
 #[test]
 fn auto_incomplete_missing_disk_falls_back() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-    "#,
-    );
-    let script = f.write_script(
-        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
-    );
-    let timezones = f.write_timezones();
-
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+        "#,
+        )
+        .timezones()
+        .script(
+            "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
+        )
+        .build()
         .assert()
         .success()
         .stderr(predicates::str::contains("disk").and(predicates::str::contains("hostname")));
@@ -325,29 +215,13 @@ fn auto_incomplete_missing_disk_falls_back() {
 #[test]
 fn auto_incomplete_missing_both_falls_back() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config("auto = true\n");
-    let script = f.write_script(
-        "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
-    );
-    let timezones = f.write_timezones();
-
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config("auto = true\n")
+        .timezones()
+        .script(
+            "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
+        )
+        .build()
         .assert()
         .success()
         .stderr(
@@ -362,33 +236,20 @@ fn auto_incomplete_missing_both_falls_back() {
 #[test]
 fn auto_with_minimal_install_config() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
 
-        hostname = "just-a-hostname"
-    "#,
-    );
+            hostname = "just-a-hostname"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["install_config"]["hostname"], "just-a-hostname");
     assert!(
         !plan["install_config"]["tailscale_authkey"]
@@ -402,38 +263,25 @@ fn auto_with_minimal_install_config() {
 #[test]
 fn auto_with_only_ssh_keys() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-        ssh-authorized-keys = [
-            "ssh-ed25519 AAAA k1",
-            "ssh-ed25519 BBBB k2",
-            "ssh-rsa CCCC k3",
-        ]
-    "#,
-    );
+            hostname = "test-host"
+            ssh-authorized-keys = [
+                "ssh-ed25519 AAAA k1",
+                "ssh-ed25519 BBBB k2",
+                "ssh-rsa CCCC k3",
+            ]
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["install_config"]["hostname"], "test-host");
     assert!(
         !plan["install_config"]["tailscale_authkey"]
@@ -448,33 +296,20 @@ fn auto_with_only_ssh_keys() {
 #[test]
 fn auto_network_dhcp_default_in_plan() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-    "#,
-    );
+            hostname = "test-host"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(
         plan["install_config"]["network"], "DHCP (all Ethernet interfaces)",
         "default network mode should be DHCP"
@@ -486,38 +321,25 @@ fn auto_network_dhcp_default_in_plan() {
 #[test]
 fn auto_network_static_in_plan() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-        network-mode = "static"
-        network-interface = "enp0s3"
-        network-ip = "192.168.1.10/24"
-        network-gateway = "192.168.1.1"
-        network-dns = "8.8.8.8, 1.1.1.1"
-    "#,
-    );
+            hostname = "test-host"
+            network-mode = "static"
+            network-interface = "enp0s3"
+            network-ip = "192.168.1.10/24"
+            network-gateway = "192.168.1.1"
+            network-dns = "8.8.8.8, 1.1.1.1"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     let network = plan["install_config"]["network"].as_str().unwrap();
     assert!(
         network.starts_with("Static IP: 192.168.1.10/24 via 192.168.1.1 on enp0s3"),
@@ -534,34 +356,21 @@ fn auto_network_static_in_plan() {
 #[test]
 fn auto_network_offline_in_plan() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-        network-mode = "offline"
-    "#,
-    );
+            hostname = "test-host"
+            network-mode = "offline"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(
         plan["install_config"]["network"],
         "Offline (no network configuration)",
@@ -573,33 +382,20 @@ fn auto_network_offline_in_plan() {
 #[test]
 fn auto_network_ipv6_slaac_in_plan() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-        network-mode = "ipv6-slaac"
-    "#,
-    );
+            hostname = "test-host"
+            network-mode = "ipv6-slaac"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["install_config"]["network"], "IPv6 SLAAC only",);
 }
