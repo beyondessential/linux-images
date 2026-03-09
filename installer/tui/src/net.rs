@@ -1,5 +1,7 @@
+use std::fs;
 use std::io;
 use std::net::UdpSocket;
+use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
@@ -7,7 +9,9 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use crate::config::NetworkMode;
 use crate::paths;
+use crate::ui::StaticNetConfig;
 
 /// An endpoint to check during the network connectivity screen.
 #[derive(Debug, Clone)]
@@ -53,7 +57,9 @@ pub struct GithubKeysResult {
 #[derive(Debug, Clone)]
 pub struct NetInterface {
     pub name: String,
+    #[expect(dead_code, reason = "stored for future interface dropdown display")]
     pub mac: String,
+    #[expect(dead_code, reason = "stored for future interface dropdown display")]
     pub state: String,
 }
 
@@ -124,7 +130,198 @@ pub fn detect_interfaces() -> Vec<NetInterface> {
         .collect()
 }
 
-// r[impl installer.tui.network-check+4]
+const INSTALLER_NETPLAN_PATH: &str = "/etc/netplan/90-installer.yaml";
+
+/// Apply a netplan configuration for the live ISO environment.
+///
+/// Writes `/etc/netplan/90-installer.yaml` (or removes it for DHCP) and
+/// runs `netplan apply`. Returns `Ok(())` on success.
+// r[impl installer.tui.network-config+13]
+pub fn apply_netplan(mode: NetworkMode, static_cfg: &StaticNetConfig) -> Result<(), String> {
+    match mode {
+        NetworkMode::Dhcp => {
+            remove_installer_netplan();
+            run_netplan_apply()?;
+        }
+        NetworkMode::StaticIp => {
+            let yaml = generate_iso_static_netplan(static_cfg);
+            write_installer_netplan(&yaml)?;
+            run_netplan_apply()?;
+        }
+        NetworkMode::Ipv6Slaac => {
+            let yaml = generate_iso_ipv6_slaac_netplan(static_cfg);
+            write_installer_netplan(&yaml)?;
+            run_netplan_apply()?;
+        }
+        NetworkMode::Offline => {
+            let yaml = generate_iso_offline_netplan(static_cfg);
+            write_installer_netplan(&yaml)?;
+            run_netplan_apply()?;
+        }
+    }
+    Ok(())
+}
+
+/// Remove the installer-written netplan file (used when reverting to DHCP).
+pub fn remove_installer_netplan() {
+    let path = std::path::Path::new(INSTALLER_NETPLAN_PATH);
+    if path.exists()
+        && let Err(e) = fs::remove_file(path)
+    {
+        tracing::warn!("failed to remove {INSTALLER_NETPLAN_PATH}: {e}");
+    }
+}
+
+fn write_installer_netplan(yaml: &str) -> Result<(), String> {
+    fs::write(INSTALLER_NETPLAN_PATH, yaml)
+        .map_err(|e| format!("writing {INSTALLER_NETPLAN_PATH}: {e}"))?;
+    fs::set_permissions(INSTALLER_NETPLAN_PATH, fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("setting permissions on {INSTALLER_NETPLAN_PATH}: {e}"))?;
+    Ok(())
+}
+
+fn run_netplan_apply() -> Result<(), String> {
+    let output = Command::new(paths::NETPLAN)
+        .arg("apply")
+        .output()
+        .map_err(|e| format!("running netplan apply: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("netplan apply failed: {stderr}"));
+    }
+    Ok(())
+}
+
+fn generate_iso_static_netplan(cfg: &StaticNetConfig) -> String {
+    let iface = if cfg.interface.is_empty() {
+        "en*"
+    } else {
+        &cfg.interface
+    };
+    let id = if cfg.interface.is_empty() {
+        "all-en"
+    } else {
+        &cfg.interface
+    };
+
+    let mut yaml = format!(
+        "network:\n\
+         \x20 version: 2\n\
+         \x20 ethernets:\n\
+         \x20   {id}:\n\
+         \x20     match:\n\
+         \x20       name: \"{iface}\"\n\
+         \x20     addresses:\n\
+         \x20       - {ip}\n\
+         \x20     routes:\n\
+         \x20       - to: default\n\
+         \x20         via: {gw}\n",
+        ip = cfg.ip_cidr,
+        gw = cfg.gateway,
+    );
+
+    if !cfg.dns.is_empty() {
+        let servers: Vec<&str> = cfg.dns.split(',').map(|s| s.trim()).collect();
+        yaml.push_str("      nameservers:\n        addresses:\n");
+        for server in &servers {
+            yaml.push_str(&format!("          - {server}\n"));
+        }
+        if !cfg.search_domain.is_empty() {
+            yaml.push_str(&format!(
+                "        search:\n          - {}\n",
+                cfg.search_domain
+            ));
+        }
+    }
+
+    yaml
+}
+
+fn generate_iso_ipv6_slaac_netplan(cfg: &StaticNetConfig) -> String {
+    let iface = if cfg.interface.is_empty() {
+        "en*"
+    } else {
+        &cfg.interface
+    };
+    let id = if cfg.interface.is_empty() {
+        "all-en"
+    } else {
+        &cfg.interface
+    };
+
+    format!(
+        "network:\n\
+         \x20 version: 2\n\
+         \x20 ethernets:\n\
+         \x20   {id}:\n\
+         \x20     match:\n\
+         \x20       name: \"{iface}\"\n\
+         \x20     dhcp4: false\n\
+         \x20     accept-ra: true\n"
+    )
+}
+
+fn generate_iso_offline_netplan(cfg: &StaticNetConfig) -> String {
+    let iface = if cfg.interface.is_empty() {
+        "en*"
+    } else {
+        &cfg.interface
+    };
+    let id = if cfg.interface.is_empty() {
+        "all-en"
+    } else {
+        &cfg.interface
+    };
+
+    format!(
+        "network:\n\
+         \x20 version: 2\n\
+         \x20 ethernets:\n\
+         \x20   {id}:\n\
+         \x20     match:\n\
+         \x20       name: \"{iface}\"\n\
+         \x20     dhcp4: false\n\
+         \x20     dhcp6: false\n\
+         \x20     optional: true\n"
+    )
+}
+
+/// Probe basic connectivity by checking for a default route.
+///
+/// Returns a `NetConnectivityStatus` reflecting the current state.
+pub fn probe_connectivity() -> NetConnectivityStatus {
+    let output = match Command::new(paths::IP)
+        .args(["-j", "route", "show", "default"])
+        .output()
+    {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return NetConnectivityStatus::NoConnectivity,
+    };
+
+    let text = String::from_utf8_lossy(&output);
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed == "[]" {
+        return NetConnectivityStatus::NoConnectivity;
+    }
+
+    // Try to extract device and source from the JSON output
+    #[derive(Deserialize)]
+    struct Route {
+        dev: Option<String>,
+        prefsrc: Option<String>,
+    }
+    if let Ok(routes) = serde_json::from_str::<Vec<Route>>(trimmed)
+        && let Some(r) = routes.first()
+    {
+        let dev = r.dev.as_deref().unwrap_or("?");
+        let src = r.prefsrc.as_deref().unwrap_or("?");
+        return NetConnectivityStatus::Connected(format!("{src} on {dev}"));
+    }
+
+    NetConnectivityStatus::Connected("default route present".into())
+}
+
+// r[impl installer.tui.network-check+6]
 
 /// The list of endpoints to check, matching the spec.
 pub fn default_endpoints() -> Vec<Endpoint> {
@@ -279,7 +476,7 @@ pub fn total_check_count(endpoints: &[Endpoint]) -> usize {
     endpoints.len() + 1
 }
 
-// r[impl installer.tui.tailscale-netcheck+2]
+// r[impl installer.tui.tailscale-netcheck+3]
 
 /// Run `tailscale netcheck` and return the output.
 pub fn spawn_tailscale_netcheck() -> mpsc::Receiver<NetcheckResult> {
@@ -473,7 +670,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.tui.tailscale-netcheck+2]
+    // r[verify installer.tui.tailscale-netcheck+3]
     #[test]
     fn tailscale_netcheck_returns_result_with_output() {
         let rx = spawn_tailscale_netcheck();
@@ -484,5 +681,73 @@ mod tests {
             !result.output.is_empty(),
             "netcheck output should not be empty regardless of success or failure"
         );
+    }
+
+    #[test]
+    fn generate_iso_static_netplan_full() {
+        let cfg = StaticNetConfig {
+            interface: "enp0s3".into(),
+            ip_cidr: "192.168.1.10/24".into(),
+            gateway: "192.168.1.1".into(),
+            dns: "8.8.8.8, 1.1.1.1".into(),
+            search_domain: "example.com".into(),
+        };
+        let yaml = generate_iso_static_netplan(&cfg);
+        assert!(yaml.contains("enp0s3:"));
+        assert!(yaml.contains("name: \"enp0s3\""));
+        assert!(yaml.contains("- 192.168.1.10/24"));
+        assert!(yaml.contains("via: 192.168.1.1"));
+        assert!(yaml.contains("- 8.8.8.8"));
+        assert!(yaml.contains("- 1.1.1.1"));
+        assert!(yaml.contains("- example.com"));
+    }
+
+    #[test]
+    fn generate_iso_static_netplan_no_interface() {
+        let cfg = StaticNetConfig {
+            interface: String::new(),
+            ip_cidr: "10.0.0.5/16".into(),
+            gateway: "10.0.0.1".into(),
+            dns: String::new(),
+            search_domain: String::new(),
+        };
+        let yaml = generate_iso_static_netplan(&cfg);
+        assert!(yaml.contains("all-en:"));
+        assert!(yaml.contains("name: \"en*\""));
+        assert!(yaml.contains("- 10.0.0.5/16"));
+        assert!(!yaml.contains("nameservers"));
+    }
+
+    #[test]
+    fn generate_iso_ipv6_slaac_netplan_contents() {
+        let cfg = StaticNetConfig {
+            interface: "eth0".into(),
+            ..Default::default()
+        };
+        let yaml = generate_iso_ipv6_slaac_netplan(&cfg);
+        assert!(yaml.contains("eth0:"));
+        assert!(yaml.contains("dhcp4: false"));
+        assert!(yaml.contains("accept-ra: true"));
+    }
+
+    #[test]
+    fn generate_iso_offline_netplan_contents() {
+        let cfg = StaticNetConfig {
+            interface: "enp0s3".into(),
+            ..Default::default()
+        };
+        let yaml = generate_iso_offline_netplan(&cfg);
+        assert!(yaml.contains("enp0s3:"));
+        assert!(yaml.contains("dhcp4: false"));
+        assert!(yaml.contains("dhcp6: false"));
+        assert!(yaml.contains("optional: true"));
+    }
+
+    #[test]
+    fn generate_iso_offline_netplan_no_interface() {
+        let cfg = StaticNetConfig::default();
+        let yaml = generate_iso_offline_netplan(&cfg);
+        assert!(yaml.contains("all-en:"));
+        assert!(yaml.contains("name: \"en*\""));
     }
 }
