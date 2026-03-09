@@ -1,25 +1,25 @@
-use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
+use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES};
 
 // r[verify installer.mode.prefilled]
 // r[verify installer.dryrun.script]
 #[test]
 fn prefilled_accepting_defaults_produces_matching_plan() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        disk-encryption = "tpm"
-        disk = "/dev/nvme0n1"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            disk-encryption = "tpm"
+            disk = "/dev/nvme0n1"
 
-        hostname = "prefilled-host"
-        tailscale-authkey = "tskey-auth-123"
-        ssh-authorized-keys = ["ssh-ed25519 AAAA key1"]
-    "#,
-    );
-    // Walk through accepting all defaults: welcome, disk, disk-encryption, hostname,
-    // tailscale, ssh, confirm
-    let script = f.write_script(
-        "\
+            hostname = "prefilled-host"
+            tailscale-authkey = "tskey-auth-123"
+            ssh-authorized-keys = ["ssh-ed25519 AAAA key1"]
+        "#,
+        )
+        .timezones()
+        .script(
+            "\
 # Welcome
 enter
 # NetworkConfig: ISO -> Target
@@ -46,29 +46,10 @@ enter
 type:yes
 enter
 ",
-    );
-    let timezones = f.write_timezones();
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "prefilled");
     assert_eq!(plan["disk_encryption"], "tpm");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
@@ -88,26 +69,20 @@ enter
 #[test]
 fn prefilled_overriding_values_via_tui() {
     let f = Fixture::new();
-    let devices = f.write_devices(TWO_DISK_DEVICES);
-    let config = f.write_config(
-        r#"
-        disk-encryption = "tpm"
-        disk = "/dev/nvme0n1"
+    let plan = f
+        .scripted_run(TWO_DISK_DEVICES)
+        .config(
+            r#"
+            disk-encryption = "tpm"
+            disk = "/dev/nvme0n1"
 
-        hostname = "old-host"
-    "#,
-    );
-    // Walk through: welcome, select second disk, cycle encryption to none, set new
-    // hostname (clear old, type new), skip tailscale, skip ssh, confirm
-    let script = f.write_script(
-        "\
-# Welcome
-enter
-# NetworkConfig: ISO -> Target
-enter
-# NetworkConfig: Target -> DiskSelection
-enter
-# Disk: move down to second, accept (extra enter was already present via 'down' + 'enter')
+            hostname = "old-host"
+        "#,
+        )
+        .start_screen("disk-selection")
+        .script(
+            "\
+# Disk: move down to second, accept
 down
 enter
 # DiskEncryption: cycle Tpm -> Keyfile -> None
@@ -138,26 +113,10 @@ enter
 type:yes
 enter
 ",
-    );
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "prefilled");
     assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
@@ -168,29 +127,20 @@ enter
 #[test]
 fn prefilled_timezone_from_config() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let timezones = f.write_timezones();
-    let config = f.write_config(
-        r#"
-        disk-encryption = "none"
-        disk = "/dev/nvme0n1"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            disk-encryption = "none"
+            disk = "/dev/nvme0n1"
 
-        timezone = "Europe/London"
-    "#,
-    );
-    // Accept all defaults including the prefilled timezone
-    let script = f.write_script(
-        "\
-# Welcome
-enter
-# NetworkConfig: ISO -> Target
-enter
-# NetworkConfig: Target -> DiskSelection
-enter
-# Disk: accept default
-enter
-# DiskEncryption: accept default (none, from config)
-enter
+            timezone = "Europe/London"
+        "#,
+        )
+        .timezones()
+        .start_screen("hostname")
+        .script(
+            "\
 # Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password
@@ -205,27 +155,9 @@ enter
 type:yes
 enter
 ",
-    );
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--fake-timezones",
-            timezones.to_str().unwrap(),
-            "--input-script",
-            script.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["install_config"]["timezone"], "Europe/London");
 }

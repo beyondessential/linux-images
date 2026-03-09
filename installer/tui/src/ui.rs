@@ -163,6 +163,34 @@ pub enum Screen {
     Error(String),
 }
 
+impl Screen {
+    /// Parse a screen name from the `--start-screen` CLI flag.
+    ///
+    /// Only screens that make sense as a starting point for scripted tests are
+    /// accepted. Sub-screens (LoginTailscale, LoginSshKeys, LoginGithub) and
+    /// terminal screens (Installing, Done, Error) are rejected.
+    pub fn parse_start_screen(s: &str) -> Result<Self, String> {
+        match s {
+            "welcome" => Ok(Self::Welcome),
+            "network-config" => Ok(Self::NetworkConfig),
+            "network-check" => Ok(Self::NetworkCheck),
+            "disk-selection" => Ok(Self::DiskSelection),
+            "disk-encryption" => Ok(Self::DiskEncryption),
+            "hostname" => Ok(Self::Hostname),
+            "hostname-input" => Ok(Self::HostnameInput),
+            "login" => Ok(Self::Login),
+            "timezone" => Ok(Self::Timezone),
+            "network-results" => Ok(Self::NetworkResults),
+            "confirmation" => Ok(Self::Confirmation),
+            _ => Err(format!(
+                "unknown start screen '{s}'; valid values: welcome, network-config, \
+                 network-check, disk-selection, disk-encryption, hostname, hostname-input, \
+                 login, timezone, network-results, confirmation"
+            )),
+        }
+    }
+}
+
 pub struct AppState {
     pub screen: Screen,
     pub devices: Vec<BlockDevice>,
@@ -356,22 +384,68 @@ impl From<&WriteProgress> for ProgressSnapshot {
     }
 }
 
-impl AppState {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "constructor collecting all initial state fields"
-    )]
-    pub fn new(
-        devices: Vec<BlockDevice>,
-        disk_encryption: DiskEncryption,
-        tpm_present: bool,
-        install_config: &InstallConfig,
-        boot_device: Option<PathBuf>,
-        default_disk_index: Option<usize>,
-        build_info: String,
-        available_timezones: Vec<String>,
-        verity_active: bool,
-    ) -> Self {
+pub struct AppStateBuilder {
+    devices: Vec<BlockDevice>,
+    disk_encryption: DiskEncryption,
+    tpm_present: bool,
+    install_config: InstallConfig,
+    boot_device: Option<PathBuf>,
+    default_disk_index: Option<usize>,
+    build_info: String,
+    available_timezones: Vec<String>,
+    verity_active: bool,
+}
+
+impl AppStateBuilder {
+    pub fn devices(mut self, devices: Vec<BlockDevice>) -> Self {
+        self.devices = devices;
+        self
+    }
+
+    pub fn disk_encryption(mut self, disk_encryption: DiskEncryption) -> Self {
+        self.disk_encryption = disk_encryption;
+        self
+    }
+
+    pub fn tpm_present(mut self, tpm_present: bool) -> Self {
+        self.tpm_present = tpm_present;
+        self
+    }
+
+    pub fn install_config(mut self, install_config: &InstallConfig) -> Self {
+        self.install_config = install_config.clone();
+        self
+    }
+
+    pub fn boot_device(mut self, boot_device: Option<PathBuf>) -> Self {
+        self.boot_device = boot_device;
+        self
+    }
+
+    pub fn default_disk_index(mut self, default_disk_index: Option<usize>) -> Self {
+        self.default_disk_index = default_disk_index;
+        self
+    }
+
+    pub fn build_info(mut self, build_info: String) -> Self {
+        self.build_info = build_info;
+        self
+    }
+
+    pub fn available_timezones(mut self, available_timezones: Vec<String>) -> Self {
+        self.available_timezones = available_timezones;
+        self
+    }
+
+    pub fn verity_active(mut self, verity_active: bool) -> Self {
+        self.verity_active = verity_active;
+        self
+    }
+
+    pub fn build(self) -> AppState {
+        let install_config = &self.install_config;
+        let available_timezones = self.available_timezones;
+
         let endpoints = net::default_endpoints();
         let net_check_total = net::total_check_count(&endpoints);
         let keys: Vec<String> = install_config
@@ -444,17 +518,17 @@ impl AppState {
             search_domain: install_config.network_domain.clone().unwrap_or_default(),
         };
 
-        let mut state = Self {
+        let mut state = AppState {
             screen: Screen::Welcome,
-            selected_disk_index: default_disk_index.unwrap_or(0),
-            devices,
-            disk_encryption,
-            tpm_present,
-            boot_device,
+            selected_disk_index: self.default_disk_index.unwrap_or(0),
+            devices: self.devices,
+            disk_encryption: self.disk_encryption,
+            tpm_present: self.tpm_present,
+            boot_device: self.boot_device,
             write_progress: None,
             completed_phases: Vec::new(),
             confirm_input: String::new(),
-            build_info,
+            build_info: self.build_info,
             hostname_input,
             hostname_from_dhcp,
             hostname_from_template,
@@ -491,7 +565,7 @@ impl AppState {
             ssh_github_error: None,
             ssh_github_rx: None,
             recovery_passphrase: None,
-            verity_check: if verity_active {
+            verity_check: if self.verity_active {
                 VerityCheckState::Running
             } else {
                 VerityCheckState::NotNeeded
@@ -513,6 +587,22 @@ impl AppState {
         };
         state.ensure_trailing_blank();
         state
+    }
+}
+
+impl AppState {
+    pub fn builder() -> AppStateBuilder {
+        AppStateBuilder {
+            devices: Vec::new(),
+            disk_encryption: DiskEncryption::None,
+            tpm_present: false,
+            install_config: InstallConfig::default(),
+            boot_device: None,
+            default_disk_index: None,
+            build_info: String::new(),
+            available_timezones: Vec::new(),
+            verity_active: false,
+        }
     }
 
     // r[impl iso.verity.check+6]
@@ -1532,18 +1622,12 @@ mod tests {
                 removable: false,
             },
         ];
-        let default_encryption = DiskEncryption::Keyfile;
-        AppState::new(
-            devices,
-            default_encryption,
-            tpm_present,
-            &InstallConfig::default(),
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        )
+        AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Keyfile)
+            .tpm_present(tpm_present)
+            .available_timezones(test_timezones())
+            .build()
     }
 
     // r[verify installer.tui.welcome+8]
@@ -2024,17 +2108,10 @@ mod tests {
             iso_network_domain: Some("test.local".into()),
             ..Default::default()
         };
-        let state = AppState::new(
-            vec![],
-            DiskEncryption::None,
-            false,
-            &config,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .install_config(&config)
+            .available_timezones(test_timezones())
+            .build();
         assert_eq!(state.iso_network_mode, NM::StaticIp);
         assert_eq!(state.iso_static_config.interface, "eth0");
         assert_eq!(state.iso_static_config.ip_cidr, "10.0.0.5/24");
@@ -2051,18 +2128,9 @@ mod tests {
     // r[verify installer.tui.network-config+13]
     #[test]
     fn network_config_defaults_to_copy_current() {
-        let config = InstallConfig::default();
-        let state = AppState::new(
-            vec![],
-            DiskEncryption::None,
-            false,
-            &config,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .available_timezones(test_timezones())
+            .build();
         assert_eq!(state.iso_network_mode, NetworkMode::Dhcp);
         assert_eq!(state.target_network_mode, TargetNetworkMode::CopyCurrent);
         assert!(!state.config_has_network_mode);
@@ -2156,17 +2224,13 @@ mod tests {
             hostname: Some("myhost".into()),
             ..Default::default()
         };
-        let state = AppState::new(
-            devices,
-            DiskEncryption::Tpm,
-            true,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Tpm)
+            .tpm_present(true)
+            .install_config(&cfg)
+            .available_timezones(test_timezones())
+            .build();
         assert!(!state.hostname_from_dhcp);
     }
 
@@ -2186,17 +2250,10 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let none_enc = AppState::new(
-            devices,
-            DiskEncryption::None,
-            false,
-            &InstallConfig::default(),
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let none_enc = AppState::builder()
+            .devices(devices)
+            .available_timezones(test_timezones())
+            .build();
         assert!(none_enc.hostname_from_dhcp);
     }
 
@@ -2215,17 +2272,13 @@ mod tests {
             hostname: Some("myhost".into()),
             ..Default::default()
         };
-        let state = AppState::new(
-            devices,
-            DiskEncryption::Tpm,
-            true,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Tpm)
+            .tpm_present(true)
+            .install_config(&cfg)
+            .available_timezones(test_timezones())
+            .build();
         assert_eq!(state.hostname_input, "myhost");
         assert_eq!(state.tailscale_input, "");
         assert_eq!(state.ssh_keys, vec![String::new()]);
@@ -2246,17 +2299,13 @@ mod tests {
             tailscale_authkey: Some("tskey-auth-xxx".into()),
             ..Default::default()
         };
-        let state = AppState::new(
-            devices,
-            DiskEncryption::Tpm,
-            true,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Tpm)
+            .tpm_present(true)
+            .install_config(&cfg)
+            .available_timezones(test_timezones())
+            .build();
         assert_eq!(state.tailscale_input, "tskey-auth-xxx");
     }
 
@@ -2275,17 +2324,13 @@ mod tests {
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
             ..Default::default()
         };
-        let state = AppState::new(
-            devices,
-            DiskEncryption::Tpm,
-            true,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Tpm)
+            .tpm_present(true)
+            .install_config(&cfg)
+            .available_timezones(test_timezones())
+            .build();
         assert_eq!(
             state.ssh_keys,
             vec!["ssh-ed25519 AAAA key1", "ssh-rsa BBBB key2", ""]
@@ -2391,17 +2436,13 @@ mod tests {
             password_hash: Some("$6$rounds=4096$salt$hash".into()),
             ..Default::default()
         };
-        let state = AppState::new(
-            devices,
-            DiskEncryption::Tpm,
-            true,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Tpm)
+            .tpm_present(true)
+            .install_config(&cfg)
+            .available_timezones(test_timezones())
+            .build();
         assert!(state.has_password());
         let cfg = state.install_config_fields().unwrap();
         assert!(cfg.password.is_none());
@@ -2484,17 +2525,13 @@ mod tests {
             hostname_template: Some("srv-{hex:6}".into()),
             ..Default::default()
         };
-        let state = AppState::new(
-            devices,
-            DiskEncryption::Tpm,
-            true,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Tpm)
+            .tpm_present(true)
+            .install_config(&cfg)
+            .available_timezones(test_timezones())
+            .build();
         assert!(state.hostname_from_template);
         assert_eq!(state.hostname_input, "resolved-name");
     }
@@ -2522,17 +2559,11 @@ mod tests {
             timezone: Some("Pacific/Auckland".into()),
             ..Default::default()
         };
-        let state = AppState::new(
-            devices,
-            DiskEncryption::None,
-            false,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .devices(devices)
+            .install_config(&cfg)
+            .available_timezones(test_timezones())
+            .build();
         assert_eq!(state.timezone_selected, "Pacific/Auckland");
         assert_eq!(state.effective_timezone(), "Pacific/Auckland");
         assert_eq!(state.timezone_cursor, 2);
@@ -2730,17 +2761,13 @@ mod tests {
             ssh_authorized_keys: vec!["ssh-ed25519 AAAA key1".into(), "ssh-rsa BBBB key2".into()],
             ..Default::default()
         };
-        let state = AppState::new(
-            devices,
-            DiskEncryption::Tpm,
-            true,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            test_timezones(),
-            false,
-        );
+        let state = AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Tpm)
+            .tpm_present(true)
+            .install_config(&cfg)
+            .available_timezones(test_timezones())
+            .build();
         assert_eq!(
             state.ssh_keys,
             vec!["ssh-ed25519 AAAA key1", "ssh-rsa BBBB key2", ""]

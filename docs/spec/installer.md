@@ -318,25 +318,25 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome+8]
-The TUI must open with a welcome screen that displays a description of what
-the image is for, contact information, and instructions on how to proceed.
-The user presses Enter to proceed to the network configuration screen.
-Pressing `q` triggers a reboot (same as the Done/Error screens). The footer
-must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
-debug shell without leaving the installer permanently (this is the only
-screen where the hint is shown, though the keybind works everywhere).
-
-When the images partition was opened via dm-verity (see `r[iso.verity.check+6]`),
-the welcome screen must display a progress bar at the bottom labelled
-"Verifying installation media..." while the integrity check runs in the
-background. The user must not be allowed to advance past the welcome screen
-(Enter is ignored) until the check completes successfully. Once complete,
-the progress bar is replaced with a "Verification passed" message. If the
-check fails, the installer transitions to the error screen with the
-pre-write corruption message from `r[iso.verity.failure]`. The `q` (reboot)
-and `Ctrl+Alt+d` (shell) keybinds remain available during the check. If
-verity is not active, no progress bar is shown and Enter works immediately.
+> r[installer.tui.welcome+8]
+> The TUI must open with a welcome screen that displays a description of what
+> the image is for, contact information, and instructions on how to proceed.
+> The user presses Enter to proceed to the network configuration screen.
+> Pressing `q` triggers a reboot (same as the Done/Error screens). The footer
+> must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
+> debug shell without leaving the installer permanently (this is the only
+> screen where the hint is shown, though the keybind works everywhere).
+> 
+> When the images partition was opened via dm-verity (see `r[iso.verity.check+6]`),
+> the welcome screen must display a progress bar at the bottom labelled
+> "Verifying installation media..." while the integrity check runs in the
+> background. The user must not be allowed to advance past the welcome screen
+> (Enter is ignored) until the check completes successfully. Once complete,
+> the progress bar is replaced with a "Verification passed" message. If the
+> check fails, the installer transitions to the error screen with the
+> pre-write corruption message from `r[iso.verity.failure]`. The `q` (reboot)
+> and `Ctrl+Alt+d` (shell) keybinds remain available during the check. If
+> verity is not active, no progress bar is shown and Enter works immediately.
 
 > r[installer.tui.network-config+13]
 > After the welcome screen, the TUI must present a "Network Configuration"

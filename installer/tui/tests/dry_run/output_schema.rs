@@ -1,34 +1,22 @@
 use serde_json::Value;
 
-use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
+use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES};
 
 // r[verify installer.dryrun.output]
 #[test]
 fn dry_run_output_to_file() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    f.scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-    "#,
-    );
-
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
+            hostname = "test-host"
+        "#,
+        )
+        .build()
         .assert()
         .success()
         .stdout(predicates::str::is_empty());
@@ -52,7 +40,7 @@ fn dry_run_output_to_stdout() {
     "#,
     );
 
-    let output = installer()
+    let output = super::common::installer()
         .args([
             "--config",
             config.to_str().unwrap(),
@@ -77,35 +65,22 @@ fn dry_run_output_to_stdout() {
 #[test]
 fn plan_contains_all_required_fields() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "test-box"
-        tailscale-authkey = "tskey-auth-xxx"
-        ssh-authorized-keys = ["ssh-ed25519 AAAA k1"]
-    "#,
-    );
+            hostname = "test-box"
+            tailscale-authkey = "tskey-auth-xxx"
+            ssh-authorized-keys = ["ssh-ed25519 AAAA k1"]
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     let obj = plan.as_object().unwrap();
 
     let required_top = [
@@ -142,34 +117,21 @@ fn plan_contains_all_required_fields() {
 #[test]
 fn plan_tailscale_authkey_is_bool_not_string() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-        tailscale-authkey = "tskey-auth-secret-should-not-appear"
-    "#,
-    );
+            hostname = "test-host"
+            tailscale-authkey = "tskey-auth-secret-should-not-appear"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert!(plan["install_config"]["tailscale_authkey"].is_boolean());
     assert!(
         plan["install_config"]["tailscale_authkey"]
@@ -188,32 +150,19 @@ fn plan_tailscale_authkey_is_bool_not_string() {
 #[test]
 fn dry_run_without_script_emits_initial_state() {
     let f = Fixture::new();
-    let devices = f.write_devices(TWO_DISK_DEVICES);
-    let config = f.write_config(
-        r#"
-        disk-encryption = "none"
-        disk = "/dev/sda"
+    let plan = f
+        .scripted_run(TWO_DISK_DEVICES)
+        .config(
+            r#"
+            disk-encryption = "none"
+            disk = "/dev/sda"
 
-        hostname = "pre-host"
-    "#,
-    );
+            hostname = "pre-host"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "prefilled");
     assert_eq!(plan["disk_encryption"], "none");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
@@ -224,22 +173,8 @@ fn dry_run_without_script_emits_initial_state() {
 #[test]
 fn dry_run_no_config_is_interactive() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let plan = f.scripted_run(SINGLE_SSD_DEVICE).run().read_plan();
 
-    installer()
-        .args([
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert_eq!(plan["mode"], "interactive");
     assert_eq!(plan["disk_encryption"], "keyfile");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
@@ -250,33 +185,20 @@ fn dry_run_no_config_is_interactive() {
 #[test]
 fn dry_run_manifest_path_is_null_when_no_images() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "tpm"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "tpm"
+            disk = "largest-ssd"
 
-        hostname = "test-host"
-    "#,
-    );
+            hostname = "test-host"
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     assert!(
         plan["manifest_path"].is_null(),
         "manifest_path should be null in dry-run without actual images"
@@ -291,34 +213,21 @@ fn dry_run_manifest_path_is_null_when_no_images() {
 #[test]
 fn multiple_validation_warnings_collected() {
     let f = Fixture::new();
-    let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    let config = f.write_config(
-        r#"
-        auto = true
-        disk-encryption = "none"
-        disk = "largest-ssd"
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
+        .config(
+            r#"
+            auto = true
+            disk-encryption = "none"
+            disk = "largest-ssd"
 
-        hostname = "-bad-"
-        ssh-authorized-keys = [""]
-    "#,
-    );
+            hostname = "-bad-"
+            ssh-authorized-keys = [""]
+        "#,
+        )
+        .run()
+        .read_plan();
 
-    installer()
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "--fake-devices",
-            devices.to_str().unwrap(),
-            "--dry-run",
-            "--dry-run-output",
-            f.plan_path().to_str().unwrap(),
-            "--log",
-            f.log_path().to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    let plan = f.read_plan();
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
         warnings.len() >= 2,
