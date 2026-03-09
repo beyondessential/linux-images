@@ -38,14 +38,26 @@ cell data over WebSocket.
 
 Server side (installer binary):
 - `tungstenite` -- synchronous WebSocket library (no async runtime needed)
-- `zstd` -- already in the dependency tree, used for frame compression
+- `flate2` -- deflate compression for frame data (pure-Rust `miniz_oxide`
+  backend, no C dependency)
 - `diceware_wordlists` -- already in the dependency tree, used for
   generating the web password (same as recovery passphrase generation)
 
 Browser side (separate WASM crate):
 - `beamterm-renderer` -- GPU-accelerated terminal rendering via WebGL2
-- `zstd` -- compiled to WASM for decompressing frames
+- `flate2` -- compiled to WASM for decompressing frames (the `miniz_oxide`
+  backend is pure Rust and compiles cleanly to `wasm32-unknown-unknown`
+  with no special configuration)
 - Built with `trunk` or `wasm-pack`
+
+Compression rationale: the `zstd` crate was previously in the dependency
+tree but was removed when the installer switched to splice-based image
+writing with squashfs+verity (kernel handles decompression). Rather than
+reintroduce a C dependency, we use `flate2` with the `miniz_oxide`
+backend. It is pure Rust on both sides (native and WASM), well-maintained,
+and deflate compresses repetitive terminal data effectively. Terminal
+frames are small enough that compression ratio differences between deflate
+and zstd are negligible.
 
 No async runtime (tokio, etc.) is introduced. The existing codebase is
 entirely synchronous with `std::thread` + `mpsc`, and the web driver fits
@@ -59,25 +71,37 @@ client gets a thread, and communication with the main event loop uses
 
 **Goal:** Make `AppState` free of I/O handles so it can be cloned/shared.
 
-Currently `AppState` contains three `Option<mpsc::Receiver<...>>` fields:
+Currently `AppState` contains four `Option<mpsc::Receiver<...>>` fields:
+- `verity_rx` (integrity check progress/completion)
 - `net_check_rx` (network connectivity check results)
 - `netcheck_rx` (tailscale netcheck result)
 - `ssh_github_rx` (GitHub SSH key fetch result)
 
-These prevent `AppState` from being `Clone` or `Send`.
+It also contains one `Option<Instant>` field:
+- `net_apply_debounce` (ISO netplan apply timer)
+
+The receivers prevent `AppState` from being `Clone` or `Send`. The
+`Instant` is `Clone` and `Send` so it is not a blocker, but logically it
+is a timer side-effect that belongs with the driver, not the model.
 
 **Changes:**
-1. Create a `SideEffects` struct that holds the three receivers.
+1. Create a `SideEffects` struct that holds the four receivers and the
+   debounce `Instant`.
 2. Move the `start_*` methods so they return receivers instead of storing
    them in `AppState`. The caller (event loop / driver) stashes them in
    `SideEffects`.
-3. Move the `poll_*` methods from `AppState` to `SideEffects`, taking
-   `&mut AppState` as a parameter.
+3. Move the `poll_*` methods and `poll_iso_apply_debounce` from `AppState`
+   to `SideEffects`, taking `&mut AppState` as a parameter.
 4. After this, `AppState` becomes `Clone` (all remaining fields are
-   `String`, `Vec<_>`, `Option<_>`, primitive types, etc.).
+   `String`, `Vec<_>`, `Option<_>`, enums, primitive types, etc.).
+
+The `Screen::Error(String)` variant is already `Clone`. The remaining
+types (`BlockDevice`, `NetInterface`, `StaticNetConfig`, etc.) are all
+composed of `Clone` primitives.
 
 All existing tests should pass with minimal changes -- the test helpers
-just need to thread `SideEffects` alongside `AppState`.
+and `run_tui_scripted` just need to thread `SideEffects` alongside
+`AppState`.
 
 Commit this phase independently.
 
@@ -85,12 +109,22 @@ Commit this phase independently.
 
 **Goal:** Decouple input handling from `crossterm::event::KeyEvent`.
 
+The current `handle_key` function in `ui/run.rs` takes a
+`crossterm::event::KeyEvent` and matches on `KeyCode` and `KeyModifiers`.
+It filters `KeyEventKind::Press` at the top. The match arms cover: chars,
+Enter, Esc, Tab, BackTab (and Alt+Tab as a Linux TTY workaround for
+Shift+Tab), Backspace, Up, Down, and modifier combinations (Alt+char,
+Ctrl+Alt+char).
+
 **Changes:**
-1. Define a crate-level `InputEvent` / `KeyInput` that captures only what
+1. Define a crate-level `InputEvent` enum that captures only what
    `handle_key` actually matches on: key code (char, enter, esc, tab,
    backtab, backspace, up, down) and modifiers (alt, ctrl).
-2. Implement `From<crossterm::event::KeyEvent> for InputEvent`.
-3. Change `handle_key` (renamed to `handle_input`) to take `InputEvent`.
+2. Implement `From<crossterm::event::KeyEvent> for InputEvent`, including
+   the Alt+Tab-to-BackTab normalization currently done inline.
+3. Change `handle_key` to take `InputEvent` instead of `KeyEvent`. The
+   `KeyEventKind::Press` filter moves into the `From` impl (non-Press
+   events map to a `None` / ignored variant).
 4. On the web side, the browser sends key events as JSON over WebSocket,
    which deserializes directly to `InputEvent`.
 
@@ -145,19 +179,21 @@ the server is disabled.
    - Receives rendered frames from the main loop via a broadcast mechanism
      (e.g. a shared buffer behind `Arc<Mutex<>>` with a condition variable,
      or per-client `mpsc` senders).
-   - Sends compressed binary frame messages to the browser.
+   - Sends deflate-compressed binary frame messages to the browser.
    - Reads key events from the browser and forwards them to the main loop
      via an `mpsc::Sender<InputEvent>`.
 
 **Wire format (server to browser):**
-- Binary WebSocket message = compressed(frame_header + cell_data[])
+- Binary WebSocket message = deflate-compressed(frame_header + cell_data[])
 - Frame header: cols (u16), rows (u16), watcher count (u16), control
   status (u8), plus reserved bytes for future use.
 - Cell data: row-major array, one entry per cell. Each entry contains the
   symbol (UTF-8, length-prefixed or null-terminated), foreground RGB (3
   bytes), background RGB (3 bytes), and modifier bits (1 byte for bold,
   italic, underline, reversed).
-- Compression applied at the application level per message.
+- Compression: raw deflate via `flate2::write::DeflateEncoder` on the
+  server, `flate2::write::DeflateDecoder` (or `DeflateDecoder` reader)
+  on the WASM client.
 
 **Wire format (browser to server):**
 - JSON text WebSocket messages for simplicity (input events are tiny and
@@ -195,19 +231,22 @@ captures input.
 
 **Crate setup:**
 - New crate at `installer/web-client/` targeting `wasm32-unknown-unknown`.
+- Added to the workspace `members` list in the root `Cargo.toml`.
 - Depends on `beamterm-renderer` (WebGL2 backend) for GPU-accelerated
   terminal rendering. Does NOT depend on ratatui -- all rendering happens
   server-side.
-- Depends on `zstd` (compiled to WASM) for decompressing frames.
+- Depends on `flate2` (pure-Rust `miniz_oxide` backend) for decompressing
+  frames. This compiles cleanly to WASM with no feature flags or wasm-
+  specific workarounds.
 - Built with `trunk`, producing `index.html` + `.wasm` + `.js`.
 
 **Client logic:**
 1. Open a WebSocket to the server (same origin, `/ws` path).
 2. Create a beamterm `Terminal` with the WebGL2 backend + static font
    atlas (the default Hack font atlas embedded in beamterm).
-3. On each binary message: decompress, decode cell data, convert to
-   beamterm `CellData` array, call `terminal.update_cells()` and
-   `terminal.render_frame()`.
+3. On each binary message: inflate (raw deflate), decode cell data,
+   convert to beamterm `CellData` array, call `terminal.update_cells()`
+   and `terminal.render_frame()`.
 4. On keyboard events: serialize as JSON, send over WebSocket.
 5. Render a status overlay showing connection state, watcher count, and
    control status.
@@ -283,23 +322,23 @@ semantics.
 
 ### Release Profile
 
-The current release profile is size-optimized (`opt-level = "s"`). Since
-the output artifact is a multi-GB ISO, binary size is not a concern.
-Change to speed-optimized:
-
-```toml
-[profile.release]
-opt-level = 2
-lto = true
-strip = true
-panic = "abort"
-codegen-units = 1
-```
+No changes needed. The old size-optimized `[profile.release]` that was in
+`installer/tui/Cargo.toml` has already been removed on main. The default
+Cargo release profile (`opt-level = 3`) is used. If we want LTO or other
+tuning, it should go in the workspace root `Cargo.toml`.
 
 ### Web Client Build
 
-The web client is a separate crate with its own build step. The justfile
-gains a recipe to build it with `trunk`:
+The web client is a separate crate added to the workspace:
+
+```
+# Root Cargo.toml
+[workspace]
+members = ["installer/tui", "installer/web-client"]
+resolver = "3"
+```
+
+The justfile gains a recipe to build it with `trunk`:
 
 ```
 installer-web-build:
@@ -315,9 +354,9 @@ The resulting `dist/` directory contents are either:
 
 A 200x50 terminal = 10,000 cells. At ~10 bytes/cell raw = 100KB per
 frame. Terminal data is highly repetitive (spaces, repeated border
-characters, same colors), so application-level compression should achieve
-10:1 or better, yielding ~10KB per frame. At 20fps = 200KB/s -- trivial
-even on constrained networks.
+characters, same colors), so deflate compression should achieve 10:1 or
+better, yielding ~10KB per frame. At 20fps = 200KB/s -- trivial even on
+constrained networks.
 
 Full frames (no diffing) are used initially for simplicity. Diff-based
 updates can be added later if needed but are unlikely to be necessary
@@ -326,8 +365,8 @@ given the compression ratio.
 ## Testing Strategy
 
 - **Phase 1-2:** All existing unit tests continue to pass. The refactors
-  are validated by the existing test suite (scripted TUI tests, state
-  machine tests, render tests).
+  are validated by the existing test suite (scripted TUI tests via
+  `run_tui_scripted`, state machine tests, render tests).
 - **Phase 3:** Add a test that renders each screen to a buffer and
   verifies dimensions / non-empty content. Similar to the existing
   `*_ascii_only` render tests.
@@ -336,7 +375,7 @@ given the compression ratio.
   the state changed. Can run headless (no terminal needed).
 - **Phase 5:** The WASM client is tested manually in a browser during
   development. Automated testing deferred (browser automation is heavy).
-- **Phase 6:** Unit tests for password generation (length, format). 
+- **Phase 6:** Unit tests for password generation (length, format).
   Integration test that verifies: unauthenticated WebSocket is closed,
   wrong password is rejected, correct password admits the client.
   Test that config-provided password is used when present.
