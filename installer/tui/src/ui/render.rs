@@ -1616,7 +1616,7 @@ mod tests {
     use ratatui::backend::TestBackend;
 
     use super::*;
-    use crate::config::{DiskEncryption, InstallConfig};
+    use crate::config::DiskEncryption;
     use crate::disk::TransportType;
 
     fn make_test_state() -> AppState {
@@ -1627,17 +1627,10 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        AppState::new(
-            devices,
-            DiskEncryption::None,
-            false,
-            &InstallConfig::default(),
-            None,
-            None,
-            String::new(),
-            vec!["UTC".into(), "America/New_York".into()],
-            false,
-        )
+        AppState::builder()
+            .devices(devices)
+            .available_timezones(vec!["UTC".into(), "America/New_York".into()])
+            .build()
     }
 
     fn is_ratatui_border_char(ch: char) -> bool {

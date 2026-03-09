@@ -517,17 +517,17 @@ impl RunContext {
         let hostname_from_template = self.install_config.hostname_template.is_some();
 
         let verity_active = _images_verity.is_some();
-        let mut state = ui::AppState::new(
-            self.devices,
-            disk_encryption,
-            self.tpm_present,
-            &self.install_config,
-            self.boot_device,
-            default_disk_index,
-            build_info,
-            self.available_timezones,
-            verity_active,
-        );
+        let mut state = ui::AppState::builder()
+            .devices(self.devices)
+            .disk_encryption(disk_encryption)
+            .tpm_present(self.tpm_present)
+            .install_config(&self.install_config)
+            .boot_device(self.boot_device)
+            .default_disk_index(default_disk_index)
+            .build_info(build_info)
+            .available_timezones(self.available_timezones)
+            .verity_active(verity_active)
+            .build();
 
         // r[impl installer.config.recovery-passphrase]
         if let Some(ref pp) = self.install_config.recovery_passphrase {

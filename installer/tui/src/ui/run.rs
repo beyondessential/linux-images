@@ -929,22 +929,16 @@ mod tests {
                 removable: false,
             },
         ];
-        AppState::new(
-            devices,
-            DiskEncryption::Keyfile,
-            false,
-            &InstallConfig::default(),
-            None,
-            None,
-            String::new(),
-            vec![
+        AppState::builder()
+            .devices(devices)
+            .disk_encryption(DiskEncryption::Keyfile)
+            .available_timezones(vec![
                 "America/New_York".into(),
                 "Europe/London".into(),
                 "Pacific/Auckland".into(),
                 "UTC".into(),
-            ],
-            false,
-        )
+            ])
+            .build()
     }
 
     // r[verify installer.dryrun.script.headless]
@@ -1103,22 +1097,16 @@ mod tests {
             transport: TransportType::Nvme,
             removable: false,
         }];
-        let state = AppState::new(
-            devices,
-            DiskEncryption::None,
-            false,
-            &cfg,
-            None,
-            None,
-            String::new(),
-            vec![
+        let state = AppState::builder()
+            .devices(devices)
+            .install_config(&cfg)
+            .available_timezones(vec![
                 "America/New_York".into(),
                 "Europe/London".into(),
                 "Pacific/Auckland".into(),
                 "UTC".into(),
-            ],
-            false,
-        );
+            ])
+            .build();
 
         let events = vec![
             // Welcome -> NetworkConfig (ISO) -> NetworkConfig (Target) -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
