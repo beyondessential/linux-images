@@ -36,6 +36,7 @@ pub struct InstallConfigInfo {
     pub ssh_authorized_keys_count: usize,
     pub password_set: bool,
     pub timezone: String,
+    pub network: String,
 }
 
 impl From<&BlockDevice> for DiskInfo {
@@ -50,7 +51,12 @@ impl From<&BlockDevice> for DiskInfo {
 }
 
 impl InstallConfigInfo {
-    pub fn from_config(cfg: &InstallConfig, hostname_from_template: bool, timezone: &str) -> Self {
+    pub fn from_config(
+        cfg: &InstallConfig,
+        hostname_from_template: bool,
+        timezone: &str,
+        network_summary: &str,
+    ) -> Self {
         let hostname = if cfg.hostname_from_dhcp {
             Some("dhcp".to_string())
         } else {
@@ -63,6 +69,7 @@ impl InstallConfigInfo {
             ssh_authorized_keys_count: cfg.ssh_authorized_keys.len(),
             password_set: cfg.has_password(),
             timezone: timezone.to_string(),
+            network: network_summary.to_string(),
         }
     }
 }
@@ -80,6 +87,7 @@ pub struct InstallPlanBuilder<'a> {
     install_config: Option<&'a InstallConfig>,
     hostname_from_template: bool,
     timezone: &'a str,
+    network_summary: &'a str,
     manifest_path: Option<PathBuf>,
     copy_install_log: bool,
     save_recovery_keys: bool,
@@ -96,6 +104,7 @@ impl<'a> InstallPlanBuilder<'a> {
             install_config: None,
             hostname_from_template: false,
             timezone: "UTC",
+            network_summary: "DHCP (all Ethernet interfaces)",
             manifest_path: None,
             copy_install_log: true,
             save_recovery_keys: false,
@@ -125,6 +134,11 @@ impl<'a> InstallPlanBuilder<'a> {
 
     pub fn timezone(mut self, tz: &'a str) -> Self {
         self.timezone = tz;
+        self
+    }
+
+    pub fn network_summary(mut self, summary: &'a str) -> Self {
+        self.network_summary = summary;
         self
     }
 
@@ -162,7 +176,12 @@ impl<'a> InstallPlanBuilder<'a> {
             disk: self.disk.map(DiskInfo::from),
             tpm_present: self.tpm_present,
             install_config: self.install_config.map(|cfg| {
-                InstallConfigInfo::from_config(cfg, self.hostname_from_template, self.timezone)
+                InstallConfigInfo::from_config(
+                    cfg,
+                    self.hostname_from_template,
+                    self.timezone,
+                    self.network_summary,
+                )
             }),
             manifest_path: self.manifest_path,
             copy_install_log: self.copy_install_log,
@@ -198,7 +217,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::config::{DiskEncryption, InstallConfig, OperatingMode};
+    use crate::config::{DiskEncryption, InstallConfig, NetworkMode, OperatingMode};
     use crate::disk::{BlockDevice, TransportType};
 
     fn sample_device() -> BlockDevice {
@@ -257,6 +276,10 @@ mod tests {
         assert!(json["install_config"]["password_set"].as_bool().unwrap());
         assert_eq!(json["install_config"]["timezone"], "America/New_York");
         assert_eq!(
+            json["install_config"]["network"],
+            "DHCP (all Ethernet interfaces)"
+        );
+        assert_eq!(
             json["manifest_path"],
             "/run/live/medium/images/partitions.json"
         );
@@ -310,7 +333,8 @@ mod tests {
             tailscale_authkey: Some("tskey-auth-secret-value".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert!(info.tailscale_authkey);
 
         let json = serde_json::to_value(&info).unwrap();
@@ -325,7 +349,8 @@ mod tests {
             hostname: Some("host".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert!(!info.tailscale_authkey);
         assert!(!info.password_set);
     }
@@ -337,7 +362,8 @@ mod tests {
             password: Some("secret".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert!(info.password_set);
     }
 
@@ -348,7 +374,8 @@ mod tests {
             password_hash: Some("$6$rounds=4096$salt$hash".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert!(info.password_set);
     }
 
@@ -416,7 +443,8 @@ mod tests {
             hostname_from_dhcp: true,
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert_eq!(info.hostname.as_deref(), Some("dhcp"));
         assert!(!info.hostname_from_template);
     }
@@ -428,7 +456,12 @@ mod tests {
             hostname: Some("srv-a1b2c3".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, true, "Pacific/Auckland");
+        let info = InstallConfigInfo::from_config(
+            &cfg,
+            true,
+            "Pacific/Auckland",
+            "DHCP (all Ethernet interfaces)",
+        );
         assert_eq!(info.hostname.as_deref(), Some("srv-a1b2c3"));
         assert!(info.hostname_from_template);
         assert_eq!(info.timezone, "Pacific/Auckland");
@@ -438,7 +471,69 @@ mod tests {
     #[test]
     fn install_config_info_timezone_default() {
         let cfg = InstallConfig::default();
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert_eq!(info.timezone, "UTC");
+        assert_eq!(info.network, "DHCP (all Ethernet interfaces)");
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn install_config_info_network_summary_static() {
+        let cfg = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_ip: Some("192.168.1.10/24".into()),
+            ..Default::default()
+        };
+        let summary = "Static IP: 192.168.1.10/24 via 192.168.1.1 on enp0s3";
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC", summary);
+        assert_eq!(info.network, summary);
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn install_config_info_network_summary_offline() {
+        let cfg = InstallConfig {
+            network_mode: Some(NetworkMode::Offline),
+            ..Default::default()
+        };
+        let summary = "Offline (no network configuration)";
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC", summary);
+        assert_eq!(info.network, summary);
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn plan_network_summary_in_json() {
+        let dev = sample_device();
+        let cfg = InstallConfig {
+            hostname: Some("srv".into()),
+            network_mode: Some(NetworkMode::StaticIp),
+            ..Default::default()
+        };
+        let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::None)
+            .disk(&dev)
+            .install_config(&cfg)
+            .network_summary("Static IP: 10.0.0.5/24 via 10.0.0.1 on eth0")
+            .build();
+        let json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(
+            json["install_config"]["network"],
+            "Static IP: 10.0.0.5/24 via 10.0.0.1 on eth0"
+        );
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn plan_network_summary_default() {
+        let cfg = sample_install_config();
+        let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::None)
+            .install_config(&cfg)
+            .build();
+        let json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(
+            json["install_config"]["network"],
+            "DHCP (all Ethernet interfaces)"
+        );
     }
 }
