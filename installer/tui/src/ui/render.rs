@@ -577,7 +577,7 @@ fn render_text_field(
 
 fn render_offline_warning(frame: &mut Frame, area: Rect) {
     let dialog_width = 60u16.min(area.width.saturating_sub(4));
-    let dialog_height = 7u16;
+    let dialog_height = 8u16;
     let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
     let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
     let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
@@ -586,12 +586,12 @@ fn render_offline_warning(frame: &mut Frame, area: Rect) {
 
     let lines = vec![
         Line::from(""),
-        Line::from("  The target system will have no network configuration."),
-        Line::from("  It will not be reachable after reboot unless configured"),
-        Line::from("  manually."),
+        Line::from(
+            "The target system will have no network configuration. It will not be reachable after reboot unless configured manually.",
+        ),
         Line::from(""),
         Line::from(Span::styled(
-            "  Are you sure? (y/n)",
+            "Are you sure? (y/n)",
             Style::default().add_modifier(Modifier::BOLD),
         )),
     ];
@@ -599,8 +599,9 @@ fn render_offline_warning(frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title(" Offline Warning ")
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .style(Style::default().fg(Color::Yellow));
-    let paragraph = Paragraph::new(lines).block(block);
+    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, dialog_area);
 }
 
