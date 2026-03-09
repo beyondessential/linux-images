@@ -42,6 +42,10 @@ PACKAGES=(
     rng-tools5
     jq
 
+    # Console font
+    console-setup
+    kbd
+
     # Editors and tools (it's really annoying not having these)
     neovim
     nano

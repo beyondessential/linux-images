@@ -227,7 +227,7 @@ else
     BTRFS_DEV="$ROOT_PART"
 fi
 
-# r[verify image.btrfs.format]
+# r[verify image.btrfs.format+2]
 BTRFS_LABEL="$(blkid -o value -s LABEL "$BTRFS_DEV" 2>/dev/null || true)"
 check "BTRFS label is 'ROOT'" [ "$BTRFS_LABEL" = "ROOT" ]
 
@@ -285,7 +285,7 @@ EFI_MOUNTED=1
 # r[verify image.base.debootstrap]
 check "/etc/fstab exists" test -f "$MNT/etc/fstab"
 
-# r[verify image.variant.types+2]
+# r[verify image.variant.types+3]
 check "/etc/bes/image-variant exists" test -f "$MNT/etc/bes/image-variant"
 
 # r[verify image.tailscale.ts-up]
@@ -293,13 +293,13 @@ check "/usr/local/bin/ts-up exists" test -x "$MNT/usr/local/bin/ts-up"
 # r[verify image.tailscale.firstboot-auth]
 check "/usr/local/bin/bes-tailscale-firstboot-auth exists" test -x "$MNT/usr/local/bin/bes-tailscale-firstboot-auth"
 
-# r[verify image.growth.script]
+# r[verify image.growth.service+3]
 check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/grow-root-filesystem"
 
-# r[verify image.growth.service]
+# r[verify image.growth.service+3]
 check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/etc/systemd/system/grow-root-filesystem.service"
 
-# r[verify image.variant.types+2]
+# r[verify image.variant.types+3]
 ACTUAL_VARIANT="$(cat "$MNT/etc/bes/image-variant" 2>/dev/null || true)"
 check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 
@@ -307,7 +307,7 @@ check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing")"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
 
-# r[verify image.hostname.metal-dhcp] r[verify image.hostname.cloud-default]
+# r[verify image.hostname.metal-dhcp+2] r[verify image.hostname.cloud-default+2]
 if [ "$VARIANT" = "metal" ]; then
     HOSTNAME_SIZE="$(stat -c%s "$MNT/etc/hostname" 2>/dev/null || echo "missing")"
     check "/etc/hostname is empty for metal (size=0)" [ "$HOSTNAME_SIZE" = "0" ]
@@ -322,7 +322,14 @@ check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
 check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/systemd/resolve/stub-resolv.conf" ]
 
-# r[verify image.base.network]
+# r[verify image.base.console-font]
+check "console-setup config exists" test -f "$MNT/etc/default/console-setup"
+if [ -f "$MNT/etc/default/console-setup" ]; then
+    check "console-setup FONTFACE is Fixed" grep -q 'FONTFACE="Fixed"' "$MNT/etc/default/console-setup"
+    check "console-setup FONTSIZE is 8x16" grep -q 'FONTSIZE="8x16"' "$MNT/etc/default/console-setup"
+fi
+
+# r[verify image.base.network+2]
 check "netplan config exists" test -f "$MNT/etc/netplan/01-all-en-dhcp.yaml"
 NETPLAN_MODE="$(stat -c%a "$MNT/etc/netplan/01-all-en-dhcp.yaml" 2>/dev/null || true)"
 check "netplan config has mode 600" [ "$NETPLAN_MODE" = "600" ]
@@ -386,6 +393,10 @@ fi
 # r[verify image.credentials.ssh-keys-only]
 check "SSH no-password config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
 check "SSH no-password config correct" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
+
+# r[verify image.credentials.no-host-keys]
+HOST_KEY_COUNT="$(find "$MNT/etc/ssh" -name 'ssh_host_*' 2>/dev/null | wc -l)"
+check "no SSH host keys in image" test "$HOST_KEY_COUNT" -eq 0
 
 # r[verify image.cloud-init.no-hostname-file]
 check "cloud-init BES config exists" test -f "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"
@@ -486,7 +497,7 @@ check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-t
 check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 
-# r[verify image.boot.hardware-drivers+2]
+# r[verify image.boot.hardware-drivers+3]
 check "dracut hardware-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
 HWDRV="$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
 check "dracut hardware-drivers has nvme" grep -wq 'nvme' "$HWDRV"
@@ -512,7 +523,7 @@ check "dracut hardware-drivers has hv_storvsc" grep -wq 'hv_storvsc' "$HWDRV"
 check "dracut hardware-drivers has hv_netvsc" grep -wq 'hv_netvsc' "$HWDRV"
 check "dracut hardware-drivers has hv_vmbus" grep -wq 'hv_vmbus' "$HWDRV"
 
-# r[verify image.boot.cloud-drivers+4]
+# r[verify image.boot.cloud-drivers+5]
 if [ "$VARIANT" = "cloud" ]; then
     check "dracut cloud-drivers config exists" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
     CLOUDDRV="$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
@@ -584,7 +595,7 @@ check_service_enabled "bes-tailscale-firstboot-auth.service" "bes-tailscale-firs
 check_service_enabled "snapper-timeline.timer"        "snapper-timeline.timer is enabled"
 check_service_enabled "snapper-cleanup.timer"         "snapper-cleanup.timer is enabled"
 
-# r[verify image.growth.service]
+# r[verify image.growth.service+3]
 check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is enabled"
 
 # r[verify image.cloud-init.enabled]

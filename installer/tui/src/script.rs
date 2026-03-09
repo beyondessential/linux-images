@@ -180,7 +180,7 @@ mod tests {
 enter
 # Disk selection — accept default
 enter
-# Variant — switch to cloud
+# DiskEncryption — cycle to None
 down
 enter
 # Hostname

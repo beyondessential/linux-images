@@ -6,27 +6,33 @@ use anyhow::{Context, Result, bail};
 use rand::{distr::slice::Choose, prelude::*};
 
 use crate::config::DiskEncryption;
+use crate::paths;
 use crate::util::{create_passphrase_keyfile, partition_path, run_command};
 
 const KEYFILE_PATH: &str = "/etc/luks/keyfile";
 const CRYPTTAB_PATH: &str = "/etc/crypttab";
+const DRACUT_CRYPT_CONF: &str = "/etc/dracut.conf.d/01-luks-crypt.conf";
 const DRACUT_KEYFILE_CONF: &str = "/etc/dracut.conf.d/02-luks-keyfile.conf";
 const PASSPHRASE_WORD_COUNT: usize = 6;
 
-/// Run the full encryption setup sequence on the target disk.
+/// Enroll the chosen unlock mechanism and write config files to the target.
 ///
-/// This must be called after writing the image and expanding partitions,
-/// with the target's root filesystem already mounted at `mount_path`.
-/// The LUKS volume should NOT be currently open when this is called;
-/// the function operates directly on the raw partition for cryptsetup
-/// commands and writes files into the mounted filesystem.
+/// This must be called after writing the image, expanding partitions, and
+/// randomizing UUIDs, but **before** `rebuild_boot_config`. The target's
+/// root filesystem must already be mounted at `mount_path`. The LUKS volume
+/// should NOT be currently open when this is called; the function operates
+/// directly on the raw partition for cryptsetup commands and writes files
+/// into the mounted filesystem.
 ///
 /// The recovery passphrase is already enrolled as the initial LUKS key
 /// (it was used when formatting the volume in `format_luks_for_root`).
 /// This function enrolls the operational unlock mechanism (TPM or keyfile)
-/// and configures the installed system (crypttab, initramfs).
-// r[impl installer.encryption.overview+2]
-pub fn run_encryption_setup(
+/// and writes crypttab (and dracut keyfile config for keyfile mode).
+/// The initramfs is NOT rebuilt here — that is handled by
+/// `rebuild_boot_config`, which runs afterwards.
+// r[impl installer.encryption.overview+5]
+// r[related installer.encryption.overview+5]
+pub fn enroll_and_configure_encryption(
     target_device: &Path,
     disk_encryption: DiskEncryption,
     mount_path: &Path,
@@ -38,12 +44,27 @@ pub fn run_encryption_setup(
 
     let root_part = partition_path(target_device, 3)?;
 
-    // r[impl installer.encryption.tpm-enroll+2]
-    // r[impl installer.encryption.keyfile-enroll+2]
+    // r[impl installer.encryption.tpm-enroll+6]
+    // r[impl installer.encryption.keyfile-enroll+5]
     enroll_unlock_mechanism(&root_part, disk_encryption, mount_path, recovery_passphrase)?;
 
-    // r[impl installer.encryption.configure-system]
-    configure_installed_system(disk_encryption, mount_path)?;
+    // Force dracut to include the crypt module and crypttab in the initramfs.
+    // Without this, dracut in host-only mode may skip the crypt module when
+    // the current root is not actually a LUKS device (e.g. in container tests
+    // or when running from a live environment).
+    let dracut_crypt_path = mount_path.join(
+        DRACUT_CRYPT_CONF
+            .strip_prefix('/')
+            .unwrap_or(DRACUT_CRYPT_CONF),
+    );
+    if let Some(parent) = dracut_crypt_path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    fs::write(
+        &dracut_crypt_path,
+        "# Force crypt module so crypttab is always included in the initramfs\nadd_dracutmodules+=\" crypt \"\n",
+    )
+    .with_context(|| format!("writing dracut crypt config at {}", dracut_crypt_path.display()))?;
 
     Ok(())
 }
@@ -62,7 +83,7 @@ fn enroll_unlock_mechanism(
     Ok(())
 }
 
-// r[impl installer.encryption.tpm-enroll+2]
+// r[impl installer.encryption.tpm-enroll+6]
 fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) -> Result<()> {
     tracing::info!("enrolling TPM with PCR 1");
 
@@ -72,7 +93,7 @@ fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) ->
     let keyfile_str = tmp_keyfile.to_str().unwrap_or_default();
 
     run_command(
-        "systemd-cryptenroll",
+        paths::SYSTEMD_CRYPTENROLL,
         &[
             part_str,
             "--unlock-key-file",
@@ -87,7 +108,7 @@ fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) ->
 
     let crypttab_path = mount_path.join(CRYPTTAB_PATH.strip_prefix('/').unwrap_or(CRYPTTAB_PATH));
     let crypttab_content = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,token-timeout=30\n";
     fs::write(&crypttab_path, crypttab_content)
         .with_context(|| format!("writing crypttab at {}", crypttab_path.display()))?;
 
@@ -95,7 +116,7 @@ fn enroll_tpm(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) ->
     Ok(())
 }
 
-// r[impl installer.encryption.keyfile-enroll+2]
+// r[impl installer.encryption.keyfile-enroll+5]
 fn enroll_keyfile(root_part: &Path, mount_path: &Path, recovery_passphrase: &str) -> Result<()> {
     tracing::info!("generating and enrolling random keyfile");
 
@@ -118,7 +139,7 @@ fn enroll_keyfile(root_part: &Path, mount_path: &Path, recovery_passphrase: &str
     let new_str = tmp_new_keyfile.to_str().unwrap_or_default();
 
     run_command(
-        "cryptsetup",
+        paths::CRYPTSETUP,
         &[
             "luksAddKey",
             part_str,
@@ -158,7 +179,7 @@ fn enroll_keyfile(root_part: &Path, mount_path: &Path, recovery_passphrase: &str
     let crypttab_path = mount_path.join(CRYPTTAB_PATH.strip_prefix('/').unwrap_or(CRYPTTAB_PATH));
     let crypttab_content = format!(
         "# <name> <device>                    <keyfile>         <options>\n\
-         root     /dev/disk/by-partlabel/root {KEYFILE_PATH}  force,luks,discard,headless=true,timeout=30\n"
+         root     /dev/disk/by-partlabel/root {KEYFILE_PATH}  force,luks,discard,keyfile-timeout=30\n"
     );
     fs::write(&crypttab_path, &crypttab_content)
         .with_context(|| format!("writing crypttab at {}", crypttab_path.display()))?;
@@ -189,73 +210,6 @@ pub fn generate_recovery_passphrase() -> String {
         .collect();
 
     words.join("-")
-}
-
-// r[impl installer.encryption.configure-system]
-fn configure_installed_system(disk_encryption: DiskEncryption, mount_path: &Path) -> Result<()> {
-    tracing::info!("rebuilding initramfs in installed system (encryption={disk_encryption})");
-
-    // Bind-mount necessary virtual filesystems for chroot
-    let proc_path = mount_path.join("proc");
-    let sys_path = mount_path.join("sys");
-    let dev_path = mount_path.join("dev");
-
-    run_command(
-        "mount",
-        &["--bind", "/proc", proc_path.to_str().unwrap_or_default()],
-    )
-    .context("bind-mounting /proc into target")?;
-    run_command(
-        "mount",
-        &["--bind", "/sys", sys_path.to_str().unwrap_or_default()],
-    )
-    .context("bind-mounting /sys into target")?;
-    run_command(
-        "mount",
-        &["--bind", "/dev", dev_path.to_str().unwrap_or_default()],
-    )
-    .context("bind-mounting /dev into target")?;
-
-    let mount_str = mount_path.to_str().unwrap_or_default();
-
-    // Find the installed kernel version to rebuild its initramfs
-    let modules_dir = mount_path.join("lib/modules");
-    let kernel_version = if modules_dir.exists() {
-        let mut versions: Vec<String> = fs::read_dir(&modules_dir)
-            .context("reading /lib/modules in target")?
-            .filter_map(|entry| {
-                entry.ok().and_then(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    if e.path().is_dir() { Some(name) } else { None }
-                })
-            })
-            .collect();
-        versions.sort();
-        versions.pop()
-    } else {
-        None
-    };
-
-    let dracut_result = if let Some(ref kver) = kernel_version {
-        tracing::info!("rebuilding initramfs for kernel {kver}");
-        run_command("chroot", &[mount_str, "dracut", "--force", "--kver", kver])
-    } else {
-        tracing::warn!("no kernel version found in target, running dracut without --kver");
-        run_command(
-            "chroot",
-            &[mount_str, "dracut", "--force", "--regenerate-all"],
-        )
-    };
-
-    // Clean up bind mounts regardless of dracut result
-    let _ = run_command("umount", &[dev_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[sys_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[proc_path.to_str().unwrap_or_default()]);
-
-    dracut_result.context("rebuilding initramfs with dracut in chroot")?;
-
-    tracing::info!("initramfs rebuilt successfully");
-    Ok(())
 }
 
 #[cfg(test)]
@@ -295,7 +249,7 @@ mod tests {
 
     #[test]
     fn encryption_setup_rejects_none() {
-        let result: Result<()> = run_encryption_setup(
+        let result: Result<()> = enroll_and_configure_encryption(
             Path::new("/dev/sda"),
             DiskEncryption::None,
             Path::new("/mnt/target"),

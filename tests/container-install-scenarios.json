@@ -1,89 +1,89 @@
 [
   {
-    "name": "metal-full-keyfile",
+    "name": "luks-keyfile-full",
     "disk-encryption": "keyfile",
-    "hostname": "test-metal-full",
+    "hostname": "test-keyfile-full",
     "tailscale": "tskey-auth-container-test-key-1234567890",
     "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
     "password": "testpass123",
     "timezone": "America/New_York"
   },
   {
-    "name": "metal-minimal-keyfile",
+    "name": "luks-keyfile-minimal",
     "disk-encryption": "keyfile",
-    "hostname": "test-metal-minimal"
+    "hostname": "test-keyfile-minimal"
   },
   {
-    "name": "metal-hostname-only",
+    "name": "luks-keyfile-hostname-only",
     "disk-encryption": "keyfile",
-    "hostname": "test-metal-hostname"
+    "hostname": "test-keyfile-hostname"
   },
   {
-    "name": "cloud-full",
+    "name": "plain-full",
     "disk-encryption": "none",
-    "hostname": "test-cloud-full",
+    "hostname": "test-plain-full",
     "tailscale": "tskey-auth-container-test-key-1234567890",
     "ssh-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForContainerInstallTest test@container",
-    "password": "cloudpass456",
+    "password": "plainpass456",
     "timezone": "Pacific/Auckland"
   },
   {
-    "name": "cloud-minimal",
+    "name": "plain-minimal",
     "disk-encryption": "none"
   },
   {
-    "name": "cloud-tailscale-only",
+    "name": "plain-tailscale-only",
     "disk-encryption": "none",
     "tailscale": "tskey-auth-container-test-key-1234567890"
   },
   {
-    "name": "cloud-password-hash",
+    "name": "plain-password-hash",
     "disk-encryption": "none",
     "password-hash": "$6$testrounds$testhashvalue"
   },
   {
-    "name": "metal-password-only",
+    "name": "luks-keyfile-password-only",
     "disk-encryption": "keyfile",
-    "hostname": "test-metal-pw",
+    "hostname": "test-keyfile-pw",
     "password": "pwonly"
   },
   {
-    "name": "metal-dhcp-hostname",
+    "name": "luks-keyfile-dhcp-hostname",
     "disk-encryption": "keyfile",
     "hostname-from-dhcp": true
   },
   {
-    "name": "metal-hostname-template",
+    "name": "luks-keyfile-hostname-template",
     "disk-encryption": "keyfile",
     "hostname-template": "test-{hex:6}",
     "hostname-template-regex": "^test-[0-9a-f]{6}$"
   },
   {
-    "name": "metal-timezone-custom",
+    "name": "luks-keyfile-timezone-custom",
     "disk-encryption": "keyfile",
-    "hostname": "test-metal-tz",
+    "hostname": "test-keyfile-tz",
     "timezone": "Europe/London"
   },
   {
-    "name": "cloud-timezone-default",
+    "name": "plain-timezone-default",
     "disk-encryption": "none"
   },
   {
-    "name": "cloud-no-install-log",
+    "name": "plain-no-install-log",
     "disk-encryption": "none",
-    "hostname": "test-cloud-nolog",
+    "hostname": "test-plain-nolog",
     "copy-install-log": false
   },
   {
-    "name": "cloud-with-network",
+    "name": "plain-with-network",
     "disk-encryption": "none",
-    "hostname": "test-cloud-net",
+    "hostname": "test-plain-net",
     "private-network": false
   },
   {
-    "name": "metal-tpm-swtpm",
+    "name": "luks-tpm-swtpm",
     "disk-encryption": "tpm",
-    "hostname": "test-metal-tpm",
+    "hostname": "test-tpm",
     "password": "testpass123"
   }
 ]

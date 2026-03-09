@@ -2,13 +2,13 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::hostname_template;
 
 // r[impl installer.config.format]
 // r[impl installer.config.auto]
-// r[impl installer.config.disk-encryption]
+// r[impl installer.config.disk-encryption+2]
 // r[impl installer.config.disk]
 // r[impl installer.config.copy-install-log]
 // r[impl installer.config.hostname]
@@ -18,7 +18,7 @@ use crate::hostname_template;
 // r[impl installer.config.timezone]
 // r[impl installer.config.recovery-passphrase]
 // r[impl installer.config.save-recovery-keys]
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
     #[serde(default)]
@@ -94,10 +94,11 @@ pub enum DiskEncryption {
 }
 
 impl DiskEncryption {
-    pub fn variant(self) -> Variant {
+    pub fn image_variant_str(self) -> &'static str {
         match self {
-            DiskEncryption::Tpm | DiskEncryption::Keyfile => Variant::Metal,
-            DiskEncryption::None => Variant::Cloud,
+            DiskEncryption::Tpm => "luks-tpm",
+            DiskEncryption::Keyfile => "luks-keyfile",
+            DiskEncryption::None => "plain",
         }
     }
 
@@ -134,18 +135,9 @@ impl<'de> Deserialize<'de> for DiskEncryption {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Variant {
-    Metal,
-    Cloud,
-}
-
-impl fmt::Display for Variant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Variant::Metal => write!(f, "metal"),
-            Variant::Cloud => write!(f, "cloud"),
-        }
+impl Serialize for DiskEncryption {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -153,6 +145,12 @@ impl fmt::Display for Variant {
 pub enum DiskSelector {
     Path(PathBuf),
     Strategy(DiskStrategy),
+}
+
+impl Serialize for DiskSelector {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -363,13 +361,9 @@ impl InstallConfig {
             issues.push(format!("hostname-template: {e}"));
         }
 
-        if self.hostname_from_dhcp
-            && self
-                .disk_encryption
-                .is_some_and(|de| de == DiskEncryption::None)
-        {
+        if self.hostname_from_dhcp {
             issues.push(
-                "hostname-from-dhcp has no special effect with disk-encryption = \"none\" (DHCP hostname is already the default)".into(),
+                "hostname-from-dhcp has no special effect (network-assigned is already the default)".into(),
             );
         }
 
@@ -387,28 +381,6 @@ impl InstallConfig {
     }
 }
 
-pub fn find_config_file() -> Option<PathBuf> {
-    // r[impl installer.config.location]
-    let candidates = [
-        // BESCONF partition (appended FAT32 partition on USB-booted ISO)
-        PathBuf::from("/run/besconf/bes-install.toml"),
-        // ISO filesystem root (mounted by live-boot)
-        PathBuf::from("/run/live/medium/bes-install.toml"),
-        // Legacy / manual placement paths
-        PathBuf::from("/boot/efi/bes-install.toml"),
-    ];
-
-    for candidate in &candidates {
-        if candidate.exists() {
-            tracing::info!("found config file at {}", candidate.display());
-            return Some(candidate.clone());
-        }
-    }
-
-    tracing::info!("no config file found at any known location");
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -422,7 +394,7 @@ mod tests {
 
     // r[verify installer.config.format]
     // r[verify installer.config.auto]
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     // r[verify installer.config.disk]
     // r[verify installer.config.hostname]
     // r[verify installer.config.tailscale-authkey+3]
@@ -462,7 +434,7 @@ mod tests {
         assert!(!config.save_recovery_keys);
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn parse_disk_encryption_variants() {
         let tpm = InstallConfig::from_toml(r#"disk-encryption = "tpm""#).unwrap();
@@ -475,7 +447,7 @@ mod tests {
         assert_eq!(none.disk_encryption, Some(DiskEncryption::None));
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn parse_invalid_disk_encryption_rejected() {
         let result = InstallConfig::from_toml(r#"disk-encryption = "bad""#);
@@ -728,7 +700,7 @@ mod tests {
         assert!(issues.is_empty(), "unexpected issues: {issues:?}");
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn disk_encryption_display() {
         assert_eq!(DiskEncryption::Tpm.to_string(), "tpm");
@@ -736,19 +708,12 @@ mod tests {
         assert_eq!(DiskEncryption::None.to_string(), "none");
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
-    fn disk_encryption_variant_derivation() {
-        assert_eq!(DiskEncryption::Tpm.variant(), Variant::Metal);
-        assert_eq!(DiskEncryption::Keyfile.variant(), Variant::Metal);
-        assert_eq!(DiskEncryption::None.variant(), Variant::Cloud);
-    }
-
-    // r[verify installer.config.disk-encryption]
-    #[test]
-    fn variant_display() {
-        assert_eq!(Variant::Metal.to_string(), "metal");
-        assert_eq!(Variant::Cloud.to_string(), "cloud");
+    fn disk_encryption_image_variant_str() {
+        assert_eq!(DiskEncryption::Tpm.image_variant_str(), "luks-tpm");
+        assert_eq!(DiskEncryption::Keyfile.image_variant_str(), "luks-keyfile");
+        assert_eq!(DiskEncryption::None.image_variant_str(), "plain");
     }
 
     // r[verify installer.config.disk]
@@ -893,15 +858,27 @@ mod tests {
     }
 
     #[test]
-    fn validate_dhcp_on_none_encryption_warns() {
+    fn validate_dhcp_always_warns() {
         let config = InstallConfig {
-            disk_encryption: Some(DiskEncryption::None),
+            disk_encryption: Some(DiskEncryption::Tpm),
             hostname_from_dhcp: true,
             ..Default::default()
         };
         let issues = config.validate();
         assert!(
             issues
+                .iter()
+                .any(|i| i.contains("hostname-from-dhcp has no special effect"))
+        );
+
+        let config_none = InstallConfig {
+            disk_encryption: Some(DiskEncryption::None),
+            hostname_from_dhcp: true,
+            ..Default::default()
+        };
+        let issues_none = config_none.validate();
+        assert!(
+            issues_none
                 .iter()
                 .any(|i| i.contains("hostname-from-dhcp has no special effect"))
         );
@@ -986,7 +963,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.disk-encryption]
+    // r[verify installer.config.disk-encryption+2]
     #[test]
     fn disk_encryption_is_encrypted() {
         assert!(DiskEncryption::Tpm.is_encrypted());
@@ -1097,5 +1074,59 @@ mod tests {
     fn save_recovery_keys_defaults_false() {
         let config = InstallConfig::from_toml("").unwrap();
         assert!(!config.save_recovery_keys);
+    }
+
+    // r[verify installer.config.template]
+    #[test]
+    fn template_contains_all_config_fields() {
+        // Construct a fully-populated InstallConfig so serialization emits every key.
+        let full = InstallConfig {
+            auto: true,
+            disk_encryption: Some(DiskEncryption::Tpm),
+            disk: Some(DiskSelector::Strategy(DiskStrategy::Largest)),
+            copy_install_log: Some(true),
+            hostname: Some("test".into()),
+            hostname_from_dhcp: true,
+            hostname_template: Some("srv-{hex:4}".into()),
+            tailscale_authkey: Some("tskey-auth-xxx".into()),
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAA test".into()],
+            password: Some("pass".into()),
+            password_hash: Some("$6$hash".into()),
+            timezone: Some("UTC".into()),
+            recovery_passphrase: Some("a]9Kx#mP2vL!nQ7wR4jH6dT0y".into()),
+            save_recovery_keys: true,
+        };
+
+        let toml_value = toml::Value::try_from(&full).expect("failed to serialize InstallConfig");
+        let keys: Vec<&str> = toml_value
+            .as_table()
+            .expect("serialized InstallConfig is not a table")
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+
+        let template_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../iso/bes-install.toml.template");
+        let template = std::fs::read_to_string(&template_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to read template at {}: {e}",
+                template_path.display()
+            )
+        });
+
+        let mut missing = Vec::new();
+        for key in &keys {
+            // Look for the key as a commented-out TOML entry (e.g. "# key = " or "# key = [")
+            let pattern = format!("# {key} = ");
+            if !template.contains(&pattern) {
+                missing.push(*key);
+            }
+        }
+
+        assert!(
+            missing.is_empty(),
+            "BESCONF template is missing entries for these InstallConfig fields: {missing:?}\n\
+             Update iso/bes-install.toml.template to include commented-out entries for each field."
+        );
     }
 }

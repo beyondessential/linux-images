@@ -4,7 +4,7 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 
 // r[verify installer.dryrun]
 // r[verify installer.dryrun.output]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.mode.auto+4]
 #[test]
 fn auto_full_config_produces_correct_plan() {
@@ -43,7 +43,6 @@ fn auto_full_config_produces_correct_plan() {
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "tpm");
-    assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
     assert_eq!(plan["disk"]["model"], "Samsung 980 PRO");
     assert_eq!(plan["disk"]["size_bytes"], 1000204886016u64);
@@ -59,7 +58,7 @@ fn auto_full_config_produces_correct_plan() {
     assert!(plan["config_warnings"].as_array().unwrap().is_empty());
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.config.disk]
 #[test]
 fn auto_disk_path_resolves_correctly() {
@@ -91,15 +90,14 @@ fn auto_disk_path_resolves_correctly() {
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "none");
-    assert_eq!(plan["variant"], "cloud");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
     assert_eq!(plan["disk"]["model"], "WD Blue");
 }
 
-// r[verify installer.dryrun.schema+5]
-// r[verify installer.config.disk-encryption]
+// r[verify installer.dryrun.schema+6]
+// r[verify installer.config.disk-encryption+2]
 #[test]
-fn auto_keyfile_encryption_produces_metal_variant() {
+fn auto_keyfile_encryption_mode() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -129,10 +127,9 @@ fn auto_keyfile_encryption_produces_metal_variant() {
 
     let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "keyfile");
-    assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.dryrun.fake-tpm]
 #[test]
 fn auto_fake_tpm_reflected_in_plan() {
@@ -169,7 +166,7 @@ fn auto_fake_tpm_reflected_in_plan() {
     assert_eq!(plan["disk_encryption"], "tpm");
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
 fn auto_none_encryption_no_install_config() {
     let f = Fixture::new();
@@ -199,7 +196,6 @@ fn auto_none_encryption_no_install_config() {
 
     let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "none");
-    assert_eq!(plan["variant"], "cloud");
     assert!(plan["install_config"].is_null());
     assert!(!plan["tpm_present"].as_bool().unwrap());
 }

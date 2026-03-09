@@ -15,11 +15,12 @@ use crate::besconf::{self, BesconfState};
 use crate::config::validate_hostname;
 use crate::encryption;
 use crate::firstboot;
+use crate::paths;
 use crate::writer;
 use crate::writer::PartitionManifest;
 
 use super::render::render;
-use super::{AppState, ProgressSnapshot, Screen};
+use super::{AppState, InstallPhase, ProgressSnapshot, Screen};
 
 enum WorkerMessage {
     Progress(ProgressSnapshot),
@@ -31,7 +32,6 @@ enum WorkerMessage {
 #[derive(Debug)]
 enum KeyAction {
     Continue,
-    Quit,
     Reboot,
     StartWrite,
     Shell,
@@ -44,7 +44,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         return KeyAction::Continue;
     }
 
-    // r[impl installer.tui.debug-shell]
+    // r[impl installer.tui.debug-shell+3]
     if key
         .modifiers
         .contains(KeyModifiers::ALT | KeyModifiers::CONTROL)
@@ -54,8 +54,9 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     }
 
     match &state.screen {
+        // r[impl installer.tui.welcome+7]
         Screen::Welcome => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Char('n') => state.open_network_check(),
             KeyCode::Enter => state.advance(),
             _ => {}
@@ -63,7 +64,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.network-check+4]
         Screen::NetworkCheck => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
             KeyCode::Tab => state.toggle_net_pane(),
@@ -74,7 +75,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.network-check+4]
         Screen::NetworkResults => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Char('r') => state.start_net_checks(),
             KeyCode::Tab => state.toggle_net_pane(),
@@ -85,7 +86,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         },
 
         Screen::DiskSelection => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Char('k') => state.select_prev_disk(),
             KeyCode::Down | KeyCode::Char('j') => state.select_next_disk(),
@@ -99,7 +100,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         // r[impl installer.tui.disk-encryption+2]
         Screen::DiskEncryption => match key.code {
-            KeyCode::Char('q') => return KeyAction::Quit,
+            KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Esc => state.go_back(),
             KeyCode::Down | KeyCode::Char('j') => {
                 state.cycle_disk_encryption();
@@ -111,7 +112,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+5]
+        // r[impl installer.tui.hostname+6]
         Screen::Hostname => match key.code {
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Down => {
@@ -121,7 +122,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             _ => {}
         },
 
-        // r[impl installer.tui.hostname+5]
+        // r[impl installer.tui.hostname+6]
         Screen::HostnameInput => match key.code {
             KeyCode::Esc => {
                 state.hostname_error = None;
@@ -316,7 +317,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         },
 
         Screen::Confirmation => match key.code {
-            KeyCode::Char('q') if state.confirm_input.is_empty() => return KeyAction::Quit,
+            KeyCode::Char('q') if state.confirm_input.is_empty() => return KeyAction::Reboot,
             KeyCode::Esc => {
                 state.confirm_input.clear();
                 state.go_back();
@@ -338,7 +339,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         Screen::Installing => {}
 
-        // r[impl installer.tui.progress+3]
+        // r[impl installer.tui.progress+4]
         Screen::Done => {
             if key.code == KeyCode::Enter {
                 return KeyAction::Reboot;
@@ -362,6 +363,10 @@ pub fn run_tui(
     no_reboot: bool,
     besconf: &BesconfState,
 ) -> Result<()> {
+    // r[impl iso.verity.check+6]
+    // r[impl installer.tui.welcome+7]
+    state.start_verity_check(manifest, images_dir);
+
     terminal::enable_raw_mode().context("enabling raw mode")?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
@@ -397,10 +402,20 @@ fn event_loop(
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
 
     loop {
-        // Poll async results for network screens and GitHub key fetch
+        // Poll async results for network screens, GitHub key fetch, and verity check
         state.poll_net_checks();
         state.poll_tailscale_netcheck();
         state.poll_github_keys();
+        state.poll_verity_check();
+
+        // r[impl iso.verity.check+6]
+        if let super::VerityCheckState::Failed(ref msg) = state.verity_check {
+            state.screen = Screen::Error(format!(
+                "Installation media integrity check failed -- \
+                 the target disk has NOT been written to -- \
+                 write a new copy of the installation medium.\n\n{msg}"
+            ));
+        }
 
         terminal.draw(|f| render(f, state))?;
 
@@ -431,11 +446,11 @@ fn event_loop(
 
         match handle_key(key, state) {
             KeyAction::Continue => {}
-            KeyAction::Quit => break,
             // r[impl installer.no-reboot]
+            // r[impl installer.tui.reboot-feedback+2]
             KeyAction::Reboot => {
                 if !no_reboot {
-                    reboot();
+                    reboot(terminal);
                 }
                 break;
             }
@@ -449,7 +464,7 @@ fn event_loop(
                     besconf,
                 );
             }
-            // r[impl installer.tui.debug-shell]
+            // r[impl installer.tui.debug-shell+3]
             KeyAction::Shell => {
                 drop_to_shell(terminal)?;
             }
@@ -472,7 +487,7 @@ pub fn run_tui_scripted(mut state: AppState, events: Vec<KeyEvent>) -> AppState 
         state.poll_github_keys();
 
         match handle_key(key, &mut state) {
-            KeyAction::Quit | KeyAction::StartWrite | KeyAction::Reboot | KeyAction::Shell => {
+            KeyAction::StartWrite | KeyAction::Reboot | KeyAction::Shell => {
                 break;
             }
             KeyAction::Continue => {}
@@ -546,39 +561,75 @@ fn run_full_install(
     tx: &mpsc::Sender<WorkerMessage>,
     besconf: &BesconfState,
 ) -> Result<Option<String>> {
-    // r[impl installer.write.disk-size-check+2]
+    // r[impl installer.write.disk-size-check+3]
     let total_image_size = writer::partition_images_total_size(manifest, images_dir)
         .context("reading partition image sizes")?;
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
 
-    // Write partitions (~90% of progress)
+    // r[impl installer.tui.progress+4]
+    let send_phase = |phase: InstallPhase| {
+        let _ = tx.send(WorkerMessage::Progress(ProgressSnapshot {
+            bytes_written: 0,
+            total_bytes: None,
+            throughput_mbps: 0.0,
+            eta: None,
+            phase,
+        }));
+    };
+
+    // Write partitions (0..90% of progress)
     disk_writer
         .write_partitions(manifest, images_dir, &mut |progress| {
             let _ = tx.send(WorkerMessage::Progress(progress.into()));
         })
         .context("writing partitions")?;
 
-    // Expand root filesystem (~91%)
+    // Expand root filesystem (90..92%)
+    send_phase(InstallPhase::Expanding);
     disk_writer
         .expand_root_filesystem()
         .context("expanding root filesystem")?;
 
-    // Randomize UUIDs (~92%)
+    // Randomize UUIDs (92..93%)
+    send_phase(InstallPhase::RandomizingUuids);
     disk_writer
         .randomize_filesystem_uuids()
         .context("randomizing filesystem UUIDs")?;
 
-    // Rebuild boot config (~94%)
+    // r[impl installer.encryption.overview+5]
+    // Encryption enrollment + config writes (93..94%) — must happen before
+    // rebuild_boot_config so dracut picks up the updated crypttab/keyfile.
+    if let Some(pp) = disk_writer.passphrase {
+        send_phase(InstallPhase::EncryptionSetup);
+        let mounted = firstboot::mount_target(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            disk_writer.passphrase,
+        )?;
+        encryption::enroll_and_configure_encryption(
+            disk_writer.target,
+            disk_writer.disk_encryption,
+            mounted.path(),
+            pp,
+        )
+        .context("encryption setup")?;
+        firstboot::unmount_target(mounted)?;
+    }
+
+    // Rebuild boot config (94..96%)
+    send_phase(InstallPhase::RebuildingBootConfig);
     disk_writer
         .rebuild_boot_config()
         .context("rebuilding boot config")?;
 
-    // Verify partition table (~95%)
+    // Verify partition table (96..97%)
+    send_phase(InstallPhase::VerifyingPartitions);
     disk_writer
         .verify_partition_table()
         .context("verifying partition table")?;
 
-    // Firstboot (~96%)
+    // Firstboot (97..100%)
+    send_phase(InstallPhase::ApplyingConfig);
     {
         let mounted = firstboot::mount_target(
             disk_writer.target,
@@ -586,14 +637,19 @@ fn run_full_install(
             disk_writer.passphrase,
         )?;
 
+        // r[impl installer.write.variant-fixup+2]
+        firstboot::write_image_variant(
+            mounted.path(),
+            disk_writer.disk_encryption.image_variant_str(),
+        )?;
+
         // r[impl installer.write.fstab-fixup]
-        // r[impl installer.write.variant-fixup]
         if disk_writer.disk_encryption.is_encrypted() {
             if let Some(cfg) = install_config {
-                firstboot::fixup_for_metal_variant(&mounted, cfg)?;
+                firstboot::fixup_for_encrypted_install(&mounted, cfg)?;
             } else {
                 let default_cfg = crate::config::InstallConfig::default();
-                firstboot::fixup_for_metal_variant(&mounted, &default_cfg)?;
+                firstboot::fixup_for_encrypted_install(&mounted, &default_cfg)?;
             }
         }
 
@@ -611,22 +667,8 @@ fn run_full_install(
         firstboot::unmount_target(mounted)?;
     }
 
-    // Encryption setup (~96-100%)
+    // Save recovery key + return passphrase
     let passphrase = if let Some(pp) = disk_writer.passphrase {
-        let mounted = firstboot::mount_target(
-            disk_writer.target,
-            disk_writer.disk_encryption,
-            disk_writer.passphrase,
-        )?;
-        encryption::run_encryption_setup(
-            disk_writer.target,
-            disk_writer.disk_encryption,
-            mounted.path(),
-            pp,
-        )
-        .context("encryption setup")?;
-        firstboot::unmount_target(mounted)?;
-
         // r[impl installer.config.save-recovery-keys]
         if besconf.save_recovery_keys() {
             let root_part = crate::util::partition_path(disk_writer.target, 3)?;
@@ -650,7 +692,7 @@ fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     terminal::disable_raw_mode()?;
 
     eprintln!("--- debug shell (type 'exit' to return to installer) ---");
-    let status = std::process::Command::new("/bin/bash")
+    let status = std::process::Command::new(paths::BASH)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -667,9 +709,40 @@ fn drop_to_shell(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Resul
     Ok(())
 }
 
-fn reboot() {
+// r[impl installer.tui.reboot-feedback+2]
+fn reboot(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
     tracing::info!("rebooting system");
-    let _ = std::process::Command::new("reboot").status();
+
+    // Leave the TUI so the user sees plain text feedback immediately.
+    terminal::disable_raw_mode().ok();
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show).ok();
+
+    println!("Rebooting...");
+
+    // Switch back to tty1 so systemd shutdown output is visible.
+    let _ = std::process::Command::new(paths::CHVT).arg("1").status();
+
+    // Try `reboot` first (provided by systemd-sysv), fall back to `systemctl reboot`.
+    match std::process::Command::new(paths::REBOOT).status() {
+        Ok(s) if s.success() => return,
+        Ok(s) => tracing::warn!("reboot exited with {s}, trying systemctl"),
+        Err(e) => tracing::warn!("reboot not found ({e}), trying systemctl"),
+    }
+
+    match std::process::Command::new(paths::SYSTEMCTL)
+        .arg("reboot")
+        .status()
+    {
+        Ok(s) if s.success() => return,
+        Ok(s) => tracing::error!("systemctl reboot exited with {s}"),
+        Err(e) => tracing::error!("systemctl reboot failed: {e}"),
+    }
+
+    eprintln!("Failed to reboot. Press Ctrl-Alt-F1 for a shell, then run: reboot -f");
+    // Block so the user can read the message and the service doesn't restart in a loop.
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
+    }
 }
 
 #[cfg(test)]
@@ -743,6 +816,7 @@ mod tests {
                 "Pacific/Auckland".into(),
                 "UTC".into(),
             ],
+            false,
         )
     }
 
@@ -757,7 +831,8 @@ mod tests {
             press(KeyCode::Enter),
             // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
-            // Hostname selector: Static is default for encrypted, Enter -> HostnameInput
+            // Hostname selector: Network-assigned (DHCP) is default, toggle to Static
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "myhost" then advance -> Login
             press(KeyCode::Char('m')),
@@ -805,7 +880,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none encryption,
+            // Hostname selector: network-assigned is default,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
             // Login: type password + confirm + advance
@@ -830,11 +905,24 @@ mod tests {
 
     // r[verify installer.dryrun.script.headless]
     #[test]
-    fn scripted_quit_on_welcome() {
+    fn scripted_reboot_on_welcome() {
         let state = make_state();
         let events = vec![press(KeyCode::Char('q'))];
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Welcome);
+    }
+
+    // r[verify installer.tui.welcome+7]
+    #[test]
+    fn welcome_q_triggers_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Welcome;
+        let action = handle_key(press(KeyCode::Char('q')), &mut state);
+        assert!(
+            matches!(action, KeyAction::Reboot),
+            "expected Reboot for 'q' on Welcome screen, got {:?}",
+            action,
+        );
     }
 
     // r[verify installer.dryrun.script.headless]
@@ -891,6 +979,7 @@ mod tests {
                 "Pacific/Auckland".into(),
                 "UTC".into(),
             ],
+            false,
         );
 
         let events = vec![
@@ -929,7 +1018,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -959,7 +1049,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -991,9 +1082,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: type password
@@ -1022,9 +1114,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: Enter moves to confirm, then Enter again with empty fields
@@ -1047,9 +1140,10 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
-            // HostnameInput: type "h" (required for encrypted) then advance
+            // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
             press(KeyCode::Enter),
             // Login: type password
@@ -1065,7 +1159,7 @@ mod tests {
         assert!(!final_state.password_confirming);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -1074,7 +1168,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static is default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: press Enter with empty input — should NOT advance
             press(KeyCode::Enter),
@@ -1086,7 +1181,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_hostname_typed_allows_advance() {
         let state = make_state();
@@ -1095,7 +1190,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static is default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type a name then advance
             press(KeyCode::Char('s')),
@@ -1109,7 +1205,7 @@ mod tests {
         assert_eq!(final_state.hostname_input, "srv");
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_encryption_network_assigned_default_advances_to_login() {
         let state = make_state();
@@ -1123,7 +1219,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none encryption,
+            // Hostname selector: network-assigned is default,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Enter),
         ];
@@ -1134,7 +1230,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_encryption_static_empty_hostname_blocks_advance() {
         let state = make_state();
@@ -1148,7 +1244,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none,
+            // Hostname selector: network-assigned is default,
             // Up to select Static -> Enter -> HostnameInput
             press(KeyCode::Up),
             press(KeyCode::Enter),
@@ -1162,7 +1258,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_selected_advances_to_login() {
         let state = make_state();
@@ -1171,8 +1267,7 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down to select DHCP, then Enter -> Login
-            press(KeyCode::Down),
+            // Hostname selector: DHCP is already the default, Enter -> Login
             press(KeyCode::Enter),
         ];
 
@@ -1182,7 +1277,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_then_static_requires_hostname() {
         let state = make_state();
@@ -1191,9 +1286,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down (DHCP) -> Up (Static) -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, Down toggles to Static, Enter -> HostnameInput
             press(KeyCode::Down),
-            press(KeyCode::Up),
             press(KeyCode::Enter),
             // HostnameInput: empty -> Enter should NOT advance
             press(KeyCode::Enter),
@@ -1205,7 +1299,7 @@ mod tests {
         assert!(final_state.hostname_input.is_empty());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_encrypted_dhcp_skips_text_input() {
         let state = make_state();
@@ -1214,8 +1308,7 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Down to select DHCP, then Enter -> Login directly
-            press(KeyCode::Down),
+            // Hostname selector: DHCP is already the default, Enter -> Login directly
             press(KeyCode::Enter),
         ];
 
@@ -1224,7 +1317,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_input_esc_returns_to_selector() {
         let state = make_state();
@@ -1233,7 +1326,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: Esc -> back to Hostname selector
             press(KeyCode::Esc),
@@ -1243,7 +1337,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Hostname);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_none_selector_navigation() {
         let state = make_state();
@@ -1257,7 +1351,7 @@ mod tests {
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
-            // Hostname selector: network-assigned is default for none,
+            // Hostname selector: network-assigned is default,
             // Up toggles to Static, Down toggles back to network-assigned,
             // Enter -> Login (skip HostnameInput)
             press(KeyCode::Up),
@@ -1270,7 +1364,7 @@ mod tests {
         assert!(final_state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_invalid_hostname_chars_blocks_advance() {
         let state = make_state();
@@ -1279,7 +1373,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type invalid hostname then try to advance
             press(KeyCode::Char('!')),
@@ -1300,7 +1395,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_leading_hyphen_hostname_blocks_advance() {
         let state = make_state();
@@ -1309,7 +1404,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type hostname starting with hyphen
             press(KeyCode::Char('-')),
@@ -1331,7 +1427,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_valid_hostname_advances() {
         let state = make_state();
@@ -1340,7 +1436,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type valid hostname
             press(KeyCode::Char('m')),
@@ -1361,7 +1458,7 @@ mod tests {
         assert!(final_state.hostname_error.is_none());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_error_cleared_on_typing() {
         let state = make_state();
@@ -1370,7 +1467,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type a leading hyphen (error set live), then delete it
             // and type a valid char — error should be cleared
@@ -1384,7 +1482,7 @@ mod tests {
         assert!(final_state.hostname_error.is_none());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn scripted_hostname_error_shown_live_on_keystroke() {
         let state = make_state();
@@ -1393,7 +1491,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type an invalid character — error should appear without Enter
             press(KeyCode::Char('!')),
@@ -1435,7 +1534,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.tui.debug-shell]
+    // r[verify installer.tui.debug-shell+3]
     #[test]
     fn ctrl_alt_d_returns_shell_action() {
         let mut state = make_state();
@@ -1445,7 +1544,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.debug-shell]
+    // r[verify installer.tui.debug-shell+3]
     #[test]
     fn ctrl_alt_d_breaks_scripted_loop() {
         let state = make_state();
@@ -1467,7 +1566,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1494,7 +1594,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1524,7 +1625,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1555,7 +1657,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1590,7 +1693,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1616,7 +1720,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1651,7 +1756,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1685,7 +1791,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1717,7 +1824,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1746,7 +1854,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1788,7 +1897,8 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
-            // Hostname selector: Static default -> Enter -> HostnameInput
+            // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
+            press(KeyCode::Down),
             press(KeyCode::Enter),
             // HostnameInput: type "h" then advance
             press(KeyCode::Char('h')),
@@ -1868,5 +1978,36 @@ mod tests {
         let final_state = run_tui_scripted(state, events);
         // run_tui_scripted breaks on KeyAction::Reboot, preserving the Error screen
         assert!(matches!(final_state.screen, Screen::Error(_)));
+    }
+
+    // r[verify installer.tui.reboot-feedback+2]
+    #[test]
+    fn done_screen_enter_triggers_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Done;
+
+        let action = handle_key(press(KeyCode::Enter), &mut state);
+        assert!(
+            matches!(action, KeyAction::Reboot),
+            "expected Reboot for Enter on Done screen, got {:?}",
+            action,
+        );
+    }
+
+    // r[verify installer.tui.reboot-feedback+2]
+    #[test]
+    fn done_screen_non_enter_does_not_reboot() {
+        let mut state = make_state();
+        state.screen = Screen::Done;
+
+        for code in [KeyCode::Char('a'), KeyCode::Esc, KeyCode::Backspace] {
+            let action = handle_key(press(code), &mut state);
+            assert!(
+                matches!(action, KeyAction::Continue),
+                "expected Continue for {:?} on Done screen, got {:?}",
+                code,
+                action,
+            );
+        }
     }
 }

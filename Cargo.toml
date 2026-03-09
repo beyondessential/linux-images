@@ -1,0 +1,3 @@
+[workspace]
+members = ["installer/tui"]
+resolver = "3"

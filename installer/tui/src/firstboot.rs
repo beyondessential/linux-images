@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use sha_crypt::{Sha512Params, sha512_simple};
 
 use crate::config::{DiskEncryption, InstallConfig};
+use crate::paths;
 use crate::util::{partition_path, run_command};
 use crate::writer;
 
@@ -31,7 +32,7 @@ pub fn mount_target(
     disk_encryption: DiskEncryption,
     passphrase: Option<&str>,
 ) -> Result<MountedTarget> {
-    // r[impl installer.container.partition-devices+2]
+    // r[impl installer.container.partition-devices+3]
     writer::ensure_partition_devices(target_device)
         .context("ensuring partition device nodes exist")?;
 
@@ -48,7 +49,7 @@ pub fn mount_target(
     fs::create_dir_all(&mount_path).context("creating mount point")?;
 
     run_command(
-        "mount",
+        paths::MOUNT,
         &[
             "-t",
             "btrfs",
@@ -68,8 +69,11 @@ pub fn mount_target(
 
 // r[impl installer.finalise.unmount]
 pub fn unmount_target(target: MountedTarget) -> Result<()> {
-    run_command("umount", &[target.mount_path.to_str().unwrap_or_default()])
-        .context("unmounting target root")?;
+    run_command(
+        paths::UMOUNT,
+        &[target.mount_path.to_str().unwrap_or_default()],
+    )
+    .context("unmounting target root")?;
 
     if target.luks_active {
         writer::close_luks_root()?;
@@ -135,14 +139,13 @@ pub fn apply_timezone_default(target: &MountedTarget) -> Result<()> {
 }
 
 // r[impl installer.write.fstab-fixup]
-// r[impl installer.write.variant-fixup]
-pub fn fixup_for_metal_variant(
+pub fn fixup_for_encrypted_install(
     target: &MountedTarget,
     install_config: &InstallConfig,
 ) -> Result<()> {
     let root = target.path();
 
-    tracing::info!("applying metal variant fixups");
+    tracing::info!("applying encrypted-install fixups");
 
     // Rewrite /etc/fstab: replace by-partlabel/root with /dev/mapper/root
     let fstab_path = root.join("etc/fstab");
@@ -151,23 +154,16 @@ pub fn fixup_for_metal_variant(
         let new_contents = contents.replace("/dev/disk/by-partlabel/root", "/dev/mapper/root");
         if new_contents != contents {
             fs::write(&fstab_path, &new_contents).context("writing target /etc/fstab")?;
-            tracing::info!("rewrote /etc/fstab for metal variant");
+            tracing::info!("rewrote /etc/fstab for encrypted install");
         }
     }
-
-    // Write variant marker
-    let variant_dir = root.join("etc/bes");
-    fs::create_dir_all(&variant_dir).context("creating /etc/bes")?;
-    let variant_path = variant_dir.join("image-variant");
-    fs::write(&variant_path, "metal\n").context("writing /etc/bes/image-variant")?;
-    tracing::info!("set image-variant to metal");
 
     // Truncate /etc/hostname if no explicit hostname is configured
     let has_hostname = install_config.has_hostname_config();
     if !has_hostname {
         let hostname_path = root.join("etc/hostname");
-        fs::write(&hostname_path, "").context("truncating /etc/hostname for metal")?;
-        tracing::info!("truncated /etc/hostname for metal variant (no explicit hostname)");
+        fs::write(&hostname_path, "").context("truncating /etc/hostname (no explicit hostname)")?;
+        tracing::info!("truncated /etc/hostname (no explicit hostname)");
     }
 
     // Create /etc/luks/empty-keyfile with mode 000
@@ -179,6 +175,17 @@ pub fn fixup_for_metal_variant(
         .context("setting empty-keyfile permissions to 000")?;
     tracing::info!("created /etc/luks/empty-keyfile");
 
+    Ok(())
+}
+
+// r[impl installer.write.variant-fixup+2]
+pub fn write_image_variant(root: &Path, variant_str: &str) -> Result<()> {
+    let variant_dir = root.join("etc/bes");
+    fs::create_dir_all(&variant_dir).context("creating /etc/bes")?;
+    let variant_path = variant_dir.join("image-variant");
+    fs::write(&variant_path, format!("{variant_str}\n"))
+        .context("writing /etc/bes/image-variant")?;
+    tracing::info!("set image-variant to {variant_str}");
     Ok(())
 }
 
@@ -359,22 +366,22 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
     let resolv_path = root.join("etc/resolv.conf");
 
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/proc", proc_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /proc for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/sys", sys_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /sys for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/dev", dev_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /dev for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/run", run_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /run for tailscale auth")?;
@@ -395,7 +402,7 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
 
     tracing::info!("attempting tailscale auth via chroot into {mount_str}");
 
-    let output = Command::new("chroot")
+    let output = Command::new(paths::CHROOT)
         .args([mount_str, "tailscale", "up", "--auth-key", authkey, "--ssh"])
         .output()
         .context("spawning chroot tailscale up")?;
@@ -404,10 +411,10 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
     if copied_resolv {
         let _ = fs::remove_file(&resolv_path);
     }
-    let _ = run_command("umount", &[run_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[dev_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[sys_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[proc_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[run_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[dev_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[sys_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[proc_path.to_str().unwrap_or_default()]);
 
     if output.status.success() {
         tracing::info!("tailscale auth succeeded via chroot");

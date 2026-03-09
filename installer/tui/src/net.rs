@@ -5,6 +5,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use crate::paths;
+
 /// An endpoint to check during the network connectivity screen.
 #[derive(Debug, Clone)]
 pub struct Endpoint {
@@ -90,7 +92,7 @@ const CHECK_TIMEOUT_SECS: u64 = 5;
 /// When `expect_200` is true, the check passes only if the HTTP status code
 /// is 200. Otherwise any HTTP response (even 403) counts as a pass.
 fn check_http(url: &str, expect_200: bool) -> (bool, String) {
-    let result = Command::new("curl")
+    let result = Command::new(paths::CURL)
         .args([
             "--silent",
             "--output",
@@ -207,7 +209,7 @@ pub fn spawn_tailscale_netcheck() -> mpsc::Receiver<NetcheckResult> {
     let (tx, rx) = mpsc::channel();
 
     thread::spawn(move || {
-        let result = Command::new("tailscale").args(["netcheck"]).output();
+        let result = Command::new(paths::TAILSCALE).args(["netcheck"]).output();
 
         let netcheck = match result {
             Ok(output) => {
@@ -257,7 +259,7 @@ pub fn spawn_github_key_fetch(username: &str) -> mpsc::Receiver<GithubKeysResult
         }
 
         let url = format!("https://github.com/{username}.keys");
-        let result = Command::new("curl")
+        let result = Command::new(paths::CURL)
             .args([
                 "--silent",
                 "--fail",

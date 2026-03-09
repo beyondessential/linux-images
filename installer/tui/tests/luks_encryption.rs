@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 // ---------------------------------------------------------------------------
-// Test fixture: a loop-backed LUKS2 volume mimicking the metal image layout
+// Test fixture: a loop-backed LUKS2 volume mimicking the encrypted image layout
 // ---------------------------------------------------------------------------
 
 struct LuksFixture {
@@ -352,38 +352,6 @@ impl LuksFixture {
         result
     }
 
-    /// Find which keyslot a given key material unlocks, or None.
-    fn find_slot_for_keyfile(&self, key_data: &[u8]) -> Option<u32> {
-        let kf_path = self.work_dir.path().join("find-slot-key");
-        fs::write(&kf_path, key_data).expect("writing trial keyfile");
-        fs::set_permissions(&kf_path, fs::Permissions::from_mode(0o400)).ok();
-
-        let slots = self.active_keyslots();
-
-        for slot in &slots {
-            let ok = Command::new("cryptsetup")
-                .args([
-                    "open",
-                    "--test-passphrase",
-                    "--key-slot",
-                    &slot.to_string(),
-                    "--key-file",
-                    kf_path.to_str().unwrap(),
-                    self.luks_part_str(),
-                ])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if ok {
-                let _ = fs::remove_file(&kf_path);
-                return Some(*slot);
-            }
-        }
-
-        let _ = fs::remove_file(&kf_path);
-        None
-    }
-
     /// Try to unlock the LUKS volume with the given passphrase string.
     fn try_open_with_passphrase(&self, passphrase: &str) -> bool {
         // cryptsetup treats the contents of --key-file as raw key material
@@ -437,7 +405,7 @@ fn partition_path(loop_dev: &str, part_num: u32) -> PathBuf {
 // Tests
 // ---------------------------------------------------------------------------
 
-// r[verify installer.encryption.keyfile-enroll+2]
+// r[verify installer.encryption.keyfile-enroll+5]
 #[test]
 fn keyfile_enrollment_adds_working_slot() {
     let mut fix = LuksFixture::setup();
@@ -494,7 +462,7 @@ fn keyfile_enrollment_adds_working_slot() {
     let crypttab = fix.mount_path.join("etc/crypttab");
     // Overwrite with keyfile-style crypttab
     let new_crypttab = "# <name> <device>                    <keyfile>         <options>\n\
-         root     /dev/disk/by-partlabel/root /etc/luks/keyfile  force,luks,discard,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root /etc/luks/keyfile  force,luks,discard,keyfile-timeout=30\n";
     fs::write(&crypttab, new_crypttab).expect("writing crypttab");
 
     let dracut_conf = fix
@@ -510,7 +478,7 @@ fn keyfile_enrollment_adds_working_slot() {
     assert!(final_crypttab.contains("/etc/luks/keyfile"));
 }
 
-// r[verify installer.encryption.tpm-enroll+2]
+// r[verify installer.encryption.tpm-enroll+6]
 #[test]
 fn tpm_enrollment_updates_crypttab() {
     // We can't actually enroll a TPM without hardware, but we can verify
@@ -523,7 +491,7 @@ fn tpm_enrollment_updates_crypttab() {
     let crypttab_path = config_dir.join("crypttab");
 
     let tpm_crypttab = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,token-timeout=30\n";
     fs::write(&crypttab_path, tpm_crypttab).expect("writing TPM crypttab");
 
     let content = fs::read_to_string(&crypttab_path).unwrap();
@@ -532,12 +500,16 @@ fn tpm_enrollment_updates_crypttab() {
         "crypttab should reference TPM"
     );
     assert!(
-        content.contains("timeout=30"),
-        "crypttab should have passphrase timeout fallback"
+        content.contains("token-timeout=30"),
+        "crypttab should have token-timeout for TPM unseal fallback"
     );
     assert!(
         content.contains("none"),
         "crypttab keyfile field should be 'none' for TPM mode"
+    );
+    assert!(
+        content.contains("force"),
+        "crypttab should have 'force' option so dracut includes it in initramfs"
     );
 }
 
@@ -561,7 +533,7 @@ fn recovery_passphrase_is_initial_luks_key() {
     );
 }
 
-// r[verify installer.encryption.configure-system]
+// r[verify installer.encryption.overview+5]
 #[test]
 fn configure_system_writes_expected_files() {
     // This test verifies the file-writing portion of configure_installed_system.
@@ -579,7 +551,7 @@ fn configure_system_writes_expected_files() {
 
     // Simulate keyfile enrollment config writes
     let keyfile_crypttab = "# <name> <device>                    <keyfile>         <options>\n\
-         root     /dev/disk/by-partlabel/root /etc/luks/keyfile  force,luks,discard,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root /etc/luks/keyfile  force,luks,discard,keyfile-timeout=30\n";
     fs::write(&crypttab_path, keyfile_crypttab).expect("writing crypttab");
 
     let dracut_content = "install_items+=\" /etc/luks/keyfile \"\n";
@@ -592,8 +564,8 @@ fn configure_system_writes_expected_files() {
         "crypttab should reference the keyfile"
     );
     assert!(
-        ct.contains("timeout=30"),
-        "crypttab should have timeout fallback"
+        ct.contains("keyfile-timeout=30"),
+        "crypttab should have keyfile-timeout fallback"
     );
 
     let dc = fs::read_to_string(&dracut_conf_path).unwrap();
@@ -604,7 +576,7 @@ fn configure_system_writes_expected_files() {
 
     // Simulate TPM enrollment config writes
     let tpm_crypttab = "# <name> <device>                    <keyfile>  <options>\n\
-         root     /dev/disk/by-partlabel/root none       luks,discard,tpm2-device=auto,headless=true,timeout=30\n";
+         root     /dev/disk/by-partlabel/root none       force,luks,discard,tpm2-device=auto,token-timeout=30\n";
     fs::write(&crypttab_path, tpm_crypttab).expect("writing TPM crypttab");
 
     let ct = fs::read_to_string(&crypttab_path).unwrap();
@@ -615,7 +587,7 @@ fn configure_system_writes_expected_files() {
     );
 }
 
-// r[verify installer.encryption.keyfile-enroll+2]
+// r[verify installer.encryption.keyfile-enroll+5]
 // r[verify installer.encryption.recovery-passphrase+3]
 #[test]
 fn full_keyfile_encryption_flow() {

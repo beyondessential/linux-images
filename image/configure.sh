@@ -98,11 +98,11 @@ apt-get install -y -q dracut  # this removes initramfs-tools
 install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
     /etc/dracut.conf.d/01-fix-hostonly-noble.conf
 
-# r[image.boot.hardware-drivers+2]
+# r[impl image.boot.hardware-drivers+3]
 install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
     /etc/dracut.conf.d/03-hardware-drivers.conf
 
-# r[image.boot.cloud-drivers+4]
+# r[impl image.boot.cloud-drivers+5]
 if [ "$VARIANT" = "cloud" ]; then
     install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
         /etc/dracut.conf.d/04-cloud-drivers.conf
@@ -113,9 +113,22 @@ if [ "$VARIANT" = "metal" ]; then
 fi
 
 # ============================================================
+# Console font
+# ============================================================
+# r[image.base.console-font]
+cat > /etc/default/console-setup << 'EOF'
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="guess"
+FONTFACE="Fixed"
+FONTSIZE="8x16"
+VIDEOMODE=
+EOF
+
+# ============================================================
 # Variant identification
 # ============================================================
-# r[image.variant.types+2]
+# r[image.variant.types+3]
 mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 
@@ -220,7 +233,7 @@ systemctl enable bes-tailscale-firstboot-auth.service
 # ============================================================
 # Network
 # ============================================================
-# r[image.base.network]
+# r[image.base.network+2]
 mkdir -p /etc/netplan
 install -m 600 /tmp/files/netplan/01-all-en-dhcp.yaml /etc/netplan/01-all-en-dhcp.yaml
 
@@ -243,7 +256,7 @@ bash /tmp/scripts/setup-snapper.sh
 # ============================================================
 # Disk growth service
 # ============================================================
-# r[image.growth.service] r[image.growth.script]
+# r[impl image.growth.service+3]
 install -m 755 /tmp/files/grow-root-filesystem /usr/local/bin/grow-root-filesystem
 install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/system/grow-root-filesystem.service
 systemctl enable grow-root-filesystem.service
@@ -321,12 +334,12 @@ grub-install \
 # Hostname
 # ============================================================
 if [ "$VARIANT" = "metal" ]; then
-    # r[image.hostname.metal-dhcp]
+    # r[image.hostname.metal-dhcp+2]
     : > /etc/hostname
     echo "127.0.0.1 localhost" > /etc/hosts
     echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
 else
-    # r[image.hostname.cloud-default]
+    # r[image.hostname.cloud-default+2]
     echo "ubuntu" > /etc/hostname
     echo "127.0.0.1 localhost" > /etc/hosts
     echo "127.0.1.1 ubuntu" >> /etc/hosts

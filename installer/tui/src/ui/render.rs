@@ -8,7 +8,7 @@ use crate::disk::BlockDevice;
 use crate::net::CheckPhase;
 use crate::writer::format_eta;
 
-use super::{AppState, NetPane, Screen};
+use super::{AppState, NetPane, Screen, VerityCheckState};
 
 pub fn render(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
@@ -288,12 +288,12 @@ fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     let hints: String = match &state.screen {
-        Screen::Welcome => "Enter: start | n: network check | q: quit".into(),
+        Screen::Welcome => "Enter: start | n: network check | q: reboot | Ctrl+Alt+d: shell".into(),
         Screen::NetworkCheck => {
-            "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: quit".into()
+            "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: reboot".into()
         }
-        Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
-        Screen::DiskEncryption => "Up/Down: select | Enter: next | Esc: back | q: quit".into(),
+        Screen::DiskSelection => "Up/Down: select | Enter: next | Esc: back | q: reboot".into(),
+        Screen::DiskEncryption => "Up/Down: select | Enter: next | Esc: back | q: reboot".into(),
         Screen::Hostname => "Up/Down: select | Enter: next | Esc: back".into(),
         Screen::HostnameInput => "Enter: next | Esc: back".into(),
         Screen::Login => {
@@ -313,10 +313,10 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::LoginGithub => "Enter: fetch keys | Esc: back".into(),
         Screen::Timezone => "Type to search | Up/Down: navigate | Enter: select | Esc: back".into(),
         Screen::NetworkResults => {
-            "Tab: switch pane | Up/Down: scroll | Enter: next | r: re-run | Esc: back | q: quit"
+            "Tab: switch pane | Up/Down: scroll | Enter: next | r: re-run | Esc: back | q: reboot"
                 .into()
         }
-        Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: quit".into(),
+        Screen::Confirmation => "Type 'yes' to confirm | Esc: back | q: reboot".into(),
         Screen::Installing => "Please wait...".into(),
         Screen::Done => "Press Enter to reboot".into(),
         Screen::Error(_) => "Press any key to reboot".into(),
@@ -325,9 +325,15 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.welcome+3]
+// r[impl installer.tui.welcome+7]
 // r[impl installer.tui.ascii-rendering]
+// r[impl iso.verity.check+6]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
+    let needs_verity_bar = !matches!(state.verity_check, VerityCheckState::NotNeeded);
+    let verity_height: u16 = if needs_verity_bar { 4 } else { 0 };
+    let chunks =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(verity_height)]).split(area);
+
     let mut description = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -377,9 +383,21 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     description.push(Line::from(""));
-    description.push(Line::from(
-        "Press Enter to begin, or 'n' for a network check.",
-    ));
+    match state.verity_check {
+        VerityCheckState::Running => {
+            description.push(Line::from("Verifying installation media..."));
+        }
+        VerityCheckState::Passed => {
+            description.push(Line::from(
+                "Press Enter to begin, or 'n' for a network check.",
+            ));
+        }
+        _ => {
+            description.push(Line::from(
+                "Press Enter to begin, or 'n' for a network check.",
+            ));
+        }
+    }
 
     frame.render_widget(
         Paragraph::new(description)
@@ -390,8 +408,68 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
                     .border_style(Style::default().fg(Color::White)),
             )
             .wrap(Wrap { trim: true }),
-        area,
+        chunks[0],
     );
+
+    if needs_verity_bar {
+        match &state.verity_check {
+            VerityCheckState::Running => {
+                let (fraction, label) = if let Some(ref p) = state.verity_progress {
+                    let frac = p
+                        .total_bytes
+                        .map(|t| {
+                            if t == 0 {
+                                0.0
+                            } else {
+                                (p.bytes_written as f64 / t as f64).min(1.0)
+                            }
+                        })
+                        .unwrap_or(0.0);
+                    let eta_str = p.eta.map(format_eta).unwrap_or_default();
+                    let lbl = format!(
+                        "Verifying installation media... {:.1} MiB/s | ETA: {}",
+                        p.throughput_mbps,
+                        if eta_str.is_empty() { "..." } else { &eta_str },
+                    );
+                    (frac, lbl)
+                } else {
+                    (0.0, "Verifying installation media...".into())
+                };
+                let gauge = Gauge::default()
+                    .block(
+                        Block::default()
+                            .title(format!(" {label} "))
+                            .borders(Borders::ALL),
+                    )
+                    .gauge_style(Style::default().fg(Color::Yellow))
+                    .ratio(fraction);
+                frame.render_widget(gauge, chunks[1]);
+            }
+            VerityCheckState::Passed => {
+                let gauge = Gauge::default()
+                    .block(
+                        Block::default()
+                            .title(" Verification passed ")
+                            .borders(Borders::ALL),
+                    )
+                    .gauge_style(Style::default().fg(Color::Green))
+                    .ratio(1.0);
+                frame.render_widget(gauge, chunks[1]);
+            }
+            VerityCheckState::Failed(_) => {
+                let gauge = Gauge::default()
+                    .block(
+                        Block::default()
+                            .title(" Verification FAILED ")
+                            .borders(Borders::ALL),
+                    )
+                    .gauge_style(Style::default().fg(Color::Red))
+                    .ratio(1.0);
+                frame.render_widget(gauge, chunks[1]);
+            }
+            VerityCheckState::NotNeeded => {}
+        }
+    }
 }
 
 // r[impl installer.tui.disk-detection+3]
@@ -477,22 +555,19 @@ fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
     let explanation = match state.disk_encryption {
         DiskEncryption::Tpm => vec![
             Line::from(""),
-            Line::from("  The disk's encryption key will be sealed to this machine's TPM"),
-            Line::from("  using PCR 1 (hardware identity: motherboard, CPU, and RAM"),
-            Line::from("  model/serials). The system will boot unattended as long as the"),
-            Line::from("  hardware stays the same. If you move the disk to different"),
-            Line::from("  hardware, you will need the recovery passphrase. Changing the"),
-            Line::from("  CPU or RAM may also require the recovery passphrase."),
+            Line::from(
+                "The disk's encryption key will be sealed to this machine's TPM using PCR 1 (hardware identity: motherboard, CPU, and RAM model/serials). The system will boot unattended as long as the hardware stays the same. If you move the disk to different hardware, you will need the recovery passphrase. Changing the CPU or RAM may also require the recovery passphrase.",
+            ),
         ],
         DiskEncryption::Keyfile => vec![
             Line::from(""),
-            Line::from("  A keyfile will be stored on the boot partition. The system will"),
-            Line::from("  boot unattended on any hardware. If the boot partition is lost,"),
-            Line::from("  you will need the recovery passphrase."),
+            Line::from(
+                "A keyfile will be stored on the boot partition. The system will boot unattended on any hardware. If the boot partition is lost, you will need the recovery passphrase.",
+            ),
         ],
         DiskEncryption::None => vec![
             Line::from(""),
-            Line::from("  The root partition will not be encrypted."),
+            Line::from("The root partition will not be encrypted."),
         ],
     };
 
@@ -509,19 +584,15 @@ fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
     let list = List::new(items);
     frame.render_widget(list, chunks[0]);
 
-    let paragraph = Paragraph::new(explanation);
+    let paragraph = Paragraph::new(explanation)
+        .wrap(Wrap { trim: true })
+        .block(Block::default().padding(Padding::horizontal(2)));
     frame.render_widget(paragraph, chunks[1]);
 }
 
-// r[impl installer.tui.hostname+5]
+// r[impl installer.tui.hostname+6]
 fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
-    let is_encrypted = state.disk_encryption.is_encrypted();
-
-    let network_label = if is_encrypted {
-        "Network-assigned (DHCP)"
-    } else {
-        "Network-assigned (DHCP / cloud-init)"
-    };
+    let network_label = "Network-assigned (DHCP)";
 
     let options = ["Static hostname", network_label];
     let selected_index = if state.hostname_from_dhcp { 1 } else { 0 };
@@ -554,7 +625,7 @@ fn render_hostname(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.hostname+5]
+// r[impl installer.tui.hostname+6]
 fn render_hostname_input(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
@@ -704,11 +775,7 @@ fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from("  Leave empty to skip Tailscale configuration."),
         Line::from(""),
         Line::from(Span::styled(
-            "  The key will be used on first boot to run 'tailscale up --auth-key --ssh'",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "  and will be deleted after use.",
+            "  The key will be used on first boot to run 'tailscale up --auth-key --ssh' and will be deleted after use.",
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
@@ -728,7 +795,7 @@ fn render_login_tailscale(frame: &mut Frame, area: Rect, state: &AppState) {
         .title(" Login > Tailscale ")
         .borders(Borders::ALL);
 
-    let paragraph = Paragraph::new(lines).block(block);
+    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, area);
 }
 
@@ -737,15 +804,14 @@ fn render_login_ssh_keys(frame: &mut Frame, area: Rect, state: &AppState) {
     let intro_lines = vec![
         Line::from(""),
         Line::from(
-            "  SSH authorized keys. Tab/Shift+Tab to navigate. Type in the blank field to add a key.",
+            "  SSH authorized keys. Tab/Shift+Tab to navigate. Type in the blank field to add a key. Leave empty to skip.",
         ),
-        Line::from("  Leave empty to skip."),
         Line::from(""),
     ];
 
-    let chunks = Layout::vertical([Constraint::Length(5), Constraint::Min(0)]).split(area);
+    let chunks = Layout::vertical([Constraint::Length(4), Constraint::Min(0)]).split(area);
 
-    let intro_paragraph = Paragraph::new(intro_lines);
+    let intro_paragraph = Paragraph::new(intro_lines).wrap(Wrap { trim: true });
     frame.render_widget(intro_paragraph, chunks[0]);
 
     let mut key_lines: Vec<Line> = Vec::new();
@@ -1029,35 +1095,31 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.progress+3]
+// r[impl installer.tui.progress+4]
 fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(area);
 
     if let Some(ref progress) = state.write_progress {
-        let fraction = progress
-            .total_bytes
-            .map(|t| {
-                if t == 0 {
-                    0.0
-                } else {
-                    (progress.bytes_written as f64 / t as f64).min(1.0)
-                }
-            })
-            .unwrap_or(0.0);
+        let fraction = progress.overall_fraction().clamp(0.0, 1.0);
 
-        let eta_str = progress.eta.map(format_eta).unwrap_or_default();
-        let label = format!(
-            "{:.1} MiB written | {:.1} MiB/s | ETA: {}",
-            progress.bytes_written as f64 / (1024.0 * 1024.0),
-            progress.throughput_mbps,
-            if eta_str.is_empty() { "..." } else { &eta_str },
-        );
+        let phase_label = progress.phase.label();
+        let detail_line = if progress.phase == super::InstallPhase::Writing {
+            let eta_str = progress.eta.map(format_eta).unwrap_or_default();
+            format!(
+                "  {:.1} MiB written | {:.1} MiB/s | ETA: {}",
+                progress.bytes_written as f64 / (1024.0 * 1024.0),
+                progress.throughput_mbps,
+                if eta_str.is_empty() { "..." } else { &eta_str },
+            )
+        } else {
+            String::new()
+        };
 
         let info_lines = vec![
             Line::from(""),
-            Line::from("  Installing to disk..."),
+            Line::from(format!("  {phase_label}")),
             Line::from(""),
-            Line::from(format!("  {label}")),
+            Line::from(detail_line),
         ];
         let info = Paragraph::new(info_lines);
         frame.render_widget(info, chunks[0]);
@@ -1073,7 +1135,7 @@ fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
-// r[impl installer.tui.progress+3]
+// r[impl installer.tui.progress+4]
 fn render_done(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![
         Line::from(""),
@@ -1174,6 +1236,7 @@ mod tests {
             None,
             String::new(),
             vec!["UTC".into(), "America/New_York".into()],
+            false,
         )
     }
 

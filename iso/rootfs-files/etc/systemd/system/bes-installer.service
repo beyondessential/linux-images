@@ -1,0 +1,19 @@
+[Unit]
+Description=BES Installer TUI
+After=multi-user.target systemd-logind.service bes-chvt.service
+Conflicts=getty@tty2.service autovt@tty2.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bes-installer-wrapper
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty2
+TTYReset=yes
+TTYVHangup=no
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

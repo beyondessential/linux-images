@@ -1,10 +1,11 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::config::{DiskEncryption, InstallConfig};
 use crate::disk::BlockDevice;
 use crate::net::{self, CheckPhase, CheckResult, GithubKeysResult, NetcheckResult};
+use crate::writer::{self, PartitionManifest};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetPane {
@@ -12,6 +13,21 @@ pub enum NetPane {
     Tailscale,
 }
 use crate::writer::WriteProgress;
+
+/// State of the upfront dm-verity integrity check that runs on the welcome screen.
+// r[impl iso.verity.check+6]
+// r[impl installer.tui.welcome+7]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerityCheckState {
+    /// Verity is not active (fallback/dev build); no check needed.
+    NotNeeded,
+    /// Check is running; progress is tracked via `verity_progress`.
+    Running,
+    /// Check completed successfully.
+    Passed,
+    /// Check failed with an error message.
+    Failed(String),
+}
 
 mod render;
 mod run;
@@ -50,6 +66,12 @@ pub struct AppState {
     pub confirm_input: String,
     pub build_info: String,
     pub recovery_passphrase: Option<String>,
+
+    // r[impl iso.verity.check+6]
+    // r[impl installer.tui.welcome+7]
+    pub verity_check: VerityCheckState,
+    pub verity_progress: Option<ProgressSnapshot>,
+    pub verity_rx: Option<mpsc::Receiver<VerityMessage>>,
 
     pub hostname_input: String,
     pub hostname_from_dhcp: bool,
@@ -95,13 +117,99 @@ pub struct AppState {
     pub ssh_github_rx: Option<mpsc::Receiver<GithubKeysResult>>,
 }
 
-// r[impl installer.tui.progress+3]
+/// Message sent from the background verity integrity check thread.
+pub enum VerityMessage {
+    Progress(ProgressSnapshot),
+    Done,
+    Error(String),
+}
+
+// r[impl installer.tui.progress+4]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallPhase {
+    Writing,
+    Expanding,
+    RandomizingUuids,
+    EncryptionSetup,
+    RebuildingBootConfig,
+    VerifyingPartitions,
+    ApplyingConfig,
+}
+
+impl InstallPhase {
+    /// The fixed fraction of the overall progress bar at which this phase
+    /// *starts*. Writing occupies 0..90%, post-write steps share the last 10%.
+    pub fn bar_start(self) -> f64 {
+        match self {
+            Self::Writing => 0.0,
+            Self::Expanding => 0.90,
+            Self::RandomizingUuids => 0.92,
+            Self::EncryptionSetup => 0.93,
+            Self::RebuildingBootConfig => 0.94,
+            Self::VerifyingPartitions => 0.96,
+            Self::ApplyingConfig => 0.97,
+        }
+    }
+
+    /// The fixed fraction at which this phase *ends* (== next phase's start,
+    /// or 1.0 for the last phase).
+    pub fn bar_end(self) -> f64 {
+        match self {
+            Self::Writing => 0.90,
+            Self::Expanding => 0.92,
+            Self::RandomizingUuids => 0.93,
+            Self::EncryptionSetup => 0.94,
+            Self::RebuildingBootConfig => 0.96,
+            Self::VerifyingPartitions => 0.97,
+            Self::ApplyingConfig => 1.0,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Writing => "Writing partitions...",
+            Self::Expanding => "Expanding root filesystem...",
+            Self::RandomizingUuids => "Randomizing filesystem UUIDs...",
+            Self::EncryptionSetup => "Setting up encryption...",
+            Self::RebuildingBootConfig => "Rebuilding boot config...",
+            Self::VerifyingPartitions => "Verifying partition table...",
+            Self::ApplyingConfig => "Applying configuration...",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ProgressSnapshot {
     pub bytes_written: u64,
     pub total_bytes: Option<u64>,
     pub throughput_mbps: f64,
     pub eta: Option<Duration>,
+    pub phase: InstallPhase,
+}
+
+impl ProgressSnapshot {
+    /// Overall progress fraction (0.0..1.0) scaled to the full install bar.
+    /// During the Writing phase, the write's byte fraction is mapped into
+    /// 0..90%. Post-write phases jump to their fixed start fraction.
+    pub fn overall_fraction(&self) -> f64 {
+        match self.phase {
+            InstallPhase::Writing => {
+                let write_frac = self
+                    .total_bytes
+                    .map(|t| {
+                        if t == 0 {
+                            0.0
+                        } else {
+                            self.bytes_written as f64 / t as f64
+                        }
+                    })
+                    .unwrap_or(0.0)
+                    .min(1.0);
+                write_frac * InstallPhase::Writing.bar_end()
+            }
+            phase => phase.bar_start(),
+        }
+    }
 }
 
 impl From<&WriteProgress> for ProgressSnapshot {
@@ -111,6 +219,7 @@ impl From<&WriteProgress> for ProgressSnapshot {
             total_bytes: p.total_bytes,
             throughput_mbps: p.throughput_mbps(),
             eta: p.eta(),
+            phase: InstallPhase::Writing,
         }
     }
 }
@@ -129,11 +238,10 @@ impl AppState {
         default_disk_index: Option<usize>,
         build_info: String,
         available_timezones: Vec<String>,
+        verity_active: bool,
     ) -> Self {
         let endpoints = net::default_endpoints();
         let net_check_total = net::total_check_count(&endpoints);
-        let variant = disk_encryption.variant();
-
         let keys: Vec<String> = install_config
             .ssh_authorized_keys
             .iter()
@@ -150,13 +258,7 @@ impl AppState {
             .as_ref()
             .is_some_and(|h| !h.trim().is_empty())
             || install_config.hostname_template.is_some();
-        let hostname_from_dhcp = if has_static_hostname {
-            false
-        } else if install_config.hostname_from_dhcp {
-            true
-        } else {
-            variant == crate::config::Variant::Cloud
-        };
+        let hostname_from_dhcp = !has_static_hostname;
         let hostname_input = install_config.hostname.clone().unwrap_or_default();
         let hostname_from_template = install_config.hostname_template.is_some();
         let tailscale_input = install_config.tailscale_authkey.clone().unwrap_or_default();
@@ -213,13 +315,84 @@ impl AppState {
             ssh_github_error: None,
             ssh_github_rx: None,
             recovery_passphrase: None,
+            verity_check: if verity_active {
+                VerityCheckState::Running
+            } else {
+                VerityCheckState::NotNeeded
+            },
+            verity_progress: None,
+            verity_rx: None,
         };
         state.ensure_trailing_blank();
         state
     }
 
+    // r[impl iso.verity.check+6]
+    // r[impl installer.tui.welcome+7]
+    /// Spawn the background integrity check thread. Must be called once after
+    /// construction when `verity_active` is true.
+    pub fn start_verity_check(&mut self, manifest: &PartitionManifest, images_dir: &Path) {
+        if self.verity_check != VerityCheckState::Running {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        self.verity_rx = Some(rx);
+
+        let manifest = manifest.clone();
+        let images_dir = images_dir.to_path_buf();
+        std::thread::spawn(move || {
+            let result = (|| -> anyhow::Result<()> {
+                let image_files = writer::image_file_sizes(&manifest, &images_dir)?;
+                writer::integrity_check(&images_dir, &image_files, &mut |progress| {
+                    let _ = tx.send(VerityMessage::Progress(progress.into()));
+                })?;
+                Ok(())
+            })();
+            match result {
+                Ok(()) => {
+                    let _ = tx.send(VerityMessage::Done);
+                }
+                Err(e) => {
+                    let _ = tx.send(VerityMessage::Error(format!("{e:#}")));
+                }
+            }
+        });
+    }
+
+    /// Poll for verity integrity check progress. Returns true if state changed.
+    pub fn poll_verity_check(&mut self) -> bool {
+        let rx = match self.verity_rx.as_ref() {
+            Some(rx) => rx,
+            None => return false,
+        };
+        let mut changed = false;
+        while let Ok(msg) = rx.try_recv() {
+            changed = true;
+            match msg {
+                VerityMessage::Progress(snap) => {
+                    self.verity_progress = Some(snap);
+                }
+                VerityMessage::Done => {
+                    self.verity_check = VerityCheckState::Passed;
+                }
+                VerityMessage::Error(e) => {
+                    self.verity_check = VerityCheckState::Failed(e);
+                }
+            }
+        }
+        changed
+    }
+
+    /// Whether the user is allowed to advance past the welcome screen.
+    pub fn verity_check_allows_advance(&self) -> bool {
+        matches!(
+            self.verity_check,
+            VerityCheckState::NotNeeded | VerityCheckState::Passed
+        )
+    }
+
     // r[impl installer.tui.disk-encryption+2]
-    // r[impl installer.tui.hostname+5]
+    // r[impl installer.tui.hostname+6]
     // r[impl installer.tui.tailscale+3]
     // r[impl installer.tui.ssh-keys+5]
     // r[impl installer.tui.password+4]
@@ -318,9 +491,6 @@ impl AppState {
                 _ => DiskEncryption::Keyfile,
             };
         }
-        if self.hostname_input.trim().is_empty() && !self.hostname_from_template {
-            self.hostname_from_dhcp = !self.disk_encryption.is_encrypted();
-        }
     }
 
     pub fn cycle_disk_encryption_reverse(&mut self) {
@@ -335,9 +505,6 @@ impl AppState {
                 DiskEncryption::Keyfile => DiskEncryption::None,
                 _ => DiskEncryption::Keyfile,
             };
-        }
-        if self.hostname_input.trim().is_empty() && !self.hostname_from_template {
-            self.hostname_from_dhcp = !self.disk_encryption.is_encrypted();
         }
     }
 
@@ -498,12 +665,16 @@ impl AppState {
     }
 
     // r[impl installer.tui.disk-encryption+2]
-    // r[impl installer.tui.hostname+5]
+    // r[impl installer.tui.hostname+6]
     // r[impl installer.tui.password+4]
     // r[impl installer.tui.timezone]
     pub fn advance(&mut self) {
         self.screen = match &self.screen {
+            // r[impl installer.tui.welcome+7]
             Screen::Welcome => {
+                if !self.verity_check_allows_advance() {
+                    return;
+                }
                 // r[impl installer.tui.network-check+4]
                 self.ensure_net_checks_started();
                 Screen::DiskSelection
@@ -531,7 +702,7 @@ impl AppState {
                 }
                 Screen::Confirmation
             }
-            // r[impl installer.tui.progress+3]
+            // r[impl installer.tui.progress+4]
             Screen::Confirmation => Screen::Installing,
             Screen::Installing => return,
             Screen::Done | Screen::Error(_) => return,
@@ -578,7 +749,7 @@ impl AppState {
             .eq_ignore_ascii_case(self.confirmation_text())
     }
 
-    // r[impl installer.tui.hostname+5]
+    // r[impl installer.tui.hostname+6]
     pub fn hostname_required(&self) -> bool {
         !self.hostname_from_dhcp
     }
@@ -779,10 +950,11 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         )
     }
 
-    // r[verify installer.tui.welcome+3]
+    // r[verify installer.tui.welcome+7]
     #[test]
     fn initial_state() {
         let state = make_state();
@@ -793,6 +965,113 @@ mod tests {
         assert_eq!(state.net_check_phase, CheckPhase::NotStarted);
         assert_eq!(state.netcheck_phase, CheckPhase::NotStarted);
         assert!(!state.net_checks_started);
+        assert_eq!(state.verity_check, VerityCheckState::NotNeeded);
+    }
+
+    // r[verify installer.tui.welcome+7]
+    // r[verify iso.verity.check+6]
+    #[test]
+    fn verity_running_blocks_advance() {
+        let mut state = make_state();
+        state.verity_check = VerityCheckState::Running;
+        assert!(!state.verity_check_allows_advance());
+        state.advance();
+        assert_eq!(state.screen, Screen::Welcome);
+    }
+
+    // r[verify installer.tui.welcome+7]
+    // r[verify iso.verity.check+6]
+    #[test]
+    fn verity_passed_allows_advance() {
+        let mut state = make_state();
+        state.verity_check = VerityCheckState::Passed;
+        assert!(state.verity_check_allows_advance());
+        state.advance();
+        assert_eq!(state.screen, Screen::DiskSelection);
+    }
+
+    // r[verify installer.tui.welcome+7]
+    // r[verify iso.verity.check+6]
+    #[test]
+    fn verity_not_needed_allows_advance() {
+        let mut state = make_state();
+        assert_eq!(state.verity_check, VerityCheckState::NotNeeded);
+        assert!(state.verity_check_allows_advance());
+        state.advance();
+        assert_eq!(state.screen, Screen::DiskSelection);
+    }
+
+    // r[verify iso.verity.check+6]
+    #[test]
+    fn verity_failed_does_not_allow_advance() {
+        let state = AppState {
+            verity_check: VerityCheckState::Failed("corrupt".into()),
+            ..make_state()
+        };
+        assert!(!state.verity_check_allows_advance());
+    }
+
+    // r[verify iso.verity.check+6]
+    #[test]
+    fn poll_verity_progress_updates_state() {
+        let mut state = make_state();
+        state.verity_check = VerityCheckState::Running;
+        let (tx, rx) = std::sync::mpsc::channel();
+        state.verity_rx = Some(rx);
+
+        tx.send(VerityMessage::Progress(ProgressSnapshot {
+            bytes_written: 500,
+            total_bytes: Some(1000),
+            throughput_mbps: 10.0,
+            eta: None,
+            phase: InstallPhase::Writing,
+        }))
+        .unwrap();
+
+        assert!(state.poll_verity_check());
+        assert_eq!(state.verity_progress.as_ref().unwrap().bytes_written, 500);
+        assert_eq!(state.verity_check, VerityCheckState::Running);
+    }
+
+    // r[verify iso.verity.check+6]
+    #[test]
+    fn poll_verity_done_transitions_to_passed() {
+        let mut state = make_state();
+        state.verity_check = VerityCheckState::Running;
+        let (tx, rx) = std::sync::mpsc::channel();
+        state.verity_rx = Some(rx);
+
+        tx.send(VerityMessage::Done).unwrap();
+
+        assert!(state.poll_verity_check());
+        assert_eq!(state.verity_check, VerityCheckState::Passed);
+    }
+
+    // r[verify iso.verity.check+6]
+    #[test]
+    fn poll_verity_error_transitions_to_failed() {
+        let mut state = make_state();
+        state.verity_check = VerityCheckState::Running;
+        let (tx, rx) = std::sync::mpsc::channel();
+        state.verity_rx = Some(rx);
+
+        tx.send(VerityMessage::Error("bad media".into())).unwrap();
+
+        assert!(state.poll_verity_check());
+        assert_eq!(
+            state.verity_check,
+            VerityCheckState::Failed("bad media".into())
+        );
+    }
+
+    // r[verify installer.tui.welcome+7]
+    // r[verify iso.verity.check+6]
+    #[test]
+    fn verity_running_still_allows_network_check() {
+        let mut state = make_state();
+        state.verity_check = VerityCheckState::Running;
+        state.open_network_check();
+        assert_eq!(state.screen, Screen::NetworkCheck);
     }
 
     // r[verify installer.tui.network-check+4]
@@ -926,9 +1205,8 @@ mod tests {
         assert_eq!(state.screen, Screen::DiskEncryption);
         state.advance();
         assert_eq!(state.screen, Screen::Hostname);
-        // Static is default for encrypted (hostname_from_dhcp = false), advance to HostnameInput
-        state.advance();
-        assert_eq!(state.screen, Screen::HostnameInput);
+        // Network-assigned (DHCP) is the default regardless of encryption,
+        // so advance skips HostnameInput and goes to Login directly.
         state.advance();
         assert_eq!(state.screen, Screen::Login);
         state.advance();
@@ -1004,9 +1282,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
-        // Encrypted: hostname_from_dhcp is false, so Login goes back to HostnameInput
-        state.go_back();
-        assert_eq!(state.screen, Screen::HostnameInput);
+        // hostname_from_dhcp is true (always the default), so Login goes back to Hostname selector
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
@@ -1111,7 +1387,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Error("test".into()));
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_prefilled_defaults_to_static() {
         use crate::disk::TransportType;
@@ -1135,17 +1411,19 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert!(!state.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
-    fn none_encryption_defaults_to_dhcp() {
+    fn default_config_always_defaults_to_dhcp() {
+        // With no static hostname configured, hostname_from_dhcp is always true
+        // regardless of encryption type.
         let state = make_state();
-        // make_state creates Tpm (encrypted) which defaults to false
-        assert!(!state.hostname_from_dhcp);
-        // Construct a none-encryption state properly.
+        assert!(state.hostname_from_dhcp);
+
         use crate::disk::TransportType;
         let devices = vec![BlockDevice {
             path: PathBuf::from("/dev/sda"),
@@ -1163,11 +1441,12 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert!(none_enc.hostname_from_dhcp);
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_prefilled_from_config() {
         use crate::disk::TransportType;
@@ -1191,6 +1470,7 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert_eq!(state.hostname_input, "myhost");
         assert_eq!(state.tailscale_input, "");
@@ -1221,6 +1501,7 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert_eq!(state.tailscale_input, "tskey-auth-xxx");
     }
@@ -1249,6 +1530,7 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert_eq!(
             state.ssh_keys,
@@ -1256,12 +1538,16 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn install_config_from_inputs() {
         let mut state = make_state();
+        // hostname_from_dhcp is true by default, so install_config_fields always
+        // returns Some (DHCP counts as configured). Disable it to test None.
+        state.hostname_from_dhcp = false;
         assert!(state.install_config_fields().is_none());
 
+        state.hostname_from_dhcp = false;
         state.hostname_input = "server-01".into();
         let cfg = state.install_config_fields().unwrap();
         assert_eq!(cfg.hostname.as_deref(), Some("server-01"));
@@ -1276,6 +1562,7 @@ mod tests {
     #[test]
     fn install_config_all_fields() {
         let mut state = make_state();
+        state.hostname_from_dhcp = false;
         state.hostname_input = "host".into();
         state.tailscale_input = "tskey-auth-123".into();
         state.ssh_keys = vec!["ssh-ed25519 AAAA".into(), "ssh-rsa BBBB".into()];
@@ -1289,13 +1576,14 @@ mod tests {
         assert!(cfg.password_hash.is_none());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn install_config_empty_strings_are_none() {
         let mut state = make_state();
         state.hostname_input = "   ".into();
+        state.hostname_from_dhcp = false;
         state.tailscale_input = "  ".into();
-        state.ssh_keys = vec![String::new(), "  ".into()];
+        // No password, no hash, not DHCP. All fields empty → None.
         assert!(state.install_config_fields().is_none());
     }
 
@@ -1347,6 +1635,7 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert!(state.has_password());
         let cfg = state.install_config_fields().unwrap();
@@ -1357,15 +1646,19 @@ mod tests {
         );
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_required_for_encrypted() {
         let mut state = make_state();
         state.disk_encryption = DiskEncryption::Tpm;
+        // hostname_from_dhcp is true by default (encryption no longer matters),
+        // so hostname is not required unless the user toggles to Static.
+        assert!(!state.hostname_required());
+        state.hostname_from_dhcp = false;
         assert!(state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_required_for_none_static() {
         let mut state = make_state();
@@ -1374,7 +1667,7 @@ mod tests {
         assert!(state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_not_required_for_none_dhcp() {
         let mut state = make_state();
@@ -1383,7 +1676,7 @@ mod tests {
         assert!(!state.hostname_required());
     }
 
-    // r[verify installer.tui.hostname+5]
+    // r[verify installer.tui.hostname+6]
     #[test]
     fn hostname_not_required_for_encrypted_with_dhcp() {
         let mut state = make_state();
@@ -1435,6 +1728,7 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert!(state.hostname_from_template);
         assert_eq!(state.hostname_input, "resolved-name");
@@ -1472,6 +1766,7 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert_eq!(state.timezone_selected, "Pacific/Auckland");
         assert_eq!(state.effective_timezone(), "Pacific/Auckland");
@@ -1679,6 +1974,7 @@ mod tests {
             None,
             String::new(),
             test_timezones(),
+            false,
         );
         assert_eq!(
             state.ssh_keys,
@@ -1746,7 +2042,7 @@ mod tests {
         assert_eq!(cfg.unwrap().timezone.as_deref(), Some("Asia/Tokyo"));
     }
 
-    // r[verify installer.tui.progress+3]
+    // r[verify installer.tui.progress+4]
     #[test]
     fn confirmation_advances_to_installing() {
         let mut state = make_state();
@@ -1756,7 +2052,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Installing);
     }
 
-    // r[verify installer.tui.progress+3]
+    // r[verify installer.tui.progress+4]
     #[test]
     fn installing_advance_is_noop() {
         let mut state = make_state();
@@ -1765,7 +2061,7 @@ mod tests {
         assert_eq!(state.screen, Screen::Installing);
     }
 
-    // r[verify installer.tui.progress+3]
+    // r[verify installer.tui.progress+4]
     #[test]
     fn installing_no_go_back() {
         let mut state = make_state();

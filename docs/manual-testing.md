@@ -128,6 +128,8 @@ This verifies the ISO boots correctly in a real UEFI VM environment, which
 exercises the El Torito EFI boot path, GRUB, live-boot, and the automatic
 TUI launch -- none of which are tested by the container-based tests.
 
+### 5a: CD-ROM boot (optical media)
+
 1. Create a new VM in VirtualBox:
    - Type: Linux, Ubuntu (64-bit)
    - Enable EFI: Settings > System > Enable EFI
@@ -165,7 +167,7 @@ TUI launch -- none of which are tested by the container-based tests.
    - Log in as `ubuntu` with the password you set.
    - Run `systemctl --failed` and confirm no unexpected failed units.
    - Run `cat /etc/bes/image-variant` and confirm it matches your
-     encryption choice (`metal` or `cloud`).
+     encryption choice (`luks-tpm`, `luks-keyfile`, or `plain`).
    - Run `df -h /` and confirm the root filesystem has been expanded
      beyond the base image size.
    - Run `btrfs subvolume list /` and confirm `@` and `@postgres`
@@ -174,7 +176,29 @@ TUI launch -- none of which are tested by the container-based tests.
 **Acceptance criteria**: the ISO boots in EFI mode without network, the
 installer completes successfully, the installed system boots unattended (no
 manual LUKS passphrase entry for keyfile mode), and the basic system health
-checks above pass.
+checks above pass. The installer log (`/var/log/bes-installer.log`) should
+show that it found the images partition by PARTUUID (possibly after a
+`losetup --partscan` on `/dev/sr0` for CD-ROM boot).
+
+### 5b: USB/hard-disk boot (VDI)
+
+This verifies the ISO works when booted as a hard disk (simulating a USB
+stick written via `dd`), which exercises the GPT partition table directly
+without the CD-ROM partition scanning workaround.
+
+1. Build the VDI: `just iso-vdi`
+2. Create a new VM in VirtualBox (same settings as 5a).
+3. Instead of attaching an optical disc, attach the `.vdi` file as a
+   **second hard disk** (Settings > Storage > SATA controller > add hard
+   disk). Keep the 10 GB target disk as the first disk.
+4. Boot from the VDI disk (change boot order if needed).
+5. The installer should find the images partition directly by PARTUUID
+   without needing the CD-ROM partscan service.
+6. Complete the installation to the target disk and verify as in 5a.
+
+**Acceptance criteria**: the VDI boots in EFI mode, the installer finds
+`partitions.json` via the PARTUUID-based lookup (no partscan fallback
+needed), and the installation completes successfully.
 
 ## Step 6: USB Configuration -- Prefilled Defaults
 
@@ -254,7 +278,7 @@ USB.
    - Hostname is `auto-test` (`hostnamectl`).
    - Log in with password `testpass` (should not prompt for password
      change).
-   - Variant is `metal` (`cat /etc/bes/image-variant`).
+   - Variant is `luks-keyfile` (`cat /etc/bes/image-variant`).
 
 **Acceptance criteria**: the install completes with zero human
 interaction. The installed system reflects the configuration from the
@@ -296,7 +320,8 @@ a disk, without using the ISO installer.
    - GRUB menu appears with a 5-second timeout.
    - The system boots to a login prompt.
    - Log in as `ubuntu` with password `bes` (will be forced to change it).
-   - `cat /etc/bes/image-variant` shows `cloud`.
+   - `cat /etc/bes/image-variant` shows `cloud` (this is the build-time
+     cloud image, not an installer-produced system).
    - `df -h /` shows the root filesystem has been expanded beyond the
      base image size.
    - `btrfs subvolume list /` shows `@` and `@postgres`.
@@ -431,7 +456,8 @@ After completing all steps, confirm:
 - [ ] Step 2: Automated tests passed.
 - [ ] Step 3: All container install scenarios passed (including metal).
 - [ ] Step 4: Interactive TUI works, Tailscale auth key accepted.
-- [ ] Step 5: ISO boots in VM, installed system is healthy.
+- [ ] Step 5a: ISO boots in VM (CD-ROM), installed system is healthy.
+- [ ] Step 5b: ISO boots in VM (VDI/USB), installed system is healthy.
 - [ ] Step 6: BESCONF prefilled defaults appear in TUI.
 - [ ] Step 7: Automatic mode installs without interaction.
 - [ ] Step 8: Bare-metal hardware boot works.
