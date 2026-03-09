@@ -57,8 +57,18 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
         // r[impl installer.tui.welcome+7]
         Screen::Welcome => match key.code {
             KeyCode::Char('q') => return KeyAction::Reboot,
-            KeyCode::Char('n') => state.open_network_check(),
             KeyCode::Enter => state.advance(),
+            _ => {}
+        },
+
+        // r[impl installer.tui.network-config+13]
+        Screen::NetworkConfig => match key.code {
+            KeyCode::Char('q') => return KeyAction::Reboot,
+            KeyCode::Esc => state.go_back(),
+            KeyCode::Enter => state.advance(),
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::ALT) => {
+                state.open_network_check();
+            }
             _ => {}
         },
 
@@ -825,7 +835,9 @@ mod tests {
     fn scripted_walk_through_encrypted_flow() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkConfig
+            press(KeyCode::Enter),
+            // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> DiskEncryptionScreen (default: Tpm)
             press(KeyCode::Enter),
@@ -871,7 +883,9 @@ mod tests {
     fn scripted_none_encryption_flow() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkConfig
+            press(KeyCode::Enter),
+            // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> DiskEncryptionScreen (default: Tpm)
             press(KeyCode::Enter),
@@ -938,7 +952,9 @@ mod tests {
     fn scripted_disk_navigation() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkConfig
+            press(KeyCode::Enter),
+            // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
             // Navigate down to second disk
             press(KeyCode::Down),
@@ -983,7 +999,8 @@ mod tests {
         );
 
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1014,7 +1031,8 @@ mod tests {
     fn scripted_go_back_from_confirmation() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1045,7 +1063,8 @@ mod tests {
     fn scripted_password_entry_matching() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1078,7 +1097,8 @@ mod tests {
     fn scripted_password_mismatch_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1110,7 +1130,8 @@ mod tests {
     fn scripted_empty_password_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1136,7 +1157,8 @@ mod tests {
     fn scripted_password_esc_from_confirm_returns_to_first_field() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1164,7 +1186,8 @@ mod tests {
     fn scripted_encrypted_empty_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1186,7 +1209,8 @@ mod tests {
     fn scripted_encrypted_hostname_typed_allows_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1210,7 +1234,9 @@ mod tests {
     fn scripted_none_encryption_network_assigned_default_advances_to_login() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkConfig
+            press(KeyCode::Enter),
+            // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> DiskEncryptionScreen (default: Tpm)
             press(KeyCode::Enter),
@@ -1235,7 +1261,9 @@ mod tests {
     fn scripted_none_encryption_static_empty_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkConfig
+            press(KeyCode::Enter),
+            // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> DiskEncryptionScreen
             press(KeyCode::Enter),
@@ -1263,7 +1291,8 @@ mod tests {
     fn scripted_encrypted_dhcp_selected_advances_to_login() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1282,7 +1311,8 @@ mod tests {
     fn scripted_encrypted_dhcp_then_static_requires_hostname() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1304,7 +1334,8 @@ mod tests {
     fn scripted_encrypted_dhcp_skips_text_input() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1322,7 +1353,8 @@ mod tests {
     fn scripted_hostname_input_esc_returns_to_selector() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1342,7 +1374,9 @@ mod tests {
     fn scripted_none_selector_navigation() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection
+            // Welcome -> NetworkConfig
+            press(KeyCode::Enter),
+            // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
             // DiskSelection -> DiskEncryptionScreen
             press(KeyCode::Enter),
@@ -1369,7 +1403,8 @@ mod tests {
     fn scripted_invalid_hostname_chars_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1400,7 +1435,8 @@ mod tests {
     fn scripted_leading_hyphen_hostname_blocks_advance() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1432,7 +1468,8 @@ mod tests {
     fn scripted_valid_hostname_advances() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1463,7 +1500,8 @@ mod tests {
     fn scripted_hostname_error_cleared_on_typing() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1487,7 +1525,8 @@ mod tests {
     fn scripted_hostname_error_shown_live_on_keystroke() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname selector
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1549,12 +1588,12 @@ mod tests {
     fn ctrl_alt_d_breaks_scripted_loop() {
         let state = make_state();
         let events = vec![
-            press(KeyCode::Enter), // Welcome -> DiskSelection
+            press(KeyCode::Enter), // Welcome -> NetworkConfig
             ctrl_alt('d'),         // should break immediately
             press(KeyCode::Enter), // should never be processed
         ];
         let final_state = run_tui_scripted(state, events);
-        assert_eq!(final_state.screen, Screen::DiskSelection);
+        assert_eq!(final_state.screen, Screen::NetworkConfig);
     }
 
     // r[verify installer.tui.timezone]
@@ -1562,7 +1601,8 @@ mod tests {
     fn scripted_timezone_accept_default_utc() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1590,7 +1630,8 @@ mod tests {
     fn scripted_timezone_navigate_down_and_select() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1621,7 +1662,8 @@ mod tests {
     fn scripted_timezone_search_filters_list() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1653,7 +1695,8 @@ mod tests {
     fn scripted_timezone_search_backspace_widens_filter() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1689,7 +1732,8 @@ mod tests {
     fn scripted_timezone_esc_goes_back_to_login() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1716,7 +1760,8 @@ mod tests {
     fn scripted_timezone_down_does_not_go_past_end() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1752,7 +1797,8 @@ mod tests {
     fn scripted_timezone_up_does_not_go_before_start() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1787,7 +1833,8 @@ mod tests {
     fn scripted_timezone_search_then_navigate() {
         let state = make_state();
         let mut events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1820,7 +1867,8 @@ mod tests {
     fn scripted_login_tailscale_sub_screen() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1850,7 +1898,8 @@ mod tests {
     fn scripted_login_ssh_keys_sub_screen() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
@@ -1893,7 +1942,8 @@ mod tests {
     fn scripted_login_ssh_keys_tab_cycles_and_trailing_blank() {
         let state = make_state();
         let events = vec![
-            // Welcome -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            // Welcome -> NetworkConfig -> DiskSelection -> DiskEncryptionScreen -> Hostname
+            press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),

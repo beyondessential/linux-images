@@ -123,6 +123,8 @@ fn scripted_timezone_search_and_select() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # DiskSelection
 enter
 # DiskEncryptionScreen: cycle to None
@@ -178,6 +180,8 @@ fn scripted_timezone_navigate_and_select() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # DiskSelection
 enter

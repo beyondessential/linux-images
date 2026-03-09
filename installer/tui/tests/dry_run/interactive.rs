@@ -10,6 +10,8 @@ fn interactive_keyfile_full_flow() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # Disk: accept first
 enter
 # DiskEncryption: accept default (keyfile)
@@ -87,6 +89,8 @@ fn interactive_none_encryption_flow() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # Disk
 enter
 # DiskEncryption: cycle Keyfile -> None
@@ -140,6 +144,8 @@ fn interactive_install_config_fields_captured() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # Disk
 enter
@@ -220,6 +226,8 @@ fn interactive_empty_install_config_is_null() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # Disk
 enter
 # DiskEncryption: cycle Keyfile -> None
@@ -288,6 +296,8 @@ fn interactive_selects_second_disk() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # Navigate to second disk
 down
@@ -403,6 +413,8 @@ fn interactive_go_back_from_confirmation_and_change() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # Disk
 enter

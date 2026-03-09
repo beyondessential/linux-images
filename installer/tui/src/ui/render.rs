@@ -24,6 +24,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 
     match &state.screen {
         Screen::Welcome => render_welcome(frame, chunks[1], state),
+        Screen::NetworkConfig => render_network_config(frame, chunks[1], state),
         Screen::NetworkCheck => render_network_check(frame, chunks[1], state),
         Screen::NetworkResults => render_network_results(frame, chunks[1], state),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
@@ -47,6 +48,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
         Screen::Welcome => "Welcome",
+        Screen::NetworkConfig => "Network Configuration",
         Screen::NetworkCheck => "Network Check",
         Screen::DiskSelection => "1/6 Select Target Disk",
         Screen::DiskEncryption => "2/6 Disk Encryption",
@@ -271,6 +273,20 @@ fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_t
     }
 }
 
+// r[impl installer.tui.network-config+13]
+fn render_network_config(frame: &mut Frame, area: Rect, _state: &AppState) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Network Configuration ")
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let text =
+        Paragraph::new("Network configuration screen (placeholder)").wrap(Wrap { trim: false });
+    frame.render_widget(text, inner);
+}
+
 // r[impl installer.tui.network-check+4]
 fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
     render_net_accordion(
@@ -288,7 +304,12 @@ fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     let hints: String = match &state.screen {
-        Screen::Welcome => "Enter: start | n: network check | q: reboot | Ctrl+Alt+d: shell".into(),
+        Screen::Welcome => "Enter: start | q: reboot | Ctrl+Alt+d: shell".into(),
+        // r[impl installer.tui.network-config+13]
+        Screen::NetworkConfig => {
+            "Tab/Shift+Tab: navigate | Alt+c: net check | Enter: next | Esc: back | q: reboot"
+                .into()
+        }
         Screen::NetworkCheck => {
             "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: reboot".into()
         }

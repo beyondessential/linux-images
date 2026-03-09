@@ -495,12 +495,12 @@ fn validate_network_static_fields(
     issues: &mut Vec<String>,
 ) {
     if mode == Some(NetworkMode::StaticIp) {
-        if ip.map_or(true, |s| s.trim().is_empty()) {
+        if ip.is_none_or(|s| s.trim().is_empty()) {
             issues.push(format!(
                 "{prefix}-ip is required when {prefix}-mode is \"static\""
             ));
         }
-        if gateway.map_or(true, |s| s.trim().is_empty()) {
+        if gateway.is_none_or(|s| s.trim().is_empty()) {
             issues.push(format!(
                 "{prefix}-gateway is required when {prefix}-mode is \"static\""
             ));

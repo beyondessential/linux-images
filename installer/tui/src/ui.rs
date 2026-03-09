@@ -1,16 +1,69 @@
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::config::{DiskEncryption, InstallConfig};
+use crate::config::{DiskEncryption, InstallConfig, NetworkMode};
 use crate::disk::BlockDevice;
-use crate::net::{self, CheckPhase, CheckResult, GithubKeysResult, NetcheckResult};
+use crate::net::{
+    self, CheckPhase, CheckResult, GithubKeysResult, NetConnectivityStatus, NetInterface,
+    NetcheckResult,
+};
 use crate::writer::{self, PartitionManifest};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetPane {
     Connectivity,
     Tailscale,
+}
+
+/// Network mode for the target pane in the TUI.
+/// `CopyCurrent` is TUI-only; it resolves to the effective ISO config
+/// before being written to the target. It is never serialised to the
+/// config file.
+// r[impl installer.tui.network-config+13]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetNetworkMode {
+    CopyCurrent,
+    Dhcp,
+    StaticIp,
+    Ipv6Slaac,
+    Offline,
+}
+
+/// Which pane of the network config accordion is expanded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetConfigPane {
+    Iso,
+    Target,
+}
+
+/// Which field in the network config screen currently has focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetConfigFocus {
+    // ISO pane fields
+    IsoMode,
+    IsoInterface,
+    IsoIp,
+    IsoGateway,
+    IsoDns,
+    IsoDomain,
+    // Target pane fields
+    TargetMode,
+    TargetInterface,
+    TargetIp,
+    TargetGateway,
+    TargetDns,
+    TargetDomain,
+}
+
+/// Static IP configuration fields for a pane.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StaticNetConfig {
+    pub interface: String,
+    pub ip_cidr: String,
+    pub gateway: String,
+    pub dns: String,
+    pub search_domain: String,
 }
 use crate::writer::WriteProgress;
 
@@ -38,6 +91,7 @@ pub use run::{run_tui, run_tui_scripted};
 // r[impl installer.tui.disk-encryption+2]
 pub enum Screen {
     Welcome,
+    NetworkConfig,
     NetworkCheck,
     DiskSelection,
     DiskEncryption,
@@ -115,6 +169,23 @@ pub struct AppState {
     pub ssh_github_fetching: bool,
     pub ssh_github_error: Option<String>,
     pub ssh_github_rx: Option<mpsc::Receiver<GithubKeysResult>>,
+
+    // r[impl installer.tui.network-config+13]
+    pub iso_network_mode: NetworkMode,
+    pub iso_static_config: StaticNetConfig,
+    pub target_network_mode: TargetNetworkMode,
+    pub target_static_config: StaticNetConfig,
+    pub detected_interfaces: Vec<NetInterface>,
+    pub iso_net_status: NetConnectivityStatus,
+    pub net_config_pane: NetConfigPane,
+    pub net_config_focus: NetConfigFocus,
+    pub net_apply_debounce: Option<Instant>,
+    pub target_pane_touched: bool,
+    /// Whether the config file specified a concrete `network-mode` (suppresses
+    /// the "Copy current config" option in the target pane).
+    pub config_has_network_mode: bool,
+    /// Whether the offline target warning dialog is currently shown.
+    pub offline_target_warning: bool,
 }
 
 /// Message sent from the background verity integrity check thread.
@@ -272,6 +343,44 @@ impl AppState {
             .position(|z| z == &timezone_selected)
             .unwrap_or(0);
 
+        // r[impl installer.tui.network-config+13]
+        let iso_network_mode = install_config.iso_network_mode.unwrap_or(NetworkMode::Dhcp);
+        let iso_static_config = StaticNetConfig {
+            interface: install_config
+                .iso_network_interface
+                .clone()
+                .unwrap_or_default(),
+            ip_cidr: install_config.iso_network_ip.clone().unwrap_or_default(),
+            gateway: install_config
+                .iso_network_gateway
+                .clone()
+                .unwrap_or_default(),
+            dns: install_config.iso_network_dns.clone().unwrap_or_default(),
+            search_domain: install_config
+                .iso_network_domain
+                .clone()
+                .unwrap_or_default(),
+        };
+
+        let config_has_network_mode = install_config.network_mode.is_some();
+        let target_network_mode = if let Some(mode) = install_config.network_mode {
+            match mode {
+                NetworkMode::Dhcp => TargetNetworkMode::Dhcp,
+                NetworkMode::StaticIp => TargetNetworkMode::StaticIp,
+                NetworkMode::Ipv6Slaac => TargetNetworkMode::Ipv6Slaac,
+                NetworkMode::Offline => TargetNetworkMode::Offline,
+            }
+        } else {
+            TargetNetworkMode::CopyCurrent
+        };
+        let target_static_config = StaticNetConfig {
+            interface: install_config.network_interface.clone().unwrap_or_default(),
+            ip_cidr: install_config.network_ip.clone().unwrap_or_default(),
+            gateway: install_config.network_gateway.clone().unwrap_or_default(),
+            dns: install_config.network_dns.clone().unwrap_or_default(),
+            search_domain: install_config.network_domain.clone().unwrap_or_default(),
+        };
+
         let mut state = Self {
             screen: Screen::Welcome,
             selected_disk_index: default_disk_index.unwrap_or(0),
@@ -322,6 +431,18 @@ impl AppState {
             },
             verity_progress: None,
             verity_rx: None,
+            iso_network_mode,
+            iso_static_config,
+            target_network_mode,
+            target_static_config,
+            detected_interfaces: Vec::new(),
+            iso_net_status: NetConnectivityStatus::Unknown,
+            net_config_pane: NetConfigPane::Iso,
+            net_config_focus: NetConfigFocus::IsoMode,
+            net_apply_debounce: None,
+            target_pane_touched: false,
+            config_has_network_mode,
+            offline_target_warning: false,
         };
         state.ensure_trailing_blank();
         state
@@ -675,7 +796,11 @@ impl AppState {
                 if !self.verity_check_allows_advance() {
                     return;
                 }
-                // r[impl installer.tui.network-check+4]
+                // r[impl installer.tui.network-config+13]
+                Screen::NetworkConfig
+            }
+            // r[impl installer.tui.network-config+13]
+            Screen::NetworkConfig => {
                 self.ensure_net_checks_started();
                 Screen::DiskSelection
             }
@@ -711,8 +836,9 @@ impl AppState {
 
     pub fn go_back(&mut self) {
         self.screen = match &self.screen {
-            Screen::NetworkCheck => Screen::Welcome,
-            Screen::DiskSelection => Screen::Welcome,
+            Screen::NetworkConfig => Screen::Welcome,
+            Screen::NetworkCheck => Screen::NetworkConfig,
+            Screen::DiskSelection => Screen::NetworkConfig,
             Screen::DiskEncryption => Screen::DiskSelection,
             Screen::Hostname => Screen::DiskEncryption,
             Screen::HostnameInput => Screen::Hostname,
@@ -732,10 +858,68 @@ impl AppState {
         };
     }
 
-    /// Enter the dedicated network check screen from the welcome screen.
+    /// Enter the dedicated network check screen from the network config screen.
     pub fn open_network_check(&mut self) {
         self.ensure_net_checks_started();
         self.screen = Screen::NetworkCheck;
+    }
+
+    /// Build a human-readable summary of the target network configuration
+    /// for the confirmation screen and install plan.
+    pub fn network_summary(&self) -> String {
+        let effective_mode = match self.target_network_mode {
+            TargetNetworkMode::CopyCurrent => match self.iso_network_mode {
+                NetworkMode::Dhcp => TargetNetworkMode::Dhcp,
+                NetworkMode::StaticIp => TargetNetworkMode::StaticIp,
+                NetworkMode::Ipv6Slaac => TargetNetworkMode::Ipv6Slaac,
+                NetworkMode::Offline => TargetNetworkMode::Offline,
+            },
+            other => other,
+        };
+        let static_cfg = match self.target_network_mode {
+            TargetNetworkMode::CopyCurrent => &self.iso_static_config,
+            _ => &self.target_static_config,
+        };
+        match effective_mode {
+            TargetNetworkMode::CopyCurrent => unreachable!(),
+            TargetNetworkMode::Dhcp => "DHCP (all Ethernet interfaces)".to_string(),
+            TargetNetworkMode::StaticIp => {
+                let iface = if static_cfg.interface.is_empty() {
+                    "en*"
+                } else {
+                    &static_cfg.interface
+                };
+                let mut s = format!(
+                    "Static IP: {} via {} on {}",
+                    static_cfg.ip_cidr, static_cfg.gateway, iface
+                );
+                if !static_cfg.dns.is_empty() {
+                    s.push_str(&format!("\n                DNS: {}", static_cfg.dns));
+                }
+                s
+            }
+            TargetNetworkMode::Ipv6Slaac => "IPv6 SLAAC only".to_string(),
+            TargetNetworkMode::Offline => "Offline (no network configuration)".to_string(),
+        }
+    }
+
+    /// Resolve the effective target `NetworkMode` (resolving `CopyCurrent`).
+    pub fn effective_target_network_mode(&self) -> NetworkMode {
+        match self.target_network_mode {
+            TargetNetworkMode::CopyCurrent => self.iso_network_mode,
+            TargetNetworkMode::Dhcp => NetworkMode::Dhcp,
+            TargetNetworkMode::StaticIp => NetworkMode::StaticIp,
+            TargetNetworkMode::Ipv6Slaac => NetworkMode::Ipv6Slaac,
+            TargetNetworkMode::Offline => NetworkMode::Offline,
+        }
+    }
+
+    /// Get the effective target static config (resolving `CopyCurrent`).
+    pub fn effective_target_static_config(&self) -> &StaticNetConfig {
+        match self.target_network_mode {
+            TargetNetworkMode::CopyCurrent => &self.iso_static_config,
+            _ => &self.target_static_config,
+        }
     }
 
     pub fn confirmation_text(&self) -> &str {
@@ -987,7 +1171,7 @@ mod tests {
         state.verity_check = VerityCheckState::Passed;
         assert!(state.verity_check_allows_advance());
         state.advance();
-        assert_eq!(state.screen, Screen::DiskSelection);
+        assert_eq!(state.screen, Screen::NetworkConfig);
     }
 
     // r[verify installer.tui.welcome+7]
@@ -998,7 +1182,7 @@ mod tests {
         assert_eq!(state.verity_check, VerityCheckState::NotNeeded);
         assert!(state.verity_check_allows_advance());
         state.advance();
-        assert_eq!(state.screen, Screen::DiskSelection);
+        assert_eq!(state.screen, Screen::NetworkConfig);
     }
 
     // r[verify iso.verity.check+6]
@@ -1076,29 +1260,47 @@ mod tests {
 
     // r[verify installer.tui.network-check+4]
     #[test]
-    fn welcome_advances_to_disk_selection() {
+    fn welcome_advances_to_network_config() {
         let mut state = make_state();
+        state.verity_check = VerityCheckState::NotNeeded;
+        state.advance();
+        assert_eq!(state.screen, Screen::NetworkConfig);
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_config_advances_to_disk_selection() {
+        let mut state = make_state();
+        state.screen = Screen::NetworkConfig;
         state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
-        assert!(state.net_checks_started);
     }
 
-    // r[verify installer.tui.network-check+4]
+    // r[verify installer.tui.network-config+13]
     #[test]
-    fn open_network_check_from_welcome() {
+    fn network_config_goes_back_to_welcome() {
         let mut state = make_state();
+        state.screen = Screen::NetworkConfig;
+        state.go_back();
+        assert_eq!(state.screen, Screen::Welcome);
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn open_network_check_from_network_config() {
+        let mut state = make_state();
+        state.screen = Screen::NetworkConfig;
         state.open_network_check();
         assert_eq!(state.screen, Screen::NetworkCheck);
-        assert!(state.net_checks_started);
     }
 
-    // r[verify installer.tui.network-check+4]
+    // r[verify installer.tui.network-config+13]
     #[test]
-    fn network_check_goes_back_to_welcome() {
+    fn network_check_goes_back_to_network_config() {
         let mut state = make_state();
         state.screen = Screen::NetworkCheck;
         state.go_back();
-        assert_eq!(state.screen, Screen::Welcome);
+        assert_eq!(state.screen, Screen::NetworkConfig);
     }
 
     // r[verify installer.tui.network-check+4]
@@ -1112,11 +1314,11 @@ mod tests {
 
     // r[verify installer.tui.network-check+4]
     #[test]
-    fn disk_selection_goes_back_to_welcome() {
+    fn disk_selection_goes_back_to_network_config() {
         let mut state = make_state();
         state.screen = Screen::DiskSelection;
         state.go_back();
-        assert_eq!(state.screen, Screen::Welcome);
+        assert_eq!(state.screen, Screen::NetworkConfig);
     }
 
     // r[verify installer.tui.network-check+4]
@@ -1200,6 +1402,8 @@ mod tests {
 
         assert_eq!(state.screen, Screen::Welcome);
         state.advance();
+        assert_eq!(state.screen, Screen::NetworkConfig);
+        state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
         assert_eq!(state.screen, Screen::DiskEncryption);
@@ -1227,6 +1431,8 @@ mod tests {
         state.hostname_from_dhcp = true;
 
         assert_eq!(state.screen, Screen::Welcome);
+        state.advance();
+        assert_eq!(state.screen, Screen::NetworkConfig);
         state.advance();
         assert_eq!(state.screen, Screen::DiskSelection);
         state.advance();
@@ -1276,19 +1482,23 @@ mod tests {
         state.disk_encryption = DiskEncryption::Tpm;
         state.screen = Screen::Confirmation;
 
+        // hostname_from_dhcp is true (always the default when no static
+        // hostname is configured), so Login goes back to Hostname selector
+        // (not HostnameInput).
         state.go_back();
         assert_eq!(state.screen, Screen::NetworkResults);
         state.go_back();
         assert_eq!(state.screen, Screen::Timezone);
         state.go_back();
         assert_eq!(state.screen, Screen::Login);
-        // hostname_from_dhcp is true (always the default), so Login goes back to Hostname selector
         state.go_back();
         assert_eq!(state.screen, Screen::Hostname);
         state.go_back();
         assert_eq!(state.screen, Screen::DiskEncryption);
         state.go_back();
         assert_eq!(state.screen, Screen::DiskSelection);
+        state.go_back();
+        assert_eq!(state.screen, Screen::NetworkConfig);
         state.go_back();
         assert_eq!(state.screen, Screen::Welcome);
     }
@@ -1385,6 +1595,142 @@ mod tests {
         state.screen = Screen::Error("test".into());
         state.advance();
         assert_eq!(state.screen, Screen::Error("test".into()));
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_config_prefilled_from_config() {
+        use crate::config::NetworkMode as NM;
+        let config = InstallConfig {
+            network_mode: Some(NM::StaticIp),
+            network_interface: Some("enp0s3".into()),
+            network_ip: Some("192.168.1.10/24".into()),
+            network_gateway: Some("192.168.1.1".into()),
+            network_dns: Some("8.8.8.8".into()),
+            network_domain: Some("example.com".into()),
+            iso_network_mode: Some(NM::StaticIp),
+            iso_network_interface: Some("eth0".into()),
+            iso_network_ip: Some("10.0.0.5/24".into()),
+            iso_network_gateway: Some("10.0.0.1".into()),
+            iso_network_dns: Some("1.1.1.1".into()),
+            iso_network_domain: Some("test.local".into()),
+            ..Default::default()
+        };
+        let state = AppState::new(
+            vec![],
+            DiskEncryption::None,
+            false,
+            &config,
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+            false,
+        );
+        assert_eq!(state.iso_network_mode, NM::StaticIp);
+        assert_eq!(state.iso_static_config.interface, "eth0");
+        assert_eq!(state.iso_static_config.ip_cidr, "10.0.0.5/24");
+        assert_eq!(state.iso_static_config.gateway, "10.0.0.1");
+        assert_eq!(state.iso_static_config.dns, "1.1.1.1");
+        assert_eq!(state.iso_static_config.search_domain, "test.local");
+        assert_eq!(state.target_network_mode, TargetNetworkMode::StaticIp);
+        assert_eq!(state.target_static_config.interface, "enp0s3");
+        assert_eq!(state.target_static_config.ip_cidr, "192.168.1.10/24");
+        assert_eq!(state.target_static_config.gateway, "192.168.1.1");
+        assert!(state.config_has_network_mode);
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_config_defaults_to_copy_current() {
+        let config = InstallConfig::default();
+        let state = AppState::new(
+            vec![],
+            DiskEncryption::None,
+            false,
+            &config,
+            None,
+            None,
+            String::new(),
+            test_timezones(),
+            false,
+        );
+        assert_eq!(state.iso_network_mode, NetworkMode::Dhcp);
+        assert_eq!(state.target_network_mode, TargetNetworkMode::CopyCurrent);
+        assert!(!state.config_has_network_mode);
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_summary_dhcp() {
+        let state = make_state();
+        // Default: CopyCurrent with ISO = DHCP => effective DHCP
+        assert_eq!(state.network_summary(), "DHCP (all Ethernet interfaces)");
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_summary_static() {
+        let mut state = make_state();
+        state.target_network_mode = TargetNetworkMode::StaticIp;
+        state.target_static_config = StaticNetConfig {
+            interface: "enp0s3".into(),
+            ip_cidr: "192.168.1.10/24".into(),
+            gateway: "192.168.1.1".into(),
+            dns: "8.8.8.8".into(),
+            search_domain: String::new(),
+        };
+        let summary = state.network_summary();
+        assert!(summary.contains("Static IP: 192.168.1.10/24 via 192.168.1.1 on enp0s3"));
+        assert!(summary.contains("DNS: 8.8.8.8"));
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_summary_offline() {
+        let mut state = make_state();
+        state.target_network_mode = TargetNetworkMode::Offline;
+        assert_eq!(
+            state.network_summary(),
+            "Offline (no network configuration)"
+        );
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_summary_ipv6_slaac() {
+        let mut state = make_state();
+        state.target_network_mode = TargetNetworkMode::Ipv6Slaac;
+        assert_eq!(state.network_summary(), "IPv6 SLAAC only");
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_summary_copy_current_static() {
+        let mut state = make_state();
+        state.target_network_mode = TargetNetworkMode::CopyCurrent;
+        state.iso_network_mode = NetworkMode::StaticIp;
+        state.iso_static_config = StaticNetConfig {
+            interface: "eth0".into(),
+            ip_cidr: "10.0.0.5/24".into(),
+            gateway: "10.0.0.1".into(),
+            dns: String::new(),
+            search_domain: String::new(),
+        };
+        let summary = state.network_summary();
+        assert!(summary.contains("Static IP: 10.0.0.5/24 via 10.0.0.1 on eth0"));
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn effective_target_mode_resolves_copy_current() {
+        let mut state = make_state();
+        state.target_network_mode = TargetNetworkMode::CopyCurrent;
+        state.iso_network_mode = NetworkMode::Ipv6Slaac;
+        assert_eq!(
+            state.effective_target_network_mode(),
+            NetworkMode::Ipv6Slaac
+        );
     }
 
     // r[verify installer.tui.hostname+6]
