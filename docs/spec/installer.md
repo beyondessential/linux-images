@@ -339,7 +339,7 @@ pre-write corruption message from `r[iso.verity.failure]`. The `q` (reboot)
 and `Ctrl+Alt+d` (shell) keybinds remain available during the check. If
 verity is not active, no progress bar is shown and Enter works immediately.
 
-> r[installer.tui.network-config+12]
+> r[installer.tui.network-config+13]
 > After the welcome screen, the TUI must present a "Network Configuration"
 > screen. This screen configures networking for both the live ISO environment
 > and the installation target. It uses an accordion layout with two panes:
@@ -372,8 +372,7 @@ verity is not active, no progress bar is shown and Enter works immediately.
 >    - Offline
 > 4. When "Static IP" is selected, additional fields appear:
 >    - **Interface**: a dropdown of detected physical interfaces (excluding
->      `lo`, `docker*`, `veth*`, `br-*`, `tailscale*`). Interfaces are
->      detected via `ip -j link show`.
+>      `lo`, `docker*`, `veth*`, `br-*`, `tailscale*`).
 >    - **IP address**: a text input accepting CIDR notation (e.g.
 >      `192.168.1.10/24`). If the user moves focus away from this field
 >      without a `/xx` suffix, `/24` is appended automatically.
@@ -383,22 +382,19 @@ verity is not active, no progress bar is shown and Enter works immediately.
 >    - **Search domain** (optional): a text input (e.g. `example.com`).
 >
 > When the network mode or any static field changes, the live network is
-> reconfigured after a 500 ms debounce. Reconfiguration writes a netplan
-> YAML to `/etc/netplan/90-installer.yaml` and runs `netplan apply`. During
-> apply the status shows "Configuring...". After apply, connectivity is
-> re-probed and the network check results (if previously run) are
-> invalidated and restarted.
+> reconfigured after a short debounce. During reconfiguration the status
+> shows "Configuring...". After reconfiguration, connectivity is re-probed
+> and the network check results (if previously run) are invalidated and
+> restarted.
 >
-> When mode is "DHCP", any installer-written netplan file is removed and
-> `netplan apply` is run to revert to the base DHCP configuration.
+> When mode is "DHCP", the live network reverts to the base DHCP
+> configuration.
 >
-> When mode is "IPv6 SLAAC only", the installer-written netplan sets
-> `dhcp4: false`, `dhcp6: false`, `accept-ra: true` on the selected
-> interface.
+> When mode is "IPv6 SLAAC only", the live network is configured with
+> IPv4 disabled and IPv6 stateless address autoconfiguration (SLAAC)
+> enabled on the selected interface.
 >
-> When mode is "Offline", all managed interfaces are deconfigured by
-> removing the installer-written netplan and the base DHCP netplan and
-> running `netplan apply`.
+> When mode is "Offline", all managed interfaces are deconfigured.
 >
 > ### Target pane
 >
@@ -440,7 +436,7 @@ verity is not active, no progress bar is shown and Enter works immediately.
 >
 > Pressing `y` advances. Pressing `n` or `Esc` returns to the target pane.
 
-> r[installer.tui.network-check+5]
+> r[installer.tui.network-check+6]
 > The TUI must perform network connectivity checks in the background,
 > starting automatically when the network configuration screen is first
 > shown. The checks run against the following endpoints in parallel:
@@ -475,9 +471,7 @@ verity is not active, no progress bar is shown and Enter works immediately.
 >
 > The two network panes (Connectivity and Tailscale Netcheck) are displayed
 > as an accordion: the active pane is expanded and the inactive pane is
-> collapsed to a title bar. Both panes use the same border color (normal
-> text, not dimmed or accented) so the active/inactive distinction comes
-> from the expanded-vs-collapsed layout alone. Each pane's title bar
+> collapsed to a title bar. Each pane's title bar
 > includes a status indicator: a spinner or "Running..." while in progress,
 > "All passed" or "N/M passed" when done for connectivity, and "OK" or
 > "Failed" when done for tailscale netcheck. There is no separate summary
@@ -974,7 +968,7 @@ the source log file does not exist), the installer must log a warning but
 must not treat it as a fatal error. There is no TUI control for this
 option.
 
-> r[installer.finalise.network+3]
+> r[installer.finalise.network+4]
 > After applying other install-time configuration, the installer must write
 > the target network configuration to the installed system as a netplan YAML
 > file with mode 0600:
@@ -987,9 +981,9 @@ option.
 >   (CIDR), gateway, and optional DNS/search-domain settings, and removes
 >   the base `01-all-en-dhcp.yaml`.
 > - **IPv6 SLAAC only**: the installer writes
->   `/etc/netplan/01-installer-ipv6-slaac.yaml` with `dhcp4: false`,
->   `dhcp6: false`, `accept-ra: true` on the selected interface, and removes
->   the base `01-all-en-dhcp.yaml`.
+>   `/etc/netplan/01-installer-ipv6-slaac.yaml` configured for IPv6 SLAAC
+>   on the selected interface (IPv4 disabled), and removes the base
+>   `01-all-en-dhcp.yaml`.
 > - **Offline**: the installer removes `01-all-en-dhcp.yaml` and writes no
 >   replacement.
 > - **Copy current (non-DHCP)**: the effective ISO config is resolved first
