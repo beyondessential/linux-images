@@ -124,8 +124,8 @@ MD
 step3
 
 # r[verify installer.finalise.tailscale-auth]
-# r[verify installer.tui.tailscale-netcheck+2]
-# r[verify installer.tui.network-check+4]
+# r[verify installer.tui.tailscale-netcheck+3]
+# r[verify installer.tui.network-check+6]
 step4() {
     cat << 'MD'
 ## Step 4: Interactive Installer with Real Tailscale Key
@@ -187,8 +187,8 @@ step4
 # r[verify iso.boot.autostart+4]
 # r[verify iso.live-boot]
 # r[verify iso.offline]
-# r[verify installer.tui.welcome+7]
-# r[verify installer.tui.confirmation+7]
+# r[verify installer.tui.welcome+8]
+# r[verify installer.tui.confirmation+8]
 # r[verify installer.tui.ascii-rendering]
 # r[verify installer.tui.error-reboot]
 # r[verify installer.write.expand-root]
