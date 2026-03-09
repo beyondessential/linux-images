@@ -73,7 +73,7 @@ fn dry_run_output_to_stdout() {
     assert_eq!(plan["disk_encryption"], "tpm");
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
 fn plan_contains_all_required_fields() {
     let f = Fixture::new();
@@ -111,7 +111,6 @@ fn plan_contains_all_required_fields() {
     let required_top = [
         "mode",
         "disk_encryption",
-        "variant",
         "disk",
         "tpm_present",
         "install_config",
@@ -129,12 +128,17 @@ fn plan_contains_all_required_fields() {
     }
 
     let fb = plan["install_config"].as_object().unwrap();
-    for key in &["hostname", "tailscale_authkey", "ssh_authorized_keys_count"] {
+    for key in &[
+        "hostname",
+        "tailscale_authkey",
+        "ssh_authorized_keys_count",
+        "network",
+    ] {
         assert!(fb.contains_key(*key), "missing install_config key: {key}");
     }
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
 fn plan_tailscale_authkey_is_bool_not_string() {
     let f = Fixture::new();

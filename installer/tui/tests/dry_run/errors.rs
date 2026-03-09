@@ -194,7 +194,6 @@ fn error_disk_path_not_found() {
         .stderr(predicates::str::contains("not found"));
 }
 
-// r[verify installer.container.error-logging]
 #[test]
 fn error_logged_to_file() {
     let f = Fixture::new();

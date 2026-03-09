@@ -22,11 +22,15 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
         "\
 # Welcome
 enter
-# Disk
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
+# Disk: accept default
 enter
 # DiskEncryption: accept default (tpm)
 enter
-# Hostname selector: Static is default (hostname prefilled), Enter -> HostnameInput
+# Hostname selector: Static is default (hostname prefilled from config), Enter -> HostnameInput
 enter
 # HostnameInput: accept prefilled hostname, Enter -> Login
 enter
@@ -67,7 +71,6 @@ enter
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "prefilled");
     assert_eq!(plan["disk_encryption"], "tpm");
-    assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
     assert_eq!(plan["install_config"]["hostname"], "prefilled-host");
     assert!(
@@ -100,14 +103,18 @@ fn prefilled_overriding_values_via_tui() {
         "\
 # Welcome
 enter
-# Disk: move down to second, accept
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
+# Disk: move down to second, accept (extra enter was already present via 'down' + 'enter')
 down
 enter
 # DiskEncryption: cycle Tpm -> Keyfile -> None
 down
 down
 enter
-# Hostname selector: Static is default (hostname prefilled), Enter -> HostnameInput
+# Hostname selector: Static is default (hostname prefilled from config), Enter -> HostnameInput
 enter
 # HostnameInput: clear 'old-host' (8 chars), type 'new-host'
 backspace
@@ -153,7 +160,6 @@ enter
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "prefilled");
     assert_eq!(plan["disk_encryption"], "none");
-    assert_eq!(plan["variant"], "cloud");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
     assert_eq!(plan["install_config"]["hostname"], "new-host");
 }
@@ -177,11 +183,15 @@ fn prefilled_timezone_from_config() {
         "\
 # Welcome
 enter
-# Disk
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
+# Disk: accept default
 enter
 # DiskEncryption: accept default (none, from config)
 enter
-# Hostname selector: network-assigned is default for none, Enter -> Login
+# Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password
 type:pw

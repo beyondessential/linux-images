@@ -28,10 +28,10 @@ and sized 1 GiB.
 
 ## BTRFS Configuration
 
-r[image.btrfs.format]
-The root partition (or the LUKS volume on top of it, for the metal variant)
-must be formatted as BTRFS with the label `ROOT`, the xxhash checksum
-algorithm, and the `block-group-tree` and `squota` features enabled.
+r[image.btrfs.format+2]
+The root partition (or the LUKS volume on top of it, for the encrypted
+variant) must be formatted as BTRFS with the label `ROOT`, the xxhash
+checksum algorithm, and the `block-group-tree` and `squota` features enabled.
 
 r[image.btrfs.subvolumes]
 The BTRFS filesystem must contain two subvolumes: `@` mounted at `/`, and
@@ -46,8 +46,8 @@ BTRFS simple quotas must be enabled on the filesystem.
 
 ## Variants
 
-> r[image.variant.types+2]
-> Two image variants must be supported: `metal` and `cloud`.
+> r[image.variant.types+3]
+> Two build-time image variants must be supported: `metal` and `cloud`.
 >
 > The `metal` variant encrypts the root partition with LUKS2. It is intended
 > for bare-metal and on-premise virtualisation. The image ships with a
@@ -56,10 +56,15 @@ BTRFS simple quotas must be enabled on the filesystem.
 > recovery passphrase) at install time.
 >
 > The `cloud` variant does not encrypt the root partition. It is intended for
-> cloud environments where encryption at rest is provided by the infrastructure.
+> cloud environments where encryption at rest is provided by the
+> infrastructure. The ISO installer is built from the cloud image.
 >
-> The active variant name must be written to `/etc/bes/image-variant` in the
-> installed system so that runtime scripts can branch on it.
+> The file `/etc/bes/image-variant` records the disk-encryption mode of the
+> running system. Build-time images write the build variant (`metal` or
+> `cloud`). The installer overwrites this with the user's chosen encryption
+> mode: `luks-tpm`, `luks-keyfile`, or `plain`. Runtime scripts must not
+> assume the file contains only `metal` or `cloud`; they should detect the
+> actual situation (e.g. whether LUKS is active) instead.
 
 ## Base System
 
@@ -73,6 +78,19 @@ unique machine ID on each first boot.
 
 r[image.base.resolver]
 systemd-resolved must be enabled and configured as the system DNS resolver.
+
+r[image.base.network+2]
+A netplan configuration must be installed at
+`/etc/netplan/01-all-en-dhcp.yaml` that matches all Ethernet interfaces
+(`en*`) and enables DHCPv4. This ensures that all images obtain an IP
+address on first boot regardless of whether cloud-init or any other
+datasource is present.
+
+r[image.base.console-font]
+The `console-setup` and `kbd` packages must be installed so that
+`systemd-vconsole-setup.service` configures the Linux console with a
+readable font at boot. `/etc/default/console-setup` must be present with
+`FONTFACE="Fixed"` and `FONTSIZE="8x16"`.
 
 ## Packages
 
@@ -102,6 +120,29 @@ r[image.boot.dracut]
 The initramfs must be generated using dracut, not initramfs-tools. Dracut must
 be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 
+> r[image.boot.hardware-drivers+3]
+> Both variants must force-include kernel modules into the initramfs for
+> hardware not present at image-build time. The following module categories
+> must be included:
+>
+> - **NVMe:** `nvme`, `nvme_core`
+> - **SATA/AHCI:** `ahci`
+> - **RAID controllers:** `megaraid_sas`, `mpt3sas`
+> - **Virtio (KVM/Proxmox/GCP/OpenStack):** `virtio_blk`, `virtio_scsi`,
+>   `virtio_net`, `virtio_pci`
+> - **Intel Ethernet:** `e1000e`, `igb`, `ixgbe`, `i40e`, `ice`
+> - **Broadcom Ethernet:** `bnxt_en`, `tg3`
+> - **Mellanox/NVIDIA Ethernet:** `mlx5_core`
+> - **USB storage:** `usb_storage`, `uas`
+> - **Hyper-V:** `hv_storvsc`, `hv_netvsc`, `hv_vmbus`
+
+> r[image.boot.cloud-drivers+5]
+> The cloud variant must additionally force-include cloud-specific kernel
+> modules into the initramfs:
+>
+> - **AWS:** `ena`, `xen_blkfront`
+> - **GCP:** `gve`
+
 r[image.boot.grub-install]
 GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
 
@@ -111,6 +152,11 @@ GRUB must be configured with `GRUB_TIMEOUT=5`,
 
 r[image.boot.grub-cmdline]
 The GRUB kernel command line must include `noresume`.
+
+r[image.boot.cloud-console]
+The cloud variant must append `console=ttyS0,115200n8` to the GRUB kernel
+command line so that boot output is visible on the EC2 serial console (and
+equivalent serial consoles on other cloud providers).
 
 r[image.boot.grub-uuids]
 The generated `grub.cfg` must reference filesystem UUIDs that match the
@@ -178,18 +224,15 @@ be enabled.
 
 ## Disk Growth
 
-r[image.growth.service]
-A systemd service `grow-root-filesystem.service` must run early at boot
-(before user sessions, before LUKS re-encryption) to expand the root partition
-and filesystem if additional disk space is available.
-
-> r[image.growth.script]
-> The growth script at `/usr/local/bin/grow-root-filesystem` must, in order:
+> r[image.growth.service+3]
+> A systemd service `grow-root-filesystem.service` must run early at boot
+> (before user sessions, before LUKS re-encryption) to expand the root partition
+> and filesystem if additional disk space is available. It must, in order:
 >
 > 1. Move the GPT secondary header to the end of the disk.
-> 2. Run `growpart` on the root partition.
-> 3. If the metal variant, run `cryptsetup resize root`.
-> 4. Run `btrfs filesystem resize max /`.
+> 2. Expand the root partition to fill available space.
+> 3. If LUKS is active, resize the LUKS container.
+> 4. Resize the BTRFS filesystem to fill the partition (or LUKS volume).
 
 ## Credentials
 
@@ -203,6 +246,15 @@ The `root` user must have its shell set to `/sbin/nologin`.
 r[image.credentials.ssh-keys-only]
 SSH password authentication must be disabled. Only key-based authentication
 is permitted over SSH.
+
+r[image.credentials.no-host-keys]
+The image must not contain SSH host keys (`/etc/ssh/ssh_host_*`). The
+openssh-server package generates host keys at install time, but these must
+be deleted during the image build so that each deployed instance generates
+its own unique keys on first boot. Shipping shared host keys is a security
+risk (enables MITM) and leaks the build machine's hostname in the key
+comment. cloud-init's `ssh` module and Ubuntu's `sshd-keygen` generator
+both regenerate missing host keys automatically.
 
 ## Cloud-Init
 
@@ -222,18 +274,19 @@ The /etc/machine-id file must be blank in the image so it's unique per install.
 
 ## Hostname
 
-r[image.hostname.metal-dhcp]
-The metal image must ship with an empty `/etc/hostname` (zero bytes) so that
-`systemd-hostnamed` accepts DHCP-provided transient hostnames. `/etc/hosts`
-must contain only `localhost` entries (no `127.0.1.1` line).
+r[image.hostname.metal-dhcp+2]
+The metal build-time image must ship with an empty `/etc/hostname` (zero
+bytes) so that `systemd-hostnamed` accepts DHCP-provided transient
+hostnames. `/etc/hosts` must contain only `localhost` entries (no
+`127.0.1.1` line).
 
-r[image.hostname.cloud-default]
-The cloud image must ship with `ubuntu` as the static hostname in
-`/etc/hostname`. Cloud-init with `create_hostname_file: false` prevents
-cloud-init from touching this file; the hostname comes from DHCP or instance
-metadata at runtime.
+r[image.hostname.cloud-default+2]
+The cloud build-time image must ship with `ubuntu` as the static hostname
+in `/etc/hostname`. Cloud-init with `create_hostname_file: false` prevents
+cloud-init from touching this file; the hostname comes from DHCP or
+instance metadata at runtime.
 
-## Encryption (Metal Variant)
+## Encryption (Metal Build Variant)
 
 ### LUKS
 

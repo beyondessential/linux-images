@@ -16,6 +16,16 @@ The dtolnay/rust-toolchain action must not be used.
 r[ci.rust-cache]
 The "swatinem" rust caching system must be used.
 
+r[ci.installer-target]
+The installer binary must be built with the `*-unknown-linux-gnu` Rust
+target (not musl). The binary runs inside the live ISO rootfs, which is an
+Ubuntu system with glibc, so static linking is unnecessary. The CI runner's
+glibc version must be less than or equal to the glibc in the ISO rootfs
+(set by `r[ci.output-suite]`), because glibc is forward-compatible but not
+backward-compatible. When upgrading the Ubuntu suite for the ISO, verify
+that the CI runner's glibc does not exceed the new suite's glibc before
+merging.
+
 r[ci.output-arch]
 CI must produce at least `amd64` and `arm64` outputs.
 

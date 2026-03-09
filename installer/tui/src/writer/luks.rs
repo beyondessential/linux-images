@@ -4,6 +4,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
+use crate::paths;
 pub(crate) use crate::util::create_passphrase_keyfile;
 
 pub(crate) const LUKS_NAME: &str = "bes-target-root";
@@ -17,7 +18,7 @@ pub fn format_luks_for_root(root_partition: &Path, passphrase: &str) -> Result<P
 
     let keyfile = create_passphrase_keyfile(passphrase)?;
 
-    let output = Command::new("cryptsetup")
+    let output = Command::new(paths::CRYPTSETUP)
         .args([
             "luksFormat",
             "--type",
@@ -39,7 +40,7 @@ pub fn format_luks_for_root(root_partition: &Path, passphrase: &str) -> Result<P
         root_partition.display()
     );
 
-    let output = Command::new("cryptsetup")
+    let output = Command::new(paths::CRYPTSETUP)
         .args([
             "open",
             "--type",
@@ -65,7 +66,7 @@ pub fn format_luks_for_root(root_partition: &Path, passphrase: &str) -> Result<P
 // r[impl installer.write.luks-before-write+2]
 pub fn close_luks_root() -> Result<()> {
     tracing::info!("closing LUKS volume {LUKS_NAME}");
-    let output = Command::new("cryptsetup")
+    let output = Command::new(paths::CRYPTSETUP)
         .args(["close", LUKS_NAME])
         .output()
         .context("running cryptsetup close")?;
@@ -78,14 +79,22 @@ pub fn close_luks_root() -> Result<()> {
 }
 
 pub(crate) fn open_luks_root(root_partition: &Path, passphrase: &str) -> Result<PathBuf> {
+    open_luks_root_as(root_partition, passphrase, LUKS_NAME)
+}
+
+pub(crate) fn open_luks_root_as(
+    root_partition: &Path,
+    passphrase: &str,
+    mapper_name: &str,
+) -> Result<PathBuf> {
     let keyfile = create_passphrase_keyfile(passphrase)?;
 
     tracing::info!(
-        "opening LUKS volume on {} as {LUKS_NAME}",
+        "opening LUKS volume on {} as {mapper_name}",
         root_partition.display()
     );
 
-    let output = Command::new("cryptsetup")
+    let output = Command::new(paths::CRYPTSETUP)
         .args([
             "open",
             "--type",
@@ -93,7 +102,7 @@ pub(crate) fn open_luks_root(root_partition: &Path, passphrase: &str) -> Result<
             "--key-file",
             keyfile.to_str().unwrap_or_default(),
             root_partition.to_str().unwrap_or_default(),
-            LUKS_NAME,
+            mapper_name,
         ])
         .output()
         .context("running cryptsetup open")?;
@@ -105,5 +114,19 @@ pub(crate) fn open_luks_root(root_partition: &Path, passphrase: &str) -> Result<
         bail!("cryptsetup open failed: {stderr}");
     }
 
-    Ok(PathBuf::from(format!("/dev/mapper/{LUKS_NAME}")))
+    Ok(PathBuf::from(format!("/dev/mapper/{mapper_name}")))
+}
+
+pub(crate) fn close_luks(mapper_name: &str) -> Result<()> {
+    tracing::info!("closing LUKS volume {mapper_name}");
+    let output = Command::new(paths::CRYPTSETUP)
+        .args(["close", mapper_name])
+        .output()
+        .context("running cryptsetup close")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("cryptsetup close failed: {stderr}");
+    }
+    Ok(())
 }

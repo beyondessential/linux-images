@@ -6,7 +6,8 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use sha_crypt::{Sha512Params, sha512_simple};
 
-use crate::config::{DiskEncryption, InstallConfig};
+use crate::config::{DiskEncryption, InstallConfig, NetworkMode};
+use crate::paths;
 use crate::util::{partition_path, run_command};
 use crate::writer;
 
@@ -31,7 +32,7 @@ pub fn mount_target(
     disk_encryption: DiskEncryption,
     passphrase: Option<&str>,
 ) -> Result<MountedTarget> {
-    // r[impl installer.container.partition-devices+2]
+    // r[impl installer.container.partition-devices+3]
     writer::ensure_partition_devices(target_device)
         .context("ensuring partition device nodes exist")?;
 
@@ -48,7 +49,7 @@ pub fn mount_target(
     fs::create_dir_all(&mount_path).context("creating mount point")?;
 
     run_command(
-        "mount",
+        paths::MOUNT,
         &[
             "-t",
             "btrfs",
@@ -68,8 +69,11 @@ pub fn mount_target(
 
 // r[impl installer.finalise.unmount]
 pub fn unmount_target(target: MountedTarget) -> Result<()> {
-    run_command("umount", &[target.mount_path.to_str().unwrap_or_default()])
-        .context("unmounting target root")?;
+    run_command(
+        paths::UMOUNT,
+        &[target.mount_path.to_str().unwrap_or_default()],
+    )
+    .context("unmounting target root")?;
 
     if target.luks_active {
         writer::close_luks_root()?;
@@ -126,6 +130,9 @@ pub fn apply_firstboot(
     let tz = config.timezone.as_deref().unwrap_or("UTC");
     apply_timezone(root, tz)?;
 
+    // r[impl installer.finalise.network+4]
+    apply_network_config(root, config)?;
+
     Ok(())
 }
 
@@ -135,14 +142,13 @@ pub fn apply_timezone_default(target: &MountedTarget) -> Result<()> {
 }
 
 // r[impl installer.write.fstab-fixup]
-// r[impl installer.write.variant-fixup]
-pub fn fixup_for_metal_variant(
+pub fn fixup_for_encrypted_install(
     target: &MountedTarget,
     install_config: &InstallConfig,
 ) -> Result<()> {
     let root = target.path();
 
-    tracing::info!("applying metal variant fixups");
+    tracing::info!("applying encrypted-install fixups");
 
     // Rewrite /etc/fstab: replace by-partlabel/root with /dev/mapper/root
     let fstab_path = root.join("etc/fstab");
@@ -151,23 +157,16 @@ pub fn fixup_for_metal_variant(
         let new_contents = contents.replace("/dev/disk/by-partlabel/root", "/dev/mapper/root");
         if new_contents != contents {
             fs::write(&fstab_path, &new_contents).context("writing target /etc/fstab")?;
-            tracing::info!("rewrote /etc/fstab for metal variant");
+            tracing::info!("rewrote /etc/fstab for encrypted install");
         }
     }
-
-    // Write variant marker
-    let variant_dir = root.join("etc/bes");
-    fs::create_dir_all(&variant_dir).context("creating /etc/bes")?;
-    let variant_path = variant_dir.join("image-variant");
-    fs::write(&variant_path, "metal\n").context("writing /etc/bes/image-variant")?;
-    tracing::info!("set image-variant to metal");
 
     // Truncate /etc/hostname if no explicit hostname is configured
     let has_hostname = install_config.has_hostname_config();
     if !has_hostname {
         let hostname_path = root.join("etc/hostname");
-        fs::write(&hostname_path, "").context("truncating /etc/hostname for metal")?;
-        tracing::info!("truncated /etc/hostname for metal variant (no explicit hostname)");
+        fs::write(&hostname_path, "").context("truncating /etc/hostname (no explicit hostname)")?;
+        tracing::info!("truncated /etc/hostname (no explicit hostname)");
     }
 
     // Create /etc/luks/empty-keyfile with mode 000
@@ -179,6 +178,17 @@ pub fn fixup_for_metal_variant(
         .context("setting empty-keyfile permissions to 000")?;
     tracing::info!("created /etc/luks/empty-keyfile");
 
+    Ok(())
+}
+
+// r[impl installer.write.variant-fixup+2]
+pub fn write_image_variant(root: &Path, variant_str: &str) -> Result<()> {
+    let variant_dir = root.join("etc/bes");
+    fs::create_dir_all(&variant_dir).context("creating /etc/bes")?;
+    let variant_path = variant_dir.join("image-variant");
+    fs::write(&variant_path, format!("{variant_str}\n"))
+        .context("writing /etc/bes/image-variant")?;
+    tracing::info!("set image-variant to {variant_str}");
     Ok(())
 }
 
@@ -359,22 +369,22 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
     let resolv_path = root.join("etc/resolv.conf");
 
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/proc", proc_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /proc for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/sys", sys_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /sys for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/dev", dev_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /dev for tailscale auth")?;
     run_command(
-        "mount",
+        paths::MOUNT,
         &["--bind", "/run", run_path.to_str().unwrap_or_default()],
     )
     .context("bind-mounting /run for tailscale auth")?;
@@ -395,7 +405,7 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
 
     tracing::info!("attempting tailscale auth via chroot into {mount_str}");
 
-    let output = Command::new("chroot")
+    let output = Command::new(paths::CHROOT)
         .args([mount_str, "tailscale", "up", "--auth-key", authkey, "--ssh"])
         .output()
         .context("spawning chroot tailscale up")?;
@@ -404,10 +414,10 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
     if copied_resolv {
         let _ = fs::remove_file(&resolv_path);
     }
-    let _ = run_command("umount", &[run_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[dev_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[sys_path.to_str().unwrap_or_default()]);
-    let _ = run_command("umount", &[proc_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[run_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[dev_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[sys_path.to_str().unwrap_or_default()]);
+    let _ = run_command(paths::UMOUNT, &[proc_path.to_str().unwrap_or_default()]);
 
     if output.status.success() {
         tracing::info!("tailscale auth succeeded via chroot");
@@ -490,9 +500,426 @@ fn resolve_uid_gid_from_passwd(root: &Path, username: &str) -> Result<(u32, u32)
     bail!("user '{username}' not found in target /etc/passwd");
 }
 
+const BASE_DHCP_NETPLAN: &str = "01-all-en-dhcp.yaml";
+const NETPLAN_DIR: &str = "etc/netplan";
+
+// r[impl installer.finalise.network+4]
+fn apply_network_config(root: &Path, config: &InstallConfig) -> Result<()> {
+    let mode = config.network_mode.unwrap_or(NetworkMode::Dhcp);
+    let netplan_dir = root.join(NETPLAN_DIR);
+    fs::create_dir_all(&netplan_dir).context("creating netplan directory")?;
+
+    let base_dhcp_path = netplan_dir.join(BASE_DHCP_NETPLAN);
+
+    match mode {
+        NetworkMode::Dhcp => {
+            tracing::info!("target network: DHCP (leaving base netplan as-is)");
+        }
+        NetworkMode::StaticIp => {
+            let yaml = generate_static_netplan(config);
+            let dest = netplan_dir.join("01-installer-static.yaml");
+            fs::write(&dest, &yaml).context("writing static netplan")?;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(0o600))
+                .context("setting static netplan permissions")?;
+            remove_base_dhcp(&base_dhcp_path);
+            tracing::info!("target network: wrote static netplan");
+        }
+        NetworkMode::Ipv6Slaac => {
+            let yaml = generate_ipv6_slaac_netplan(config);
+            let dest = netplan_dir.join("01-installer-ipv6-slaac.yaml");
+            fs::write(&dest, &yaml).context("writing IPv6 SLAAC netplan")?;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(0o600))
+                .context("setting IPv6 SLAAC netplan permissions")?;
+            remove_base_dhcp(&base_dhcp_path);
+            tracing::info!("target network: wrote IPv6 SLAAC netplan");
+        }
+        NetworkMode::Offline => {
+            remove_base_dhcp(&base_dhcp_path);
+            tracing::info!("target network: offline (removed base DHCP netplan)");
+        }
+    }
+
+    Ok(())
+}
+
+fn remove_base_dhcp(path: &Path) {
+    if path.exists()
+        && let Err(e) = fs::remove_file(path)
+    {
+        tracing::warn!("failed to remove base DHCP netplan {}: {e}", path.display());
+    }
+}
+
+fn generate_static_netplan(config: &InstallConfig) -> String {
+    let iface = config.network_interface.as_deref().unwrap_or_default();
+
+    let ip = config.network_ip.as_deref().unwrap_or_default();
+    let gw = config.network_gateway.as_deref().unwrap_or_default();
+
+    let match_block = if iface.is_empty() {
+        "      match:\n        name: \"en*\"\n".to_string()
+    } else {
+        format!("      match:\n        name: \"{iface}\"\n")
+    };
+
+    let id = if iface.is_empty() { "all-en" } else { iface };
+
+    let mut yaml = format!(
+        "network:\n  version: 2\n  ethernets:\n    {id}:\n{match_block}      addresses:\n        - {ip}\n      routes:\n        - to: default\n          via: {gw}\n"
+    );
+
+    if let Some(ref dns) = config.network_dns {
+        let dns = dns.trim();
+        if !dns.is_empty() {
+            let servers: Vec<&str> = dns.split(',').map(|s| s.trim()).collect();
+            yaml.push_str("      nameservers:\n        addresses:\n");
+            for server in &servers {
+                yaml.push_str(&format!("          - {server}\n"));
+            }
+            if let Some(ref domain) = config.network_domain {
+                let domain = domain.trim();
+                if !domain.is_empty() {
+                    yaml.push_str(&format!("        search:\n          - {domain}\n"));
+                }
+            }
+        }
+    }
+
+    yaml
+}
+
+fn generate_ipv6_slaac_netplan(config: &InstallConfig) -> String {
+    let iface = config.network_interface.as_deref().unwrap_or_default();
+
+    let match_block = if iface.is_empty() {
+        "      match:\n        name: \"en*\"\n".to_string()
+    } else {
+        format!("      match:\n        name: \"{iface}\"\n")
+    };
+
+    let id = if iface.is_empty() { "all-en" } else { iface };
+
+    format!(
+        "network:\n  version: 2\n  ethernets:\n    {id}:\n{match_block}      dhcp4: false\n      accept-ra: true\n"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_dhcp_leaves_base_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+        fs::write(
+            netplan_dir.join("01-all-en-dhcp.yaml"),
+            "network:\n  version: 2\n",
+        )
+        .unwrap();
+
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::Dhcp),
+            ..Default::default()
+        };
+        apply_network_config(dir.path(), &config).unwrap();
+
+        assert!(
+            netplan_dir.join("01-all-en-dhcp.yaml").exists(),
+            "base DHCP file should be preserved for DHCP mode"
+        );
+        assert!(
+            !netplan_dir.join("01-installer-static.yaml").exists(),
+            "no static file should be written for DHCP mode"
+        );
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_default_is_dhcp() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+        fs::write(
+            netplan_dir.join("01-all-en-dhcp.yaml"),
+            "network:\n  version: 2\n",
+        )
+        .unwrap();
+
+        let config = InstallConfig::default();
+        apply_network_config(dir.path(), &config).unwrap();
+
+        assert!(netplan_dir.join("01-all-en-dhcp.yaml").exists());
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_static_writes_file_and_removes_base() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+        fs::write(
+            netplan_dir.join("01-all-en-dhcp.yaml"),
+            "network:\n  version: 2\n",
+        )
+        .unwrap();
+
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_interface: Some("enp0s3".into()),
+            network_ip: Some("192.168.1.10/24".into()),
+            network_gateway: Some("192.168.1.1".into()),
+            network_dns: Some("8.8.8.8, 1.1.1.1".into()),
+            network_domain: Some("example.com".into()),
+            ..Default::default()
+        };
+        apply_network_config(dir.path(), &config).unwrap();
+
+        assert!(
+            !netplan_dir.join("01-all-en-dhcp.yaml").exists(),
+            "base DHCP file should be removed for static mode"
+        );
+
+        let static_path = netplan_dir.join("01-installer-static.yaml");
+        assert!(
+            static_path.exists(),
+            "static netplan file should be written"
+        );
+
+        let perms = fs::metadata(&static_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(perms, 0o600);
+
+        let contents = fs::read_to_string(&static_path).unwrap();
+        assert!(contents.contains("192.168.1.10/24"));
+        assert!(contents.contains("192.168.1.1"));
+        assert!(contents.contains("enp0s3"));
+        assert!(contents.contains("8.8.8.8"));
+        assert!(contents.contains("1.1.1.1"));
+        assert!(contents.contains("example.com"));
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_static_without_interface_uses_wildcard() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_ip: Some("10.0.0.5/16".into()),
+            network_gateway: Some("10.0.0.1".into()),
+            ..Default::default()
+        };
+        apply_network_config(dir.path(), &config).unwrap();
+
+        let contents = fs::read_to_string(netplan_dir.join("01-installer-static.yaml")).unwrap();
+        assert!(
+            contents.contains("\"en*\""),
+            "should use en* wildcard when no interface specified"
+        );
+        assert!(contents.contains("10.0.0.5/16"));
+        assert!(contents.contains("10.0.0.1"));
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_static_without_dns() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_interface: Some("eth0".into()),
+            network_ip: Some("10.0.0.5/24".into()),
+            network_gateway: Some("10.0.0.1".into()),
+            ..Default::default()
+        };
+        apply_network_config(dir.path(), &config).unwrap();
+
+        let contents = fs::read_to_string(netplan_dir.join("01-installer-static.yaml")).unwrap();
+        assert!(
+            !contents.contains("nameservers"),
+            "should not include nameservers when DNS is not set"
+        );
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_ipv6_slaac_writes_file_and_removes_base() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+        fs::write(
+            netplan_dir.join("01-all-en-dhcp.yaml"),
+            "network:\n  version: 2\n",
+        )
+        .unwrap();
+
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::Ipv6Slaac),
+            network_interface: Some("enp0s3".into()),
+            ..Default::default()
+        };
+        apply_network_config(dir.path(), &config).unwrap();
+
+        assert!(
+            !netplan_dir.join("01-all-en-dhcp.yaml").exists(),
+            "base DHCP file should be removed for IPv6 SLAAC mode"
+        );
+
+        let slaac_path = netplan_dir.join("01-installer-ipv6-slaac.yaml");
+        assert!(slaac_path.exists());
+
+        let perms = fs::metadata(&slaac_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(perms, 0o600);
+
+        let contents = fs::read_to_string(&slaac_path).unwrap();
+        assert!(contents.contains("dhcp4: false"));
+        assert!(contents.contains("accept-ra: true"));
+        assert!(contents.contains("enp0s3"));
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_ipv6_slaac_without_interface_uses_wildcard() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::Ipv6Slaac),
+            ..Default::default()
+        };
+        apply_network_config(dir.path(), &config).unwrap();
+
+        let contents =
+            fs::read_to_string(netplan_dir.join("01-installer-ipv6-slaac.yaml")).unwrap();
+        assert!(contents.contains("\"en*\""));
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_offline_removes_base_and_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+        fs::write(
+            netplan_dir.join("01-all-en-dhcp.yaml"),
+            "network:\n  version: 2\n",
+        )
+        .unwrap();
+
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::Offline),
+            ..Default::default()
+        };
+        apply_network_config(dir.path(), &config).unwrap();
+
+        assert!(
+            !netplan_dir.join("01-all-en-dhcp.yaml").exists(),
+            "base DHCP file should be removed for offline mode"
+        );
+        assert!(
+            !netplan_dir.join("01-installer-static.yaml").exists(),
+            "no static file should be written for offline mode"
+        );
+        assert!(
+            !netplan_dir.join("01-installer-ipv6-slaac.yaml").exists(),
+            "no slaac file should be written for offline mode"
+        );
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn apply_network_config_offline_no_base_file_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let netplan_dir = dir.path().join("etc/netplan");
+        fs::create_dir_all(&netplan_dir).unwrap();
+
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::Offline),
+            ..Default::default()
+        };
+        apply_network_config(dir.path(), &config).unwrap();
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn generate_static_netplan_full() {
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_interface: Some("enp0s3".into()),
+            network_ip: Some("192.168.1.10/24".into()),
+            network_gateway: Some("192.168.1.1".into()),
+            network_dns: Some("8.8.8.8, 1.1.1.1".into()),
+            network_domain: Some("example.com".into()),
+            ..Default::default()
+        };
+
+        let yaml = generate_static_netplan(&config);
+
+        assert!(yaml.starts_with("network:\n  version: 2\n"));
+        assert!(yaml.contains("enp0s3:"));
+        assert!(yaml.contains("name: \"enp0s3\""));
+        assert!(yaml.contains("- 192.168.1.10/24"));
+        assert!(yaml.contains("via: 192.168.1.1"));
+        assert!(yaml.contains("- 8.8.8.8"));
+        assert!(yaml.contains("- 1.1.1.1"));
+        assert!(yaml.contains("- example.com"));
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn generate_static_netplan_minimal() {
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_ip: Some("10.0.0.5/16".into()),
+            network_gateway: Some("10.0.0.1".into()),
+            ..Default::default()
+        };
+
+        let yaml = generate_static_netplan(&config);
+
+        assert!(yaml.contains("all-en:"));
+        assert!(yaml.contains("name: \"en*\""));
+        assert!(yaml.contains("- 10.0.0.5/16"));
+        assert!(yaml.contains("via: 10.0.0.1"));
+        assert!(!yaml.contains("nameservers"));
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn generate_ipv6_slaac_netplan_with_interface() {
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::Ipv6Slaac),
+            network_interface: Some("eth0".into()),
+            ..Default::default()
+        };
+
+        let yaml = generate_ipv6_slaac_netplan(&config);
+
+        assert!(yaml.contains("eth0:"));
+        assert!(yaml.contains("name: \"eth0\""));
+        assert!(yaml.contains("dhcp4: false"));
+        assert!(yaml.contains("accept-ra: true"));
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn generate_ipv6_slaac_netplan_without_interface() {
+        let config = InstallConfig::default();
+
+        let yaml = generate_ipv6_slaac_netplan(&config);
+
+        assert!(yaml.contains("all-en:"));
+        assert!(yaml.contains("name: \"en*\""));
+        assert!(yaml.contains("dhcp4: false"));
+        assert!(yaml.contains("accept-ra: true"));
+    }
 
     // r[verify installer.finalise.password]
     #[test]

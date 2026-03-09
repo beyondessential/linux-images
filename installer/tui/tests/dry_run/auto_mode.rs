@@ -4,7 +4,7 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES, installer};
 
 // r[verify installer.dryrun]
 // r[verify installer.dryrun.output]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.mode.auto+4]
 #[test]
 fn auto_full_config_produces_correct_plan() {
@@ -43,7 +43,6 @@ fn auto_full_config_produces_correct_plan() {
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "tpm");
-    assert_eq!(plan["variant"], "metal");
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
     assert_eq!(plan["disk"]["model"], "Samsung 980 PRO");
     assert_eq!(plan["disk"]["size_bytes"], 1000204886016u64);
@@ -59,7 +58,7 @@ fn auto_full_config_produces_correct_plan() {
     assert!(plan["config_warnings"].as_array().unwrap().is_empty());
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.config.disk]
 #[test]
 fn auto_disk_path_resolves_correctly() {
@@ -91,15 +90,14 @@ fn auto_disk_path_resolves_correctly() {
     let plan = f.read_plan();
     assert_eq!(plan["mode"], "auto");
     assert_eq!(plan["disk_encryption"], "none");
-    assert_eq!(plan["variant"], "cloud");
     assert_eq!(plan["disk"]["path"], "/dev/sda");
     assert_eq!(plan["disk"]["model"], "WD Blue");
 }
 
-// r[verify installer.dryrun.schema+5]
-// r[verify installer.config.disk-encryption]
+// r[verify installer.dryrun.schema+6]
+// r[verify installer.config.disk-encryption+2]
 #[test]
-fn auto_keyfile_encryption_produces_metal_variant() {
+fn auto_keyfile_encryption_mode() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -129,10 +127,9 @@ fn auto_keyfile_encryption_produces_metal_variant() {
 
     let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "keyfile");
-    assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 // r[verify installer.dryrun.fake-tpm]
 #[test]
 fn auto_fake_tpm_reflected_in_plan() {
@@ -169,7 +166,7 @@ fn auto_fake_tpm_reflected_in_plan() {
     assert_eq!(plan["disk_encryption"], "tpm");
 }
 
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
 fn auto_none_encryption_no_install_config() {
     let f = Fixture::new();
@@ -199,7 +196,6 @@ fn auto_none_encryption_no_install_config() {
 
     let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "none");
-    assert_eq!(plan["variant"], "cloud");
     assert!(plan["install_config"].is_null());
     assert!(!plan["tpm_present"].as_bool().unwrap());
 }
@@ -445,4 +441,165 @@ fn auto_with_only_ssh_keys() {
             .unwrap()
     );
     assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 3);
+}
+
+// r[verify installer.finalise.network+4]
+// r[verify installer.dryrun.schema+6]
+#[test]
+fn auto_network_dhcp_default_in_plan() {
+    let f = Fixture::new();
+    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let config = f.write_config(
+        r#"
+        auto = true
+        disk-encryption = "none"
+        disk = "largest-ssd"
+
+        hostname = "test-host"
+    "#,
+    );
+
+    installer()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--fake-devices",
+            devices.to_str().unwrap(),
+            "--dry-run",
+            "--dry-run-output",
+            f.plan_path().to_str().unwrap(),
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let plan = f.read_plan();
+    assert_eq!(
+        plan["install_config"]["network"], "DHCP (all Ethernet interfaces)",
+        "default network mode should be DHCP"
+    );
+}
+
+// r[verify installer.finalise.network+4]
+// r[verify installer.dryrun.schema+6]
+#[test]
+fn auto_network_static_in_plan() {
+    let f = Fixture::new();
+    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let config = f.write_config(
+        r#"
+        auto = true
+        disk-encryption = "none"
+        disk = "largest-ssd"
+
+        hostname = "test-host"
+        network-mode = "static"
+        network-interface = "enp0s3"
+        network-ip = "192.168.1.10/24"
+        network-gateway = "192.168.1.1"
+        network-dns = "8.8.8.8, 1.1.1.1"
+    "#,
+    );
+
+    installer()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--fake-devices",
+            devices.to_str().unwrap(),
+            "--dry-run",
+            "--dry-run-output",
+            f.plan_path().to_str().unwrap(),
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let plan = f.read_plan();
+    let network = plan["install_config"]["network"].as_str().unwrap();
+    assert!(
+        network.starts_with("Static IP: 192.168.1.10/24 via 192.168.1.1 on enp0s3"),
+        "expected static IP summary, got: {network}"
+    );
+    assert!(
+        network.contains("8.8.8.8, 1.1.1.1"),
+        "expected DNS in summary, got: {network}"
+    );
+}
+
+// r[verify installer.finalise.network+4]
+// r[verify installer.dryrun.schema+6]
+#[test]
+fn auto_network_offline_in_plan() {
+    let f = Fixture::new();
+    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let config = f.write_config(
+        r#"
+        auto = true
+        disk-encryption = "none"
+        disk = "largest-ssd"
+
+        hostname = "test-host"
+        network-mode = "offline"
+    "#,
+    );
+
+    installer()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--fake-devices",
+            devices.to_str().unwrap(),
+            "--dry-run",
+            "--dry-run-output",
+            f.plan_path().to_str().unwrap(),
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let plan = f.read_plan();
+    assert_eq!(
+        plan["install_config"]["network"],
+        "Offline (no network configuration)",
+    );
+}
+
+// r[verify installer.finalise.network+4]
+// r[verify installer.dryrun.schema+6]
+#[test]
+fn auto_network_ipv6_slaac_in_plan() {
+    let f = Fixture::new();
+    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let config = f.write_config(
+        r#"
+        auto = true
+        disk-encryption = "none"
+        disk = "largest-ssd"
+
+        hostname = "test-host"
+        network-mode = "ipv6-slaac"
+    "#,
+    );
+
+    installer()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--fake-devices",
+            devices.to_str().unwrap(),
+            "--dry-run",
+            "--dry-run-output",
+            f.plan_path().to_str().unwrap(),
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let plan = f.read_plan();
+    assert_eq!(plan["install_config"]["network"], "IPv6 SLAAC only",);
 }

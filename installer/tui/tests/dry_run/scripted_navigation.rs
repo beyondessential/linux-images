@@ -11,15 +11,20 @@ fn scripted_encryption_cycle_twice_returns_to_default() {
         "\
 # Welcome
 enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
 # DiskSelection
 enter
 # DiskEncryptionScreen: default Keyfile, cycle down twice (Keyfile->None->Keyfile)
 down
 down
 enter
-# Hostname selector: Static is default for metal (Keyfile), Enter -> HostnameInput
+# Hostname selector: Network-assigned is default, Up to select Static
+up
 enter
-# HostnameInput: type 'h' (required for encrypted)
+# HostnameInput: type 'h'
 type:h
 enter
 # Login: type password
@@ -61,11 +66,15 @@ enter
 fn scripted_encryption_cycle_back_to_keyfile() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // No TPM present, default is Keyfile (metal).
-    // Cycle once to None (cloud), then cycle again back to Keyfile (metal).
+    // No TPM present, default is Keyfile.
+    // Cycle once to None, then cycle again back to Keyfile.
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
 enter
 # DiskSelection
 enter
@@ -73,9 +82,10 @@ enter
 down
 down
 enter
-# Hostname selector: Static is default for metal (Keyfile), Enter -> HostnameInput
+# Hostname selector: Network-assigned is default, Up to select Static
+up
 enter
-# HostnameInput: type 'h' (required for encrypted)
+# HostnameInput: type 'h'
 type:h
 enter
 # Login: type password
@@ -109,10 +119,9 @@ enter
 
     let plan = f.read_plan();
     assert_eq!(plan["disk_encryption"], "keyfile");
-    assert_eq!(plan["variant"], "metal");
 }
 
-// r[verify installer.tui.disk-detection+3]
+// r[verify installer.tui.disk-detection+4]
 #[test]
 fn scripted_disk_wrap_around() {
     let f = Fixture::new();
@@ -123,15 +132,20 @@ fn scripted_disk_wrap_around() {
         "\
 # Welcome
 enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
 # Disk: down twice wraps back to index 0
 down
 down
 enter
 # DiskEncryptionScreen: accept default (Keyfile)
 enter
-# Hostname selector: Static is default for metal, Enter -> HostnameInput
+# Hostname selector: Network-assigned is default, Up to select Static
+up
 enter
-# HostnameInput: type 'h' (required for encrypted)
+# HostnameInput: type 'h'
 type:h
 enter
 # Login: type password
@@ -167,7 +181,7 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
-// r[verify installer.tui.disk-detection+3]
+// r[verify installer.tui.disk-detection+4]
 #[test]
 fn scripted_disk_up_wraps_to_last() {
     let f = Fixture::new();
@@ -177,14 +191,19 @@ fn scripted_disk_up_wraps_to_last() {
         "\
 # Welcome
 enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
 # Disk: up wraps to last
 up
 enter
 # DiskEncryptionScreen: accept default (Keyfile)
 enter
-# Hostname selector: Static is default for metal, Enter -> HostnameInput
+# Hostname selector: Network-assigned is default, Up to select Static
+up
 enter
-# HostnameInput: type 'h' (required for encrypted)
+# HostnameInput: type 'h'
 type:h
 enter
 # Login: type password
@@ -220,22 +239,26 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/sda");
 }
 
-// r[verify installer.tui.hostname+5]
+// r[verify installer.tui.hostname+6]
 #[test]
 fn scripted_hostname_with_backspace_correction() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // No TPM, default Keyfile. Cycle to None (cloud) for network-assigned default.
+    // No TPM, default Keyfile. Cycle to None for simplicity.
     let script = f.write_script(
         "\
 # Welcome
 enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
 # DiskSelection
 enter
-# DiskEncryptionScreen: cycle to None (cloud)
+# DiskEncryptionScreen: cycle to None
 down
 enter
-# Hostname selector: network-assigned is default for cloud, Up to select Static
+# Hostname selector: Network-assigned is default, Up to select Static
 up
 enter
 # HostnameInput: type 'baaad', backspace 3 times, type 'd'
@@ -283,17 +306,21 @@ enter
 fn scripted_multiline_ssh_keys() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
-    // No TPM, default Keyfile. Cycle to None (cloud) for network-assigned default.
+    // No TPM, default Keyfile. Cycle to None for simplicity.
     let script = f.write_script(
         "\
 # Welcome
 enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
 # DiskSelection
 enter
-# DiskEncryptionScreen: cycle to None (cloud)
+# DiskEncryptionScreen: cycle to None
 down
 enter
-# Hostname selector: network-assigned is default for cloud, Enter -> Login
+# Hostname selector: Network-assigned is default, Enter -> Login
 enter
 
 # Login: enter ssh keys sub-screen
@@ -335,7 +362,7 @@ enter
     assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.confirmation+7]
+// r[verify installer.tui.confirmation+8]
 #[test]
 fn scripted_wrong_confirmation_does_not_advance() {
     let f = Fixture::new();
@@ -347,13 +374,18 @@ fn scripted_wrong_confirmation_does_not_advance() {
         "\
 # Welcome
 enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
 # DiskSelection
 enter
 # DiskEncryptionScreen: accept default (Keyfile)
 enter
-# Hostname selector: Static is default for metal (Keyfile), Enter -> HostnameInput
+# Hostname selector: Network-assigned is default, Up to select Static
+up
 enter
-# HostnameInput: type 'h' (required for encrypted)
+# HostnameInput: type 'h'
 type:h
 enter
 # Login: type password

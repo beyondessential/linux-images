@@ -2,34 +2,65 @@ use std::fs;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
+use crate::paths;
 pub use crate::util::{partition_path, run_command};
 
-// r[impl installer.container.partition-devices+2]
+// r[impl installer.container.partition-devices+3]
 pub fn ensure_partition_devices(target: &Path) -> Result<()> {
+    const MAX_RETRIES: u32 = 10;
+    const RETRY_DELAY: Duration = Duration::from_millis(200);
+
     let dev_name = target
         .file_name()
         .and_then(|n| n.to_str())
         .context("getting device name from target path")?;
 
-    let created = ensure_partition_devices_via_sysfs(dev_name)?;
-    if created > 0 {
-        tracing::info!("created {created} partition device node(s) via sysfs");
-    } else {
-        tracing::debug!("all partition device nodes already present for {dev_name}");
+    for attempt in 0..MAX_RETRIES {
+        let (created, found) = ensure_partition_devices_via_sysfs(dev_name)?;
+        if found > 0 {
+            if created > 0 {
+                tracing::info!("created {created} partition device node(s) via sysfs");
+            } else {
+                tracing::debug!(
+                    "all {found} partition device nodes already present for {dev_name}"
+                );
+            }
+            return Ok(());
+        }
+
+        if attempt + 1 < MAX_RETRIES {
+            tracing::debug!(
+                "no partition entries found in sysfs for {dev_name} (attempt {}/{}), retrying in {}ms",
+                attempt + 1,
+                MAX_RETRIES,
+                RETRY_DELAY.as_millis(),
+            );
+            thread::sleep(RETRY_DELAY);
+        }
     }
 
+    tracing::warn!(
+        "no partition sysfs entries appeared for {dev_name} after {} retries ({:.1}s) — \
+         partition device nodes may be missing",
+        MAX_RETRIES,
+        (MAX_RETRIES as f64) * RETRY_DELAY.as_secs_f64(),
+    );
     Ok(())
 }
 
-fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<usize> {
+/// Returns `(created, found)` — the number of device nodes created and the
+/// total number of partition entries discovered in sysfs.
+fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<(usize, usize)> {
     let sysfs_dir = format!("/sys/class/block/{dev_name}");
     let sysfs_path = Path::new(&sysfs_dir);
     if !sysfs_path.exists() {
         tracing::warn!("sysfs path {sysfs_dir} does not exist — cannot discover partitions");
-        return Ok(0);
+        return Ok((0, 0));
     }
 
     let entries =
@@ -63,12 +94,13 @@ fn ensure_partition_devices_via_sysfs(dev_name: &str) -> Result<usize> {
         created += mknod_block_device(&dev_path, &name, major, minor)?;
     }
 
+    let found = seen_entries.len();
     tracing::debug!(
         "ensure_partition_devices_via_sysfs({dev_name}): saw [{}], created {created}",
         seen_entries.join(", "),
     );
 
-    Ok(created)
+    Ok((created, found))
 }
 
 fn parse_major_minor(majmin: &str) -> Result<(u32, u32)> {
@@ -118,7 +150,7 @@ fn mknod_block_device(dev_path: &Path, name: &str, major: u32, minor: u32) -> Re
 
     tracing::info!("creating device node /dev/{name} (block {major}:{minor})");
 
-    let status = Command::new("mknod")
+    let status = Command::new(paths::MKNOD)
         .args([
             dev_path.to_str().unwrap_or_default(),
             "b",
@@ -138,7 +170,7 @@ fn mknod_block_device(dev_path: &Path, name: &str, major: u32, minor: u32) -> Re
 }
 
 pub fn reread_partition_table(target: &Path) -> Result<()> {
-    let output = Command::new("partprobe")
+    let output = Command::new(paths::PARTPROBE)
         .arg(target)
         .output()
         .context("running partprobe")?;
@@ -153,7 +185,7 @@ pub fn reread_partition_table(target: &Path) -> Result<()> {
         tracing::debug!("partprobe: {stderr}");
     }
 
-    let _ = Command::new("udevadm")
+    let _ = Command::new(paths::UDEVADM)
         .args(["settle", "--timeout=5"])
         .status();
 
@@ -171,7 +203,7 @@ pub(crate) fn sync_device(file: &std::fs::File) -> Result<()> {
 mod tests {
     use super::*;
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_valid() {
         let (major, minor) = parse_major_minor("259:22").unwrap();
@@ -179,7 +211,7 @@ mod tests {
         assert_eq!(minor, 22);
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_zero() {
         let (major, minor) = parse_major_minor("0:0").unwrap();
@@ -187,26 +219,26 @@ mod tests {
         assert_eq!(minor, 0);
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_missing_colon() {
         assert!(parse_major_minor("259").is_err());
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_non_numeric() {
         assert!(parse_major_minor("abc:22").is_err());
         assert!(parse_major_minor("259:xyz").is_err());
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn parse_major_minor_empty() {
         assert!(parse_major_minor("").is_err());
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn is_valid_block_device_nonexistent_path() {
         assert!(!is_valid_block_device(
@@ -216,7 +248,7 @@ mod tests {
         ));
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn is_valid_block_device_regular_file_is_not_block() {
         let dir = tempfile::tempdir().unwrap();
@@ -225,10 +257,12 @@ mod tests {
         assert!(!is_valid_block_device(&path, 8, 0));
     }
 
-    // r[verify installer.container.partition-devices+2]
+    // r[verify installer.container.partition-devices+3]
     #[test]
     fn ensure_partition_devices_via_sysfs_nonexistent_dir() {
-        let count = ensure_partition_devices_via_sysfs("nonexistent_device_xyzzy_test").unwrap();
-        assert_eq!(count, 0);
+        let (created, found) =
+            ensure_partition_devices_via_sysfs("nonexistent_device_xyzzy_test").unwrap();
+        assert_eq!(created, 0);
+        assert_eq!(found, 0);
     }
 }

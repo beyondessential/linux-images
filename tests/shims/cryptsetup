@@ -1,0 +1,230 @@
+#!/bin/bash
+#
+# Fake cryptsetup shim for CI environments where the kernel keyring is not
+# available (e.g. systemd-nspawn containers on GitHub Actions runners).
+#
+# Instead of real LUKS/dm-crypt operations, this shim:
+#   - luksFormat: no-op (the partition stays as raw, unencrypted)
+#   - open:       creates a symlink /dev/mapper/<name> -> <device>
+#   - close:      removes the symlink
+#   - luksAddKey: no-op
+#   - luksChangeKey: no-op
+#   - status:     reports active if the symlink exists
+#   - luksDump:   prints a fake LUKS header
+#   - isLuks:     always succeeds (exit 0)
+#
+# This allows the full installer code path to run (partitioning, image
+# writing, encryption config, initramfs rebuild) without real dm-crypt,
+# because /dev/mapper/<name> is a transparent passthrough to the raw
+# partition.
+#
+# The shim is installed at /usr/sbin/cryptsetup inside the container rootfs
+# (replacing the real binary) only when BES_FAKE_LUKS=1.
+
+set -euo pipefail
+
+MAPPER_DIR="/dev/mapper"
+
+log() {
+    echo "[fake-cryptsetup] $*" >&2
+}
+
+cmd_luksFormat() {
+    # Parse arguments to find the device (skip options).
+    local device=""
+    local skip_next=0
+    for arg in "$@"; do
+        if [ "$skip_next" -eq 1 ]; then
+            skip_next=0
+            continue
+        fi
+        case "$arg" in
+            --type|--key-file|--pbkdf|--pbkdf-force-iterations|--key-slot|--batch-mode)
+                # These take a value as the next argument (except --batch-mode)
+                case "$arg" in
+                    --batch-mode) ;;
+                    *) skip_next=1 ;;
+                esac
+                ;;
+            --*=*) ;;
+            --*) skip_next=1 ;;
+            /dev/*) device="$arg" ;;
+        esac
+    done
+
+    if [ -z "$device" ]; then
+        log "luksFormat: could not determine device from args: $*"
+        exit 1
+    fi
+
+    log "luksFormat (no-op): $device"
+}
+
+cmd_open() {
+    # Parse: cryptsetup open [--type luks2] [--key-file <kf>] <device> <name>
+    local device="" name="" skip_next=0
+    local positional=()
+    for arg in "$@"; do
+        if [ "$skip_next" -eq 1 ]; then
+            skip_next=0
+            continue
+        fi
+        case "$arg" in
+            --type|--key-file)
+                skip_next=1
+                ;;
+            --*=*) ;;
+            --*) skip_next=1 ;;
+            *)
+                positional+=("$arg")
+                ;;
+        esac
+    done
+
+    if [ "${#positional[@]}" -lt 2 ]; then
+        log "open: expected <device> <name>, got: ${positional[*]}"
+        exit 1
+    fi
+
+    device="${positional[0]}"
+    name="${positional[1]}"
+
+    mkdir -p "$MAPPER_DIR"
+
+    if [ -e "$MAPPER_DIR/$name" ]; then
+        log "open: $MAPPER_DIR/$name already exists, removing first"
+        rm -f "$MAPPER_DIR/$name"
+    fi
+
+    ln -s "$device" "$MAPPER_DIR/$name"
+    log "open: $MAPPER_DIR/$name -> $device"
+}
+
+cmd_close() {
+    local name="$1"
+
+    if [ -L "$MAPPER_DIR/$name" ]; then
+        rm -f "$MAPPER_DIR/$name"
+        log "close: removed $MAPPER_DIR/$name"
+    elif [ -e "$MAPPER_DIR/$name" ]; then
+        rm -f "$MAPPER_DIR/$name"
+        log "close: removed $MAPPER_DIR/$name (was not a symlink)"
+    else
+        log "close: $MAPPER_DIR/$name does not exist (ignoring)"
+    fi
+}
+
+cmd_luksAddKey() {
+    log "luksAddKey (no-op): $*"
+}
+
+cmd_luksChangeKey() {
+    log "luksChangeKey (no-op): $*"
+}
+
+cmd_resize() {
+    # In fake mode the "LUKS container" is just a symlink to the raw
+    # partition, so there is nothing to resize. No-op.
+    log "resize (no-op): $*"
+}
+
+cmd_status() {
+    local name="$1"
+    if [ -e "$MAPPER_DIR/$name" ]; then
+        local target
+        target="$(readlink -f "$MAPPER_DIR/$name" 2>/dev/null || echo "$MAPPER_DIR/$name")"
+        echo "/dev/mapper/$name is active."
+        echo "  type:    FAKE (symlink)"
+        echo "  device:  $target"
+        exit 0
+    else
+        echo "/dev/mapper/$name is inactive."
+        exit 4
+    fi
+}
+
+cmd_luksDump() {
+    # Parse to find the device.
+    local device=""
+    for arg in "$@"; do
+        case "$arg" in
+            /dev/*) device="$arg" ;;
+        esac
+    done
+
+    if [ -z "$device" ]; then
+        log "luksDump: no device specified"
+        exit 1
+    fi
+
+    # Print a minimal fake LUKS2 header that the installer/tests might parse.
+    cat <<EOF
+LUKS header information
+Version:        2
+Epoch:          1
+Metadata area:  16384 [bytes]
+Keyslots area:  16744448 [bytes]
+UUID:           00000000-fake-luks-0000-000000000000
+Label:          (no label)
+Subsystem:      (no subsystem)
+Flags:          (no flags)
+
+Data segments:
+  0: crypt
+        offset: 16777216 [bytes]
+        length: (whole device)
+        cipher: aes-xts-plain64
+        sector: 512 [bytes]
+
+Keyslots:
+  0: luks2
+        Key:        512 bits
+        Priority:   normal
+        Iterations: 1000
+        Salt:       00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+                    00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        AF stripes: 4000
+        AF hash:    sha256
+        Area offset:32768 [bytes]
+        Area length:258048 [bytes]
+        Digest ID:  0
+Tokens:
+Digests:
+  0: pbkdf2
+        Hash:       sha256
+        Iterations: 1000
+EOF
+}
+
+cmd_isLuks() {
+    # Always report success: the partition is "LUKS" in our fake world.
+    exit 0
+}
+
+# ============================================================
+# Dispatch
+# ============================================================
+
+if [ $# -lt 1 ]; then
+    echo "Usage: cryptsetup <command> [args...]" >&2
+    exit 1
+fi
+
+COMMAND="$1"
+shift
+
+case "$COMMAND" in
+    luksFormat)     cmd_luksFormat "$@" ;;
+    open)           cmd_open "$@" ;;
+    close)          cmd_close "$@" ;;
+    resize)         cmd_resize "$@" ;;
+    luksAddKey)     cmd_luksAddKey "$@" ;;
+    luksChangeKey)  cmd_luksChangeKey "$@" ;;
+    status)         cmd_status "$@" ;;
+    luksDump)       cmd_luksDump "$@" ;;
+    isLuks)         cmd_isLuks "$@" ;;
+    *)
+        log "unhandled command: $COMMAND $*"
+        exit 1
+        ;;
+esac

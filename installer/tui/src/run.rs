@@ -1,16 +1,19 @@
 use std::fs;
 use std::io::IsTerminal;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 
 use crate::Cli;
-use crate::config;
+use crate::besconf;
+use crate::config::{self, NetworkMode};
 use crate::disk;
 use crate::encryption;
 use crate::firstboot;
 use crate::hostname_template;
+use crate::paths;
 use crate::plan;
 use crate::script;
 use crate::timezone;
@@ -31,11 +34,33 @@ pub struct RunContext {
     pub arch: String,
     pub available_timezones: Vec<String>,
     pub config_warnings: Vec<String>,
+    pub besconf: besconf::BesconfState,
 }
 
 impl RunContext {
     pub fn from_cli(cli: Cli) -> Result<Self> {
+        let build_info = read_build_info();
+        let version = env!("CARGO_PKG_VERSION");
+        tracing::info!("bes-installer v{version} — {build_info}");
+        eprintln!("bes-installer v{version} — {build_info}");
+
+        // r[impl installer.besconf.writable-detection+2]
+        // r[impl iso.config-partition+5]
+        // Mount BESCONF before loading config: the config file lives on
+        // BESCONF at /run/besconf/bes-install.toml.
+        let mut besconf = if cli.dry_run {
+            besconf::BesconfState::readonly()
+        } else {
+            let (state, _mounted) = besconf::mount_and_detect();
+            // r[impl installer.besconf.failure-log]
+            besconf::rotate_failure_log(&state);
+            state
+        };
+
         let (mut install_config, mode) = load_config(&cli)?;
+
+        // Apply save_recovery_keys from the now-loaded config.
+        besconf = besconf::with_save_recovery_keys(besconf, install_config.save_recovery_keys);
 
         resolve_hostname_template(&mut install_config)?;
 
@@ -80,6 +105,9 @@ impl RunContext {
         };
         tracing::info!("TPM present: {tpm_present}");
 
+        // r[impl installer.config.recovery-passphrase]
+        install_config.validate_hard()?;
+
         let config_warnings = install_config.validate();
         for w in &config_warnings {
             tracing::warn!("config: {w}");
@@ -95,10 +123,30 @@ impl RunContext {
             arch,
             available_timezones,
             config_warnings,
+            besconf,
         })
     }
 
     pub fn run(self) -> Result<()> {
+        let besconf = self.besconf.clone();
+        let log_path = self.cli.log.clone();
+        let dry_run = self.cli.dry_run;
+        let result = self.run_inner();
+
+        // r[impl installer.besconf.failure-log]
+        if result.is_err() {
+            besconf::write_failure_log(&besconf, &log_path);
+        }
+
+        // r[impl iso.config-partition+5]
+        if !dry_run {
+            besconf::unmount();
+        }
+
+        result
+    }
+
+    fn run_inner(self) -> Result<()> {
         match self.mode {
             config::OperatingMode::Auto => self.run_auto(),
             // r[impl installer.mode.auto-incomplete+3]
@@ -136,7 +184,6 @@ impl RunContext {
             .install_config
             .disk_encryption
             .expect("auto mode requires disk-encryption");
-        let variant = disk_encryption.variant();
         let disk_selector = self
             .install_config
             .disk
@@ -148,6 +195,22 @@ impl RunContext {
         let hostname_from_template = self.install_config.hostname_template.is_some();
 
         let target = disk::resolve_disk(disk_selector, &self.devices, self.boot_device.as_ref())?;
+
+        // r[impl installer.write.source+5]
+        // Open the images partition via dm-verity before searching for the manifest.
+        // The verity mount at /run/bes-images is the primary search path.
+        let _images_verity = if self.cli.dry_run {
+            None
+        } else {
+            match writer::open_and_mount_images() {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("failed to open images verity: {e:#}");
+                    None
+                }
+            }
+        };
+
         let manifest_result = if self.cli.dry_run {
             writer::find_partition_manifest().ok()
         } else {
@@ -161,13 +224,16 @@ impl RunContext {
 
         // r[impl installer.dryrun]
         if self.cli.dry_run {
+            let net_summary = network_summary_from_config(&self.install_config);
             let mut builder =
                 plan::InstallPlan::builder(&config::OperatingMode::Auto, disk_encryption)
                     .disk(target)
                     .tpm_present(self.tpm_present)
                     .hostname_from_template(hostname_from_template)
                     .timezone(effective_timezone)
+                    .network_summary(&net_summary)
                     .copy_install_log(copy_install_log)
+                    .save_recovery_keys(self.besconf.save_recovery_keys())
                     .config_warnings(self.config_warnings);
             if self.install_config.has_install_config_fields() {
                 builder = builder.install_config(&self.install_config);
@@ -183,7 +249,6 @@ impl RunContext {
 
         eprintln!("BES Installer -- automatic mode");
         eprintln!("  encryption: {disk_encryption}");
-        eprintln!("  variant:    {variant}");
         eprintln!(
             "  target:     {} ({})",
             target.path.display(),
@@ -205,6 +270,8 @@ impl RunContext {
         } else {
             eprintln!("  timezone:   UTC");
         }
+        let net_summary = network_summary_from_config(&self.install_config);
+        eprintln!("  network:    {net_summary}");
         if self.install_config.tailscale_authkey.is_some() {
             eprintln!("  tailscale:  auth key provided");
         }
@@ -218,14 +285,45 @@ impl RunContext {
             eprintln!("  password:   custom password set");
         }
 
-        // r[impl installer.write.disk-size-check+2]
+        // r[impl installer.write.disk-size-check+3]
         let total_image_size = writer::partition_images_total_size(&manifest, &images_dir)
             .context("reading partition image sizes")?;
         writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
 
+        // r[impl iso.verity.check+6]
+        // r[impl iso.verity.failure]
+        if _images_verity.is_some() {
+            eprintln!("verifying installation media integrity...");
+            let image_files = writer::image_file_sizes(&manifest, &images_dir)
+                .context("reading image file sizes for integrity check")?;
+            let interactive = std::io::stderr().is_terminal();
+            writer::integrity_check(&images_dir, &image_files, &mut |progress| {
+                if interactive {
+                    let pct = progress.fraction().map(|f| f * 100.0).unwrap_or(0.0);
+                    let mbps = progress.throughput_mbps();
+                    let eta = progress
+                        .eta()
+                        .map(writer::format_eta)
+                        .unwrap_or_else(|| "...".into());
+                    eprint!("\r  {pct:5.1}% | {mbps:.1} MiB/s | ETA: {eta}    ");
+                }
+            })
+            .context("installation media integrity check failed — the target disk has NOT been written to — write a new copy of the installation medium")?;
+            if interactive {
+                eprintln!();
+            }
+            eprintln!("integrity check passed");
+        }
+
         // r[impl installer.encryption.recovery-passphrase+3]
+        // r[impl installer.config.recovery-passphrase]
         let recovery_passphrase = if disk_encryption.is_encrypted() {
-            Some(encryption::generate_recovery_passphrase())
+            Some(
+                self.install_config
+                    .recovery_passphrase
+                    .clone()
+                    .unwrap_or_else(encryption::generate_recovery_passphrase),
+            )
         } else {
             None
         };
@@ -276,6 +374,24 @@ impl RunContext {
             .randomize_filesystem_uuids()
             .context("randomizing filesystem UUIDs")?;
 
+        // r[impl installer.encryption.overview+5]
+        if let Some(ref passphrase) = recovery_passphrase {
+            eprintln!("setting up disk encryption...");
+            let mounted = firstboot::mount_target(
+                &target.path,
+                disk_encryption,
+                recovery_passphrase.as_deref(),
+            )?;
+            encryption::enroll_and_configure_encryption(
+                &target.path,
+                disk_encryption,
+                mounted.path(),
+                passphrase,
+            )
+            .context("encryption setup")?;
+            firstboot::unmount_target(mounted)?;
+        }
+
         eprintln!("rebuilding boot config (initramfs + grub)...");
         disk_writer
             .rebuild_boot_config()
@@ -293,10 +409,12 @@ impl RunContext {
                 recovery_passphrase.as_deref(),
             )?;
 
+            // r[impl installer.write.variant-fixup+2]
+            firstboot::write_image_variant(mounted.path(), disk_encryption.image_variant_str())?;
+
             // r[impl installer.write.fstab-fixup]
-            // r[impl installer.write.variant-fixup]
             if disk_encryption.is_encrypted() {
-                firstboot::fixup_for_metal_variant(&mounted, &self.install_config)?;
+                firstboot::fixup_for_encrypted_install(&mounted, &self.install_config)?;
             }
 
             if self.install_config.has_install_config_fields() {
@@ -314,23 +432,7 @@ impl RunContext {
             firstboot::unmount_target(mounted)?;
         }
 
-        // r[impl installer.encryption.overview+2]
         if let Some(ref passphrase) = recovery_passphrase {
-            eprintln!("setting up disk encryption...");
-            let mounted = firstboot::mount_target(
-                &target.path,
-                disk_encryption,
-                recovery_passphrase.as_deref(),
-            )?;
-            encryption::run_encryption_setup(
-                &target.path,
-                disk_encryption,
-                mounted.path(),
-                passphrase,
-            )
-            .context("encryption setup")?;
-            firstboot::unmount_target(mounted)?;
-
             // r[impl installer.encryption.recovery-passphrase+3]
             eprintln!();
             eprintln!("=== RECOVERY PASSPHRASE ===");
@@ -341,6 +443,16 @@ impl RunContext {
             eprintln!("You will need it if the primary unlock mechanism fails.");
             eprintln!("===========================");
             eprintln!();
+
+            // r[impl installer.config.save-recovery-keys]
+            if self.besconf.save_recovery_keys() {
+                let root_part = crate::util::partition_path(&target.path, 3)?;
+                if let Err(e) = besconf::append_recovery_key(&self.besconf, passphrase, &root_part)
+                {
+                    tracing::warn!("failed to save recovery key to BESCONF: {e}");
+                    eprintln!("warning: failed to save recovery key to BESCONF: {e}");
+                }
+            }
         }
 
         // r[impl installer.no-reboot]
@@ -348,7 +460,15 @@ impl RunContext {
             eprintln!("installation complete (--no-reboot, not rebooting)");
         } else {
             eprintln!("installation complete, rebooting...");
-            let _ = std::process::Command::new("reboot").status();
+            let reboot_ok = std::process::Command::new(paths::REBOOT)
+                .status()
+                .is_ok_and(|s| s.success());
+            if !reboot_ok {
+                tracing::warn!("{} failed, trying systemctl", paths::REBOOT);
+                let _ = std::process::Command::new(paths::SYSTEMCTL)
+                    .arg("reboot")
+                    .status();
+            }
         }
         Ok(())
     }
@@ -359,11 +479,7 @@ impl RunContext {
         let disk_encryption = self
             .install_config
             .disk_encryption
-            .unwrap_or(if self.tpm_present {
-                config::DiskEncryption::Tpm
-            } else {
-                config::DiskEncryption::Keyfile
-            });
+            .unwrap_or(config::DiskEncryption::Keyfile);
 
         let copy_install_log = self.install_config.copy_install_log.unwrap_or(true);
 
@@ -372,6 +488,20 @@ impl RunContext {
                 .ok()
                 .and_then(|resolved| self.devices.iter().position(|d| d.path == resolved.path))
         });
+
+        // r[impl installer.write.source+5]
+        // Open the images partition via dm-verity before searching for the manifest.
+        let _images_verity = if self.cli.dry_run {
+            None
+        } else {
+            match writer::open_and_mount_images() {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("failed to open images verity: {e:#}");
+                    None
+                }
+            }
+        };
 
         let manifest_result = if self.cli.dry_run {
             writer::find_partition_manifest().ok()
@@ -386,7 +516,8 @@ impl RunContext {
 
         let hostname_from_template = self.install_config.hostname_template.is_some();
 
-        let state = ui::AppState::new(
+        let verity_active = _images_verity.is_some();
+        let mut state = ui::AppState::new(
             self.devices,
             disk_encryption,
             self.tpm_present,
@@ -395,7 +526,13 @@ impl RunContext {
             default_disk_index,
             build_info,
             self.available_timezones,
+            verity_active,
         );
+
+        // r[impl installer.config.recovery-passphrase]
+        if let Some(ref pp) = self.install_config.recovery_passphrase {
+            state.recovery_passphrase = Some(pp.clone());
+        }
 
         // r[impl installer.dryrun.script]
         // r[impl installer.dryrun.script.headless]
@@ -410,6 +547,7 @@ impl RunContext {
                     hostname_from_template,
                     &manifest_path,
                     copy_install_log,
+                    self.besconf.save_recovery_keys(),
                     &self.config_warnings,
                 );
                 return emit_plan(&plan, &self.cli);
@@ -427,6 +565,7 @@ impl RunContext {
                 hostname_from_template,
                 &manifest_path,
                 copy_install_log,
+                self.besconf.save_recovery_keys(),
                 &self.config_warnings,
             );
             return emit_plan(&plan, &self.cli);
@@ -444,6 +583,7 @@ impl RunContext {
             &images_dir,
             install_log,
             self.cli.no_reboot,
+            &self.besconf,
         )
     }
 }
@@ -460,12 +600,14 @@ fn resolve_hostname_template(cfg: &mut config::InstallConfig) -> Result<()> {
 }
 
 fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMode)> {
-    let config_path = cli.config.clone().or_else(config::find_config_file);
+    let config_path = cli
+        .config
+        .as_deref()
+        // r[impl installer.config.location]
+        .unwrap_or(Path::new("/run/besconf/bes-install.toml"));
 
-    match config_path {
-        Some(path) => {
-            let cfg = config::InstallConfig::load_from_file(&path)?.unwrap_or_default();
-
+    match config::InstallConfig::load_from_file(config_path)? {
+        Some(cfg) => {
             let mode = cfg.mode();
             tracing::info!("operating mode: {mode}");
             Ok((cfg, mode))
@@ -486,15 +628,19 @@ fn plan_from_tui_state(
     hostname_from_template: bool,
     manifest_path: &Option<PathBuf>,
     copy_install_log: bool,
+    save_recovery_keys: bool,
     config_warnings: &[String],
 ) -> plan::InstallPlan {
     let disk = state.selected_disk();
     let install_cfg = state.install_config_fields();
+    let net_summary = state.network_summary();
     let mut builder = plan::InstallPlan::builder(mode, state.disk_encryption)
         .tpm_present(state.tpm_present)
         .hostname_from_template(state.hostname_from_template || hostname_from_template)
         .timezone(state.effective_timezone())
+        .network_summary(&net_summary)
         .copy_install_log(copy_install_log)
+        .save_recovery_keys(save_recovery_keys)
         .config_warnings(config_warnings.to_vec());
     if let Some(dev) = disk {
         builder = builder.disk(dev);
@@ -520,25 +666,55 @@ fn emit_plan(plan: &plan::InstallPlan, cli: &Cli) -> Result<()> {
 }
 
 fn read_build_info() -> String {
-    let contents = match fs::read_to_string("/etc/bes-build-info") {
-        Ok(c) => c,
-        Err(_) => return String::new(),
+    let commit = option_env!("VERGEN_GIT_SHA").unwrap_or("");
+    let vergen_date = option_env!("VERGEN_BUILD_DATE").unwrap_or("");
+
+    let (date, arch) = match fs::read_to_string("/etc/bes-build-info") {
+        Ok(contents) => {
+            let mut d = None;
+            let mut a = None;
+            for line in contents.lines() {
+                if let Some(val) = line.strip_prefix("BUILD_DATE=") {
+                    d = Some(val.trim().to_string());
+                } else if let Some(val) = line.strip_prefix("ARCH=") {
+                    a = Some(val.trim().to_string());
+                }
+            }
+            (d, a)
+        }
+        Err(_) => (None, None),
     };
 
-    let mut date = None;
-    let mut arch = None;
-    for line in contents.lines() {
-        if let Some(val) = line.strip_prefix("BUILD_DATE=") {
-            date = Some(val.trim());
-        } else if let Some(val) = line.strip_prefix("ARCH=") {
-            arch = Some(val.trim());
-        }
-    }
+    let date = date.unwrap_or_else(|| vergen_date.to_string());
+    let arch = arch.unwrap_or_else(detect_arch);
 
-    match (date, arch) {
-        (Some(d), Some(a)) => format!("Built {d} ({a})"),
-        (Some(d), None) => format!("Built {d}"),
-        _ => String::new(),
+    if commit.is_empty() {
+        format!("Built {date} ({arch})")
+    } else {
+        format!("Built {date} ({arch}) {commit}")
+    }
+}
+
+/// Build a human-readable network summary from an `InstallConfig` (for auto
+/// mode, where there is no `AppState`).
+fn network_summary_from_config(cfg: &config::InstallConfig) -> String {
+    match cfg.network_mode.unwrap_or(NetworkMode::Dhcp) {
+        NetworkMode::Dhcp => "DHCP (all Ethernet interfaces)".to_string(),
+        NetworkMode::StaticIp => {
+            let iface = cfg.network_interface.as_deref().unwrap_or("en*");
+            let ip = cfg.network_ip.as_deref().unwrap_or("?");
+            let gw = cfg.network_gateway.as_deref().unwrap_or("?");
+            let mut s = format!("Static IP: {ip} via {gw} on {iface}");
+            if let Some(ref dns) = cfg.network_dns {
+                let dns = dns.trim();
+                if !dns.is_empty() {
+                    s.push_str(&format!("\n                DNS: {dns}"));
+                }
+            }
+            s
+        }
+        NetworkMode::Ipv6Slaac => "IPv6 SLAAC only".to_string(),
+        NetworkMode::Offline => "Offline (no network configuration)".to_string(),
     }
 }
 
@@ -548,5 +724,58 @@ fn detect_arch() -> String {
         "x86_64" => "amd64".into(),
         "aarch64" => "arm64".into(),
         other => other.into(),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+
+    use crate::config::{DiskEncryption, DiskSelector, DiskStrategy};
+
+    fn make_cli(config: Option<PathBuf>) -> crate::Cli {
+        crate::Cli {
+            config,
+            log: crate::DEFAULT_LOG_PATH.into(),
+            dry_run: false,
+            dry_run_output: None,
+            fake_devices: None,
+            input_script: None,
+            fake_timezones: None,
+            fake_tpm: false,
+            no_reboot: false,
+            check_paths: None,
+            check_chroot_paths: None,
+        }
+    }
+
+    // r[verify installer.config.location]
+    #[test]
+    fn load_valid_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bes-install.toml");
+        std::fs::write(
+            &path,
+            r#"
+            disk-encryption = "none"
+            disk = "smallest"
+        "#,
+        )
+        .unwrap();
+        let (config, _) = super::load_config(&make_cli(Some(path))).unwrap();
+        assert_eq!(config.disk_encryption, Some(DiskEncryption::None));
+        assert_eq!(
+            config.disk,
+            Some(DiskSelector::Strategy(DiskStrategy::Smallest))
+        );
+    }
+
+    // r[verify installer.config.format]
+    #[test]
+    fn load_invalid_toml_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bes-install.toml");
+        std::fs::write(&path, "this is not valid toml {{{{").unwrap();
+        assert!(super::load_config(&make_cli(Some(path))).is_err());
     }
 }

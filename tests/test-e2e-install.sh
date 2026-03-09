@@ -4,16 +4,29 @@
 # and an injected bes-install.toml for fully automatic installation, then boot
 # the installed system and run smoke checks.
 #
-# Usage: test-e2e-install.sh <iso> <variant> <arch>
-#   variant: metal | cloud
-#   arch:    amd64 | arm64
+# Usage: test-e2e-install.sh <iso> <disk-encryption> <arch>
+#   disk-encryption: tpm | keyfile | none
+#   arch:            amd64 | arm64
 #
 # Requires: qemu-system-{x86_64,aarch64}, qemu-img, genisoimage, xorriso, UEFI firmware
 set -euo pipefail
 
-ISO="${1:?Usage: $0 <iso> <variant> <arch>}"
-VARIANT="${2:?Usage: $0 <iso> <variant> <arch>}"
-ARCH="${3:?Usage: $0 <iso> <variant> <arch>}"
+ISO="${1:?Usage: $0 <iso> <disk-encryption> <arch>}"
+DISK_ENCRYPTION="${2:?Usage: $0 <iso> <disk-encryption> <arch>}"
+ARCH="${3:?Usage: $0 <iso> <disk-encryption> <arch>}"
+
+# Derive image-variant string from disk-encryption mode
+case "$DISK_ENCRYPTION" in
+    tpm)     IMAGE_VARIANT="luks-tpm" ;;
+    keyfile) IMAGE_VARIANT="luks-keyfile" ;;
+    none)    IMAGE_VARIANT="plain" ;;
+    *)
+        echo "ERROR: disk-encryption must be tpm, keyfile, or none (got: $DISK_ENCRYPTION)"
+        exit 1
+        ;;
+esac
+IS_ENCRYPTED=0
+[ "$DISK_ENCRYPTION" != "none" ] && IS_ENCRYPTED=1
 
 INSTALL_TIMEOUT="${INSTALL_TIMEOUT:-600}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-300}"
@@ -25,14 +38,6 @@ if [ ! -f "$ISO" ]; then
     echo "ERROR: ISO not found: $ISO"
     exit 1
 fi
-
-case "$VARIANT" in
-    metal|cloud) ;;
-    *)
-        echo "ERROR: variant must be metal or cloud (got: $VARIANT)"
-        exit 1
-        ;;
-esac
 
 case "$ARCH" in
     amd64)
@@ -101,7 +106,7 @@ echo "=============================="
 echo "BES E2E Install Test"
 echo "=============================="
 echo "ISO:       $ISO"
-echo "Variant:   $VARIANT"
+echo "Encryption: $DISK_ENCRYPTION (image-variant: $IMAGE_VARIANT)"
 echo "Arch:      $ARCH"
 echo "QEMU:      $QEMU_CMD"
 echo "Firmware:  $FW_CODE"
@@ -119,9 +124,9 @@ cp "$ISO" "$MODIFIED_ISO"
 
 cat > "$WORK_DIR/bes-install.toml" << EOF
 auto = true
-disk-encryption = "$([ "$VARIANT" = "metal" ] && echo "keyfile" || echo "none")"
+disk-encryption = "$DISK_ENCRYPTION"
 disk = "largest"
-hostname = "e2e-test-$VARIANT"
+hostname = "e2e-test-$DISK_ENCRYPTION"
 EOF
 
 echo "    Config:"
@@ -225,7 +230,7 @@ mkdir -p "$CI_DIR"
 
 cat > "$CI_DIR/meta-data" << META
 instance-id: e2e-test
-local-hostname: e2e-test-$VARIANT
+local-hostname: e2e-test-$DISK_ENCRYPTION
 META
 
 cat > "$CI_DIR/user-data" << 'CLOUDINIT'
@@ -266,10 +271,10 @@ runcmd:
     check "root is btrfs" test "$(stat -f -c%T /)" = "btrfs"
     check "compression active in /proc/mounts" grep -q 'compress=' /proc/mounts
 
-    VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "unknown")
-    echo "Variant: $VARIANT"
+    IMAGE_VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "unknown")
+    echo "Image variant: $IMAGE_VARIANT"
 
-    if [ "$VARIANT" = "metal" ]; then
+    if [ -e /dev/mapper/root ]; then
       check "LUKS volume is active" test -e /dev/mapper/root
     fi
 
@@ -334,7 +339,7 @@ echo ""
 # ============================================================
 # Phase 6: Evaluate results
 # ============================================================
-echo "=== E2E Test Results ($VARIANT / $ARCH) ==="
+echo "=== E2E Test Results ($DISK_ENCRYPTION / $ARCH) ==="
 echo ""
 
 if grep -q "TEST_SUCCESS" "$BOOT_LOG"; then

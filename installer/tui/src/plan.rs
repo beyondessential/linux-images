@@ -5,17 +5,17 @@ use serde::Serialize;
 use crate::config::{DiskEncryption, InstallConfig, OperatingMode};
 use crate::disk::BlockDevice;
 
-// r[impl installer.dryrun.schema+5]
+// r[impl installer.dryrun.schema+6]
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallPlan {
     pub mode: String,
     pub disk_encryption: String,
-    pub variant: String,
     pub disk: Option<DiskInfo>,
     pub tpm_present: bool,
     pub install_config: Option<InstallConfigInfo>,
     pub manifest_path: Option<PathBuf>,
     pub copy_install_log: bool,
+    pub save_recovery_keys: bool,
     pub config_warnings: Vec<String>,
 }
 
@@ -27,7 +27,7 @@ pub struct DiskInfo {
     pub transport: String,
 }
 
-// r[impl installer.dryrun.schema+5]
+// r[impl installer.dryrun.schema+6]
 #[derive(Debug, Clone, Serialize)]
 pub struct InstallConfigInfo {
     pub hostname: Option<String>,
@@ -36,6 +36,7 @@ pub struct InstallConfigInfo {
     pub ssh_authorized_keys_count: usize,
     pub password_set: bool,
     pub timezone: String,
+    pub network: String,
 }
 
 impl From<&BlockDevice> for DiskInfo {
@@ -50,7 +51,12 @@ impl From<&BlockDevice> for DiskInfo {
 }
 
 impl InstallConfigInfo {
-    pub fn from_config(cfg: &InstallConfig, hostname_from_template: bool, timezone: &str) -> Self {
+    pub fn from_config(
+        cfg: &InstallConfig,
+        hostname_from_template: bool,
+        timezone: &str,
+        network_summary: &str,
+    ) -> Self {
         let hostname = if cfg.hostname_from_dhcp {
             Some("dhcp".to_string())
         } else {
@@ -63,6 +69,7 @@ impl InstallConfigInfo {
             ssh_authorized_keys_count: cfg.ssh_authorized_keys.len(),
             password_set: cfg.has_password(),
             timezone: timezone.to_string(),
+            network: network_summary.to_string(),
         }
     }
 }
@@ -80,8 +87,10 @@ pub struct InstallPlanBuilder<'a> {
     install_config: Option<&'a InstallConfig>,
     hostname_from_template: bool,
     timezone: &'a str,
+    network_summary: &'a str,
     manifest_path: Option<PathBuf>,
     copy_install_log: bool,
+    save_recovery_keys: bool,
     config_warnings: Vec<String>,
 }
 
@@ -95,8 +104,10 @@ impl<'a> InstallPlanBuilder<'a> {
             install_config: None,
             hostname_from_template: false,
             timezone: "UTC",
+            network_summary: "DHCP (all Ethernet interfaces)",
             manifest_path: None,
             copy_install_log: true,
+            save_recovery_keys: false,
             config_warnings: Vec::new(),
         }
     }
@@ -126,6 +137,11 @@ impl<'a> InstallPlanBuilder<'a> {
         self
     }
 
+    pub fn network_summary(mut self, summary: &'a str) -> Self {
+        self.network_summary = summary;
+        self
+    }
+
     pub fn manifest_path(mut self, path: PathBuf) -> Self {
         self.manifest_path = Some(path);
         self
@@ -133,6 +149,11 @@ impl<'a> InstallPlanBuilder<'a> {
 
     pub fn copy_install_log(mut self, copy: bool) -> Self {
         self.copy_install_log = copy;
+        self
+    }
+
+    pub fn save_recovery_keys(mut self, save: bool) -> Self {
+        self.save_recovery_keys = save;
         self
     }
 
@@ -152,14 +173,19 @@ impl<'a> InstallPlanBuilder<'a> {
         InstallPlan {
             mode: mode_str.to_string(),
             disk_encryption: self.disk_encryption.to_string(),
-            variant: self.disk_encryption.variant().to_string(),
             disk: self.disk.map(DiskInfo::from),
             tpm_present: self.tpm_present,
             install_config: self.install_config.map(|cfg| {
-                InstallConfigInfo::from_config(cfg, self.hostname_from_template, self.timezone)
+                InstallConfigInfo::from_config(
+                    cfg,
+                    self.hostname_from_template,
+                    self.timezone,
+                    self.network_summary,
+                )
             }),
             manifest_path: self.manifest_path,
             copy_install_log: self.copy_install_log,
+            save_recovery_keys: self.save_recovery_keys,
             config_warnings: self.config_warnings,
         }
     }
@@ -191,7 +217,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::config::{DiskEncryption, InstallConfig, OperatingMode};
+    use crate::config::{DiskEncryption, InstallConfig, NetworkMode, OperatingMode};
     use crate::disk::{BlockDevice, TransportType};
 
     fn sample_device() -> BlockDevice {
@@ -214,7 +240,7 @@ mod tests {
         }
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn plan_serializes_full() {
         let dev = sample_device();
@@ -230,7 +256,6 @@ mod tests {
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["mode"], "auto");
         assert_eq!(json["disk_encryption"], "tpm");
-        assert_eq!(json["variant"], "metal");
         assert_eq!(json["disk"]["path"], "/dev/nvme0n1");
         assert_eq!(json["disk"]["model"], "Samsung 980 PRO");
         assert_eq!(json["disk"]["size_bytes"], 1_000_204_886_016u64);
@@ -251,6 +276,10 @@ mod tests {
         assert!(json["install_config"]["password_set"].as_bool().unwrap());
         assert_eq!(json["install_config"]["timezone"], "America/New_York");
         assert_eq!(
+            json["install_config"]["network"],
+            "DHCP (all Ethernet interfaces)"
+        );
+        assert_eq!(
             json["manifest_path"],
             "/run/live/medium/images/partitions.json"
         );
@@ -258,7 +287,7 @@ mod tests {
         assert!(json["config_warnings"].as_array().unwrap().is_empty());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn plan_serializes_minimal() {
         let plan = InstallPlan::builder(&OperatingMode::Interactive, DiskEncryption::None)
@@ -268,7 +297,6 @@ mod tests {
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["mode"], "interactive");
         assert_eq!(json["disk_encryption"], "none");
-        assert_eq!(json["variant"], "cloud");
         assert!(json["disk"].is_null());
         assert!(!json["tpm_present"].as_bool().unwrap());
         assert!(json["install_config"].is_null());
@@ -277,18 +305,17 @@ mod tests {
         assert_eq!(json["config_warnings"][0], "some warning");
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
-    fn plan_keyfile_derives_metal_variant() {
+    fn plan_keyfile_encryption() {
         let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::Keyfile).build();
 
         let json = serde_json::to_value(&plan).unwrap();
         assert_eq!(json["disk_encryption"], "keyfile");
-        assert_eq!(json["variant"], "metal");
         assert!(!json["tpm_present"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn plan_copy_install_log_false() {
         let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::None)
@@ -299,14 +326,15 @@ mod tests {
         assert!(!json["copy_install_log"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_hides_authkey_value() {
         let cfg = InstallConfig {
             tailscale_authkey: Some("tskey-auth-secret-value".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert!(info.tailscale_authkey);
 
         let json = serde_json::to_value(&info).unwrap();
@@ -314,41 +342,44 @@ mod tests {
         assert!(json["tailscale_authkey"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_no_authkey() {
         let cfg = InstallConfig {
             hostname: Some("host".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert!(!info.tailscale_authkey);
         assert!(!info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_password_set_from_plaintext() {
         let cfg = InstallConfig {
             password: Some("secret".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert!(info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_password_set_from_hash() {
         let cfg = InstallConfig {
             password_hash: Some("$6$rounds=4096$salt$hash".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert!(info.password_set);
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn disk_info_from_block_device() {
         let dev = sample_device();
@@ -359,7 +390,7 @@ mod tests {
         assert_eq!(info.transport, "NVMe");
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn all_operating_modes_map_correctly() {
         let dev = sample_device();
@@ -401,41 +432,108 @@ mod tests {
         let contents = std::fs::read_to_string(&path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
         assert_eq!(parsed["mode"], "auto");
-        assert_eq!(parsed["variant"], "metal");
         assert_eq!(parsed["disk_encryption"], "tpm");
         assert!(parsed["tpm_present"].as_bool().unwrap());
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_dhcp_hostname_sentinel() {
         let cfg = InstallConfig {
             hostname_from_dhcp: true,
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert_eq!(info.hostname.as_deref(), Some("dhcp"));
         assert!(!info.hostname_from_template);
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_template_flag() {
         let cfg = InstallConfig {
             hostname: Some("srv-a1b2c3".into()),
             ..Default::default()
         };
-        let info = InstallConfigInfo::from_config(&cfg, true, "Pacific/Auckland");
+        let info = InstallConfigInfo::from_config(
+            &cfg,
+            true,
+            "Pacific/Auckland",
+            "DHCP (all Ethernet interfaces)",
+        );
         assert_eq!(info.hostname.as_deref(), Some("srv-a1b2c3"));
         assert!(info.hostname_from_template);
         assert_eq!(info.timezone, "Pacific/Auckland");
     }
 
-    // r[verify installer.dryrun.schema+5]
+    // r[verify installer.dryrun.schema+6]
     #[test]
     fn install_config_info_timezone_default() {
         let cfg = InstallConfig::default();
-        let info = InstallConfigInfo::from_config(&cfg, false, "UTC");
+        let info =
+            InstallConfigInfo::from_config(&cfg, false, "UTC", "DHCP (all Ethernet interfaces)");
         assert_eq!(info.timezone, "UTC");
+        assert_eq!(info.network, "DHCP (all Ethernet interfaces)");
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn install_config_info_network_summary_static() {
+        let cfg = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_ip: Some("192.168.1.10/24".into()),
+            ..Default::default()
+        };
+        let summary = "Static IP: 192.168.1.10/24 via 192.168.1.1 on enp0s3";
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC", summary);
+        assert_eq!(info.network, summary);
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn install_config_info_network_summary_offline() {
+        let cfg = InstallConfig {
+            network_mode: Some(NetworkMode::Offline),
+            ..Default::default()
+        };
+        let summary = "Offline (no network configuration)";
+        let info = InstallConfigInfo::from_config(&cfg, false, "UTC", summary);
+        assert_eq!(info.network, summary);
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn plan_network_summary_in_json() {
+        let dev = sample_device();
+        let cfg = InstallConfig {
+            hostname: Some("srv".into()),
+            network_mode: Some(NetworkMode::StaticIp),
+            ..Default::default()
+        };
+        let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::None)
+            .disk(&dev)
+            .install_config(&cfg)
+            .network_summary("Static IP: 10.0.0.5/24 via 10.0.0.1 on eth0")
+            .build();
+        let json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(
+            json["install_config"]["network"],
+            "Static IP: 10.0.0.5/24 via 10.0.0.1 on eth0"
+        );
+    }
+
+    // r[verify installer.finalise.network+4]
+    #[test]
+    fn plan_network_summary_default() {
+        let cfg = sample_install_config();
+        let plan = InstallPlan::builder(&OperatingMode::Auto, DiskEncryption::None)
+            .install_config(&cfg)
+            .build();
+        let json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(
+            json["install_config"]["network"],
+            "DHCP (all Ethernet interfaces)"
+        );
     }
 }

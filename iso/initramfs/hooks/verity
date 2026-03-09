@@ -1,0 +1,15 @@
+#!/bin/sh
+# r[depends iso.verity.squashfs+3]
+# Initramfs hook: copy veritysetup and its shared library dependencies
+# into the initramfs so the live-premount script can set up dm-verity.
+set -e
+
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0;; esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+# copy_exec handles shared library dependencies automatically
+# (libcryptsetup, libdevmapper, etc.)
+copy_exec /usr/sbin/veritysetup

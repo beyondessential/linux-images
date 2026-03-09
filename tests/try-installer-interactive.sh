@@ -11,12 +11,13 @@
 #                  this replaces the binary baked into the ISO, so you can
 #                  iterate on the installer without rebuilding the whole ISO.
 #
-# Requires: systemd-nspawn, xorriso, unsquashfs, losetup, lsblk.
-#           Must run as root.
+# Requires: systemd-nspawn, xorriso, unsquashfs, losetup, lsblk, sgdisk,
+#           veritysetup. Must run as root.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/nspawn-opts.sh"
+source "$SCRIPT_DIR/iso-images-mount.sh"
 
 ISO="${1:?Usage: $0 <iso> <arch> [disk-size] [installer-bin]}"
 ARCH="${2:?Usage: $0 <iso> <arch> [disk-size] [installer-bin]}"
@@ -42,7 +43,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 MISSING=()
-for cmd in systemd-nspawn xorriso unsquashfs losetup lsblk; do
+for cmd in systemd-nspawn xorriso unsquashfs losetup lsblk sgdisk veritysetup; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -59,6 +60,8 @@ LOOP_DEV=""
 cleanup() {
     local exit_code=$?
     set +e
+
+    iso_images_cleanup
 
     # Unmount any stale mounts the installer left on the target device or
     # its LUKS mapper before closing LUKS / detaching the loop.
@@ -112,7 +115,6 @@ echo "==> Extracting rootfs and images from ISO..."
 
 SQUASHFS="$WORK_DIR/filesystem.squashfs"
 ROOTFS_DIR="$WORK_DIR/rootfs"
-IMAGES_DIR="$WORK_DIR/images"
 
 xorriso -osirrox on -indev "$ISO" \
     -extract /live/filesystem.squashfs "$SQUASHFS" \
@@ -129,21 +131,11 @@ unsquashfs -d "$ROOTFS_DIR" -f "$SQUASHFS" >/dev/null 2>&1
 rm -f "$SQUASHFS"
 echo "    Unpacked rootfs to $ROOTFS_DIR"
 
-mkdir -p "$IMAGES_DIR"
-xorriso -osirrox on -indev "$ISO" \
-    -extract /images "$IMAGES_DIR" \
-    2>/dev/null
-
-if [ ! -f "$IMAGES_DIR/partitions.json" ]; then
-    echo "ERROR: partitions.json not found in ISO /images/"
-    exit 1
-fi
-PART_IMAGE_COUNT=$(find "$IMAGES_DIR" -name '*.img.zst' | wc -l)
-if [ "$PART_IMAGE_COUNT" -eq 0 ]; then
-    echo "ERROR: no .img.zst partition images found in ISO /images/"
-    exit 1
-fi
-echo "    Extracted partitions.json + $PART_IMAGE_COUNT partition image(s)"
+# Mount the images squashfs from the ISO's GPT images partition via dm-verity.
+# This verifies integrity and gives us the real squashfs mount that the
+# installer would see in production at /run/bes-images.
+iso_images_mount "$ISO"
+IMAGES_DIR="$ISO_IMAGES_MNT"
 echo ""
 
 # ============================================================
@@ -236,14 +228,14 @@ echo "==> Launching interactive installer in container..."
 echo "    (The installer TUI will take over the terminal.)"
 echo ""
 
-# r[impl installer.container.isolation+3]: use the shared nspawn
+# r[impl installer.container.isolation+4]: use the shared nspawn
 # configuration. --private-network is omitted so tailscale netcheck works.
 #
 # The container gets nspawn's own private /dev (no host devices exposed).
 # After partprobe, partition device nodes only appear on the host's devtmpfs,
 # not inside the container. The installer handles this by reading
 # /sys/class/block/ and creating missing device nodes via mknod
-# (see r[installer.container.partition-devices+2]).
+# (see r[installer.container.partition-devices+3]).
 nspawn_opts
 nspawn_installer_binds "$LOOP_DEV" "$IMAGES_DIR" "$DEVICES_JSON" \
     "" "$WORK_DIR/log:/log"

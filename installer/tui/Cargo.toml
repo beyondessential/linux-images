@@ -24,7 +24,6 @@ thiserror = "2.0.18"
 toml = "1.0.3"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["fmt"] }
-zstd = "0.13.3"
 
 [dev-dependencies]
 assert_cmd = "2.1.2"
@@ -34,9 +33,5 @@ tempfile = "3.26.0"
 [features]
 luks-tests = []
 
-[profile.release]
-opt-level = "s"
-lto = true
-strip = true
-panic = "abort"
-codegen-units = 1
+[build-dependencies]
+vergen-gitcl = { version = "9.1.0", features = ["build"] }

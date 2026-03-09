@@ -98,10 +98,37 @@ apt-get install -y -q dracut  # this removes initramfs-tools
 install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
     /etc/dracut.conf.d/01-fix-hostonly-noble.conf
 
+# r[impl image.boot.hardware-drivers+3]
+install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
+    /etc/dracut.conf.d/03-hardware-drivers.conf
+
+# r[impl image.boot.cloud-drivers+5]
+if [ "$VARIANT" = "cloud" ]; then
+    install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
+        /etc/dracut.conf.d/04-cloud-drivers.conf
+fi
+
+if [ "$VARIANT" = "metal" ]; then
+    apt-get install -y -q --no-install-recommends linux-firmware
+fi
+
+# ============================================================
+# Console font
+# ============================================================
+# r[image.base.console-font]
+cat > /etc/default/console-setup << 'EOF'
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="guess"
+FONTFACE="Fixed"
+FONTSIZE="8x16"
+VIDEOMODE=
+EOF
+
 # ============================================================
 # Variant identification
 # ============================================================
-# r[image.variant.types+2]
+# r[image.variant.types+3]
 mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 
@@ -120,13 +147,22 @@ GRUB_CMDLINE_LINUX_DEFAULT="noresume"
 GRUB_CMDLINE_LINUX=""
 GRUB_RECORDFAIL_TIMEOUT=5
 GRUBEOF
+fi
+
+# r[image.boot.cloud-console]
+if [ "$VARIANT" = "cloud" ]; then
+    GRUB_CMDLINE="noresume console=ttyS0,115200n8"
 else
+    GRUB_CMDLINE="noresume"
+fi
+
+if [ -f /etc/default/grub ]; then
     # r[image.boot.grub-timeout]
     sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=5/' /etc/default/grub
     sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub
 
-    # r[image.boot.grub-cmdline]
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="noresume"/' /etc/default/grub
+    # r[image.boot.grub-cmdline] r[image.boot.cloud-console]
+    sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"${GRUB_CMDLINE}\"/" /etc/default/grub
 
     # r[image.boot.grub-timeout] (recordfail)
     if ! grep -q '^GRUB_RECORDFAIL_TIMEOUT=' /etc/default/grub; then
@@ -195,6 +231,13 @@ install -m 644 /tmp/files/systemd/bes-tailscale-firstboot-auth.service /etc/syst
 systemctl enable bes-tailscale-firstboot-auth.service
 
 # ============================================================
+# Network
+# ============================================================
+# r[image.base.network+2]
+mkdir -p /etc/netplan
+install -m 600 /tmp/files/netplan/01-all-en-dhcp.yaml /etc/netplan/01-all-en-dhcp.yaml
+
+# ============================================================
 # SSH
 # ============================================================
 # r[image.credentials.ssh-keys-only]
@@ -213,7 +256,7 @@ bash /tmp/scripts/setup-snapper.sh
 # ============================================================
 # Disk growth service
 # ============================================================
-# r[image.growth.service] r[image.growth.script]
+# r[impl image.growth.service+3]
 install -m 755 /tmp/files/grow-root-filesystem /usr/local/bin/grow-root-filesystem
 install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/system/grow-root-filesystem.service
 systemctl enable grow-root-filesystem.service
@@ -291,12 +334,12 @@ grub-install \
 # Hostname
 # ============================================================
 if [ "$VARIANT" = "metal" ]; then
-    # r[image.hostname.metal-dhcp]
+    # r[image.hostname.metal-dhcp+2]
     : > /etc/hostname
     echo "127.0.0.1 localhost" > /etc/hosts
     echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
 else
-    # r[image.hostname.cloud-default]
+    # r[image.hostname.cloud-default+2]
     echo "ubuntu" > /etc/hostname
     echo "127.0.0.1 localhost" > /etc/hosts
     echo "127.0.1.1 ubuntu" >> /etc/hosts

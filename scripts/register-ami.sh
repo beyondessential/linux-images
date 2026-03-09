@@ -1,7 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Register an imported snapshot as an AMI
+# Register an imported snapshot as an AMI.
+#
+# This is the second step after import-to-aws.sh completes. The import
+# produces an EBS snapshot; this script registers it as a bootable AMI.
+#
 # Usage: ./register-ami.sh <import-task-id> [region] [arch]
 
 IMPORT_TASK_ID="${1:-}"
@@ -61,9 +65,9 @@ echo "Snapshot ID: $SNAPSHOT_ID"
 
 # Generate AMI name with timestamp
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-AMI_NAME="ubuntu-24.04-bes-${ARCH}-${TIMESTAMP}"
+AMI_NAME="ubuntu-24.04-bes-cloud-${ARCH}-${TIMESTAMP}"
 
-# Set architecture for AWS
+# Set architecture for AWS API
 AWS_ARCH="${ARCH/amd64/x86_64}"
 
 echo ""
@@ -73,7 +77,7 @@ echo "Name: $AMI_NAME"
 AMI_ID=$(aws ec2 register-image \
     --region "$REGION" \
     --name "$AMI_NAME" \
-    --description "BES Ubuntu 24.04 ${ARCH} with BTRFS+LUKS encryption" \
+    --description "BES Ubuntu 24.04 cloud ${ARCH} with BTRFS" \
     --architecture "$AWS_ARCH" \
     --root-device-name /dev/sda1 \
     --block-device-mappings "DeviceName=/dev/sda1,Ebs={SnapshotId=${SNAPSHOT_ID},VolumeType=gp3,DeleteOnTermination=true}" \
@@ -96,7 +100,7 @@ echo "Region: $REGION"
 echo "Architecture: $ARCH"
 echo ""
 
-# Tag the AMI
+# Tag the AMI and its backing snapshot
 echo "Tagging AMI..."
 aws ec2 create-tags \
     --region "$REGION" \
@@ -105,9 +109,10 @@ aws ec2 create-tags \
         "Key=Name,Value=${AMI_NAME}" \
         "Key=Os,Value=Ubuntu" \
         "Key=Version,Value=24.04" \
+        "Key=Variant,Value=cloud" \
         "Key=Architecture,Value=${ARCH}" \
         "Key=BuildTime,Value=${TIMESTAMP}" \
-        "Key=Features,Value=BTRFS+LUKS" \
+        "Key=Features,Value=BTRFS" \
         "Key=Builder,Value=BES"
 
 echo "Tagging complete"
@@ -116,4 +121,8 @@ echo "AMI is ready to use:"
 echo "  aws ec2 describe-images --region $REGION --image-ids $AMI_ID"
 echo ""
 echo "Launch an instance:"
-echo "  aws ec2 run-instances --region $REGION --image-id $AMI_ID --instance-type t3.small --key-name <your-key>"
+if [ "$ARCH" = "amd64" ]; then
+    echo "  aws ec2 run-instances --region $REGION --image-id $AMI_ID --instance-type t3.small --key-name <your-key>"
+else
+    echo "  aws ec2 run-instances --region $REGION --image-id $AMI_ID --instance-type t4g.small --key-name <your-key>"
+fi

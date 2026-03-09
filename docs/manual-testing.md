@@ -87,9 +87,9 @@ a real auth key, and that the TUI is usable by a human.
 
 3. Walk through every TUI screen:
    - **Welcome screen**: verify the description text renders correctly in
-     ASCII. Press `n` to open the network check screen, confirm that
-     connectivity checks and `tailscale netcheck` run and display results.
-     Press `Esc` to return, then `Enter` to proceed.
+     ASCII. Press `Enter` to open the network screen, then `n` for the check
+     screen, confirm that connectivity checks and `tailscale netcheck` run and
+     display results. Press `Esc` to return, then `Enter` to proceed.
    - **Disk selection**: confirm the loopback disk is listed with its
      size and model. Select it and press `Enter`.
    - **Disk encryption**: select "Full-disk encryption, not bound to
@@ -128,6 +128,8 @@ This verifies the ISO boots correctly in a real UEFI VM environment, which
 exercises the El Torito EFI boot path, GRUB, live-boot, and the automatic
 TUI launch -- none of which are tested by the container-based tests.
 
+### 5a: CD-ROM boot (optical media)
+
 1. Create a new VM in VirtualBox:
    - Type: Linux, Ubuntu (64-bit)
    - Enable EFI: Settings > System > Enable EFI
@@ -165,7 +167,7 @@ TUI launch -- none of which are tested by the container-based tests.
    - Log in as `ubuntu` with the password you set.
    - Run `systemctl --failed` and confirm no unexpected failed units.
    - Run `cat /etc/bes/image-variant` and confirm it matches your
-     encryption choice (`metal` or `cloud`).
+     encryption choice (`luks-tpm`, `luks-keyfile`, or `plain`).
    - Run `df -h /` and confirm the root filesystem has been expanded
      beyond the base image size.
    - Run `btrfs subvolume list /` and confirm `@` and `@postgres`
@@ -174,7 +176,29 @@ TUI launch -- none of which are tested by the container-based tests.
 **Acceptance criteria**: the ISO boots in EFI mode without network, the
 installer completes successfully, the installed system boots unattended (no
 manual LUKS passphrase entry for keyfile mode), and the basic system health
-checks above pass.
+checks above pass. The installer log (`/var/log/bes-installer.log`) should
+show that it found the images partition by PARTUUID (possibly after a
+`losetup --partscan` on `/dev/sr0` for CD-ROM boot).
+
+### 5b: USB/hard-disk boot (VDI)
+
+This verifies the ISO works when booted as a hard disk (simulating a USB
+stick written via `dd`), which exercises the GPT partition table directly
+without the CD-ROM partition scanning workaround.
+
+1. Build the VDI: `just iso-vdi`
+2. Create a new VM in VirtualBox (same settings as 5a).
+3. Instead of attaching an optical disc, attach the `.vdi` file as a
+   **second hard disk** (Settings > Storage > SATA controller > add hard
+   disk). Keep the 10 GB target disk as the first disk.
+4. Boot from the VDI disk (change boot order if needed).
+5. The installer should find the images partition directly by PARTUUID
+   without needing the CD-ROM partscan service.
+6. Complete the installation to the target disk and verify as in 5a.
+
+**Acceptance criteria**: the VDI boots in EFI mode, the installer finds
+`partitions.json` via the PARTUUID-based lookup (no partscan fallback
+needed), and the installation completes successfully.
 
 ## Step 6: USB Configuration -- Prefilled Defaults
 
@@ -254,7 +278,7 @@ USB.
    - Hostname is `auto-test` (`hostnamectl`).
    - Log in with password `testpass` (should not prompt for password
      change).
-   - Variant is `metal` (`cat /etc/bes/image-variant`).
+   - Variant is `luks-keyfile` (`cat /etc/bes/image-variant`).
 
 **Acceptance criteria**: the install completes with zero human
 interaction. The installed system reflects the configuration from the
@@ -296,7 +320,8 @@ a disk, without using the ISO installer.
    - GRUB menu appears with a 5-second timeout.
    - The system boots to a login prompt.
    - Log in as `ubuntu` with password `bes` (will be forced to change it).
-   - `cat /etc/bes/image-variant` shows `cloud`.
+   - `cat /etc/bes/image-variant` shows `cloud` (this is the build-time
+     cloud image, not an installer-produced system).
    - `df -h /` shows the root filesystem has been expanded beyond the
      base image size.
    - `btrfs subvolume list /` shows `@` and `@postgres`.
@@ -307,6 +332,122 @@ a disk, without using the ISO installer.
 write. The growth service expands the root filesystem. The metal image
 boots without prompting for a passphrase.
 
+## Step 10: BESCONF Interaction and Recovery Passphrase
+
+This verifies the BESCONF writable-detection, failure-log rotation,
+`recovery-passphrase` config field, and `save-recovery-keys` config field.
+These features require a real (or realistic) BESCONF partition that the
+installer can remount read-write, so they cannot be fully tested in
+unit tests.
+
+### 10a: Recovery passphrase and save-recovery-keys (auto mode)
+
+1. Mount the BESCONF partition on the USB drive prepared in Step 6:
+
+   ```
+   sudo mount /dev/sdX3 /mnt    # partition label BESCONF
+   ```
+
+2. Write a config that uses a pre-determined recovery passphrase and
+   enables saving recovery keys:
+
+   ```
+   cat | sudo tee /mnt/bes-install.toml << 'EOF'
+   auto = true
+   disk-encryption = "keyfile"
+   disk = "largest"
+   hostname = "recovery-test"
+   password = "testpass"
+   recovery-passphrase = "this-is-a-test-passphrase-that-is-long-enough"
+   save-recovery-keys = true
+   EOF
+   ```
+
+3. Remove any leftover files from previous runs:
+
+   ```
+   sudo rm -f /mnt/recovery-keys.txt /mnt/installer-failed.log /mnt/installer-failed.log.old
+   ```
+
+4. Unmount: `sudo umount /mnt`
+
+5. Boot the target machine from the USB and let the automatic install
+   complete. The installer should display the pre-determined passphrase
+   (`this-is-a-test-passphrase-that-is-long-enough`) on the recovery
+   passphrase screen, not a random diceware passphrase.
+
+6. After reboot, remove the USB and mount the BESCONF partition on
+   your workstation:
+
+   ```
+   sudo mount /dev/sdX3 /mnt
+   cat /mnt/recovery-keys.txt
+   ```
+
+7. Verify the `recovery-keys.txt` file contains one line with three
+   tab-separated fields:
+   - The passphrase (`this-is-a-test-passphrase-that-is-long-enough`).
+   - A UUID (the root partition UUID).
+   - A machine serial number or the literal string `unknown`.
+
+8. Verify the installed system unlocks with the pre-determined
+   passphrase: boot the installed disk and when prompted for the LUKS
+   recovery passphrase (e.g. after removing the keyfile or on a
+   different machine), enter
+   `this-is-a-test-passphrase-that-is-long-enough`.
+
+**Acceptance criteria**: the installer uses the provided passphrase
+instead of generating one, and `recovery-keys.txt` is written to BESCONF
+with the correct format.
+
+### 10b: BESCONF writable detection and failure-log rotation
+
+1. Mount the BESCONF partition and create a fake failure log from a
+   "previous run":
+
+   ```
+   sudo mount /dev/sdX3 /mnt
+   echo "fake previous failure" | sudo tee /mnt/installer-failed.log
+   ```
+
+2. Write a config that will cause the installer to fail (e.g. specify a
+   disk that does not exist):
+
+   ```
+   cat | sudo tee /mnt/bes-install.toml << 'EOF'
+   auto = true
+   disk-encryption = "keyfile"
+   disk = "/dev/sdZZZ"
+   hostname = "fail-test"
+   password = "testpass"
+   EOF
+   ```
+
+3. Unmount: `sudo umount /mnt`
+
+4. Boot the target machine from the USB. The installer should fail
+   because `/dev/sdZZZ` does not exist.
+
+5. Remove the USB, mount BESCONF on your workstation, and verify:
+
+   ```
+   sudo mount /dev/sdX3 /mnt
+   ls -la /mnt/installer-failed.log /mnt/installer-failed.log.old
+   cat /mnt/installer-failed.log.old
+   cat /mnt/installer-failed.log
+   ```
+
+   - `installer-failed.log.old` should contain "fake previous failure"
+     (the file from sub-step 1 was rotated).
+   - `installer-failed.log` should contain the actual installer log from
+     the failed run (look for error messages about the missing disk).
+
+6. Clean up: `sudo umount /mnt`
+
+**Acceptance criteria**: the installer detects BESCONF as writable,
+rotates the existing failure log to `.old`, and writes the new failure
+log on error.
+
 ## Completion Checklist
 
 After completing all steps, confirm:
@@ -315,8 +456,11 @@ After completing all steps, confirm:
 - [ ] Step 2: Automated tests passed.
 - [ ] Step 3: All container install scenarios passed (including metal).
 - [ ] Step 4: Interactive TUI works, Tailscale auth key accepted.
-- [ ] Step 5: ISO boots in VM, installed system is healthy.
+- [ ] Step 5a: ISO boots in VM (CD-ROM), installed system is healthy.
+- [ ] Step 5b: ISO boots in VM (VDI/USB), installed system is healthy.
 - [ ] Step 6: BESCONF prefilled defaults appear in TUI.
 - [ ] Step 7: Automatic mode installs without interaction.
 - [ ] Step 8: Bare-metal hardware boot works.
 - [ ] Step 9: Direct image write boots (cloud and metal).
+- [ ] Step 10a: Recovery passphrase accepted, recovery-keys.txt written.
+- [ ] Step 10b: Failure log rotated and written on BESCONF.

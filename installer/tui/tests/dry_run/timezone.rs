@@ -2,7 +2,7 @@ use super::common::{Fixture, SINGLE_SSD_DEVICE, installer};
 
 // r[verify installer.tui.timezone]
 // r[verify installer.finalise.timezone]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
 fn auto_timezone_defaults_to_utc() {
     let f = Fixture::new();
@@ -77,9 +77,9 @@ fn auto_timezone_from_config() {
 }
 
 // r[verify installer.tui.timezone]
-// r[verify installer.dryrun.schema+5]
+// r[verify installer.dryrun.schema+6]
 #[test]
-fn auto_metal_timezone_from_config() {
+fn auto_encrypted_timezone_from_config() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let config = f.write_config(
@@ -123,12 +123,16 @@ fn scripted_timezone_search_and_select() {
         "\
 # Welcome
 enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
 # DiskSelection
 enter
-# DiskEncryptionScreen: cycle to None (cloud)
+# DiskEncryptionScreen: cycle to None
 down
 enter
-# Hostname selector: network-assigned is default for cloud, Enter -> Login
+# Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password
 type:pw
@@ -179,12 +183,16 @@ fn scripted_timezone_navigate_and_select() {
         "\
 # Welcome
 enter
+# NetworkConfig: ISO -> Target
+enter
+# NetworkConfig: Target -> DiskSelection
+enter
 # DiskSelection
 enter
-# DiskEncryptionScreen: cycle to None (cloud)
+# DiskEncryptionScreen: cycle to None
 down
 enter
-# Hostname selector: network-assigned is default for cloud, Enter -> Login
+# Hostname selector: Network-assigned is default, Enter -> Login
 enter
 # Login: type password
 type:pw
