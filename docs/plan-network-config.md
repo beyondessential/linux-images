@@ -1,6 +1,6 @@
 # Plan: Installer Network Configuration
 
-## Status: Draft
+## Status: Draft (updated after merge from main)
 
 ## Summary
 
@@ -12,40 +12,78 @@ installation target (written to the installed system).
 ## Motivation
 
 Currently the ISO installer relies entirely on DHCP for the live environment
-(provided by `live-boot`) and installs a DHCP-only netplan config
-(`01-all-en-dhcp.yaml`) on the target. The only network-related customisation
-is the hostname. This is insufficient for environments that require static IP
-addressing, IPv6-only networks, or intentionally offline installs.
+(provided by `live-boot` with `systemd-networkd`) and installs a DHCP-only
+netplan config (`01-all-en-dhcp.yaml`) on the target. The only
+network-related customisation is the hostname. This is insufficient for
+environments that require static IP addressing, IPv6-only networks, or
+intentionally offline installs.
+
+## Current State (post-merge baseline)
+
+The following is already implemented and must be accounted for:
+
+- The **Welcome screen** (`r[installer.tui.welcome+8]`) now includes:
+  - `q` to reboot
+  - `Ctrl+Alt+d: shell` hint in the footer
+  - dm-verity integrity check with progress bar (blocks Enter until passed)
+  - `n` keybind to open the standalone NetworkCheck screen
+- The **NetworkCheck screen** is reachable from Welcome via `n` and shows
+  endpoint connectivity checks + tailscale netcheck in an accordion layout
+  (`NetPane::Connectivity` / `NetPane::Tailscale`).
+- The **NetworkResults screen** sits between Timezone and Confirmation and
+  shows the same check results.
+- The netplan file `01-all-en-dhcp.yaml` ships in both the image
+  (`image/files/netplan/`) and the ISO rootfs (`iso/rootfs-files/etc/netplan/`).
+  It matches `en*` interfaces with `dhcp4: true`, mode 0600.
+- `InstallConfig` has no network fields yet. `InstallPlan` /
+  `InstallConfigInfo` has no network summary.
+- The confirmation screen shows disk, encryption, timezone, hostname,
+  tailscale, SSH keys, and password -- but not network config.
+- `apply_firstboot` in `firstboot.rs` handles hostname, tailscale, SSH keys,
+  password, timezone, and install-log copy -- but not network config.
+- The spec already contains `r[installer.config.network-mode]`,
+  `r[installer.config.network-static]`, `r[installer.config.iso-network-mode]`,
+  `r[installer.tui.network-config+12]`, and `r[installer.finalise.network+3]`
+  (added on this branch before the merge).
+- The config template (`iso/bes-install.toml.template`) does not yet include
+  network fields.
 
 ## Screen Flow (before vs after)
 
-### Before
+### Before (current)
 
 ```
-Welcome (n: netcheck) -> DiskSelection -> DiskEncryption -> Hostname -> ...
-                \-> NetworkCheck (standalone)
+Welcome (n: netcheck, q: reboot, verity check) -> DiskSelection -> ...
+                \-> NetworkCheck (standalone, Esc back to Welcome)
+...
+Timezone -> NetworkResults -> Confirmation
 ```
 
 ### After
 
 ```
-Welcome -> NetworkConfig -> DiskSelection -> DiskEncryption -> Hostname -> ...
-              |                  (Alt+c: netcheck from NetworkConfig)
-              |--- ISO pane (accordion top)
-              |--- Target pane (accordion bottom)
+Welcome (q: reboot, verity check) -> NetworkConfig -> DiskSelection -> ...
+                                        |
+                                        |--- ISO pane (accordion top)
+                                        |--- Target pane (accordion bottom)
+                                        |--- Alt+c: NetworkCheck
+...
+Timezone -> NetworkResults -> Confirmation
 ```
 
 The `n` keybind is removed from the Welcome screen. The standalone
-`NetworkCheck` screen is still present but is now only reachable via `Alt+c`
-from the `NetworkConfig` screen (and from the `NetworkResults` screen, which
-remains between Timezone and Confirmation).
+`NetworkCheck` screen is now only reachable via `Alt+c` from the
+`NetworkConfig` screen. `Esc` from NetworkCheck returns to NetworkConfig
+(not Welcome). The `NetworkResults` screen between Timezone and Confirmation
+remains unchanged.
 
 ## Network Configuration Screen
 
 ### Layout
 
-The screen uses the same accordion pattern as the existing netcheck screen:
-two panes, one expanded and one collapsed. The panes are:
+The screen uses the same accordion pattern as the existing netcheck screen
+(`render_net_accordion` in `ui/render.rs`): two panes, one expanded and one
+collapsed. The panes are:
 
 1. **Live ISO (current)** -- configures the running live system's network
 2. **Installation Target** -- configures what gets written to the installed
@@ -64,6 +102,7 @@ two panes, one expanded and one collapsed. The panes are:
 - `Alt+c` opens the NetworkCheck screen (connectivity checks + tailscale
   netcheck). The netcheck is restarted whenever the ISO network configuration
   changes.
+- `q` triggers reboot (consistent with all other screens).
 
 ### ISO Pane
 
@@ -164,8 +203,9 @@ restarted.
 
 ## Confirmation Screen
 
-The confirmation screen (step 6/6) already shows a summary of install-time
-config. It must additionally show the target network configuration:
+The confirmation screen already shows a summary of install-time config (disk,
+encryption, timezone, hostname, tailscale, SSH keys, password). It must
+additionally show the target network configuration:
 
 ```
 Network:        DHCP (all Ethernet interfaces)
@@ -188,15 +228,16 @@ Network:        Offline (no network configuration)
 
 ### Target netplan generation
 
-During `apply_firstboot`, the installer writes the target network
-configuration to the installed system:
+During `apply_firstboot` (in `firstboot.rs`), the installer writes the target
+network configuration to the installed system. This is a new step added after
+the existing timezone/hostname/tailscale/ssh/password steps:
 
 - **DHCP** (or "Copy current" when ISO is DHCP): the existing
-  `01-all-en-dhcp.yaml` is left as-is (it ships in the image).
-- **Static IP**: a new `/etc/netplan/01-static.yaml` is written with the
-  user's settings. The base `01-all-en-dhcp.yaml` is removed.
-- **IPv6 SLAAC only**: a new `/etc/netplan/01-ipv6-slaac.yaml` is written.
-  The base `01-all-en-dhcp.yaml` is removed.
+  `01-all-en-dhcp.yaml` is left as-is (it ships in the base image).
+- **Static IP**: a new `/etc/netplan/01-installer-static.yaml` is written
+  with the user's settings. The base `01-all-en-dhcp.yaml` is removed.
+- **IPv6 SLAAC only**: a new `/etc/netplan/01-installer-ipv6-slaac.yaml` is
+  written. The base `01-all-en-dhcp.yaml` is removed.
 - **Offline**: the base `01-all-en-dhcp.yaml` is removed. No replacement is
   written.
 - **Copy current (static)**: same as static IP, using the ISO pane's values.
@@ -204,11 +245,13 @@ configuration to the installed system:
 ### Netplan file permissions
 
 All installer-generated netplan files must have mode 0600 (matching the
-existing `01-all-en-dhcp.yaml`).
+existing `01-all-en-dhcp.yaml`, which is verified by
+`test-image-structure.sh` and `test-iso-structure.sh`).
 
 ## Configuration File (`bes-install.toml`)
 
-New optional fields:
+New optional fields to add to both `InstallConfig` (in `config.rs`) and the
+template (`iso/bes-install.toml.template`):
 
 ```toml
 # Target network mode: "dhcp" (default), "static", "ipv6-slaac", "offline"
@@ -249,6 +292,10 @@ When `auto = false` (interactive/prefilled):
   the TUI pre-selects that mode instead (no "Copy current" option).
 - The user can still change them interactively.
 
+**Note**: The `template_contains_all_config_fields` test in `config.rs`
+verifies that every `InstallConfig` field has a corresponding entry in the
+template. New fields must be added to both.
+
 ## Data Model Changes
 
 ### New types
@@ -283,12 +330,6 @@ struct StaticNetConfig {
     search_domain: String,  // optional
 }
 
-/// Full network configuration for one side (ISO or target).
-struct NetworkConfig {
-    mode: NetworkMode,  // or TargetNetworkMode for target
-    static_config: StaticNetConfig,
-}
-
 /// Detected network interface for the dropdown.
 struct NetInterface {
     name: String,       // e.g. "enp0s3"
@@ -297,49 +338,85 @@ struct NetInterface {
 }
 ```
 
-### AppState additions
+### AppState additions (`ui.rs`)
+
+The existing `AppState` struct gains:
 
 ```rust
-pub struct AppState {
-    // ... existing fields ...
-
-    // Network config screen
-    pub iso_network: NetworkConfig,
-    pub target_network: TargetNetworkConfig,
-    pub detected_interfaces: Vec<NetInterface>,
-    pub iso_net_status: NetConnectivityStatus,
-    pub net_config_focus: NetConfigFocus,  // which pane, which field
-    pub net_apply_debounce: Option<Instant>,
-    pub target_pane_touched: bool,  // has user manually changed target?
-}
+// Network config screen
+pub iso_network_mode: NetworkMode,
+pub iso_static_config: StaticNetConfig,
+pub target_network_mode: TargetNetworkMode,
+pub target_static_config: StaticNetConfig,
+pub detected_interfaces: Vec<NetInterface>,
+pub iso_net_status: NetConnectivityStatus,
+pub net_config_pane: NetConfigPane,       // which pane is expanded (Iso / Target)
+pub net_config_focus: NetConfigFocus,     // which field has focus
+pub net_apply_debounce: Option<Instant>,
+pub target_pane_touched: bool,            // has user manually changed target?
 ```
 
-### InstallConfig additions
+The existing `net_checks_started` field remains but the checks are now
+started when the `NetworkConfig` screen is first shown (not on Welcome
+advance).
+
+### InstallConfig additions (`config.rs`)
 
 ```rust
 pub struct InstallConfig {
-    // ... existing fields ...
+    // ... existing fields (auto, disk_encryption, disk, hostname, etc.) ...
+
     // Config file only stores concrete modes (no CopyCurrent).
+    #[serde(default, rename = "network-mode")]
     pub network_mode: Option<NetworkMode>,
-    pub network_config: Option<StaticNetConfig>,
+    #[serde(default, rename = "network-interface")]
+    pub network_interface: Option<String>,
+    #[serde(default, rename = "network-ip")]
+    pub network_ip: Option<String>,
+    #[serde(default, rename = "network-gateway")]
+    pub network_gateway: Option<String>,
+    #[serde(default, rename = "network-dns")]
+    pub network_dns: Option<String>,
+    #[serde(default, rename = "network-domain")]
+    pub network_domain: Option<String>,
+
+    #[serde(default, rename = "iso-network-mode")]
     pub iso_network_mode: Option<NetworkMode>,
-    pub iso_network_config: Option<StaticNetConfig>,
+    #[serde(default, rename = "iso-network-interface")]
+    pub iso_network_interface: Option<String>,
+    #[serde(default, rename = "iso-network-ip")]
+    pub iso_network_ip: Option<String>,
+    #[serde(default, rename = "iso-network-gateway")]
+    pub iso_network_gateway: Option<String>,
+    #[serde(default, rename = "iso-network-dns")]
+    pub iso_network_dns: Option<String>,
+    #[serde(default, rename = "iso-network-domain")]
+    pub iso_network_domain: Option<String>,
 }
 ```
 
-### InstallPlan / confirmation additions
+### InstallPlan / confirmation additions (`plan.rs`)
 
 The `InstallConfigInfo` struct gains a `network` field that summarises the
 target network config for display in the plan JSON and on the confirmation
-screen.
+screen:
+
+```rust
+pub struct InstallConfigInfo {
+    // ... existing fields ...
+    pub network: String,   // e.g. "dhcp", "static:192.168.1.10/24 via 192.168.1.1 on enp0s3"
+}
+```
+
+The `InstallPlanBuilder` gains a `.network_summary()` setter.
 
 ## Screen Enum Changes
 
 ```rust
 pub enum Screen {
     Welcome,
-    NetworkConfig,     // NEW: replaces the welcome->disk transition
-    NetworkCheck,      // MOVED: now reachable from NetworkConfig via Alt+c
+    NetworkConfig,     // NEW: inserted between Welcome and DiskSelection
+    NetworkCheck,      // EXISTING: now reachable from NetworkConfig via Alt+c
     DiskSelection,
     DiskEncryption,
     Hostname,
@@ -349,7 +426,7 @@ pub enum Screen {
     LoginSshKeys,
     LoginGithub,
     Timezone,
-    NetworkResults,
+    NetworkResults,    // EXISTING: unchanged between Timezone and Confirmation
     Confirmation,
     Installing,
     Done,
@@ -357,32 +434,129 @@ pub enum Screen {
 }
 ```
 
+### Navigation changes
+
+`advance()`:
+- `Welcome` -> `NetworkConfig` (was `DiskSelection`)
+- `NetworkConfig` -> `DiskSelection` (new)
+- Everything else unchanged
+
+`go_back()`:
+- `NetworkConfig` -> `Welcome` (new)
+- `NetworkCheck` -> `NetworkConfig` (was `Welcome`)
+- `DiskSelection` -> `NetworkConfig` (was `Welcome`)
+- Everything else unchanged
+
+`open_network_check()`:
+- Remains, but is now only called from the `NetworkConfig` screen's `Alt+c`
+  handler (not from Welcome's `n` handler).
+
+## Affected Files
+
+| File | Changes |
+|---|---|
+| `docs/spec/installer.md` | Already updated on this branch. Bump `installer.tui.welcome` to +8 (done). |
+| `config.rs` | Add network fields to `InstallConfig`, `NetworkMode` enum, validation for static fields, `Deserialize`/`Serialize` impls. |
+| `net.rs` | Add `detect_interfaces()`, `apply_netplan()`, connectivity probing, `NetInterface` struct. Existing check/netcheck code unchanged. |
+| `ui.rs` | Add `NetworkConfig` to `Screen` enum, new state fields, update `advance()`/`go_back()`, add focus management. |
+| `ui/render.rs` | Add `render_network_config()` with dual-pane accordion. Update `render_confirmation()` to show network summary. Update `render()` dispatch. |
+| `ui/run.rs` | Add key handling for `NetworkConfig` screen. Remove `n` from Welcome. Wire `Alt+c` in NetworkConfig. Update `run_full_install` to pass network config to `apply_firstboot`. |
+| `firstboot.rs` | Add `apply_network_config()` to write target netplan YAML. Call from `apply_firstboot`. |
+| `plan.rs` | Add `network` field to `InstallConfigInfo`. Add `.network_summary()` to builder. |
+| `iso/bes-install.toml.template` | Add commented-out network fields. |
+| `tests/test-container-install.sh` | Add verification for target netplan after install. |
+| Test files (`tests/dry_run/*.rs`) | Update scripted navigation tests for new screen. Add network config tests. |
+
 ## Implementation Order
 
-1. **Spec update** (`docs/spec/installer.md`): add network config requirements.
-2. **Config parsing** (`config.rs`): add new fields, parsing, validation.
-3. **Net interface detection** (`net.rs`): add `detect_interfaces()` and
-   connectivity probing.
-4. **Data model** (`ui.rs`): add new state fields, `NetworkConfig` screen to
-   enum, navigation logic (advance/go_back), accordion focus management.
-5. **Network application** (`net.rs`): add `apply_netplan()` for live ISO
-   reconfiguration with debounce.
-6. **Rendering** (`ui/render.rs`): add `render_network_config()` with both
+1. **Config parsing** (`config.rs`): add `NetworkMode` enum, new
+   `InstallConfig` fields, deserialization, validation (static requires
+   ip + gateway). Update `bes-install.toml.template`. Ensure
+   `template_contains_all_config_fields` test passes.
+
+2. **Net interface detection** (`net.rs`): add `NetInterface` struct,
+   `detect_interfaces()` (calls `ip -j link show`, filters), and a simple
+   connectivity probe function.
+
+3. **Data model** (`ui.rs`): add `NetworkConfig` to `Screen` enum, add new
+   state fields, update `advance()`/`go_back()`/`open_network_check()`.
+   Fix all existing tests that assert on navigation (e.g.
+   `welcome_advances_to_disk_selection` becomes
+   `welcome_advances_to_network_config`,
+   `disk_selection_goes_back_to_welcome` becomes
+   `disk_selection_goes_back_to_network_config`, etc.).
+
+4. **Network application** (`net.rs`): add `apply_netplan()` for live ISO
+   reconfiguration with debounce (writes `/etc/netplan/90-installer.yaml`,
+   runs `netplan apply`).
+
+5. **Rendering** (`ui/render.rs`): add `render_network_config()` with both
    panes, radio selectors, field inputs, status indicator, offline warning
-   dialog.
-7. **Key handling** (`ui/run.rs`): add key handling for the `NetworkConfig`
+   dialog. Re-use `render_net_accordion` pattern from existing netcheck
+   rendering.
+
+6. **Key handling** (`ui/run.rs`): add key handling for the `NetworkConfig`
    screen (field navigation, radio selection, text input, Alt+c, Tab/Shift+Tab
    accordion switching, Enter to advance, Esc to go back, offline warning
-   dialog y/n).
-8. **Firstboot** (`firstboot.rs`): add `apply_network_config()` to write
-   target netplan during install.
-9. **Plan/confirmation** (`plan.rs`, `ui/render.rs`): add network config to
-   plan JSON and confirmation screen display.
-10. **Tests**: unit tests for config parsing, navigation, mode defaults,
-    CIDR auto-suffix, offline warning, target pane copy logic, netplan
-    generation.
-11. **Spec cross-references**: add tracey `r[...]` annotations to all new
-    code.
+   dialog y/n). Remove `n` keybind from Welcome (Welcome now only has Enter
+   to advance and `q` to reboot; the `n` keybind line in `handle_key` is
+   deleted). Ensure network checks are started when entering NetworkConfig
+   rather than on Welcome advance.
+
+7. **Firstboot** (`firstboot.rs`): add `apply_network_config()` to write
+   target netplan during install. Call it from `apply_firstboot()` after
+   existing config steps. Update `run_full_install` to thread through the
+   resolved target network config.
+
+8. **Plan/confirmation** (`plan.rs`, `ui/render.rs`): add network config to
+   `InstallConfigInfo`, plan JSON, and confirmation screen display.
+
+9. **Tests**: unit tests for config parsing, navigation, mode defaults,
+   CIDR auto-suffix, offline warning, target pane copy logic, netplan
+   generation. Update all existing scripted navigation tests that are
+   affected by the new screen insertion. Update ASCII-only render tests
+   for the new screen.
+
+10. **Spec cross-references**: add tracey `r[impl ...]` and `r[verify ...]`
+    annotations to all new code, referencing the existing spec rules.
+
+## Test Impact
+
+The following existing tests will need updates after adding the new screen:
+
+**`ui.rs` tests**:
+- `welcome_advances_to_disk_selection` -- now advances to `NetworkConfig`
+- `open_network_check_from_welcome` -- remove (netcheck no longer from welcome)
+- `network_check_goes_back_to_welcome` -- goes back to `NetworkConfig`
+- `disk_selection_goes_back_to_welcome` -- goes back to `NetworkConfig`
+
+**`ui/run.rs` tests**:
+- `scripted_walk_through_encrypted_flow` -- insert Enter for NetworkConfig
+- `scripted_none_encryption_flow` -- insert Enter for NetworkConfig
+- `scripted_reboot_on_welcome` -- unchanged (q still works)
+- All scripted tests that advance past Welcome need an extra Enter/navigation
+  step for NetworkConfig
+
+**`ui/render.rs` tests**:
+- Add `network_config_screen_ascii_only` test
+
+## Stale Tracey Annotations
+
+After bumping the spec rule `installer.tui.welcome` from `+7` to `+8` in
+the merge resolution, all source-code annotations still reference `+7`.
+These sites must be updated to `+8` during implementation (step 3 or 6):
+
+- `ui.rs`: `VerityCheckState` doc, `AppState.verity_check` field,
+  `start_verity_check`, `advance()` Welcome arm, and five `#[test]`
+  annotations (`initial_state`, `verity_running_blocks_advance`,
+  `verity_passed_allows_advance`, `verity_not_needed_allows_advance`,
+  `verity_running_still_allows_network_check`)
+- `ui/render.rs`: `render_welcome` annotation
+- `ui/run.rs`: `handle_key` Welcome arm, `run_tui` verity start,
+  `welcome_q_triggers_reboot` test
+
+Run `tracey bump` after staging the spec change to identify all stale sites
+automatically.
 
 ## Open Questions
 
