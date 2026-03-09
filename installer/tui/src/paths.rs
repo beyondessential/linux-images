@@ -52,6 +52,8 @@ pub const BASH: &str = "/bin/bash";
 
 // networking
 pub const CURL: &str = "/usr/bin/curl";
+pub const IP: &str = "/usr/sbin/ip";
+pub const NETPLAN: &str = "/usr/sbin/netplan";
 pub const TAILSCALE: &str = "/usr/bin/tailscale";
 
 // Binaries executed directly by the installer in the live ISO environment.
@@ -81,6 +83,8 @@ const ISO_PATHS: &[(&str, &str)] = &[
     ("chvt", CHVT),
     ("bash", BASH),
     ("curl", CURL),
+    ("ip", IP),
+    ("netplan", NETPLAN),
     ("tailscale", TAILSCALE),
 ];
 

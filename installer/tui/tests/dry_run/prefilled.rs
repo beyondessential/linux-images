@@ -22,6 +22,8 @@ fn prefilled_accepting_defaults_produces_matching_plan() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # Disk
 enter
 # DiskEncryption: accept default (tpm)
@@ -99,6 +101,8 @@ fn prefilled_overriding_values_via_tui() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # Disk: move down to second, accept
 down
 enter
@@ -174,6 +178,8 @@ fn prefilled_timezone_from_config() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # Disk
 enter

@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::Cli;
 use crate::besconf;
-use crate::config;
+use crate::config::{self, NetworkMode};
 use crate::disk;
 use crate::encryption;
 use crate::firstboot;
@@ -224,12 +224,14 @@ impl RunContext {
 
         // r[impl installer.dryrun]
         if self.cli.dry_run {
+            let net_summary = network_summary_from_config(&self.install_config);
             let mut builder =
                 plan::InstallPlan::builder(&config::OperatingMode::Auto, disk_encryption)
                     .disk(target)
                     .tpm_present(self.tpm_present)
                     .hostname_from_template(hostname_from_template)
                     .timezone(effective_timezone)
+                    .network_summary(&net_summary)
                     .copy_install_log(copy_install_log)
                     .save_recovery_keys(self.besconf.save_recovery_keys())
                     .config_warnings(self.config_warnings);
@@ -268,6 +270,8 @@ impl RunContext {
         } else {
             eprintln!("  timezone:   UTC");
         }
+        let net_summary = network_summary_from_config(&self.install_config);
+        eprintln!("  network:    {net_summary}");
         if self.install_config.tailscale_authkey.is_some() {
             eprintln!("  tailscale:  auth key provided");
         }
@@ -633,10 +637,12 @@ fn plan_from_tui_state(
 ) -> plan::InstallPlan {
     let disk = state.selected_disk();
     let install_cfg = state.install_config_fields();
+    let net_summary = state.network_summary();
     let mut builder = plan::InstallPlan::builder(mode, state.disk_encryption)
         .tpm_present(state.tpm_present)
         .hostname_from_template(state.hostname_from_template || hostname_from_template)
         .timezone(state.effective_timezone())
+        .network_summary(&net_summary)
         .copy_install_log(copy_install_log)
         .save_recovery_keys(save_recovery_keys)
         .config_warnings(config_warnings.to_vec());
@@ -690,6 +696,29 @@ fn read_build_info() -> String {
         format!("Built {date} ({arch})")
     } else {
         format!("Built {date} ({arch}) {commit}")
+    }
+}
+
+/// Build a human-readable network summary from an `InstallConfig` (for auto
+/// mode, where there is no `AppState`).
+fn network_summary_from_config(cfg: &config::InstallConfig) -> String {
+    match cfg.network_mode.unwrap_or(NetworkMode::Dhcp) {
+        NetworkMode::Dhcp => "DHCP (all Ethernet interfaces)".to_string(),
+        NetworkMode::StaticIp => {
+            let iface = cfg.network_interface.as_deref().unwrap_or("en*");
+            let ip = cfg.network_ip.as_deref().unwrap_or("?");
+            let gw = cfg.network_gateway.as_deref().unwrap_or("?");
+            let mut s = format!("Static IP: {ip} via {gw} on {iface}");
+            if let Some(ref dns) = cfg.network_dns {
+                let dns = dns.trim();
+                if !dns.is_empty() {
+                    s.push_str(&format!("\n                DNS: {dns}"));
+                }
+            }
+            s
+        }
+        NetworkMode::Ipv6Slaac => "IPv6 SLAAC only".to_string(),
+        NetworkMode::Offline => "Offline (no network configuration)".to_string(),
     }
 }
 

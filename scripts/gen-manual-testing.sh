@@ -124,8 +124,8 @@ MD
 step3
 
 # r[verify installer.finalise.tailscale-auth]
-# r[verify installer.tui.tailscale-netcheck+2]
-# r[verify installer.tui.network-check+4]
+# r[verify installer.tui.tailscale-netcheck+3]
+# r[verify installer.tui.network-check+6]
 step4() {
     cat << 'MD'
 ## Step 4: Interactive Installer with Real Tailscale Key
@@ -143,9 +143,9 @@ a real auth key, and that the TUI is usable by a human.
 
 3. Walk through every TUI screen:
    - **Welcome screen**: verify the description text renders correctly in
-     ASCII. Press `n` to open the network check screen, confirm that
-     connectivity checks and `tailscale netcheck` run and display results.
-     Press `Esc` to return, then `Enter` to proceed.
+     ASCII. Press `Enter` to open the network screen, then `n` for the check
+     screen, confirm that connectivity checks and `tailscale netcheck` run and
+     display results. Press `Esc` to return, then `Enter` to proceed.
    - **Disk selection**: confirm the loopback disk is listed with its
      size and model. Select it and press `Enter`.
    - **Disk encryption**: select "Full-disk encryption, not bound to
@@ -187,8 +187,8 @@ step4
 # r[verify iso.boot.autostart+4]
 # r[verify iso.live-boot]
 # r[verify iso.offline]
-# r[verify installer.tui.welcome+7]
-# r[verify installer.tui.confirmation+7]
+# r[verify installer.tui.welcome+8]
+# r[verify installer.tui.confirmation+8]
 # r[verify installer.tui.ascii-rendering]
 # r[verify installer.tui.error-reboot]
 # r[verify installer.write.expand-root]

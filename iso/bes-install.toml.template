@@ -69,3 +69,26 @@
 # Each line will contain: passphrase, root partition UUID, machine serial.
 # Only works when BESCONF is writable (USB boot, not optical).
 # save-recovery-keys = true
+
+# Target network mode: "dhcp" (default), "static", "ipv6-slaac", "offline".
+# Note: "copy-current" is a TUI-only option (copies the live ISO config).
+# It is not valid in the config file.
+# network-mode = "dhcp"
+
+# Static IP fields for the target (only used when network-mode = "static").
+# network-interface = "enp0s3"
+# network-ip = "192.168.1.10/24"
+# network-gateway = "192.168.1.1"
+# network-dns = "8.8.8.8, 1.1.1.1"
+# network-domain = "example.com"
+
+# ISO/live network mode (optional, rarely needed):
+# "dhcp" (default), "static", "ipv6-slaac", "offline"
+# iso-network-mode = "dhcp"
+
+# Static IP fields for the live ISO (only used when iso-network-mode = "static").
+# iso-network-interface = "enp0s3"
+# iso-network-ip = "192.168.1.10/24"
+# iso-network-gateway = "192.168.1.1"
+# iso-network-dns = "8.8.8.8, 1.1.1.1"
+# iso-network-domain = "example.com"

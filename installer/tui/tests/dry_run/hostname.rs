@@ -309,7 +309,9 @@ fn scripted_encrypted_dhcp_toggle_produces_dhcp_sentinel() {
     let f = Fixture::new();
     let devices = f.write_devices(SINGLE_SSD_DEVICE);
     let script = f.write_script(
-        "# Welcome -> DiskSelection
+        "# Welcome -> NetworkConfig
+enter
+# NetworkConfig -> DiskSelection
 enter
 # DiskSelection -> DiskEncryptionScreen (default Keyfile)
 enter

@@ -121,7 +121,7 @@ struct LsblkDevice {
     ro: Option<bool>,
 }
 
-// r[impl installer.tui.disk-detection+3]
+// r[impl installer.tui.disk-detection+4]
 pub fn detect_block_devices() -> Result<Vec<BlockDevice>> {
     let output = Command::new(paths::LSBLK)
         .args([
@@ -359,7 +359,7 @@ mod tests {
         assert!(resolve_disk(&selector, &devices, None).is_err());
     }
 
-    // r[verify installer.tui.disk-detection+3]
+    // r[verify installer.tui.disk-detection+4]
     #[test]
     fn resolve_excludes_boot_device() {
         let devices = vec![
@@ -384,7 +384,7 @@ mod tests {
         assert!(resolve_disk(&selector, &devices, None).is_err());
     }
 
-    // r[verify installer.tui.disk-detection+3]
+    // r[verify installer.tui.disk-detection+4]
     #[test]
     fn resolve_no_eligible_devices() {
         let devices = vec![make_device(
@@ -397,7 +397,7 @@ mod tests {
         assert!(resolve_disk(&selector, &devices, Some(&boot)).is_err());
     }
 
-    // r[verify installer.tui.disk-detection+3]
+    // r[verify installer.tui.disk-detection+4]
     #[test]
     fn format_bytes_display() {
         assert_eq!(format_bytes(0), "0 B");
@@ -468,7 +468,7 @@ mod tests {
         assert_eq!(dev, parsed);
     }
 
-    // r[verify installer.tui.disk-detection+3]
+    // r[verify installer.tui.disk-detection+4]
     #[test]
     fn transport_display() {
         assert_eq!(TransportType::Nvme.to_string(), "NVMe");
@@ -479,7 +479,7 @@ mod tests {
         assert_eq!(TransportType::Unknown.to_string(), "unknown");
     }
 
-    // r[verify installer.tui.disk-detection+3]
+    // r[verify installer.tui.disk-detection+4]
     #[test]
     fn transport_from_tran_strings() {
         assert_eq!(TransportType::from_tran("nvme"), TransportType::Nvme);
@@ -491,7 +491,7 @@ mod tests {
         assert_eq!(TransportType::from_tran("blah"), TransportType::Unknown);
     }
 
-    // r[verify installer.tui.disk-detection+3]
+    // r[verify installer.tui.disk-detection+4]
     #[test]
     fn ssd_detection() {
         assert!(TransportType::Nvme.is_ssd());

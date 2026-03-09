@@ -11,6 +11,8 @@ fn scripted_encryption_cycle_twice_returns_to_default() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # DiskSelection
 enter
 # DiskEncryptionScreen: default Keyfile, cycle down twice (Keyfile->None->Keyfile)
@@ -68,6 +70,8 @@ fn scripted_encryption_cycle_back_to_keyfile() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # DiskSelection
 enter
 # DiskEncryptionScreen: default Keyfile, cycle: Keyfile->None->Keyfile
@@ -113,7 +117,7 @@ enter
     assert_eq!(plan["disk_encryption"], "keyfile");
 }
 
-// r[verify installer.tui.disk-detection+3]
+// r[verify installer.tui.disk-detection+4]
 #[test]
 fn scripted_disk_wrap_around() {
     let f = Fixture::new();
@@ -123,6 +127,8 @@ fn scripted_disk_wrap_around() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # Disk: down twice wraps back to index 0
 down
@@ -169,7 +175,7 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
-// r[verify installer.tui.disk-detection+3]
+// r[verify installer.tui.disk-detection+4]
 #[test]
 fn scripted_disk_up_wraps_to_last() {
     let f = Fixture::new();
@@ -178,6 +184,8 @@ fn scripted_disk_up_wraps_to_last() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # Disk: up wraps to last
 up
@@ -232,6 +240,8 @@ fn scripted_hostname_with_backspace_correction() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # DiskSelection
 enter
@@ -291,6 +301,8 @@ fn scripted_multiline_ssh_keys() {
         "\
 # Welcome
 enter
+# NetworkConfig
+enter
 # DiskSelection
 enter
 # DiskEncryptionScreen: cycle to None
@@ -338,7 +350,7 @@ enter
     assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.confirmation+7]
+// r[verify installer.tui.confirmation+8]
 #[test]
 fn scripted_wrong_confirmation_does_not_advance() {
     let f = Fixture::new();
@@ -349,6 +361,8 @@ fn scripted_wrong_confirmation_does_not_advance() {
     let script = f.write_script(
         "\
 # Welcome
+enter
+# NetworkConfig
 enter
 # DiskSelection
 enter

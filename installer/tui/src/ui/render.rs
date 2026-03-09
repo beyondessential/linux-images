@@ -2,13 +2,16 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, Gauge, List, ListItem, Padding, Paragraph, Wrap};
 
+use crate::config::NetworkMode;
 use crate::disk::BlockDevice;
-use crate::net::CheckPhase;
+use crate::net::{CheckPhase, NetConnectivityStatus};
 use crate::writer::format_eta;
 
-use super::{AppState, NetPane, Screen, VerityCheckState};
+use super::{
+    AppState, NetConfigFocus, NetConfigPane, NetPane, Screen, TargetNetworkMode, VerityCheckState,
+};
 
 pub fn render(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
@@ -24,6 +27,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 
     match &state.screen {
         Screen::Welcome => render_welcome(frame, chunks[1], state),
+        Screen::NetworkConfig => render_network_config(frame, chunks[1], state),
         Screen::NetworkCheck => render_network_check(frame, chunks[1], state),
         Screen::NetworkResults => render_network_results(frame, chunks[1], state),
         Screen::DiskSelection => render_disk_selection(frame, chunks[1], state),
@@ -47,18 +51,19 @@ pub fn render(frame: &mut Frame, state: &AppState) {
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let step = match &state.screen {
         Screen::Welcome => "Welcome",
+        Screen::NetworkConfig => "Network Configuration",
         Screen::NetworkCheck => "Network Check",
-        Screen::DiskSelection => "1/6 Select Target Disk",
-        Screen::DiskEncryption => "2/6 Disk Encryption",
-        Screen::Hostname => "3/6 Hostname",
-        Screen::HostnameInput => "3/6 Hostname",
-        Screen::Login => "4/6 Login",
-        Screen::LoginTailscale => "4/6 Login > Tailscale",
-        Screen::LoginSshKeys => "4/6 Login > SSH Keys",
-        Screen::LoginGithub => "4/6 Login > GitHub",
-        Screen::Timezone => "5/6 Timezone",
+        Screen::DiskSelection => "Select Target Disk",
+        Screen::DiskEncryption => "Disk Encryption",
+        Screen::Hostname => "Hostname",
+        Screen::HostnameInput => "Hostname",
+        Screen::Login => "Login",
+        Screen::LoginTailscale => "Login > Tailscale",
+        Screen::LoginSshKeys => "Login > SSH Keys",
+        Screen::LoginGithub => "Login > GitHub",
+        Screen::Timezone => "Timezone",
         Screen::NetworkResults => "Network Results",
-        Screen::Confirmation => "6/6 Confirm",
+        Screen::Confirmation => "Confirm",
         Screen::Installing => "Installing",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
@@ -186,7 +191,7 @@ fn tailscale_status(state: &AppState) -> &'static str {
     }
 }
 
-// r[impl installer.tui.network-check+4]
+// r[impl installer.tui.network-check+6]
 fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_text: &str) {
     let intro = vec![
         Line::from(""),
@@ -271,7 +276,335 @@ fn render_net_accordion(frame: &mut Frame, area: Rect, state: &AppState, intro_t
     }
 }
 
-// r[impl installer.tui.network-check+4]
+// r[impl installer.tui.network-config+13]
+fn render_network_config(frame: &mut Frame, area: Rect, state: &AppState) {
+    let iso_expanded = state.net_config_pane == NetConfigPane::Iso;
+    let target_expanded = state.net_config_pane == NetConfigPane::Target;
+
+    let (iso_constraint, target_constraint) = if iso_expanded {
+        (Constraint::Min(0), Constraint::Length(3))
+    } else {
+        (Constraint::Length(3), Constraint::Min(0))
+    };
+
+    let chunks = Layout::vertical([iso_constraint, target_constraint]).split(area);
+
+    // --- ISO pane ---
+    let iso_title = if iso_expanded {
+        " Live ISO (current) "
+    } else {
+        " Live ISO (current) [Tab to expand] "
+    };
+    let iso_block = Block::default().title(iso_title).borders(Borders::ALL);
+
+    if iso_expanded {
+        let inner = iso_block.inner(chunks[0]);
+        frame.render_widget(iso_block, chunks[0]);
+        render_iso_pane(frame, inner, state);
+    } else {
+        frame.render_widget(iso_block, chunks[0]);
+    }
+
+    // --- Target pane ---
+    let target_title = if target_expanded {
+        " Installation Target "
+    } else {
+        " Installation Target [Tab to expand] "
+    };
+    let target_block = Block::default().title(target_title).borders(Borders::ALL);
+
+    if target_expanded {
+        let inner = target_block.inner(chunks[1]);
+        frame.render_widget(target_block, chunks[1]);
+        render_target_pane(frame, inner, state);
+    } else {
+        frame.render_widget(target_block, chunks[1]);
+    }
+
+    // Offline warning dialog overlay
+    if state.offline_target_warning {
+        render_offline_warning(frame, area);
+    }
+}
+
+fn render_iso_pane(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(Line::from(
+        "  Configure networking for the current live system.",
+    ));
+    lines.push(Line::from(""));
+
+    // Status indicator
+    let status_text = match &state.iso_net_status {
+        NetConnectivityStatus::Unknown => {
+            Span::styled("  Status: Unknown", Style::default().fg(Color::DarkGray))
+        }
+        NetConnectivityStatus::Connected(detail) => Span::styled(
+            format!("  Status: Connected ({detail})"),
+            Style::default().fg(Color::Green),
+        ),
+        NetConnectivityStatus::NoConnectivity => {
+            Span::styled("  Status: No connectivity", Style::default().fg(Color::Red))
+        }
+        NetConnectivityStatus::Configuring => Span::styled(
+            "  Status: Configuring...",
+            Style::default().fg(Color::Yellow),
+        ),
+    };
+    lines.push(Line::from(status_text));
+    lines.push(Line::from(""));
+
+    // Mode radio selector
+    let modes = [
+        (NetworkMode::Dhcp, "DHCP"),
+        (NetworkMode::StaticIp, "Static IP"),
+        (NetworkMode::Ipv6Slaac, "IPv6 SLAAC only"),
+        (NetworkMode::Offline, "Offline"),
+    ];
+    for (mode, label) in &modes {
+        let selected = state.iso_network_mode == *mode;
+        let focused = state.net_config_focus == NetConfigFocus::IsoMode
+            && state.net_config_pane == NetConfigPane::Iso;
+        let marker = if selected { "(*)" } else { "( )" };
+        let style = if focused && selected {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else if focused {
+            Style::default().fg(Color::Yellow)
+        } else if selected {
+            Style::default().add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(Span::styled(
+            format!("    {marker} {label}"),
+            style,
+        )));
+    }
+
+    // Static IP fields (only if Static IP is selected)
+    if state.iso_network_mode == NetworkMode::StaticIp {
+        lines.push(Line::from(""));
+        render_text_field(
+            &mut lines,
+            "Interface",
+            &state.iso_static_config.interface,
+            state.net_config_focus == NetConfigFocus::IsoInterface
+                && state.net_config_pane == NetConfigPane::Iso,
+            true,
+        );
+        render_text_field(
+            &mut lines,
+            "IP address",
+            &state.iso_static_config.ip_cidr,
+            state.net_config_focus == NetConfigFocus::IsoIp
+                && state.net_config_pane == NetConfigPane::Iso,
+            false,
+        );
+        render_text_field(
+            &mut lines,
+            "Gateway",
+            &state.iso_static_config.gateway,
+            state.net_config_focus == NetConfigFocus::IsoGateway
+                && state.net_config_pane == NetConfigPane::Iso,
+            false,
+        );
+        render_text_field(
+            &mut lines,
+            "DNS",
+            &state.iso_static_config.dns,
+            state.net_config_focus == NetConfigFocus::IsoDns
+                && state.net_config_pane == NetConfigPane::Iso,
+            false,
+        );
+        render_text_field(
+            &mut lines,
+            "Search domain",
+            &state.iso_static_config.search_domain,
+            state.net_config_focus == NetConfigFocus::IsoDomain
+                && state.net_config_pane == NetConfigPane::Iso,
+            false,
+        );
+    }
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
+}
+
+fn render_target_pane(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(Line::from(
+        "  Configure networking for the installed system.",
+    ));
+    lines.push(Line::from(""));
+
+    // Mode radio selector -- includes CopyCurrent when config doesn't specify a mode
+    let modes: Vec<(TargetNetworkMode, &str)> = if state.config_has_network_mode {
+        vec![
+            (TargetNetworkMode::Dhcp, "DHCP"),
+            (TargetNetworkMode::StaticIp, "Static IP"),
+            (TargetNetworkMode::Ipv6Slaac, "IPv6 SLAAC only"),
+            (TargetNetworkMode::Offline, "Offline"),
+        ]
+    } else {
+        vec![
+            (TargetNetworkMode::CopyCurrent, "Copy current config"),
+            (TargetNetworkMode::Dhcp, "DHCP"),
+            (TargetNetworkMode::StaticIp, "Static IP"),
+            (TargetNetworkMode::Ipv6Slaac, "IPv6 SLAAC only"),
+            (TargetNetworkMode::Offline, "Offline"),
+        ]
+    };
+
+    for (mode, label) in &modes {
+        let selected = state.target_network_mode == *mode;
+        let focused = state.net_config_focus == NetConfigFocus::TargetMode
+            && state.net_config_pane == NetConfigPane::Target;
+        let marker = if selected { "(*)" } else { "( )" };
+        let style = if focused && selected {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else if focused {
+            Style::default().fg(Color::Yellow)
+        } else if selected {
+            Style::default().add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(Span::styled(
+            format!("    {marker} {label}"),
+            style,
+        )));
+    }
+
+    // If CopyCurrent, show summary of what will be copied
+    if state.target_network_mode == TargetNetworkMode::CopyCurrent {
+        lines.push(Line::from(""));
+        let summary = state.network_summary();
+        lines.push(Line::from(Span::styled(
+            format!("    Will copy: {summary}"),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    // Static IP fields (only if Static IP is selected for target)
+    if state.target_network_mode == TargetNetworkMode::StaticIp {
+        lines.push(Line::from(""));
+        render_text_field(
+            &mut lines,
+            "Interface",
+            &state.target_static_config.interface,
+            state.net_config_focus == NetConfigFocus::TargetInterface
+                && state.net_config_pane == NetConfigPane::Target,
+            true,
+        );
+        render_text_field(
+            &mut lines,
+            "IP address",
+            &state.target_static_config.ip_cidr,
+            state.net_config_focus == NetConfigFocus::TargetIp
+                && state.net_config_pane == NetConfigPane::Target,
+            false,
+        );
+        render_text_field(
+            &mut lines,
+            "Gateway",
+            &state.target_static_config.gateway,
+            state.net_config_focus == NetConfigFocus::TargetGateway
+                && state.net_config_pane == NetConfigPane::Target,
+            false,
+        );
+        render_text_field(
+            &mut lines,
+            "DNS",
+            &state.target_static_config.dns,
+            state.net_config_focus == NetConfigFocus::TargetDns
+                && state.net_config_pane == NetConfigPane::Target,
+            false,
+        );
+        render_text_field(
+            &mut lines,
+            "Search domain",
+            &state.target_static_config.search_domain,
+            state.net_config_focus == NetConfigFocus::TargetDomain
+                && state.net_config_pane == NetConfigPane::Target,
+            false,
+        );
+    }
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
+}
+
+fn render_text_field(
+    lines: &mut Vec<Line<'_>>,
+    label: &str,
+    value: &str,
+    focused: bool,
+    is_dropdown: bool,
+) {
+    let label_width = 16;
+    let padded_label = format!("    {label:<width$}", width = label_width);
+    let cursor = if focused { "_" } else { "" };
+    let arrows = if focused && is_dropdown {
+        " [Up/Down]"
+    } else {
+        ""
+    };
+    let display_value = if value.is_empty() && !focused {
+        if is_dropdown { "(auto: en*)" } else { "" }
+    } else if value.is_empty() && focused {
+        ""
+    } else {
+        value
+    };
+
+    let style = if focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+
+    lines.push(Line::from(vec![
+        Span::styled(padded_label, style),
+        Span::styled(format!("{display_value}{cursor}{arrows}"), style),
+    ]));
+}
+
+fn render_offline_warning(frame: &mut Frame, area: Rect) {
+    let dialog_width = 60u16.min(area.width.saturating_sub(4));
+    let dialog_height = 7u16;
+    let x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
+    let dialog_area = Rect::new(x, y, dialog_width, dialog_height);
+
+    frame.render_widget(Clear, dialog_area);
+
+    let lines = vec![
+        Line::from(""),
+        Line::from("  The target system will have no network configuration."),
+        Line::from("  It will not be reachable after reboot unless configured"),
+        Line::from("  manually."),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Are you sure? (y/n)",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+    ];
+
+    let block = Block::default()
+        .title(" Offline Warning ")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::Yellow));
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, dialog_area);
+}
+
+// r[impl installer.tui.network-check+6]
 fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
     render_net_accordion(
         frame,
@@ -281,14 +614,19 @@ fn render_network_check(frame: &mut Frame, area: Rect, state: &AppState) {
     );
 }
 
-// r[impl installer.tui.network-check+4]
+// r[impl installer.tui.network-check+6]
 fn render_network_results(frame: &mut Frame, area: Rect, state: &AppState) {
     render_net_accordion(frame, area, state, "Network check results");
 }
 
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     let hints: String = match &state.screen {
-        Screen::Welcome => "Enter: start | n: network check | q: reboot | Ctrl+Alt+d: shell".into(),
+        Screen::Welcome => "Enter: start | q: reboot | Ctrl+Alt+d: shell".into(),
+        // r[impl installer.tui.network-config+13]
+        Screen::NetworkConfig => {
+            "Tab/Shift+Tab: navigate | Alt+c: net check | Enter: next | Esc: back | q: reboot"
+                .into()
+        }
         Screen::NetworkCheck => {
             "Tab: switch pane | Up/Down: scroll | r: re-run | Esc: back | q: reboot".into()
         }
@@ -325,7 +663,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.welcome+7]
+// r[impl installer.tui.welcome+8]
 // r[impl installer.tui.ascii-rendering]
 // r[impl iso.verity.check+6]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -388,14 +726,10 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
             description.push(Line::from("Verifying installation media..."));
         }
         VerityCheckState::Passed => {
-            description.push(Line::from(
-                "Press Enter to begin, or 'n' for a network check.",
-            ));
+            description.push(Line::from("Press Enter to begin."));
         }
         _ => {
-            description.push(Line::from(
-                "Press Enter to begin, or 'n' for a network check.",
-            ));
+            description.push(Line::from("Press Enter to begin."));
         }
     }
 
@@ -472,7 +806,7 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
-// r[impl installer.tui.disk-detection+3]
+// r[impl installer.tui.disk-detection+4]
 fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
     let items: Vec<ListItem> = state
         .devices
@@ -905,7 +1239,7 @@ fn render_login_github(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(paragraph, area);
 }
 
-// r[impl installer.tui.confirmation+7]
+// r[impl installer.tui.confirmation+8]
 // r[impl installer.tui.password+4]
 // r[impl installer.tui.timezone]
 fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -976,7 +1310,7 @@ fn render_timezone(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(list, chunks[1]);
 }
 
-// r[impl installer.tui.confirmation+7]
+// r[impl installer.tui.confirmation+8]
 fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
     let disk = state.selected_disk();
     let disk_desc = disk
@@ -1004,7 +1338,7 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
             ),
         ]),
         Line::from(vec![
-            Span::raw("  Timezone:     "),
+            Span::raw("  Timezone:         "),
             Span::styled(
                 state.effective_timezone(),
                 Style::default().add_modifier(Modifier::BOLD),
@@ -1012,16 +1346,35 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         ]),
     ];
 
+    // r[impl installer.tui.confirmation+8]
+    let net_summary = state.network_summary();
+    for (i, part) in net_summary.lines().enumerate() {
+        if i == 0 {
+            lines.push(Line::from(vec![
+                Span::raw("  Network:          "),
+                Span::styled(
+                    part.to_string(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![Span::styled(
+                format!("  {part}"),
+                Style::default().add_modifier(Modifier::BOLD),
+            )]));
+        }
+    }
+
     if let Some(cfg) = state.install_config_fields() {
         if let Some(ref h) = cfg.hostname {
             lines.push(Line::from(vec![
-                Span::raw("  Hostname:     "),
+                Span::raw("  Hostname:         "),
                 Span::styled(h.to_string(), Style::default().add_modifier(Modifier::BOLD)),
             ]));
         }
         if cfg.tailscale_authkey.is_some() {
             lines.push(Line::from(vec![
-                Span::raw("  Tailscale:    "),
+                Span::raw("  Tailscale:        "),
                 Span::styled(
                     "auth key provided",
                     Style::default().add_modifier(Modifier::BOLD),
@@ -1030,7 +1383,7 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         }
         if !cfg.ssh_authorized_keys.is_empty() {
             lines.push(Line::from(vec![
-                Span::raw("  SSH keys:     "),
+                Span::raw("  SSH keys:         "),
                 Span::styled(
                     format!("{} key(s)", cfg.ssh_authorized_keys.len()),
                     Style::default().add_modifier(Modifier::BOLD),
@@ -1039,7 +1392,7 @@ fn render_confirmation(frame: &mut Frame, area: Rect, state: &AppState) {
         }
         if cfg.password.is_some() || cfg.password_hash.is_some() {
             lines.push(Line::from(vec![
-                Span::raw("  Password:     "),
+                Span::raw("  Password:         "),
                 Span::styled(
                     "custom password set",
                     Style::default().add_modifier(Modifier::BOLD),
@@ -1492,5 +1845,57 @@ mod tests {
         state.recovery_passphrase = Some("alpha-bravo-charlie-delta".into());
         let terminal = render_screen(&state);
         assert_buffer_ascii(&terminal, "Confirmation(with recovery passphrase)");
+    }
+
+    // r[verify installer.tui.ascii-rendering]
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_config_screen_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::NetworkConfig;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "NetworkConfig");
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_config_target_pane_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::NetworkConfig;
+        state.net_config_pane = super::super::NetConfigPane::Target;
+        state.net_config_focus = super::super::NetConfigFocus::TargetMode;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "NetworkConfig(target pane)");
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_config_static_ip_fields_ascii_only() {
+        use crate::config::NetworkMode;
+
+        let mut state = make_test_state();
+        state.screen = Screen::NetworkConfig;
+        state.iso_network_mode = NetworkMode::StaticIp;
+        state.iso_static_config = super::super::StaticNetConfig {
+            interface: "enp0s3".into(),
+            ip_cidr: "192.168.1.10/24".into(),
+            gateway: "192.168.1.1".into(),
+            dns: "8.8.8.8".into(),
+            search_domain: "example.com".into(),
+        };
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "NetworkConfig(static IP)");
+    }
+
+    // r[verify installer.tui.network-config+13]
+    #[test]
+    fn network_config_offline_warning_ascii_only() {
+        let mut state = make_test_state();
+        state.screen = Screen::NetworkConfig;
+        state.net_config_pane = super::super::NetConfigPane::Target;
+        state.target_network_mode = super::super::TargetNetworkMode::Offline;
+        state.offline_target_warning = true;
+        let terminal = render_screen(&state);
+        assert_buffer_ascii(&terminal, "NetworkConfig(offline warning)");
     }
 }
