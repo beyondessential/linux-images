@@ -143,9 +143,9 @@ a real auth key, and that the TUI is usable by a human.
 
 3. Walk through every TUI screen:
    - **Welcome screen**: verify the description text renders correctly in
-     ASCII. Press `n` to open the network check screen, confirm that
-     connectivity checks and `tailscale netcheck` run and display results.
-     Press `Esc` to return, then `Enter` to proceed.
+     ASCII. Press `Enter` to open the network screen, then `n` for the check
+     screen, confirm that connectivity checks and `tailscale netcheck` run and
+     display results. Press `Esc` to return, then `Enter` to proceed.
    - **Disk selection**: confirm the loopback disk is listed with its
      size and model. Select it and press `Enter`.
    - **Disk encryption**: select "Full-disk encryption, not bound to

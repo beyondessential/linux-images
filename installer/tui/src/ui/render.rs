@@ -53,17 +53,17 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
         Screen::Welcome => "Welcome",
         Screen::NetworkConfig => "Network Configuration",
         Screen::NetworkCheck => "Network Check",
-        Screen::DiskSelection => "1/6 Select Target Disk",
-        Screen::DiskEncryption => "2/6 Disk Encryption",
-        Screen::Hostname => "3/6 Hostname",
-        Screen::HostnameInput => "3/6 Hostname",
-        Screen::Login => "4/6 Login",
-        Screen::LoginTailscale => "4/6 Login > Tailscale",
-        Screen::LoginSshKeys => "4/6 Login > SSH Keys",
-        Screen::LoginGithub => "4/6 Login > GitHub",
-        Screen::Timezone => "5/6 Timezone",
+        Screen::DiskSelection => "Select Target Disk",
+        Screen::DiskEncryption => "Disk Encryption",
+        Screen::Hostname => "Hostname",
+        Screen::HostnameInput => "Hostname",
+        Screen::Login => "Login",
+        Screen::LoginTailscale => "Login > Tailscale",
+        Screen::LoginSshKeys => "Login > SSH Keys",
+        Screen::LoginGithub => "Login > GitHub",
+        Screen::Timezone => "Timezone",
         Screen::NetworkResults => "Network Results",
-        Screen::Confirmation => "6/6 Confirm",
+        Screen::Confirmation => "Confirm",
         Screen::Installing => "Installing",
         Screen::Done => "Complete",
         Screen::Error(_) => "Error",
@@ -726,14 +726,10 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
             description.push(Line::from("Verifying installation media..."));
         }
         VerityCheckState::Passed => {
-            description.push(Line::from(
-                "Press Enter to begin, or 'n' for a network check.",
-            ));
+            description.push(Line::from("Press Enter to begin."));
         }
         _ => {
-            description.push(Line::from(
-                "Press Enter to begin, or 'n' for a network check.",
-            ));
+            description.push(Line::from("Press Enter to begin."));
         }
     }
 
