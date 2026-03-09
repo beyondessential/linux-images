@@ -363,7 +363,7 @@ pub fn run_tui(
     no_reboot: bool,
     besconf: &BesconfState,
 ) -> Result<()> {
-    // r[impl iso.verity.check+5]
+    // r[impl iso.verity.check+6]
     // r[impl installer.tui.welcome+7]
     state.start_verity_check(manifest, images_dir);
 
@@ -408,7 +408,7 @@ fn event_loop(
         state.poll_github_keys();
         state.poll_verity_check();
 
-        // r[impl iso.verity.check+5]
+        // r[impl iso.verity.check+6]
         if let super::VerityCheckState::Failed(ref msg) = state.verity_check {
             state.screen = Screen::Error(format!(
                 "Installation media integrity check failed -- \

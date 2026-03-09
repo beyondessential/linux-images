@@ -288,7 +288,7 @@ must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
 debug shell without leaving the installer permanently (this is the only
 screen where the hint is shown, though the keybind works everywhere).
 
-When the images partition was opened via dm-verity (see `r[iso.verity.check+5]`),
+When the images partition was opened via dm-verity (see `r[iso.verity.check+6]`),
 the welcome screen must display a progress bar at the bottom labelled
 "Verifying installation media..." while the integrity check runs in the
 background. The user must not be allowed to advance past the welcome screen
@@ -541,7 +541,7 @@ r[installer.tui.progress+4]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
 `Installing` screen from the moment the user confirms until all steps
-complete. The integrity check (see `r[iso.verity.check+5]`) is **not** part of
+complete. The integrity check (see `r[iso.verity.check+6]`) is **not** part of
 this progress bar -- it runs earlier on the welcome screen. The Installing
 screen begins with partition image writes (which have byte-level progress)
 occupying approximately 90% of the bar. Each post-write step (filesystem
@@ -575,7 +575,7 @@ images, the installer must verify the partition table.
 > partition to locate the partition images and their layout metadata. There is
 > one set of partition images per architecture, not per variant. The partition
 > images are raw (uncompressed) files inside a squashfs with transparent zstd
-> compression (see `r[iso.images-partition+3]`).
+> compression (see `r[iso.images-partition+4]`).
 >
 > The installer must locate the images partition by its well-known GPT
 > PARTUUID (`ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`) via
@@ -643,7 +643,7 @@ the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is
 needed. This ensures the installed system has a fully expanded filesystem
 without depending on a boot-time growth service.
 
-r[installer.write.randomize-uuids+3]
+r[installer.write.randomize-uuids+4]
 After expanding the root filesystem, the installer must randomize the
 filesystem UUID of each partition to ensure every installation has unique
 identifiers. For the ext4 extended boot partition, it must first run
@@ -652,13 +652,12 @@ then `tune2fs -U random`. For the BTRFS root partition (or the LUKS volume
 on top of it), it must run `btrfstune -u` while the filesystem is
 unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
-changes. After all UUIDs have been changed, the installer must run
-`udevadm trigger --subsystem-match=block` followed by
-`udevadm settle --timeout=10` to refresh the `/dev/disk/by-uuid/` symlinks.
-These commands may fail in container environments without udevd; failures
-are non-fatal.
+changes. After all UUIDs have been changed, the installer must trigger a
+udev refresh so that `/dev/disk/by-uuid/` symlinks reflect the new UUIDs.
+The refresh may fail in container environments without udevd; failures are
+non-fatal.
 
-> r[installer.write.rebuild-boot-config+8]
+> r[installer.write.rebuild-boot-config+9]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
 > `r[installer.encryption.overview+5]`), the installer must unconditionally
@@ -669,29 +668,21 @@ are non-fatal.
 > dracut configuration that must be baked into the initramfs. Before running
 > dracut, the installer must:
 >
->   1. Delete all existing initramfs files from `/boot` (matching
->      `initrd.img*` and `initramfs-*`). This is necessary because dracut's
->      `hostonly` mode reads the existing initramfs to discover host devices;
->      the image-build initramfs contains UUIDs from the build environment
->      that no longer exist after UUID randomization, and leaving it in place
->      causes the new initramfs to inherit stale device references that will
->      hang at boot.
+>   1. Delete all existing initramfs files from `/boot`. The image-build
+>      initramfs contains UUIDs from the build environment that no longer
+>      exist after UUID randomization; if dracut's `hostonly` mode finds it,
+>      the new initramfs inherits stale device references that hang at boot.
 >   2. Temporarily replace `/etc/fstab` in the target with a version that
->      uses `UUID=` references (read via `blkid` from the actual partitions)
->      instead of `/dev/disk/by-partlabel/` paths. This is necessary because
->      dracut's `hostonly` mode resolves `by-partlabel` symlinks and then
->      looks up UUIDs via `/dev/disk/by-uuid/`; if udev has not refreshed
->      those symlinks after UUID randomization (e.g. inside a container with
->      no udevd), dracut discovers stale UUIDs and bakes them into systemd
->      device-wait units. After dracut completes, the original fstab must be
->      restored.
+>      uses `UUID=` device references instead of symlink-based paths. Dracut
+>      `hostonly` mode resolves symlinks and looks up UUIDs; if udev has not
+>      refreshed symlinks after UUID randomization (e.g. in a container),
+>      dracut discovers stale UUIDs. After dracut completes, the original
+>      fstab must be restored.
 >   3. When encryption is enabled, open the LUKS volume using the production
 >      mapper name `root` (not the installer's internal name) so that
->      dracut's `hostonly` mode discovers `/dev/mapper/root`. If the volume
->      is opened under a different name, dracut bakes that name into the
->      initramfs cmdline and the boot fails because `systemd-cryptsetup`
->      creates `/dev/mapper/root` (from the `rd.luks.name` parameter) while
->      the initramfs expects the installer's internal name.
+>      dracut's `hostonly` mode discovers `/dev/mapper/root`. A mismatched
+>      name causes boot failure because the initramfs expects one name while
+>      `systemd-cryptsetup` creates another.
 >
 > The installer must then run `dracut --force` and `update-grub` with
 > `/proc`, `/sys`, and `/dev` bind-mounted into the target.
@@ -701,13 +692,9 @@ are non-fatal.
 >
 >   - Clear `GRUB_CMDLINE_LINUX` in `/etc/default/grub` (ensure it is set
 >     to `""`). The installer must NOT place `rd.luks.name` or
->     `rd.luks.options` on the kernel command line. The crypttab (with the
->     `force` option) is the sole authority for LUKS unlock — it already
->     contains the mapper name, device path, keyfile or `tpm2-device=auto`,
->     and options like `discard`. If `rd.luks.name` appears on the cmdline,
->     `systemd-cryptsetup-generator` treats it as an override: it creates a
->     passphrase-prompt unit and skips the crypttab entry entirely, defeating
->     keyfile and TPM-based auto-unlock.
+>     `rd.luks.options` on the kernel command line. The crypttab is the sole
+>     authority for LUKS unlock; `rd.luks.name` on the cmdline overrides the
+>     crypttab entry, defeating keyfile and TPM-based auto-unlock.
 >   - Remove the serial console (`console=ttyS0,115200n8`) from
 >     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target
 >     bare-metal hardware where the serial console is not needed.
@@ -718,7 +705,7 @@ are non-fatal.
 
 > r[installer.encryption.overview+5]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+8]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+9]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -729,7 +716,7 @@ are non-fatal.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config+8]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+9]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created
@@ -738,38 +725,32 @@ are non-fatal.
 
 
 
-> r[installer.encryption.tpm-enroll+5]
+> r[installer.encryption.tpm-enroll+6]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
 > `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
 > recovery passphrase. PCR 1 covers hardware identity (motherboard model,
 > CPU, RAM model and serials). The installer must update `/etc/crypttab` to
 > use `tpm2-device=auto` with `token-timeout=30` and the `force` option (so
 > dracut includes the entry in the initramfs even when the build-time root is
-> not a `crypto_LUKS` device). `token-timeout=` (systemd v250+) controls how
-> long to wait for the TPM token to unseal before falling back to a
-> passphrase prompt. The `timeout=` option must be omitted (defaults to 0 =
-> unlimited) so the user has enough time to type the recovery passphrase when
-> fallback occurs. The `force` option is consumed by dracut only;
-> `systemd-cryptsetup` ignores it at runtime. The crypttab must NOT include
-> `headless=true` — when TPM unsealing fails (hardware change, VM, etc.)
-> `systemd-cryptsetup` must fall back to prompting for the recovery
-> passphrase.
+> not a `crypto_LUKS` device). The `timeout=` option must be omitted so the
+> user has enough time to type the recovery passphrase when fallback occurs.
+> The crypttab must NOT include `headless=true` — when TPM unsealing fails
+> (hardware change, VM, etc.) `systemd-cryptsetup` must fall back to
+> prompting for the recovery passphrase.
 
-> r[installer.encryption.keyfile-enroll+4]
+> r[installer.encryption.keyfile-enroll+5]
 > When disk encryption is `"keyfile"`, the installer must generate a random
 > keyfile (4096 bytes from `/dev/urandom`), enroll it via
 > `cryptsetup luksAddKey` unlocking with the recovery passphrase, and
 > install it at `/etc/luks/keyfile` (mode 000) on the installed system. The
 > installer must update `/etc/crypttab` to reference the keyfile with
 > `keyfile-timeout=30` and the `force` option, and update the dracut
-> configuration to include the new keyfile in the initramfs.
-> `keyfile-timeout=` (systemd v243+) controls how long to wait for the
-> keyfile to become available before falling back to a passphrase prompt.
-> The `timeout=` option must be omitted (defaults to 0 = unlimited) so the
-> user has enough time to type the recovery passphrase when fallback occurs.
-> The crypttab must NOT include `headless=true` — if the keyfile fails for
-> any reason, `systemd-cryptsetup` must fall back to prompting for the
-> recovery passphrase.
+> configuration to include the new keyfile in the initramfs. The `timeout=`
+> option must be omitted so the user has enough time to type the recovery
+> passphrase when fallback occurs. The crypttab must NOT include
+> `headless=true` — if the keyfile fails for any reason,
+> `systemd-cryptsetup` must fall back to prompting for the recovery
+> passphrase.
 
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the

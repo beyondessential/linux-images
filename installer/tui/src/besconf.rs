@@ -47,7 +47,7 @@ impl BesconfState {
 
 /// Mount the BESCONF partition and detect whether it can be made writable.
 ///
-/// r[impl iso.config-partition+4]
+/// r[impl iso.config-partition+5]
 // r[impl installer.besconf.writable-detection+2]
 ///
 /// Locates the BESCONF partition by its well-known PARTUUID, mounts it

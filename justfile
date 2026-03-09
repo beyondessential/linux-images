@@ -153,7 +153,7 @@ iso: _validate-arch iso-rootfs
 
 # Convert the hybrid ISO to VDI for VirtualBox USB/hard-disk testing.
 
-# r[impl iso.vdi]
+# r[impl iso.vdi+2]
 iso-vdi: iso
     #!/usr/bin/env bash
     set -euo pipefail

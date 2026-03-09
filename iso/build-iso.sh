@@ -28,9 +28,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Well-known GPT PARTUUIDs for ISO partitions
-# r[impl iso.images-partition+3]
+# r[impl iso.images-partition+4]
 IMAGES_PARTUUID="ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b"
-# r[impl iso.config-partition+4]
+# r[impl iso.config-partition+5]
 BESCONF_PARTUUID="e2bac42b-03a7-5048-b8f5-3f6d22100e77"
 
 # Well-known GPT partition type UUIDs
@@ -147,7 +147,7 @@ cp -a "$ROOTFS_DIR/live" "$STAGING/live"
 # Phase 1: Extract partition images from source image
 # ============================================================
 # r[impl iso.contents+3]
-# r[impl iso.images-partition+3]
+# r[impl iso.images-partition+4]
 echo "==> Phase 1: Extracting partition images from source image..."
 IMAGES_STAGING="$WORK_DIR/images-staging"
 mkdir -p "$IMAGES_STAGING"
@@ -238,7 +238,7 @@ echo ""
 # ============================================================
 # Phase 2: Build images squashfs with verity
 # ============================================================
-# r[impl iso.images-partition+3]
+# r[impl iso.images-partition+4]
 # r[impl iso.verity.images+4]
 # r[impl iso.verity.layout+3]
 echo "==> Phase 2: Building images squashfs with verity..."
@@ -338,7 +338,7 @@ echo "    GRUB target: $GRUB_TARGET ($GRUB_EFI_NAME)"
 # ============================================================
 # Phase 4: Build BESCONF FAT32 partition image
 # ============================================================
-# r[impl iso.config-partition+4]
+# r[impl iso.config-partition+5]
 # r[impl installer.config.template]
 echo "==> Phase 4: Building BESCONF partition image..."
 
@@ -382,8 +382,8 @@ xorriso -as mkisofs \
 # ============================================================
 # Phase 6: Stamp well-known PARTUUIDs via sfdisk
 # ============================================================
-# r[impl iso.images-partition+3]
-# r[impl iso.config-partition+4]
+# r[impl iso.images-partition+4]
+# r[impl iso.config-partition+5]
 echo "==> Phase 6: Stamping well-known PARTUUIDs..."
 
 # Find partition numbers by GPT partition name. xorriso names its appended
@@ -432,7 +432,7 @@ echo ""
 echo "Boot in a VM (CD-ROM):"
 echo "  Attach $OUTPUT as a CD/DVD drive (UEFI mode)"
 echo ""
-# r[impl iso.vdi]
+# r[impl iso.vdi+2]
 echo "Boot in VirtualBox (USB/hard-disk):"
 echo "  Edit the bes-install.toml: just iso-besconf"
 echo "  Attach the .vdi as a hard disk in VirtualBox (UEFI mode)"

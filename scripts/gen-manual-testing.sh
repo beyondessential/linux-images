@@ -194,8 +194,8 @@ step4
 # r[verify installer.write.expand-root]
 # r[verify image.growth.service+3]
 # r[verify image.boot.grub-uuids]
-# r[verify iso.vdi]
-# r[verify iso.cdrom-partscan+3]
+# r[verify iso.vdi+2]
+# r[verify iso.cdrom-partscan+4]
 step5() {
     cat << 'MD'
 ## Step 5: ISO in a Full VM (VirtualBox)
@@ -280,7 +280,7 @@ MD
 }
 step5
 
-# r[verify iso.config-partition+4]
+# r[verify iso.config-partition+5]
 # r[verify installer.config.location]
 # r[verify installer.mode.prefilled]
 step6() {
@@ -389,7 +389,7 @@ MD
 step7
 
 # r[verify iso.hybrid]
-# r[verify installer.encryption.tpm-enroll+5]
+# r[verify installer.encryption.tpm-enroll+6]
 # r[verify image.firewall.policy]
 # r[verify image.firewall.ssh]
 # r[verify image.tailscale.service-enabled]

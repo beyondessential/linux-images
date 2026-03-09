@@ -448,7 +448,7 @@ check "root partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"r
 # r[verify installer.mode.auto.progress]
 check "non-interactive write summary printed" grep -q "write complete:.*MiB in.*MiB/s" "$INSTALLER_OUTPUT"
 
-# r[verify iso.verity.check+5]
+# r[verify iso.verity.check+6]
 # r[verify iso.verity.failure]
 # The integrity check only runs when the installer opens the images partition
 # via dm-verity (real ISO boot). In the container test the images directory is
@@ -762,8 +762,8 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
-        # r[verify installer.write.randomize-uuids+3]
-        # r[verify installer.write.rebuild-boot-config+8]
+        # r[verify installer.write.randomize-uuids+4]
+        # r[verify installer.write.rebuild-boot-config+9]
         # Mount /boot under the verify root so we can read grub.cfg and
         # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"
@@ -829,7 +829,7 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
 
             # --- Initramfs UUID and mapper-name consistency ---
-            # r[verify installer.write.rebuild-boot-config+8]
+            # r[verify installer.write.rebuild-boot-config+9]
             # The initramfs must not contain stale UUIDs from the image build
             # or the installer's internal LUKS mapper name.
             INITRD_FILE="$(find "$BOOT_MNT" -maxdepth 1 -name 'initrd.img-*' -print -quit 2>/dev/null)"

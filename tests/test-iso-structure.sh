@@ -347,13 +347,13 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
     check "resolv.conf is symlink to resolved stub" test -L "$SQFS_MNT/etc/resolv.conf"
 
-    # r[verify iso.config-partition+4]
+    # r[verify iso.config-partition+5]
     # BESCONF and images partitions are mounted by the installer at runtime,
     # not by systemd units. Verify the old units are NOT present.
     check "run-besconf.mount absent (installer owns mount)" test ! -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
     check "run-besconf.automount absent (installer owns mount)" test ! -f "$SQFS_MNT/etc/systemd/system/run-besconf.automount"
 
-    # r[verify iso.cdrom-partscan+3]
+    # r[verify iso.cdrom-partscan+4]
     # CD-ROM partscan is handled by the installer, not a boot service.
     check "bes-cdrom-partscan.service absent (installer owns partscan)" test ! -f "$SQFS_MNT/etc/systemd/system/bes-cdrom-partscan.service"
 
@@ -397,7 +397,7 @@ fi
 echo ""
 echo "--- BESCONF Partition ---"
 
-# r[verify iso.config-partition+4]
+# r[verify iso.config-partition+5]
 # Set up a loop device with partition scanning to find the appended BESCONF partition.
 LOOP_DEVICE="$(losetup -f --show -P "$ISO")"
 partprobe "$LOOP_DEVICE" 2>/dev/null || true
@@ -441,7 +441,7 @@ fi
 echo ""
 echo "--- Images Partition ---"
 
-# r[verify iso.images-partition+3]
+# r[verify iso.images-partition+4]
 # r[verify iso.verity.images+4]
 # r[verify iso.verity.layout+3]
 # Find the images partition by GPT type code 8300 (Linux filesystem).
@@ -492,7 +492,7 @@ if [ -n "$IMAGES_PART" ]; then
     fi
     if [ -n "$IMAGES_ROOTHASH" ]; then
         HASH_OFFSET=$((IMAGES_TOTAL_SIZE - 8 - HASH_SIZE))
-        # r[verify iso.verity.images+3]
+        # r[verify iso.verity.images+4]
         if veritysetup verify "$IMAGES_PART" "$IMAGES_PART" "$IMAGES_ROOTHASH" --hash-offset="$HASH_OFFSET" 2>/dev/null; then
             pass "images partition passes veritysetup verify"
         else
@@ -698,7 +698,7 @@ else
     fail "dd output contains BESCONF partition"
 fi
 
-# r[verify iso.images-partition+3]
+# r[verify iso.images-partition+4]
 # Images partition must also survive the dd — find by type UUID, not number
 DD_IMAGES_FOUND=0
 while IFS= read -r line; do

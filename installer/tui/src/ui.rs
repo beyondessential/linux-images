@@ -15,7 +15,7 @@ pub enum NetPane {
 use crate::writer::WriteProgress;
 
 /// State of the upfront dm-verity integrity check that runs on the welcome screen.
-// r[impl iso.verity.check+5]
+// r[impl iso.verity.check+6]
 // r[impl installer.tui.welcome+7]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerityCheckState {
@@ -67,7 +67,7 @@ pub struct AppState {
     pub build_info: String,
     pub recovery_passphrase: Option<String>,
 
-    // r[impl iso.verity.check+5]
+    // r[impl iso.verity.check+6]
     // r[impl installer.tui.welcome+7]
     pub verity_check: VerityCheckState,
     pub verity_progress: Option<ProgressSnapshot>,
@@ -327,7 +327,7 @@ impl AppState {
         state
     }
 
-    // r[impl iso.verity.check+5]
+    // r[impl iso.verity.check+6]
     // r[impl installer.tui.welcome+7]
     /// Spawn the background integrity check thread. Must be called once after
     /// construction when `verity_active` is true.
@@ -969,7 +969,7 @@ mod tests {
     }
 
     // r[verify installer.tui.welcome+7]
-    // r[verify iso.verity.check+5]
+    // r[verify iso.verity.check+6]
     #[test]
     fn verity_running_blocks_advance() {
         let mut state = make_state();
@@ -980,7 +980,7 @@ mod tests {
     }
 
     // r[verify installer.tui.welcome+7]
-    // r[verify iso.verity.check+5]
+    // r[verify iso.verity.check+6]
     #[test]
     fn verity_passed_allows_advance() {
         let mut state = make_state();
@@ -991,7 +991,7 @@ mod tests {
     }
 
     // r[verify installer.tui.welcome+7]
-    // r[verify iso.verity.check+5]
+    // r[verify iso.verity.check+6]
     #[test]
     fn verity_not_needed_allows_advance() {
         let mut state = make_state();
@@ -1001,7 +1001,7 @@ mod tests {
         assert_eq!(state.screen, Screen::DiskSelection);
     }
 
-    // r[verify iso.verity.check+5]
+    // r[verify iso.verity.check+6]
     #[test]
     fn verity_failed_does_not_allow_advance() {
         let state = AppState {
@@ -1011,7 +1011,7 @@ mod tests {
         assert!(!state.verity_check_allows_advance());
     }
 
-    // r[verify iso.verity.check+5]
+    // r[verify iso.verity.check+6]
     #[test]
     fn poll_verity_progress_updates_state() {
         let mut state = make_state();
@@ -1033,7 +1033,7 @@ mod tests {
         assert_eq!(state.verity_check, VerityCheckState::Running);
     }
 
-    // r[verify iso.verity.check+5]
+    // r[verify iso.verity.check+6]
     #[test]
     fn poll_verity_done_transitions_to_passed() {
         let mut state = make_state();
@@ -1047,7 +1047,7 @@ mod tests {
         assert_eq!(state.verity_check, VerityCheckState::Passed);
     }
 
-    // r[verify iso.verity.check+5]
+    // r[verify iso.verity.check+6]
     #[test]
     fn poll_verity_error_transitions_to_failed() {
         let mut state = make_state();
@@ -1065,7 +1065,7 @@ mod tests {
     }
 
     // r[verify installer.tui.welcome+7]
-    // r[verify iso.verity.check+5]
+    // r[verify iso.verity.check+6]
     #[test]
     fn verity_running_still_allows_network_check() {
         let mut state = make_state();
