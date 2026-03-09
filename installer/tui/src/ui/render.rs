@@ -1003,66 +1003,105 @@ fn render_login(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
     ];
 
-    let password_label = if state.password_confirming {
-        Span::raw("  Password: ")
-    } else {
-        Span::styled(
-            "  Password: ",
-            Style::default().add_modifier(Modifier::BOLD),
-        )
-    };
-
-    let masked = mask(&state.password_input);
-    let mut password_line = vec![
-        password_label,
-        Span::styled(
-            masked,
+    if state.config_has_password {
+        let use_cfg_style = if state.use_config_password {
             Style::default()
                 .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    if !state.password_confirming {
-        password_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
-    }
-    lines.push(Line::from(password_line));
-
-    let confirm_label = if state.password_confirming {
-        Span::styled(
-            "  Confirm:  ",
-            Style::default().add_modifier(Modifier::BOLD),
-        )
-    } else {
-        Span::raw("  Confirm:  ")
-    };
-
-    let confirm_masked = mask(&state.password_confirm_input);
-    let mut confirm_line = vec![
-        confirm_label,
-        Span::styled(
-            confirm_masked,
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let set_new_style = if !state.use_config_password {
             Style::default()
                 .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-    if state.password_confirming {
-        confirm_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
-    }
-    lines.push(Line::from(confirm_line));
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let use_cfg_marker = if state.use_config_password {
+            "(*)"
+        } else {
+            "( )"
+        };
+        let set_new_marker = if !state.use_config_password {
+            "(*)"
+        } else {
+            "( )"
+        };
 
-    if state.password_mismatch {
-        lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  Passwords do not match.",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            format!("  {use_cfg_marker} Use password from config"),
+            use_cfg_style,
         )));
-    } else if state.password_empty {
-        lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  Password is required.",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            format!("  {set_new_marker} Set new password"),
+            set_new_style,
         )));
+        lines.push(Line::from(""));
+    }
+
+    if !state.config_has_password || !state.use_config_password {
+        let password_label = if state.password_confirming {
+            Span::raw("  Password: ")
+        } else {
+            Span::styled(
+                "  Password: ",
+                Style::default().add_modifier(Modifier::BOLD),
+            )
+        };
+
+        let masked = mask(&state.password_input);
+        let mut password_line = vec![
+            password_label,
+            Span::styled(
+                masked,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ];
+        if !state.password_confirming {
+            password_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+        }
+        lines.push(Line::from(password_line));
+
+        let confirm_label = if state.password_confirming {
+            Span::styled(
+                "  Confirm:  ",
+                Style::default().add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::raw("  Confirm:  ")
+        };
+
+        let confirm_masked = mask(&state.password_confirm_input);
+        let mut confirm_line = vec![
+            confirm_label,
+            Span::styled(
+                confirm_masked,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ];
+        if state.password_confirming {
+            confirm_line.push(Span::styled("_", Style::default().fg(Color::DarkGray)));
+        }
+        lines.push(Line::from(confirm_line));
+
+        if state.password_mismatch {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Passwords do not match.",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )));
+        } else if state.password_empty {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Password is required.",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )));
+        }
     }
 
     lines.push(Line::from(""));

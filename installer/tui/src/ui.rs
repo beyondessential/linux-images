@@ -196,6 +196,12 @@ pub struct AppState {
     pub password_empty: bool,
     /// Pre-hashed password from config file (takes precedence over plaintext).
     pub config_password_hash: Option<String>,
+    /// Plaintext password from config file.
+    pub config_password: Option<String>,
+    /// Whether the config file supplied a password (plaintext or hash).
+    pub config_has_password: bool,
+    /// When true, use the password from the config file instead of prompting.
+    pub use_config_password: bool,
 
     // r[impl installer.tui.timezone]
     pub available_timezones: Vec<String>,
@@ -389,6 +395,8 @@ impl AppState {
         let hostname_from_template = install_config.hostname_template.is_some();
         let tailscale_input = install_config.tailscale_authkey.clone().unwrap_or_default();
         let config_password_hash = install_config.password_hash.clone();
+        let config_password = install_config.password.clone();
+        let config_has_password = config_password.is_some() || config_password_hash.is_some();
         let timezone_from_config = install_config.timezone.clone();
 
         let timezone_selected = timezone_from_config.unwrap_or_else(|| "UTC".to_string());
@@ -459,6 +467,9 @@ impl AppState {
             password_mismatch: false,
             password_empty: false,
             config_password_hash,
+            config_password,
+            config_has_password,
+            use_config_password: config_has_password,
             available_timezones,
             timezone_search: String::new(),
             timezone_selected,
@@ -599,13 +610,19 @@ impl AppState {
             .filter(|k| !k.is_empty())
             .collect();
 
-        let password = if self.password_input.is_empty() {
-            None
+        let (password, password_hash) = if self.config_has_password && self.use_config_password {
+            (
+                self.config_password.clone(),
+                self.config_password_hash.clone(),
+            )
         } else {
-            Some(self.password_input.clone())
+            let pw = if self.password_input.is_empty() {
+                None
+            } else {
+                Some(self.password_input.clone())
+            };
+            (pw, None)
         };
-
-        let password_hash = self.config_password_hash.clone();
 
         let timezone = if self.timezone_selected == "UTC" {
             None

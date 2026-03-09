@@ -252,8 +252,17 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             {
                 state.screen = Screen::LoginGithub;
             }
+            KeyCode::Up | KeyCode::Down
+                if state.config_has_password
+                    && !state.password_confirming
+                    && state.password_input.is_empty() =>
+            {
+                state.use_config_password = !state.use_config_password;
+            }
             KeyCode::Enter | KeyCode::Tab => {
-                if !state.password_confirming {
+                if state.config_has_password && state.use_config_password {
+                    state.advance();
+                } else if !state.password_confirming {
                     state.password_confirming = true;
                     state.password_mismatch = false;
                     state.password_empty = false;
@@ -271,18 +280,27 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 }
             }
             KeyCode::Backspace => {
-                if state.password_confirming {
+                if state.config_has_password && state.use_config_password {
+                    // Typing switches to "Set new password" mode
+                    state.use_config_password = false;
+                } else if state.password_confirming {
                     state.password_confirm_input.pop();
                 } else {
                     state.password_input.pop();
                 }
             }
             KeyCode::Char(c) => {
-                state.password_empty = false;
-                if state.password_confirming {
-                    state.password_confirm_input.push(c);
-                } else {
+                if state.config_has_password && state.use_config_password {
+                    // Typing switches to "Set new password" mode and captures the char
+                    state.use_config_password = false;
                     state.password_input.push(c);
+                } else {
+                    state.password_empty = false;
+                    if state.password_confirming {
+                        state.password_confirm_input.push(c);
+                    } else {
+                        state.password_input.push(c);
+                    }
                 }
             }
             _ => {}
