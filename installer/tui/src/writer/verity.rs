@@ -64,7 +64,7 @@ fn cmdline_param(key: &str) -> Result<Option<String>> {
 }
 
 // r[impl installer.write.source+5]
-// r[impl iso.images-partition+3]
+// r[impl iso.images-partition+4]
 /// Check whether the well-known images PARTUUID symlink exists and resolve it.
 fn check_images_partuuid() -> Result<Option<PathBuf>> {
     let by_partuuid = PathBuf::from(format!("/dev/disk/by-partuuid/{IMAGES_PARTUUID}"));
@@ -77,7 +77,7 @@ fn check_images_partuuid() -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-// r[impl iso.cdrom-partscan+3]
+// r[impl iso.cdrom-partscan+4]
 /// Find the boot medium device (the ISO).
 ///
 /// Tries `blkid` by filesystem label first (works even with `toram` where
@@ -114,7 +114,7 @@ fn find_boot_medium() -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-// r[impl iso.cdrom-partscan+3]
+// r[impl iso.cdrom-partscan+4]
 /// On CD-ROM boot the kernel does not expose GPT appended partitions.
 /// Create a read-only loop device with partition scanning on the boot
 /// medium so that udev populates `/dev/disk/by-partuuid/`.
@@ -159,8 +159,8 @@ fn cdrom_partscan() -> Result<Option<PathBuf>> {
 }
 
 // r[impl installer.write.source+5]
-// r[impl iso.images-partition+3]
-// r[impl iso.cdrom-partscan+3]
+// r[impl iso.images-partition+4]
+// r[impl iso.cdrom-partscan+4]
 /// Find the images partition block device by its well-known GPT PARTUUID.
 ///
 /// If the PARTUUID is not present (CD-ROM boot), attempts `losetup
@@ -342,8 +342,8 @@ pub fn open_and_mount_images() -> Result<Option<ImagesVerity>> {
     }))
 }
 
-// r[impl iso.verity.check+5]
-// r[impl installer.write.stream-copy]
+// r[impl iso.verity.check+6]
+// r[impl installer.write.stream-copy+2]
 /// Splice data from `src_fd` through a pipe to `dst_fd` using `splice(2)`.
 ///
 /// Returns the total number of bytes transferred. Calls `on_progress` after
@@ -444,7 +444,7 @@ pub fn splice_fd_to_fd(
     result
 }
 
-// r[impl iso.verity.check+5]
+// r[impl iso.verity.check+6]
 /// Run the upfront integrity check: splice every partition image to
 /// `/dev/null`, forcing dm-verity to verify every block.
 ///
@@ -604,7 +604,7 @@ mod tests {
         assert_eq!(hash_size, trailer_hash_size);
     }
 
-    // r[verify installer.write.stream-copy]
+    // r[verify installer.write.stream-copy+2]
     #[test]
     fn splice_fd_to_fd_copies_data() {
         use std::os::unix::io::AsRawFd;
@@ -637,7 +637,7 @@ mod tests {
         assert_eq!(result, payload);
     }
 
-    // r[verify installer.write.stream-copy]
+    // r[verify installer.write.stream-copy+2]
     #[test]
     fn splice_fd_to_fd_empty_file() {
         use std::os::unix::io::AsRawFd;

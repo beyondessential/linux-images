@@ -327,7 +327,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState) {
 
 // r[impl installer.tui.welcome+7]
 // r[impl installer.tui.ascii-rendering]
-// r[impl iso.verity.check+5]
+// r[impl iso.verity.check+6]
 fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     let needs_verity_bar = !matches!(state.verity_check, VerityCheckState::NotNeeded);
     let verity_height: u16 = if needs_verity_bar { 4 } else { 0 };

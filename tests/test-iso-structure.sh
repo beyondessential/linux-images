@@ -215,7 +215,7 @@ check "/boot/grub/grub.cfg exists" test -f "$ISO_MNT/boot/grub/grub.cfg"
 if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
     check "grub.cfg contains boot=live" grep -q "boot=live" "$ISO_MNT/boot/grub/grub.cfg"
 
-    # r[verify iso.verity.squashfs+2]
+    # r[verify iso.verity.squashfs+3]
     check "grub.cfg contains live.verity.roothash" grep -q "live.verity.roothash=" "$ISO_MNT/boot/grub/grub.cfg"
 
     # r[verify iso.verity.images+4]
@@ -248,7 +248,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     # r[verify iso.contents+3]
     check "bes-installer binary exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer"
 
-    # r[verify installer.hardcoded-paths]
+    # r[related iso.contents+3]
     if [ -n "$INSTALLER_BIN" ] && [ -x "$INSTALLER_BIN" ]; then
         CHECK_OUTPUT="$("$INSTALLER_BIN" --check-paths "$SQFS_MNT" 2>&1)" && CHECK_RC=0 || CHECK_RC=$?
         if [ "$CHECK_RC" -eq 0 ]; then
@@ -266,7 +266,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fi
     fi
 
-    # r[verify iso.boot.autostart+3]
+    # r[verify iso.boot.autostart+4]
     check "bes-installer-wrapper exists" test -x "$SQFS_MNT/usr/local/bin/bes-installer-wrapper"
     check "bes-installer.service exists" test -f "$SQFS_MNT/etc/systemd/system/bes-installer.service"
     check "bes-chvt.service exists" test -f "$SQFS_MNT/etc/systemd/system/bes-chvt.service"
@@ -323,7 +323,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fail "sgdisk exists in rootfs"
     fi
 
-    # r[verify iso.verity.initramfs-hook]
+    # r[verify iso.verity.squashfs+3]
     check "verity initramfs hook exists" test -f "$SQFS_MNT/usr/share/initramfs-tools/hooks/verity"
     check "verity premount script exists" test -f "$SQFS_MNT/usr/share/initramfs-tools/scripts/live-premount/verity"
 
@@ -347,13 +347,13 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
     check "resolv.conf is symlink to resolved stub" test -L "$SQFS_MNT/etc/resolv.conf"
 
-    # r[verify iso.config-partition+4]
+    # r[verify iso.config-partition+5]
     # BESCONF and images partitions are mounted by the installer at runtime,
     # not by systemd units. Verify the old units are NOT present.
     check "run-besconf.mount absent (installer owns mount)" test ! -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
     check "run-besconf.automount absent (installer owns mount)" test ! -f "$SQFS_MNT/etc/systemd/system/run-besconf.automount"
 
-    # r[verify iso.cdrom-partscan+3]
+    # r[verify iso.cdrom-partscan+4]
     # CD-ROM partscan is handled by the installer, not a boot service.
     check "bes-cdrom-partscan.service absent (installer owns partscan)" test ! -f "$SQFS_MNT/etc/systemd/system/bes-cdrom-partscan.service"
 
@@ -372,7 +372,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
         fi
     fi
 
-    # r[verify iso.boot.autostart+3]
+    # r[verify iso.boot.autostart+4]
     # getty on tty2 should be masked so it doesn't compete with the installer
     if [ -L "$SQFS_MNT/etc/systemd/system/getty@tty2.service" ]; then
         MASK_TARGET="$(readlink "$SQFS_MNT/etc/systemd/system/getty@tty2.service")"
@@ -397,7 +397,7 @@ fi
 echo ""
 echo "--- BESCONF Partition ---"
 
-# r[verify iso.config-partition+4]
+# r[verify iso.config-partition+5]
 # Set up a loop device with partition scanning to find the appended BESCONF partition.
 LOOP_DEVICE="$(losetup -f --show -P "$ISO")"
 partprobe "$LOOP_DEVICE" 2>/dev/null || true
@@ -441,7 +441,7 @@ fi
 echo ""
 echo "--- Images Partition ---"
 
-# r[verify iso.images-partition+3]
+# r[verify iso.images-partition+4]
 # r[verify iso.verity.images+4]
 # r[verify iso.verity.layout+3]
 # Find the images partition by GPT type code 8300 (Linux filesystem).
@@ -492,7 +492,7 @@ if [ -n "$IMAGES_PART" ]; then
     fi
     if [ -n "$IMAGES_ROOTHASH" ]; then
         HASH_OFFSET=$((IMAGES_TOTAL_SIZE - 8 - HASH_SIZE))
-        # r[verify iso.verity.build-deps]
+        # r[verify iso.verity.images+4]
         if veritysetup verify "$IMAGES_PART" "$IMAGES_PART" "$IMAGES_ROOTHASH" --hash-offset="$HASH_OFFSET" 2>/dev/null; then
             pass "images partition passes veritysetup verify"
         else
@@ -594,7 +594,7 @@ else
     fail "images partition found by type UUID (Linux filesystem)"
 fi
 
-# r[verify iso.verity.squashfs+2]
+# r[verify iso.verity.squashfs+3]
 # Verify the squashfs rootfs verity trailer
 echo ""
 echo "--- Squashfs Verity ---"
@@ -698,7 +698,7 @@ else
     fail "dd output contains BESCONF partition"
 fi
 
-# r[verify iso.images-partition+3]
+# r[verify iso.images-partition+4]
 # Images partition must also survive the dd — find by type UUID, not number
 DD_IMAGES_FOUND=0
 while IFS= read -r line; do

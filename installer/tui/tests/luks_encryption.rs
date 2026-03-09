@@ -405,7 +405,7 @@ fn partition_path(loop_dev: &str, part_num: u32) -> PathBuf {
 // Tests
 // ---------------------------------------------------------------------------
 
-// r[verify installer.encryption.keyfile-enroll+4]
+// r[verify installer.encryption.keyfile-enroll+5]
 #[test]
 fn keyfile_enrollment_adds_working_slot() {
     let mut fix = LuksFixture::setup();
@@ -478,7 +478,7 @@ fn keyfile_enrollment_adds_working_slot() {
     assert!(final_crypttab.contains("/etc/luks/keyfile"));
 }
 
-// r[verify installer.encryption.tpm-enroll+5]
+// r[verify installer.encryption.tpm-enroll+6]
 #[test]
 fn tpm_enrollment_updates_crypttab() {
     // We can't actually enroll a TPM without hardware, but we can verify
@@ -587,7 +587,7 @@ fn configure_system_writes_expected_files() {
     );
 }
 
-// r[verify installer.encryption.keyfile-enroll+4]
+// r[verify installer.encryption.keyfile-enroll+5]
 // r[verify installer.encryption.recovery-passphrase+3]
 #[test]
 fn full_keyfile_encryption_flow() {

@@ -228,14 +228,14 @@ echo "==> Launching interactive installer in container..."
 echo "    (The installer TUI will take over the terminal.)"
 echo ""
 
-# r[impl installer.container.isolation+3]: use the shared nspawn
+# r[impl installer.container.isolation+4]: use the shared nspawn
 # configuration. --private-network is omitted so tailscale netcheck works.
 #
 # The container gets nspawn's own private /dev (no host devices exposed).
 # After partprobe, partition device nodes only appear on the host's devtmpfs,
 # not inside the container. The installer handles this by reading
 # /sys/class/block/ and creating missing device nodes via mknod
-# (see r[installer.container.partition-devices+2]).
+# (see r[installer.container.partition-devices+3]).
 nspawn_opts
 nspawn_installer_binds "$LOOP_DEV" "$IMAGES_DIR" "$DEVICES_JSON" \
     "" "$WORK_DIR/log:/log"

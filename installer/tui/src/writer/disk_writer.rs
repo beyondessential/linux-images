@@ -126,7 +126,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.stream-copy]
+    // r[impl installer.write.stream-copy+2]
     fn splice_to_device(
         &self,
         source: &Path,
@@ -174,7 +174,7 @@ impl<'a> DiskWriter<'a> {
     }
 
     // r[impl installer.write.partitions+2]
-    // r[impl installer.write.stream-copy]
+    // r[impl installer.write.stream-copy+2]
     pub fn write_partitions(
         &self,
         manifest: &PartitionManifest,
@@ -308,7 +308,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.randomize-uuids+3]
+    // r[impl installer.write.randomize-uuids+4]
     pub fn randomize_filesystem_uuids(&self) -> Result<()> {
         tracing::info!("randomizing filesystem UUIDs on {}", self.target.display());
 
@@ -408,7 +408,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.rebuild-boot-config+8]
+    // r[impl installer.write.rebuild-boot-config+9]
     pub fn rebuild_boot_config(&self) -> Result<()> {
         tracing::info!("rebuilding boot config (initramfs + grub)");
 
@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 
-    // r[verify installer.write.rebuild-boot-config+8]
+    // r[verify installer.write.rebuild-boot-config+9]
     #[test]
     fn patch_grub_defaults_clears_cmdline_linux_and_removes_console() {
         let dir = tempfile::tempdir().unwrap();
@@ -995,7 +995,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.write.rebuild-boot-config+8]
+    // r[verify installer.write.rebuild-boot-config+9]
     #[test]
     fn patch_grub_defaults_preserves_empty_cmdline_linux() {
         let dir = tempfile::tempdir().unwrap();

@@ -148,9 +148,8 @@ echo "    squashfs: $(du -h "$OUTPUT_DIR/live/filesystem.squashfs" | cut -f1)"
 # ============================================================
 # Phase 4: Add verity to squashfs rootfs
 # ============================================================
-# r[impl iso.verity.squashfs+2]
+# r[impl iso.verity.squashfs+3]
 # r[impl iso.verity.layout+3]
-# r[impl iso.verity.build-deps]
 echo "==> Phase 4: Adding verity to squashfs rootfs..."
 
 SQFS_HASHTREE="$WORK_DIR/filesystem.squashfs.hashtree"

@@ -45,7 +45,7 @@ impl RunContext {
         eprintln!("bes-installer v{version} — {build_info}");
 
         // r[impl installer.besconf.writable-detection+2]
-        // r[impl iso.config-partition+4]
+        // r[impl iso.config-partition+5]
         // Mount BESCONF before loading config: the config file lives on
         // BESCONF at /run/besconf/bes-install.toml.
         let mut besconf = if cli.dry_run {
@@ -138,7 +138,7 @@ impl RunContext {
             besconf::write_failure_log(&besconf, &log_path);
         }
 
-        // r[impl iso.config-partition+4]
+        // r[impl iso.config-partition+5]
         if !dry_run {
             besconf::unmount();
         }
@@ -286,7 +286,7 @@ impl RunContext {
             .context("reading partition image sizes")?;
         writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
 
-        // r[impl iso.verity.check+5]
+        // r[impl iso.verity.check+6]
         // r[impl iso.verity.failure]
         if _images_verity.is_some() {
             eprintln!("verifying installation media integrity...");

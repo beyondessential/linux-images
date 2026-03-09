@@ -181,14 +181,6 @@ When `auto = true` but required fields are missing (`disk-encryption`,
 must print an error describing the missing fields and fall back to
 interactive mode.
 
-## External Binaries
-
-r[installer.hardcoded-paths]
-The installer must use hardcoded absolute paths for every external binary
-it invokes (e.g. `/usr/bin/mount`, `/usr/sbin/cryptsetup`). This avoids
-reliance on `PATH` in the live ISO environment, where the shell or systemd
-context may not include `/usr/sbin` or `/sbin`.
-
 ## Testing Flags
 
 r[installer.no-reboot]
@@ -296,7 +288,7 @@ must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
 debug shell without leaving the installer permanently (this is the only
 screen where the hint is shown, though the keybind works everywhere).
 
-When the images partition was opened via dm-verity (see `r[iso.verity.check+5]`),
+When the images partition was opened via dm-verity (see `r[iso.verity.check+6]`),
 the welcome screen must display a progress bar at the bottom labelled
 "Verifying installation media..." while the integrity check runs in the
 background. The user must not be allowed to advance past the welcome screen
@@ -549,7 +541,7 @@ r[installer.tui.progress+4]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
 `Installing` screen from the moment the user confirms until all steps
-complete. The integrity check (see `r[iso.verity.check+5]`) is **not** part of
+complete. The integrity check (see `r[iso.verity.check+6]`) is **not** part of
 this progress bar -- it runs earlier on the welcome screen. The Installing
 screen begins with partition image writes (which have byte-level progress)
 occupying approximately 90% of the bar. Each post-write step (filesystem
@@ -569,14 +561,6 @@ re-enable raw mode, and redraw. The keybind must be shown in the footer
 hints on the welcome screen so users can discover it; it does not need to
 be repeated on every screen.
 
-r[installer.tui.loop-device]
-The installer's TUI and write pipeline must not assume the target device is
-real hardware. It must work correctly when targeting a loop device backed by
-a sparse file (created via `losetup --partscan`). This means no reliance on
-udev events for partition discovery (explicit `partprobe` calls are
-acceptable), no transport-type filtering that would reject loop devices, and
-no SCSI/ATA-specific ioctls.
-
 ## Image Writing
 
 r[installer.write.partitions+2]
@@ -591,7 +575,7 @@ images, the installer must verify the partition table.
 > partition to locate the partition images and their layout metadata. There is
 > one set of partition images per architecture, not per variant. The partition
 > images are raw (uncompressed) files inside a squashfs with transparent zstd
-> compression (see `r[iso.images-partition+3]`).
+> compression (see `r[iso.images-partition+4]`).
 >
 > The installer must locate the images partition by its well-known GPT
 > PARTUUID (`ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`) via
@@ -618,18 +602,14 @@ sizes (plus GPT overhead). If the disk is too small, the installer must
 refuse to write and report the required size and disk size in the error
 message.
 
-r[installer.write.stream-copy]
+r[installer.write.stream-copy+2]
 The installer must stream-copy each raw partition image directly to its
 corresponding partition device (or to the opened LUKS mapper device for the
-root partition when encryption is enabled) using `splice(2)` for zero-copy
-kernel-side transfer. The installer creates a pipe, splices data from the
-source file descriptor into the pipe, then splices from the pipe to the
-target block device. The pipe buffer must be resized to at least 1 MiB via
-`fcntl(F_SETPIPE_SZ)` to reduce the number of splice calls. Progress is
-tracked from the return values of each splice call. Since the images are
-stored in a squashfs with transparent compression, the kernel handles
-decompression on read; dm-verity verification also happens transparently
-on each block read. Data never transits through userspace.
+root partition when encryption is enabled) with progress reporting. The copy
+must be efficient: data should not be buffered entirely in userspace. Since
+the images are stored in a squashfs with transparent compression, the kernel
+handles decompression on read; dm-verity verification also happens
+transparently on each block read.
 
 r[installer.write.luks-before-write+2]
 When disk encryption is not `"none"`, the installer must format the root
@@ -663,7 +643,7 @@ the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is
 needed. This ensures the installed system has a fully expanded filesystem
 without depending on a boot-time growth service.
 
-r[installer.write.randomize-uuids+3]
+r[installer.write.randomize-uuids+4]
 After expanding the root filesystem, the installer must randomize the
 filesystem UUID of each partition to ensure every installation has unique
 identifiers. For the ext4 extended boot partition, it must first run
@@ -672,13 +652,12 @@ then `tune2fs -U random`. For the BTRFS root partition (or the LUKS volume
 on top of it), it must run `btrfstune -u` while the filesystem is
 unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
-changes. After all UUIDs have been changed, the installer must run
-`udevadm trigger --subsystem-match=block` followed by
-`udevadm settle --timeout=10` to refresh the `/dev/disk/by-uuid/` symlinks.
-These commands may fail in container environments without udevd; failures
-are non-fatal.
+changes. After all UUIDs have been changed, the installer must trigger a
+udev refresh so that `/dev/disk/by-uuid/` symlinks reflect the new UUIDs.
+The refresh may fail in container environments without udevd; failures are
+non-fatal.
 
-> r[installer.write.rebuild-boot-config+8]
+> r[installer.write.rebuild-boot-config+9]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
 > `r[installer.encryption.overview+5]`), the installer must unconditionally
@@ -689,29 +668,21 @@ are non-fatal.
 > dracut configuration that must be baked into the initramfs. Before running
 > dracut, the installer must:
 >
->   1. Delete all existing initramfs files from `/boot` (matching
->      `initrd.img*` and `initramfs-*`). This is necessary because dracut's
->      `hostonly` mode reads the existing initramfs to discover host devices;
->      the image-build initramfs contains UUIDs from the build environment
->      that no longer exist after UUID randomization, and leaving it in place
->      causes the new initramfs to inherit stale device references that will
->      hang at boot.
+>   1. Delete all existing initramfs files from `/boot`. The image-build
+>      initramfs contains UUIDs from the build environment that no longer
+>      exist after UUID randomization; if dracut's `hostonly` mode finds it,
+>      the new initramfs inherits stale device references that hang at boot.
 >   2. Temporarily replace `/etc/fstab` in the target with a version that
->      uses `UUID=` references (read via `blkid` from the actual partitions)
->      instead of `/dev/disk/by-partlabel/` paths. This is necessary because
->      dracut's `hostonly` mode resolves `by-partlabel` symlinks and then
->      looks up UUIDs via `/dev/disk/by-uuid/`; if udev has not refreshed
->      those symlinks after UUID randomization (e.g. inside a container with
->      no udevd), dracut discovers stale UUIDs and bakes them into systemd
->      device-wait units. After dracut completes, the original fstab must be
->      restored.
+>      uses `UUID=` device references instead of symlink-based paths. Dracut
+>      `hostonly` mode resolves symlinks and looks up UUIDs; if udev has not
+>      refreshed symlinks after UUID randomization (e.g. in a container),
+>      dracut discovers stale UUIDs. After dracut completes, the original
+>      fstab must be restored.
 >   3. When encryption is enabled, open the LUKS volume using the production
 >      mapper name `root` (not the installer's internal name) so that
->      dracut's `hostonly` mode discovers `/dev/mapper/root`. If the volume
->      is opened under a different name, dracut bakes that name into the
->      initramfs cmdline and the boot fails because `systemd-cryptsetup`
->      creates `/dev/mapper/root` (from the `rd.luks.name` parameter) while
->      the initramfs expects the installer's internal name.
+>      dracut's `hostonly` mode discovers `/dev/mapper/root`. A mismatched
+>      name causes boot failure because the initramfs expects one name while
+>      `systemd-cryptsetup` creates another.
 >
 > The installer must then run `dracut --force` and `update-grub` with
 > `/proc`, `/sys`, and `/dev` bind-mounted into the target.
@@ -721,13 +692,9 @@ are non-fatal.
 >
 >   - Clear `GRUB_CMDLINE_LINUX` in `/etc/default/grub` (ensure it is set
 >     to `""`). The installer must NOT place `rd.luks.name` or
->     `rd.luks.options` on the kernel command line. The crypttab (with the
->     `force` option) is the sole authority for LUKS unlock — it already
->     contains the mapper name, device path, keyfile or `tpm2-device=auto`,
->     and options like `discard`. If `rd.luks.name` appears on the cmdline,
->     `systemd-cryptsetup-generator` treats it as an override: it creates a
->     passphrase-prompt unit and skips the crypttab entry entirely, defeating
->     keyfile and TPM-based auto-unlock.
+>     `rd.luks.options` on the kernel command line. The crypttab is the sole
+>     authority for LUKS unlock; `rd.luks.name` on the cmdline overrides the
+>     crypttab entry, defeating keyfile and TPM-based auto-unlock.
 >   - Remove the serial console (`console=ttyS0,115200n8`) from
 >     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target
 >     bare-metal hardware where the serial console is not needed.
@@ -738,7 +705,7 @@ are non-fatal.
 
 > r[installer.encryption.overview+5]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+8]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+9]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -749,7 +716,7 @@ are non-fatal.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config+8]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+9]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created
@@ -758,38 +725,32 @@ are non-fatal.
 
 
 
-> r[installer.encryption.tpm-enroll+5]
+> r[installer.encryption.tpm-enroll+6]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
 > `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
 > recovery passphrase. PCR 1 covers hardware identity (motherboard model,
 > CPU, RAM model and serials). The installer must update `/etc/crypttab` to
 > use `tpm2-device=auto` with `token-timeout=30` and the `force` option (so
 > dracut includes the entry in the initramfs even when the build-time root is
-> not a `crypto_LUKS` device). `token-timeout=` (systemd v250+) controls how
-> long to wait for the TPM token to unseal before falling back to a
-> passphrase prompt. The `timeout=` option must be omitted (defaults to 0 =
-> unlimited) so the user has enough time to type the recovery passphrase when
-> fallback occurs. The `force` option is consumed by dracut only;
-> `systemd-cryptsetup` ignores it at runtime. The crypttab must NOT include
-> `headless=true` — when TPM unsealing fails (hardware change, VM, etc.)
-> `systemd-cryptsetup` must fall back to prompting for the recovery
-> passphrase.
+> not a `crypto_LUKS` device). The `timeout=` option must be omitted so the
+> user has enough time to type the recovery passphrase when fallback occurs.
+> The crypttab must NOT include `headless=true` — when TPM unsealing fails
+> (hardware change, VM, etc.) `systemd-cryptsetup` must fall back to
+> prompting for the recovery passphrase.
 
-> r[installer.encryption.keyfile-enroll+4]
+> r[installer.encryption.keyfile-enroll+5]
 > When disk encryption is `"keyfile"`, the installer must generate a random
 > keyfile (4096 bytes from `/dev/urandom`), enroll it via
 > `cryptsetup luksAddKey` unlocking with the recovery passphrase, and
 > install it at `/etc/luks/keyfile` (mode 000) on the installed system. The
 > installer must update `/etc/crypttab` to reference the keyfile with
 > `keyfile-timeout=30` and the `force` option, and update the dracut
-> configuration to include the new keyfile in the initramfs.
-> `keyfile-timeout=` (systemd v243+) controls how long to wait for the
-> keyfile to become available before falling back to a passphrase prompt.
-> The `timeout=` option must be omitted (defaults to 0 = unlimited) so the
-> user has enough time to type the recovery passphrase when fallback occurs.
-> The crypttab must NOT include `headless=true` — if the keyfile fails for
-> any reason, `systemd-cryptsetup` must fall back to prompting for the
-> recovery passphrase.
+> configuration to include the new keyfile in the initramfs. The `timeout=`
+> option must be omitted so the user has enough time to type the recovery
+> passphrase when fallback occurs. The crypttab must NOT include
+> `headless=true` — if the keyfile fails for any reason,
+> `systemd-cryptsetup` must fall back to prompting for the recovery
+> passphrase.
 
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the
@@ -874,7 +835,7 @@ filesystems and close any LUKS volumes before prompting for reboot.
 
 ## Container Isolation
 
-> r[installer.container.isolation+3]
+> r[installer.container.isolation+4]
 > When the installer is run inside a container (e.g. `systemd-nspawn`) for
 > integration testing, it must never have access to the host's real block
 > devices. Safety is enforced by three layers:
@@ -891,6 +852,12 @@ filesystems and close any LUKS volumes before prompting for reboot.
 >    at least one scenario must run **with** `--private-network` to serve
 >    as the enforcement mechanism for `r[iso.offline]`.
 >
+> The installer must work correctly when targeting a loop device backed by a
+> sparse file (e.g. via `losetup --partscan`). This means no reliance on
+> udev events for partition discovery (explicit `partprobe` calls are
+> acceptable), no transport-type filtering that would reject loop devices,
+> and no SCSI/ATA-specific ioctls.
+>
 > The `systemd-nspawn` options and bind-mount configuration used by all
 > container scripts (interactive trial, integration tests, isolation test)
 > must be defined in a single shared file so that the isolation test
@@ -900,72 +867,37 @@ filesystems and close any LUKS volumes before prompting for reboot.
 > the installer and confirming that no host block devices (e.g. `/dev/sda`,
 > `/dev/nvme*`) are visible inside.
 
-r[installer.container.partition-devices+2]
-Inside a container with a private `/dev`, running `partprobe` tells the
-kernel to re-read the partition table but the resulting device nodes are
-created on the **host's** devtmpfs, not inside the container. The installer
-must therefore ensure that partition device nodes exist before any operation
-that accesses them (e.g. `cryptsetup open`, `mount`). It does so by reading
-`/sys/class/block/<disk>/<partition>/dev` to obtain each partition's
-major:minor and then creating or recreating any `/dev` nodes that are
-missing or have a stale major:minor (verified via `MetadataExt::rdev()`).
-The installer must not attempt to derive partition major:minor numbers from
-the parent device — the kernel assigns them dynamically (e.g. loop device
-partitions use major 259 with unrelated minors, not `parent_minor + N`).
+r[installer.container.partition-devices+3]
+Inside a container with a private `/dev`, partition device nodes created by
+`partprobe` appear on the host's devtmpfs, not inside the container. The
+installer must ensure that partition device nodes exist (with correct
+major:minor numbers) before any operation that accesses them (e.g.
+`cryptsetup open`, `mount`). It must not derive partition major:minor
+numbers from the parent device — the kernel assigns them dynamically.
 
-r[installer.container.swtpm]
-Container-based integration tests that exercise TPM disk encryption must use
-`swtpm` (software TPM 2.0 emulator) in `chardev` mode with `--vtpm-proxy`
-to create a `/dev/tpmN` device on the host. The test harness starts the
-`swtpm` process before launching the container and binds the resulting
-`/dev/tpmN` device into the container so that `systemd-cryptenroll
---tpm2-device=auto` works against the emulated TPM. The `tpm_vtpm_proxy`
-kernel module must be loaded on the host. The `swtpm` process is stopped
-and the device cleaned up when the test scenario finishes. The shared
-nspawn helpers must support an optional TPM device bind-mount so that only
-TPM scenarios pay the setup cost.
+r[installer.container.swtpm+2]
+Container-based integration tests that exercise TPM disk encryption must
+use a software TPM 2.0 emulator (`swtpm`) to provide a `/dev/tpmN` device
+inside the container so that `systemd-cryptenroll --tpm2-device=auto` works.
+The emulator must be started before the container launches and cleaned up
+when the test scenario finishes.
 
-> r[installer.container.fake-luks]
+> r[installer.container.fake-luks+2]
 > Container-based integration tests must be able to run metal (encrypted)
 > scenarios in CI environments where the kernel keyring is not available
 > (e.g. `systemd-nspawn` on GitHub Actions runners, where `cryptsetup open`
-> fails with "Failed to load key in kernel keyring"). This is achieved by
-> replacing `cryptsetup` and `systemd-cryptenroll` inside the container with
-> shim scripts that simulate LUKS operations without `dm-crypt`:
-> 
-> - `luksFormat`: no-op (the partition remains raw, unencrypted).
-> - `open <device> <name>`: creates a symlink `/dev/mapper/<name>` pointing
->   to the raw partition device, so the installer can write to and mount the
->   "opened" volume transparently.
-> - `close <name>`: removes the symlink.
-> - `luksAddKey`, `luksChangeKey`: no-op.
-> - `systemd-cryptenroll`: no-op.
-> 
-> Because the partition is not actually encrypted, the btrfs filesystem is
-> written directly to the raw partition. The installer's full code path still
-> executes: partitioning, image writing, `crypttab` generation, dracut
-> keyfile configuration, initramfs rebuild, and grub configuration. The only
-> difference is that no real encryption or key enrollment occurs.
-> 
-> Detection is automatic: before running a metal scenario, the test harness
-> attempts a real `cryptsetup luksFormat` + `open` + `close` cycle on a
-> temporary loopback device. If this probe fails, `BES_FAKE_LUKS` is set to
-> `1` and the shims are installed. The caller can also force fake mode by
-> setting `BES_FAKE_LUKS=1` or force real mode with `BES_FAKE_LUKS=0`.
-> 
-> When fake-LUKS mode is active for a TPM scenario, `swtpm` is not started
-> (the `systemd-cryptenroll` shim does not need a real or emulated TPM).
-> 
-> The host-side verification phase (mounting the installed filesystem to check
-> its contents) must also account for fake mode: instead of calling
-> `cryptsetup open` on the host, it creates a symlink to the raw partition.
-> The shared nspawn helpers (`nspawn-opts.sh`) provide `host_luks_open`,
-> `host_luks_close`, and `host_luks_cleanup` functions that dispatch to real
-> `cryptsetup` or symlink operations depending on `BES_FAKE_LUKS`.
-> 
-
-r[installer.container.error-logging]
-Fatal errors that propagate to the installer's top-level must be logged via
-the tracing/log file **in addition to** being printed to stderr, so that
-container-based test harnesses that only capture the log file can see the
-failure reason.
+> fails with "Failed to load key in kernel keyring"). When real dm-crypt is
+> unavailable, the test harness must substitute shim scripts that simulate
+> LUKS operations (format, open, close, key management) without `dm-crypt`.
+>
+> The installer's full code path must still execute (partitioning, image
+> writing, `crypttab` generation, dracut keyfile configuration, initramfs
+> rebuild, and grub configuration); only the actual encryption and key
+> enrollment are skipped.
+>
+> Detection must be automatic: the test harness probes whether real LUKS
+> operations work and falls back to shims if they do not. The caller may
+> also force the mode explicitly.
+>
+> The host-side verification phase (mounting the installed filesystem to
+> check its contents) must also account for the fake mode.

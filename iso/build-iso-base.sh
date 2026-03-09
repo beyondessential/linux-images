@@ -195,7 +195,7 @@ run_in_chroot bash -c "
     rm -rf /var/lib/apt/lists/*
 "
 
-# r[impl iso.verity.initramfs-hook]
+# r[depends iso.verity.squashfs+3]
 install -D -m 755 "$SCRIPT_DIR/initramfs/hooks/verity" \
     "$MNT_ROOTFS/usr/share/initramfs-tools/hooks/verity"
 install -D -m 755 "$SCRIPT_DIR/initramfs/scripts/live-premount/verity" \
@@ -219,7 +219,7 @@ mkdir -p "$MNT_ROOTFS/etc/network"
 install -D -m 644 "$ROOTFS_FILES/etc/modprobe.d/blacklist-gpu.conf" \
     "$MNT_ROOTFS/etc/modprobe.d/blacklist-gpu.conf"
 
-# r[impl iso.boot.autostart+3]
+# r[impl iso.boot.autostart+4]
 install -D -m 755 "$ROOTFS_FILES/usr/local/bin/bes-installer-wrapper" \
     "$MNT_ROOTFS/usr/local/bin/bes-installer-wrapper"
 

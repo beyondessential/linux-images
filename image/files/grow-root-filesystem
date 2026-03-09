@@ -1,5 +1,5 @@
 #!/bin/bash
-# r[image.growth.script+2]: Grow the root partition and filesystem at boot.
+# r[depends image.growth.service+3]: Grow the root partition and filesystem at boot.
 #
 # On first boot (or any boot where the disk is larger than the partition table
 # accounts for), this script expands the root partition and filesystem to fill

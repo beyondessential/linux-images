@@ -293,10 +293,10 @@ check "/usr/local/bin/ts-up exists" test -x "$MNT/usr/local/bin/ts-up"
 # r[verify image.tailscale.firstboot-auth]
 check "/usr/local/bin/bes-tailscale-firstboot-auth exists" test -x "$MNT/usr/local/bin/bes-tailscale-firstboot-auth"
 
-# r[verify image.growth.script+2]
+# r[verify image.growth.service+3]
 check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/grow-root-filesystem"
 
-# r[verify image.growth.service]
+# r[verify image.growth.service+3]
 check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/etc/systemd/system/grow-root-filesystem.service"
 
 # r[verify image.variant.types+3]
@@ -497,7 +497,7 @@ check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-t
 check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
 
-# r[verify image.boot.hardware-drivers+2]
+# r[verify image.boot.hardware-drivers+3]
 check "dracut hardware-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
 HWDRV="$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
 check "dracut hardware-drivers has nvme" grep -wq 'nvme' "$HWDRV"
@@ -523,7 +523,7 @@ check "dracut hardware-drivers has hv_storvsc" grep -wq 'hv_storvsc' "$HWDRV"
 check "dracut hardware-drivers has hv_netvsc" grep -wq 'hv_netvsc' "$HWDRV"
 check "dracut hardware-drivers has hv_vmbus" grep -wq 'hv_vmbus' "$HWDRV"
 
-# r[verify image.boot.cloud-drivers+4]
+# r[verify image.boot.cloud-drivers+5]
 if [ "$VARIANT" = "cloud" ]; then
     check "dracut cloud-drivers config exists" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
     CLOUDDRV="$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
@@ -595,7 +595,7 @@ check_service_enabled "bes-tailscale-firstboot-auth.service" "bes-tailscale-firs
 check_service_enabled "snapper-timeline.timer"        "snapper-timeline.timer is enabled"
 check_service_enabled "snapper-cleanup.timer"         "snapper-cleanup.timer is enabled"
 
-# r[verify image.growth.service]
+# r[verify image.growth.service+3]
 check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is enabled"
 
 # r[verify image.cloud-init.enabled]

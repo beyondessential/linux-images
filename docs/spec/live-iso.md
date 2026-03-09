@@ -71,7 +71,7 @@ The ISO must contain a TUI installer binary and a `partitions.json` manifest
 describing the partition layout. There is one set of partition images per
 architecture, not per variant. The partition images (`efi.img`, `xboot.img`,
 `root.img`) are stored as raw (uncompressed) files inside a dedicated
-squashfs with transparent zstd compression (see `r[iso.images-partition+3]`).
+squashfs with transparent zstd compression (see `r[iso.images-partition+4]`).
 The installer reconstructs the GPT and writes each partition individually,
 setting up LUKS on the root partition when encryption is enabled.
 
@@ -81,15 +81,13 @@ boot image is a FAT32 filesystem image containing a GRUB EFI binary at
 the default removable media path (`EFI/BOOT/BOOTX64.EFI` for amd64,
 `EFI/BOOT/BOOTAA64.EFI` for arm64).
 
-r[iso.boot.autostart+3]
-On boot, the live environment must automatically launch the TUI installer on
-tty2. A separate oneshot service must switch the active VT to tty2 before
-the installer starts, so the user sees the installer immediately. The `kbd`
-package must be installed in the live rootfs to provide `/usr/bin/chvt`.
-The `systemd-sysv` package must be installed to provide `/sbin/reboot`
-so that the installer's reboot action works.
+r[iso.boot.autostart+4]
+On boot, the live environment must automatically launch the TUI installer
+and switch the active virtual terminal so the user sees it immediately.
+The `reboot` command must be functional in the live environment so the
+installer's reboot action works.
 
-> r[iso.config-partition+4]
+> r[iso.config-partition+5]
 > The ISO must include an appended FAT32 partition (GPT type `Microsoft basic
 > data`) created via `xorriso --append_partition`. This partition is embedded
 > in the ISO file and becomes a real writable GPT partition after the ISO is
@@ -98,8 +96,8 @@ so that the installer's reboot action works.
 > `e2bac42b-03a7-5048-b8f5-3f6d22100e77` so that the installer can locate it
 > via `/dev/disk/by-partuuid/` without depending on a specific partition
 > number or risking label collisions with other disks. After `xorriso`
-> produces the ISO, the build script must use `sfdisk --part-uuid` to stamp
-> this PARTUUID onto the BESCONF partition.
+> produces the ISO, the build script must stamp this PARTUUID onto the
+> BESCONF partition.
 >
 > The installer is responsible for mounting the BESCONF partition at
 > `/run/besconf`. It must locate the partition by its well-known PARTUUID,
@@ -119,37 +117,30 @@ r[iso.usb]
 The ISO must be writable to USB media using `dd` and must boot correctly on
 UEFI systems from that media.
 
-r[iso.vdi]
+r[iso.vdi+2]
 The build system must provide a recipe to convert the hybrid ISO to a VDI
 (VirtualBox Disk Image) so that it can be attached as a USB/hard-disk
-device in VirtualBox for testing. The conversion uses `qemu-img convert`
-from raw to VDI format. The resulting `.vdi` file is byte-equivalent to
-the ISO but in a container format that VirtualBox recognises as a hard disk.
+device in VirtualBox for testing. The resulting `.vdi` file is
+byte-equivalent to the ISO but in a container format that VirtualBox
+recognises as a hard disk.
 
 ## CD-ROM Partition Scanning
 
-> r[iso.cdrom-partscan+3]
+> r[iso.cdrom-partscan+4]
 > When the ISO is booted as optical media (e.g. `/dev/sr0` in a VM), the
 > Linux kernel does not parse the GPT appended partitions because the CD-ROM
 > block device driver exposes the device as a single block device with an
-> ISO 9660 filesystem. As a result, partition device nodes (e.g. `sr0p3`,
-> `sr0p4`) are never created and `/dev/disk/by-partuuid/` symlinks for the
-> appended BESIMAGES and BESCONF partitions do not appear.
+> ISO 9660 filesystem. As a result, partition device nodes are never created
+> and `/dev/disk/by-partuuid/` symlinks for the appended BESIMAGES and
+> BESCONF partitions do not appear.
 >
 > The installer must handle this transparently. When the well-known
 > PARTUUIDs are not present in `/dev/disk/by-partuuid/`, the installer
-> must:
->
-> 1. Identify the boot device by running `blkid -t LABEL=BES_INSTALLER`
->    (works even with `toram` where `/run/live/medium` is backed by
->    tmpfs), falling back to well-known CD-ROM paths (`/dev/sr0`,
->    `/dev/cdrom`).
-> 2. Run `losetup --find --show --partscan --read-only <device>` to create
->    a loop device with partition scanning enabled.
-> 3. Run `partprobe` on the loop device and wait for udev to settle.
-> 4. After this, the kernel creates partition device nodes on the loop
->    device (e.g. `loop0p3`, `loop0p4`) and udev populates
->    `/dev/disk/by-partuuid/` with the well-known PARTUUIDs.
+> must identify the boot device, create a loop device with partition
+> scanning enabled, and trigger a udev settle so that the kernel creates
+> partition device nodes and udev populates `/dev/disk/by-partuuid/` with
+> the well-known PARTUUIDs. Boot device detection must work even when
+> `toram` is active (where `/run/live/medium` is backed by tmpfs).
 >
 > This must happen early in the installer's startup, before any attempt to
 > mount BESCONF or open the images partition. The installer must detach the
@@ -196,7 +187,7 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 > the only piece of information that must be stored externally (it is the
 > trust anchor).
 
-> r[iso.verity.squashfs+2]
+> r[iso.verity.squashfs+3]
 > The live rootfs squashfs (`/live/filesystem.squashfs`) must be protected by
 > dm-verity using the layout described in `r[iso.verity.layout+3]`. At build
 > time:
@@ -214,7 +205,9 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 > `[squashfs | hash tree | padding | hash_size_le64]` as a single
 > sector-aligned blob.
 >
-> At boot, a custom initramfs premount script must:
+> The initramfs must include `veritysetup` and its runtime dependencies so
+> that dm-verity can be set up during early boot. At boot, an initramfs
+> premount script must:
 >
 > 1. Read the `live.verity.roothash=` parameter from `/proc/cmdline`.
 > 2. Read the last 8 bytes of the squashfs file to recover the hash tree
@@ -229,16 +222,7 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 > line, the hook must be skipped and boot must proceed without verification
 > (graceful fallback for development builds).
 
-> r[iso.verity.initramfs-hook]
-> The live rootfs must include an initramfs hook at
-> `/usr/share/initramfs-tools/hooks/verity` that copies `veritysetup` and its
-> runtime dependencies (shared libraries, `libcryptsetup`, `libdevmapper`)
-> into the initramfs. A premount script at
-> `/usr/share/initramfs-tools/scripts/live-premount/verity` must implement
-> the dm-verity setup described in `r[iso.verity.squashfs+2]`, including the
-> trailer read to recover the hash offset.
-
-> r[iso.images-partition+3]
+> r[iso.images-partition+4]
 > The ISO must include a read-only squashfs partition appended via
 > `xorriso --append_partition`. This squashfs must contain the raw
 > (uncompressed) partition images (`efi.img`, `xboot.img`, `root.img`) and
@@ -247,9 +231,9 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 > must have a well-known GPT PARTUUID of `ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`
 > so that the installer can locate it via `/dev/disk/by-partuuid/` without
 > depending on a specific partition number. After `xorriso` produces the
-> ISO, the build script must use `sfdisk --part-uuid` to stamp this PARTUUID
-> onto the images partition. On CD-ROM boot, the partition scanning service
-> described in `r[iso.cdrom-partscan+3]` ensures these PARTUUIDs become
+> ISO, the build script must stamp this PARTUUID onto the images partition.
+> On CD-ROM boot, the partition scanning service
+> described in `r[iso.cdrom-partscan+4]` ensures these PARTUUIDs become
 > available.
 
 > r[iso.verity.images+4]
@@ -292,10 +276,10 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 >   written and cannot be used, and that the only recourse is to write a new
 >   copy of the installation medium.
 
-> r[iso.verity.check+5]
+> r[iso.verity.check+6]
 > On boot, after the images partition is opened via dm-verity, the installer
-> must perform a full sequential read of every partition image file into
-> `/dev/null` using `splice(2)` before beginning the installation. This
+> must perform a full sequential read of every partition image file before
+> beginning the installation. This
 > forces dm-verity to verify every block of the images partition up front,
 > catching corruption before any data is written to the target disk.
 >
@@ -319,6 +303,3 @@ the ISO but in a container format that VirtualBox recognises as a hard disk.
 > If any read returns an I/O error, the installer must display the pre-write
 > corruption error described in `r[iso.verity.failure]`.
 
-r[iso.verity.build-deps]
-The ISO build script must have `cryptsetup` (which provides `veritysetup`)
-available as a build-time dependency for computing dm-verity hash trees.

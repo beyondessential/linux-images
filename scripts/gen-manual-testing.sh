@@ -100,7 +100,7 @@ MD
 }
 step2
 
-# r[verify installer.container.swtpm]
+# r[verify installer.container.swtpm+2]
 step3() {
     cat << 'MD'
 ## Step 3: Run Container Install Tests (All Variants)
@@ -184,7 +184,7 @@ step4
 
 # r[verify iso.format]
 # r[verify iso.boot.uefi]
-# r[verify iso.boot.autostart+3]
+# r[verify iso.boot.autostart+4]
 # r[verify iso.live-boot]
 # r[verify iso.offline]
 # r[verify installer.tui.welcome+7]
@@ -192,10 +192,10 @@ step4
 # r[verify installer.tui.ascii-rendering]
 # r[verify installer.tui.error-reboot]
 # r[verify installer.write.expand-root]
-# r[verify image.growth.service]
+# r[verify image.growth.service+3]
 # r[verify image.boot.grub-uuids]
-# r[verify iso.vdi]
-# r[verify iso.cdrom-partscan+3]
+# r[verify iso.vdi+2]
+# r[verify iso.cdrom-partscan+4]
 step5() {
     cat << 'MD'
 ## Step 5: ISO in a Full VM (VirtualBox)
@@ -280,7 +280,7 @@ MD
 }
 step5
 
-# r[verify iso.config-partition+4]
+# r[verify iso.config-partition+5]
 # r[verify installer.config.location]
 # r[verify installer.mode.prefilled]
 step6() {
@@ -389,7 +389,7 @@ MD
 step7
 
 # r[verify iso.hybrid]
-# r[verify installer.encryption.tpm-enroll+5]
+# r[verify installer.encryption.tpm-enroll+6]
 # r[verify image.firewall.policy]
 # r[verify image.firewall.ssh]
 # r[verify image.tailscale.service-enabled]
@@ -421,8 +421,7 @@ step8
 # r[verify image.boot.grub-timeout]
 # r[verify image.boot.grub-cmdline]
 # r[verify image.boot.grub-uuids]
-# r[verify image.growth.service]
-# r[verify image.growth.script+2]
+# r[verify image.growth.service+3]
 step9() {
     cat << 'MD'
 ## Step 9: Direct Image Write Boot

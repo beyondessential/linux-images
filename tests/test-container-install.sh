@@ -93,7 +93,7 @@ fi
 # ============================================================
 # Fake-LUKS detection
 # ============================================================
-# r[impl installer.container.fake-luks]
+# r[impl installer.container.fake-luks+2]
 if [ "$IS_ENCRYPTED" -eq 1 ]; then
     luks_detect_or_fake
 else
@@ -182,8 +182,7 @@ echo ""
 # ============================================================
 # Phase 1: Create loopback target disk
 # ============================================================
-# r[impl installer.tui.loop-device]: it's hard to implement a negative
-# r[verify installer.tui.loop-device]
+# r[depends installer.container.isolation+4]
 echo "==> Creating loopback target disk ($TARGET_DISK_SIZE)..."
 
 TARGET_IMG="$WORK_DIR/target.img"
@@ -281,8 +280,8 @@ done
 # ============================================================
 echo "==> Running installer in systemd-nspawn container..."
 
-# r[impl installer.container.swtpm]
-# r[verify installer.container.swtpm]
+# r[impl installer.container.swtpm+2]
+# r[verify installer.container.swtpm+2]
 # For TPM scenarios, start a software TPM emulator so that
 # systemd-cryptenroll --tpm2-device=auto has a real (emulated) TPM to talk to.
 # In fake-LUKS mode, swtpm is not needed (the shim handles cryptenroll).
@@ -293,8 +292,8 @@ elif [ "$DISK_ENCRYPTION" = "tpm" ] && [ "${BES_FAKE_LUKS:-0}" = "1" ]; then
     echo "==> Skipping swtpm (fake-LUKS mode)"
 fi
 
-# r[impl installer.container.fake-luks]
-# r[verify installer.container.fake-luks]
+# r[impl installer.container.fake-luks+2]
+# r[verify installer.container.fake-luks+2]
 # Install fake cryptsetup/systemd-cryptenroll shims into the container rootfs
 # when the kernel keyring is unavailable for real LUKS operations.
 # Verification: a successful metal scenario with BES_FAKE_LUKS=1 proves the
@@ -305,12 +304,12 @@ if [ "${BES_FAKE_LUKS:-0}" = "1" ] && [ "$IS_ENCRYPTED" -eq 1 ]; then
     install_fake_luks_shims "$SCENARIO_ROOTFS"
 fi
 
-# r[impl installer.container.isolation+3]: build nspawn options and binds
+# r[impl installer.container.isolation+4]: build nspawn options and binds
 # from the shared library. The host /dev is never bind-mounted; the
 # container gets nspawn's own private /dev. After partprobe, partition
 # device nodes only appear on the host's devtmpfs — the installer handles
 # this by reading /sys/class/block/ and creating missing nodes via mknod
-# (see r[installer.container.partition-devices+2]).
+# (see r[installer.container.partition-devices+3]).
 # shellcheck disable=SC2119 # intentionally called without args; uses PRIVATE_NETWORK env var
 nspawn_opts
 nspawn_installer_binds "$LOOP_DEV" "$IMAGES_DIR" "$DEVICES_JSON" \
@@ -322,9 +321,9 @@ INSTALLER_OUTPUT="$WORK_DIR/installer-output.txt"
 echo "    Running installer (disk-encryption=$DISK_ENCRYPTION, target=$LOOP_DEV)..."
 echo ""
 
-# r[impl installer.container.isolation+3] (layer 2): --fake-devices bypasses
+# r[impl installer.container.isolation+4] (layer 2): --fake-devices bypasses
 # lsblk discovery so the installer sees only the loop device.
-# r[impl installer.container.isolation+3] (layer 3): when PRIVATE_NETWORK is
+# r[impl installer.container.isolation+4] (layer 3): when PRIVATE_NETWORK is
 # enabled (the default), --private-network prevents any network side-effects
 # from the container. This also serves as the enforcement mechanism for
 # r[verify iso.offline]: a successful install with no network proves the ISO
@@ -449,7 +448,7 @@ check "root partition label present" grep -qi '"name"[[:space:]]*:[[:space:]]*"r
 # r[verify installer.mode.auto.progress]
 check "non-interactive write summary printed" grep -q "write complete:.*MiB in.*MiB/s" "$INSTALLER_OUTPUT"
 
-# r[verify iso.verity.check+5]
+# r[verify iso.verity.check+6]
 # r[verify iso.verity.failure]
 # The integrity check only runs when the installer opens the images partition
 # via dm-verity (real ISO boot). In the container test the images directory is
@@ -763,8 +762,8 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
-        # r[verify installer.write.randomize-uuids+3]
-        # r[verify installer.write.rebuild-boot-config+8]
+        # r[verify installer.write.randomize-uuids+4]
+        # r[verify installer.write.rebuild-boot-config+9]
         # Mount /boot under the verify root so we can read grub.cfg and
         # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"
@@ -830,7 +829,7 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
 
             # --- Initramfs UUID and mapper-name consistency ---
-            # r[verify installer.write.rebuild-boot-config+8]
+            # r[verify installer.write.rebuild-boot-config+9]
             # The initramfs must not contain stale UUIDs from the image build
             # or the installer's internal LUKS mapper name.
             INITRD_FILE="$(find "$BOOT_MNT" -maxdepth 1 -name 'initrd.img-*' -print -quit 2>/dev/null)"

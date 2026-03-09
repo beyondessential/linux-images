@@ -98,11 +98,11 @@ apt-get install -y -q dracut  # this removes initramfs-tools
 install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
     /etc/dracut.conf.d/01-fix-hostonly-noble.conf
 
-# r[image.boot.hardware-drivers+2]
+# r[impl image.boot.hardware-drivers+3]
 install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
     /etc/dracut.conf.d/03-hardware-drivers.conf
 
-# r[image.boot.cloud-drivers+4]
+# r[impl image.boot.cloud-drivers+5]
 if [ "$VARIANT" = "cloud" ]; then
     install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
         /etc/dracut.conf.d/04-cloud-drivers.conf
@@ -256,7 +256,7 @@ bash /tmp/scripts/setup-snapper.sh
 # ============================================================
 # Disk growth service
 # ============================================================
-# r[image.growth.service] r[image.growth.script+2]
+# r[impl image.growth.service+3]
 install -m 755 /tmp/files/grow-root-filesystem /usr/local/bin/grow-root-filesystem
 install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/system/grow-root-filesystem.service
 systemctl enable grow-root-filesystem.service
