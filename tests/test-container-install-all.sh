@@ -58,6 +58,7 @@ fi
 # ============================================================
 WORK_DIR=""
 
+# shellcheck disable=SC2329 # invoked indirectly via trap
 cleanup() {
     local exit_code=$?
     set +e

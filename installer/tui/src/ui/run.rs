@@ -20,7 +20,7 @@ use crate::writer;
 use crate::writer::PartitionManifest;
 
 use super::render::render;
-use super::{AppState, ProgressSnapshot, Screen};
+use super::{AppState, InstallPhase, ProgressSnapshot, Screen};
 
 enum WorkerMessage {
     Progress(ProgressSnapshot),
@@ -54,7 +54,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
     }
 
     match &state.screen {
-        // r[impl installer.tui.welcome+5]
+        // r[impl installer.tui.welcome+7]
         Screen::Welcome => match key.code {
             KeyCode::Char('q') => return KeyAction::Reboot,
             KeyCode::Char('n') => state.open_network_check(),
@@ -339,7 +339,7 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
 
         Screen::Installing => {}
 
-        // r[impl installer.tui.progress+3]
+        // r[impl installer.tui.progress+4]
         Screen::Done => {
             if key.code == KeyCode::Enter {
                 return KeyAction::Reboot;
@@ -363,6 +363,10 @@ pub fn run_tui(
     no_reboot: bool,
     besconf: &BesconfState,
 ) -> Result<()> {
+    // r[impl iso.verity.check+5]
+    // r[impl installer.tui.welcome+7]
+    state.start_verity_check(manifest, images_dir);
+
     terminal::enable_raw_mode().context("enabling raw mode")?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
@@ -398,10 +402,20 @@ fn event_loop(
     let (worker_tx, worker_rx) = mpsc::channel::<WorkerMessage>();
 
     loop {
-        // Poll async results for network screens and GitHub key fetch
+        // Poll async results for network screens, GitHub key fetch, and verity check
         state.poll_net_checks();
         state.poll_tailscale_netcheck();
         state.poll_github_keys();
+        state.poll_verity_check();
+
+        // r[impl iso.verity.check+5]
+        if let super::VerityCheckState::Failed(ref msg) = state.verity_check {
+            state.screen = Screen::Error(format!(
+                "Installation media integrity check failed -- \
+                 the target disk has NOT been written to -- \
+                 write a new copy of the installation medium.\n\n{msg}"
+            ));
+        }
 
         terminal.draw(|f| render(f, state))?;
 
@@ -552,38 +566,41 @@ fn run_full_install(
         .context("reading partition image sizes")?;
     writer::check_disk_size(total_image_size, disk_size).context("disk size check")?;
 
-    // r[impl iso.verity.check]
-    // r[impl iso.verity.failure]
-    // Upfront integrity check: splice every image to /dev/null so dm-verity
-    // verifies every block before we touch the target disk.
-    let image_files = writer::image_file_sizes(manifest, images_dir)
-        .context("reading image file sizes for integrity check")?;
-    writer::integrity_check(images_dir, &image_files, &mut |progress| {
-        let _ = tx.send(WorkerMessage::Progress(progress.into()));
-    })
-    .context("installation media integrity check failed — the target disk has NOT been written to — write a new copy of the installation medium")?;
+    // r[impl installer.tui.progress+4]
+    let send_phase = |phase: InstallPhase| {
+        let _ = tx.send(WorkerMessage::Progress(ProgressSnapshot {
+            bytes_written: 0,
+            total_bytes: None,
+            throughput_mbps: 0.0,
+            eta: None,
+            phase,
+        }));
+    };
 
-    // Write partitions (~90% of progress)
+    // Write partitions (0..90% of progress)
     disk_writer
         .write_partitions(manifest, images_dir, &mut |progress| {
             let _ = tx.send(WorkerMessage::Progress(progress.into()));
         })
         .context("writing partitions")?;
 
-    // Expand root filesystem (~91%)
+    // Expand root filesystem (90..92%)
+    send_phase(InstallPhase::Expanding);
     disk_writer
         .expand_root_filesystem()
         .context("expanding root filesystem")?;
 
-    // Randomize UUIDs (~92%)
+    // Randomize UUIDs (92..93%)
+    send_phase(InstallPhase::RandomizingUuids);
     disk_writer
         .randomize_filesystem_uuids()
         .context("randomizing filesystem UUIDs")?;
 
-    // r[impl installer.encryption.overview+3]
-    // Encryption enrollment + config writes (~93%) — must happen before
+    // r[impl installer.encryption.overview+5]
+    // Encryption enrollment + config writes (93..94%) — must happen before
     // rebuild_boot_config so dracut picks up the updated crypttab/keyfile.
     if let Some(pp) = disk_writer.passphrase {
+        send_phase(InstallPhase::EncryptionSetup);
         let mounted = firstboot::mount_target(
             disk_writer.target,
             disk_writer.disk_encryption,
@@ -599,17 +616,20 @@ fn run_full_install(
         firstboot::unmount_target(mounted)?;
     }
 
-    // Rebuild boot config (~94%)
+    // Rebuild boot config (94..96%)
+    send_phase(InstallPhase::RebuildingBootConfig);
     disk_writer
         .rebuild_boot_config()
         .context("rebuilding boot config")?;
 
-    // Verify partition table (~95%)
+    // Verify partition table (96..97%)
+    send_phase(InstallPhase::VerifyingPartitions);
     disk_writer
         .verify_partition_table()
         .context("verifying partition table")?;
 
-    // Firstboot (~96%)
+    // Firstboot (97..100%)
+    send_phase(InstallPhase::ApplyingConfig);
     {
         let mounted = firstboot::mount_target(
             disk_writer.target,
@@ -796,6 +816,7 @@ mod tests {
                 "Pacific/Auckland".into(),
                 "UTC".into(),
             ],
+            false,
         )
     }
 
@@ -891,7 +912,7 @@ mod tests {
         assert_eq!(final_state.screen, Screen::Welcome);
     }
 
-    // r[verify installer.tui.welcome+5]
+    // r[verify installer.tui.welcome+7]
     #[test]
     fn welcome_q_triggers_reboot() {
         let mut state = make_state();
@@ -958,6 +979,7 @@ mod tests {
                 "Pacific/Auckland".into(),
                 "UTC".into(),
             ],
+            false,
         );
 
         let events = vec![

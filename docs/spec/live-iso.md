@@ -64,12 +64,14 @@ r[iso.offline]
 The live ISO must be fully functional without network connectivity. No
 packages or data are downloaded during the installation process.
 
+## Build Cleanup
+
 r[iso.contents+3]
 The ISO must contain a TUI installer binary and a `partitions.json` manifest
 describing the partition layout. There is one set of partition images per
 architecture, not per variant. The partition images (`efi.img`, `xboot.img`,
 `root.img`) are stored as raw (uncompressed) files inside a dedicated
-squashfs with transparent zstd compression (see `r[iso.images-partition]`).
+squashfs with transparent zstd compression (see `r[iso.images-partition+3]`).
 The installer reconstructs the GPT and writes each partition individually,
 setting up LUKS on the root partition when encryption is enabled.
 
@@ -85,15 +87,27 @@ and switch the active virtual terminal so the user sees it immediately.
 The `reboot` command must be functional in the live environment so the
 installer's reboot action works.
 
-> r[iso.config-partition]
+> r[iso.config-partition+4]
 > The ISO must include an appended FAT32 partition (GPT type `Microsoft basic
 > data`) created via `xorriso --append_partition`. This partition is embedded
 > in the ISO file and becomes a real writable GPT partition after the ISO is
-> written to USB via `dd`. Its filesystem label must be `BESCONF`.
+> written to USB via `dd`. Its filesystem label must be `BESCONF`. The
+> partition must have a well-known GPT PARTUUID of
+> `e2bac42b-03a7-5048-b8f5-3f6d22100e77` so that the installer can locate it
+> via `/dev/disk/by-partuuid/` without depending on a specific partition
+> number or risking label collisions with other disks. After `xorriso`
+> produces the ISO, the build script must use `sfdisk --part-uuid` to stamp
+> this PARTUUID onto the BESCONF partition.
+>
+> The installer is responsible for mounting the BESCONF partition at
+> `/run/besconf`. It must locate the partition by its well-known PARTUUID,
+> mount it read-only, then attempt a read-write remount to determine
+> writability. No systemd mount/automount units are used; the installer
+> owns the entire mount lifecycle and unmounts on exit.
 >
 > When booted from USB, this partition is writable and is the intended location
 > for users to place a `bes-install.toml` configuration file before booting.
-> When booted as optical media in a VM, the partition is still readable.
+> When booted as optical media in a VM, the partition is read-only.
 
 r[iso.per-arch]
 Separate ISO images must be produced per architecture (amd64, arm64). Each
@@ -102,6 +116,43 @@ ISO contains only the images and installer binary for its architecture.
 r[iso.usb]
 The ISO must be writable to USB media using `dd` and must boot correctly on
 UEFI systems from that media.
+
+r[iso.vdi]
+The build system must provide a recipe to convert the hybrid ISO to a VDI
+(VirtualBox Disk Image) so that it can be attached as a USB/hard-disk
+device in VirtualBox for testing. The conversion uses `qemu-img convert`
+from raw to VDI format. The resulting `.vdi` file is byte-equivalent to
+the ISO but in a container format that VirtualBox recognises as a hard disk.
+
+## CD-ROM Partition Scanning
+
+> r[iso.cdrom-partscan+3]
+> When the ISO is booted as optical media (e.g. `/dev/sr0` in a VM), the
+> Linux kernel does not parse the GPT appended partitions because the CD-ROM
+> block device driver exposes the device as a single block device with an
+> ISO 9660 filesystem. As a result, partition device nodes (e.g. `sr0p3`,
+> `sr0p4`) are never created and `/dev/disk/by-partuuid/` symlinks for the
+> appended BESIMAGES and BESCONF partitions do not appear.
+>
+> The installer must handle this transparently. When the well-known
+> PARTUUIDs are not present in `/dev/disk/by-partuuid/`, the installer
+> must:
+>
+> 1. Identify the boot device by running `blkid -t LABEL=BES_INSTALLER`
+>    (works even with `toram` where `/run/live/medium` is backed by
+>    tmpfs), falling back to well-known CD-ROM paths (`/dev/sr0`,
+>    `/dev/cdrom`).
+> 2. Run `losetup --find --show --partscan --read-only <device>` to create
+>    a loop device with partition scanning enabled.
+> 3. Run `partprobe` on the loop device and wait for udev to settle.
+> 4. After this, the kernel creates partition device nodes on the loop
+>    device (e.g. `loop0p3`, `loop0p4`) and udev populates
+>    `/dev/disk/by-partuuid/` with the well-known PARTUUIDs.
+>
+> This must happen early in the installer's startup, before any attempt to
+> mount BESCONF or open the images partition. The installer must detach the
+> loop device on exit. On USB boot, the PARTUUIDs are already visible and
+> this step is a no-op.
 
 ## Integrity Verification
 
@@ -145,7 +196,7 @@ UEFI systems from that media.
 
 > r[iso.verity.squashfs+3]
 > The live rootfs squashfs (`/live/filesystem.squashfs`) must be protected by
-> dm-verity using the layout described in `r[iso.verity.layout]`. At build
+> dm-verity using the layout described in `r[iso.verity.layout+3]`. At build
 > time:
 >
 > 1. Run `mksquashfs` to produce the squashfs.
@@ -153,7 +204,7 @@ UEFI systems from that media.
 >    and a root hash.
 > 3. Append the hash tree to the squashfs file.
 > 4. Pad the blob to 4096-byte alignment and write the trailer as described
->    in `r[iso.verity.layout]`.
+>    in `r[iso.verity.layout+3]`.
 > 5. Embed the root hash in the GRUB kernel command line as
 >    `live.verity.roothash=<hex>`.
 >
@@ -178,17 +229,23 @@ UEFI systems from that media.
 > line, the hook must be skipped and boot must proceed without verification
 > (graceful fallback for development builds).
 
-> r[iso.images-partition]
-> The ISO must include a read-only squashfs partition appended as GPT
-> partition 4 via `xorriso --append_partition`. This squashfs must contain
-> the raw (uncompressed) partition images (`efi.img`, `xboot.img`,
-> `root.img`) and the `partitions.json` manifest. The squashfs must use zstd
-> compression so that the kernel decompresses data transparently on read.
-> The filesystem label must be `BESIMAGES`.
+> r[iso.images-partition+3]
+> The ISO must include a read-only squashfs partition appended via
+> `xorriso --append_partition`. This squashfs must contain the raw
+> (uncompressed) partition images (`efi.img`, `xboot.img`, `root.img`) and
+> the `partitions.json` manifest. The squashfs must use zstd compression so
+> that the kernel decompresses data transparently on read. The partition
+> must have a well-known GPT PARTUUID of `ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`
+> so that the installer can locate it via `/dev/disk/by-partuuid/` without
+> depending on a specific partition number. After `xorriso` produces the
+> ISO, the build script must use `sfdisk --part-uuid` to stamp this PARTUUID
+> onto the images partition. On CD-ROM boot, the partition scanning service
+> described in `r[iso.cdrom-partscan+3]` ensures these PARTUUIDs become
+> available.
 
-> r[iso.verity.images+3]
+> r[iso.verity.images+4]
 > The images squashfs partition must be protected by dm-verity using the
-> layout described in `r[iso.verity.layout]`. At build time:
+> layout described in `r[iso.verity.layout+3]`. At build time:
 >
 > 1. Run `mksquashfs` to produce the images squashfs.
 > 2. Record the squashfs data size.
@@ -196,16 +253,17 @@ UEFI systems from that media.
 >    and a root hash.
 > 4. Append the hash tree to the squashfs file.
 > 5. Pad the blob to 4096-byte alignment and write the trailer as described
->    in `r[iso.verity.layout]`.
+>    in `r[iso.verity.layout+3]`.
 > 6. Append the combined blob as a GPT partition via xorriso.
 > 7. Store the root hash in the GRUB kernel command line as
 >    `images.verity.roothash=<hex>`.
 >
-> At runtime, the installer must find the images partition (GPT partition 4
-> of the boot device, or by filesystem label `BESIMAGES`), read the last 8
-> bytes to recover the hash tree size and compute the hash offset, then run
-> `veritysetup open` with the root hash and `--hash-offset`, mount the
-> resulting dm-verity device as squashfs, and read partition images from it.
+> At runtime, the installer must find the images partition by its well-known
+> PARTUUID (`ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`) via
+> `/dev/disk/by-partuuid/`, read the last 8 bytes to recover the hash tree
+> size and compute the hash offset, then run `veritysetup open` with the
+> root hash and `--hash-offset`, mount the resulting dm-verity device as
+> squashfs, and read partition images from it.
 
 > r[iso.verity.failure]
 > If dm-verity verification fails, the system must not silently use corrupted
@@ -225,13 +283,30 @@ UEFI systems from that media.
 >   written and cannot be used, and that the only recourse is to write a new
 >   copy of the installation medium.
 
-> r[iso.verity.check]
+> r[iso.verity.check+5]
 > On boot, after the images partition is opened via dm-verity, the installer
 > must perform a full sequential read of every partition image file into
 > `/dev/null` using `splice(2)` before beginning the installation. This
 > forces dm-verity to verify every block of the images partition up front,
-> catching corruption before any data is written to the target disk. The
-> installer must display progress during this check. If any read returns an
-> I/O error, the installer must display the pre-write corruption error
-> described in `r[iso.verity.failure]`.
+> catching corruption before any data is written to the target disk.
+>
+> In interactive (TUI) mode, the integrity check must run in the background
+> while the welcome screen is displayed, starting automatically when the
+> welcome screen is first shown. A progress bar labelled
+> "Verifying installation media..." must be rendered at the bottom of the
+> welcome screen. The user must not be allowed to advance past the welcome
+> screen until the integrity check completes successfully. If the check
+> fails, the installer must display the pre-write corruption error described
+> in `r[iso.verity.failure]`. The `n` (network check) and `q` (reboot)
+> keybinds remain available during the check.
+>
+> In automatic mode, the integrity check runs sequentially before the
+> installation begins, with progress printed to stderr.
+>
+> If verity is not active (e.g. development builds using the fallback
+> manifest path), the integrity check is skipped and the welcome screen
+> does not block advancement.
+>
+> If any read returns an I/O error, the installer must display the pre-write
+> corruption error described in `r[iso.verity.failure]`.
 

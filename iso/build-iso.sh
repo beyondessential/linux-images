@@ -27,6 +27,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Well-known GPT PARTUUIDs for ISO partitions
+# r[impl iso.images-partition+3]
+IMAGES_PARTUUID="ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b"
+# r[impl iso.config-partition+4]
+BESCONF_PARTUUID="e2bac42b-03a7-5048-b8f5-3f6d22100e77"
+
 # Well-known GPT partition type UUIDs
 GPT_TYPE_MICROSOFT_BASIC_DATA="EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
 GPT_TYPE_LINUX_FILESYSTEM="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
@@ -141,7 +147,7 @@ cp -a "$ROOTFS_DIR/live" "$STAGING/live"
 # Phase 1: Extract partition images from source image
 # ============================================================
 # r[impl iso.contents+3]
-# r[impl iso.images-partition]
+# r[impl iso.images-partition+3]
 echo "==> Phase 1: Extracting partition images from source image..."
 IMAGES_STAGING="$WORK_DIR/images-staging"
 mkdir -p "$IMAGES_STAGING"
@@ -232,8 +238,8 @@ echo ""
 # ============================================================
 # Phase 2: Build images squashfs with verity
 # ============================================================
-# r[impl iso.images-partition]
-# r[impl iso.verity.images+3]
+# r[impl iso.images-partition+3]
+# r[impl iso.verity.images+4]
 # r[impl iso.verity.layout+3]
 echo "==> Phase 2: Building images squashfs with verity..."
 
@@ -332,7 +338,8 @@ echo "    GRUB target: $GRUB_TARGET ($GRUB_EFI_NAME)"
 # ============================================================
 # Phase 4: Build BESCONF FAT32 partition image
 # ============================================================
-# r[impl iso.config-partition]
+# r[impl iso.config-partition+4]
+# r[impl installer.config.template]
 echo "==> Phase 4: Building BESCONF partition image..."
 
 BESCONF_IMG="$WORK_DIR/besconf.img"
@@ -372,6 +379,42 @@ xorriso -as mkisofs \
     \
     "$STAGING"
 
+# ============================================================
+# Phase 6: Stamp well-known PARTUUIDs via sfdisk
+# ============================================================
+# r[impl iso.images-partition+3]
+# r[impl iso.config-partition+4]
+echo "==> Phase 6: Stamping well-known PARTUUIDs..."
+
+# Find partition numbers by GPT partition name. xorriso names its appended
+# partitions "Appended3" and "Appended4" (matching the -append_partition
+# numbers). We cannot match by type UUID because xorriso's gap partitions
+# share the same Microsoft basic data type as BESCONF.
+SFDISK_ISO_JSON="$(sfdisk --json "$OUTPUT")"
+IMAGES_PARTNUM="$(echo "$SFDISK_ISO_JSON" | jq -r \
+    '.partitiontable.partitions[] | select(.name == "Appended3") | .node' \
+    | head -1 | grep -o '[0-9]*$')"
+BESCONF_PARTNUM="$(echo "$SFDISK_ISO_JSON" | jq -r \
+    '.partitiontable.partitions[] | select(.name == "Appended4") | .node' \
+    | head -1 | grep -o '[0-9]*$')"
+
+if [ -z "$IMAGES_PARTNUM" ]; then
+    echo "ERROR: could not find images partition (Linux filesystem) in ISO GPT"
+    exit 1
+fi
+if [ -z "$BESCONF_PARTNUM" ]; then
+    echo "ERROR: could not find BESCONF partition (Microsoft basic data) in ISO GPT"
+    exit 1
+fi
+
+sfdisk --part-uuid "$OUTPUT" "$IMAGES_PARTNUM" "$IMAGES_PARTUUID"
+sfdisk --part-label "$OUTPUT" "$IMAGES_PARTNUM" "BESIMAGES"
+echo "    images  partition ${IMAGES_PARTNUM}: name=BESIMAGES PARTUUID=${IMAGES_PARTUUID}"
+
+sfdisk --part-uuid "$OUTPUT" "$BESCONF_PARTNUM" "$BESCONF_PARTUUID"
+sfdisk --part-label "$OUTPUT" "$BESCONF_PARTNUM" "BESCONF"
+echo "    besconf partition ${BESCONF_PARTNUM}: name=BESCONF PARTUUID=${BESCONF_PARTUUID}"
+
 # Clean up working directory
 rm -rf "$WORK_DIR"
 WORK_DIR=""
@@ -380,19 +423,18 @@ trap - EXIT
 
 echo ""
 echo "=============================="
-echo "Live ISO built successfully"
+echo "Live ISO+USB built successfully"
 echo "=============================="
 echo "Output: $OUTPUT"
 echo "Size:   $(du -h "$OUTPUT" | cut -f1)"
 echo "SHA256: $(sha256sum "$OUTPUT" | cut -d' ' -f1)"
 echo ""
-echo "Boot in a VM:"
+echo "Boot in a VM (CD-ROM):"
 echo "  Attach $OUTPUT as a CD/DVD drive (UEFI mode)"
 echo ""
-echo "Write to USB:"
-echo "  sudo dd if=$OUTPUT of=/dev/sdX bs=4M status=progress"
+# r[impl iso.vdi]
+echo "Boot in VirtualBox (USB/hard-disk):"
+echo "  Edit the bes-install.toml: just iso-besconf"
+echo "  Attach the .vdi as a hard disk in VirtualBox (UEFI mode)"
 echo ""
-echo "To pre-configure on USB, mount the BESCONF partition and place bes-install.toml:"
-echo "  lsblk -o NAME,LABEL /dev/sdX   # find the BESCONF partition"
-echo "  mount /dev/sdXN /mnt && cp bes-install.toml /mnt/ && umount /mnt"
 echo "=============================="

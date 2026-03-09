@@ -1,10 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{Context, Result};
 
 use crate::paths;
 
+const BESCONF_PARTUUID: &str = "e2bac42b-03a7-5048-b8f5-3f6d22100e77";
 const BESCONF_MOUNT: &str = "/run/besconf";
 const FAILURE_LOG_NAME: &str = "installer-failed.log";
 const FAILURE_LOG_OLD_NAME: &str = "installer-failed.log.old";
@@ -43,49 +45,132 @@ impl BesconfState {
     }
 }
 
-/// Detect whether the BESCONF partition is mounted and can be made writable.
+/// Mount the BESCONF partition and detect whether it can be made writable.
 ///
-/// Attempts `mount -o remount,rw /run/besconf`. If the remount succeeds,
-/// the partition is considered writable. If it fails for any reason (not
-/// mounted, optical media, permissions), the partition is considered
-/// read-only.
-// r[impl installer.besconf.writable-detection]
-pub fn detect_writable() -> BesconfState {
+/// r[impl iso.config-partition+4]
+// r[impl installer.besconf.writable-detection+2]
+///
+/// Locates the BESCONF partition by its well-known PARTUUID, mounts it
+/// read-only at `/run/besconf`, then attempts a read-write remount to
+/// determine writability. If the partition is not found (e.g. development
+/// or container test), returns a read-only state with the mount path set
+/// but nothing actually mounted.
+///
+/// Returns `(BesconfState, bool)` — the state and whether we performed
+/// the initial mount (so the caller knows to unmount on exit).
+pub fn mount_and_detect() -> (BesconfState, bool) {
     let mount_path = PathBuf::from(BESCONF_MOUNT);
+    let by_partuuid = PathBuf::from(format!("/dev/disk/by-partuuid/{BESCONF_PARTUUID}"));
 
-    if !mount_path.exists() {
-        tracing::info!("BESCONF mount path does not exist, treating as read-only");
-        return BesconfState {
-            writable: false,
-            mount_path,
-            save_recovery_keys: false,
-        };
+    if !by_partuuid.exists() {
+        tracing::info!(
+            "BESCONF PARTUUID device not found at {}, treating as unavailable",
+            by_partuuid.display()
+        );
+        return (
+            BesconfState {
+                writable: false,
+                mount_path,
+                save_recovery_keys: false,
+            },
+            false,
+        );
     }
 
-    let output = std::process::Command::new(paths::MOUNT)
-        .args(["-o", "remount,rw", BESCONF_MOUNT])
+    // Create the mount point if it doesn't exist.
+    if let Err(e) = fs::create_dir_all(&mount_path) {
+        tracing::warn!("failed to create {}: {e}", mount_path.display());
+        return (
+            BesconfState {
+                writable: false,
+                mount_path,
+                save_recovery_keys: false,
+            },
+            false,
+        );
+    }
+
+    // Mount read-only first.
+    let mount_output = Command::new(paths::MOUNT)
+        .args(["-t", "vfat", "-o", "ro,noatime,iocharset=ascii"])
+        .arg(&by_partuuid)
+        .arg(&mount_path)
         .output();
 
-    let writable = match output {
+    let mounted = match mount_output {
         Ok(o) if o.status.success() => {
-            tracing::info!("BESCONF partition remounted read-write");
+            tracing::info!("BESCONF mounted read-only at {}", mount_path.display());
             true
         }
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr);
-            tracing::info!("BESCONF remount failed (exit {}): {stderr}", o.status);
+            tracing::info!("BESCONF mount failed (exit {}): {stderr}", o.status);
             false
         }
         Err(e) => {
-            tracing::info!("BESCONF remount command failed to run: {e}");
+            tracing::info!("BESCONF mount command failed to run: {e}");
             false
         }
     };
 
-    BesconfState {
-        writable,
-        mount_path,
-        save_recovery_keys: false,
+    if !mounted {
+        return (
+            BesconfState {
+                writable: false,
+                mount_path,
+                save_recovery_keys: false,
+            },
+            false,
+        );
+    }
+
+    // Try to remount read-write.
+    let rw_output = Command::new(paths::MOUNT)
+        .args(["-o", "remount,rw", BESCONF_MOUNT])
+        .output();
+
+    let writable = match rw_output {
+        Ok(o) if o.status.success() => {
+            tracing::info!("BESCONF remounted read-write");
+            true
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            tracing::info!("BESCONF rw remount failed (exit {}): {stderr}", o.status);
+            false
+        }
+        Err(e) => {
+            tracing::info!("BESCONF rw remount command failed to run: {e}");
+            false
+        }
+    };
+
+    (
+        BesconfState {
+            writable,
+            mount_path,
+            save_recovery_keys: false,
+        },
+        true,
+    )
+}
+
+/// Unmount BESCONF if we mounted it.
+pub fn unmount() {
+    let mount_path = Path::new(BESCONF_MOUNT);
+    if mount_path.exists() {
+        let status = Command::new(paths::UMOUNT).arg(mount_path).status();
+        match status {
+            Ok(s) if s.success() => {
+                tracing::info!("unmounted BESCONF at {}", mount_path.display());
+            }
+            Ok(s) => {
+                tracing::warn!("umount BESCONF exited with {s}");
+            }
+            Err(e) => {
+                tracing::warn!("umount BESCONF failed: {e}");
+            }
+        }
     }
 }
 
@@ -244,7 +329,7 @@ pub fn append_recovery_key(
 mod tests {
     use super::*;
 
-    // r[verify installer.besconf.writable-detection]
+    // r[verify installer.besconf.writable-detection+2]
     #[test]
     fn besconf_state_tracks_writable() {
         let state = BesconfState {
@@ -256,7 +341,7 @@ mod tests {
         assert_eq!(state.mount_path(), Path::new("/tmp/test-besconf"));
     }
 
-    // r[verify installer.besconf.writable-detection]
+    // r[verify installer.besconf.writable-detection+2]
     #[test]
     fn besconf_state_tracks_readonly() {
         let state = BesconfState {

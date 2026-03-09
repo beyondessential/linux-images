@@ -48,13 +48,14 @@ output_raw := output_dir / filestem + ".raw"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
 output_iso := output_arch_dir / "bes-installer-" + arch + ".iso"
+output_iso_vdi := output_arch_dir / "bes-installer-" + arch + ".vdi"
 iso_base_tarball := work_dir / "iso-base.tar"
 iso_rootfs_dir := work_dir / "iso-rootfs"
 
 # --- Rust installer settings ---
 
-cargo_target := if arch == "amd64" { "x86_64-unknown-linux-musl" } else if arch == "arm64" { "aarch64-unknown-linux-musl" } else { error("Unsupported architecture") }
-installer_bin := "installer/tui/target" / cargo_target / "release" / "bes-installer"
+cargo_target := if arch == "amd64" { "x86_64-unknown-linux-gnu" } else if arch == "arm64" { "aarch64-unknown-linux-gnu" } else { error("Unsupported architecture") }
+installer_bin := "target" / cargo_target / "release" / "bes-installer"
 
 # --- QEMU settings for boot tests ---
 
@@ -67,7 +68,7 @@ qemu_firmvars := if arch == "amd64" { work_dir / "OVMF_VARS.fd" } else if arch =
 # Installer (Rust TUI)
 # ============================================================
 
-# Build the TUI installer binary (static musl)
+# Build the TUI installer binary
 installer-build: _validate-arch
     cargo build -p bes-installer --release --target {{ cargo_target }}
 
@@ -150,12 +151,104 @@ iso: _validate-arch iso-rootfs
          SOURCE_IMAGE="$SOURCE_IMAGE" \
          iso/build-iso.sh
 
+# Convert the hybrid ISO to VDI for VirtualBox USB/hard-disk testing.
+
+# r[impl iso.vdi]
+iso-vdi: iso
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ISO="{{ output_iso }}"
+    VDI="{{ output_iso_vdi }}"
+    if [ ! -f "$ISO" ]; then
+      echo "ERROR: ISO not found: $ISO"
+      echo "Run 'just iso' first."
+      exit 1
+    fi
+    rm -f "$VDI"
+    echo "Converting $ISO -> $VDI ..."
+    qemu-img convert -f raw -O vdi "$ISO" "$VDI"
+    echo "VDI: $VDI ($(du -h "$VDI" | cut -f1))"
+    echo ""
+    echo "Attach in VirtualBox as a USB/hard-disk device (UEFI mode)."
+
+# Requires: qemu-nbd (qemu-utils), nbd kernel module.
+
+# Mount the BESCONF partition from the VDI for editing (simulates USB workflow).
+iso-besconf: _validate-arch
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VDI="{{ output_iso_vdi }}"
+    BESCONF_PARTUUID="e2bac42b-03a7-5048-b8f5-3f6d22100e77"
+    MNT="{{ work_dir }}/besconf-mnt"
+
+    if [ ! -f "$VDI" ]; then
+      echo "ERROR: VDI not found: $VDI"
+      echo "Run 'just iso-vdi' first."
+      exit 1
+    fi
+
+    if ! command -v qemu-nbd &>/dev/null; then
+      echo "ERROR: qemu-nbd not found (install qemu-utils)"
+      exit 1
+    fi
+
+    sudo modprobe nbd max_part=16
+
+    # Find a free /dev/nbdN (size 0 in sysfs means disconnected)
+    NBD=""
+    for dev in /dev/nbd{0..15}; do
+      if [ -b "$dev" ] && [ "$(cat "/sys/block/$(basename "$dev")/size" 2>/dev/null)" = "0" ]; then
+        NBD="$dev"
+        break
+      fi
+    done
+    if [ -z "$NBD" ]; then
+      echo "ERROR: no free /dev/nbdN device found"
+      exit 1
+    fi
+
+    cleanup() {
+      echo ""
+      echo "Unmounting and disconnecting..."
+      sudo umount "$MNT" 2>/dev/null || true
+      sudo qemu-nbd --disconnect "$NBD" 2>/dev/null || true
+      rmdir "$MNT" 2>/dev/null || true
+    }
+    trap cleanup EXIT
+
+    sudo qemu-nbd --connect="$NBD" "$VDI"
+    sleep 0.5
+    sudo partprobe "$NBD"
+    sudo udevadm settle --timeout=5
+
+    # Find the BESCONF partition via the well-known PARTUUID symlink
+    PART="/dev/disk/by-partuuid/$BESCONF_PARTUUID"
+    if [ ! -b "$PART" ]; then
+      echo "ERROR: BESCONF partition not found at $PART"
+      sudo fdisk -l "$NBD"
+      exit 1
+    fi
+
+    mkdir -p "$MNT"
+    sudo mount -o "uid=$(id -u),gid=$(id -g)" "$PART" "$MNT"
+
+    echo ""
+    echo "BESCONF mounted at: $MNT"
+    echo "  VDI:       $VDI"
+    echo "  Device:    $PART"
+    echo ""
+    echo "Contents:"
+    ls -la "$MNT"
+    echo ""
+    echo "Spawning shell in $MNT -- exit the shell to unmount."
+    (cd "$MNT" && "${SHELL:-/bin/sh}")
+
 # Force-rebuild the ISO base (removes cached tarball first)
 iso-base-rebuild: _validate-arch _ensure-dirs
     #!/usr/bin/env bash
     set -euo pipefail
-    rm -f "{{ iso_base_tarball }}"
-    rm -rf "{{ iso_rootfs_dir }}"
+    sudo rm -f "{{ iso_base_tarball }}"
+    sudo rm -rf "{{ iso_rootfs_dir }}"
     sudo ARCH="{{ arch }}" \
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
@@ -166,7 +259,7 @@ iso-base-rebuild: _validate-arch _ensure-dirs
 iso-rootfs-rebuild: _validate-arch iso-base installer-build _ensure-dirs
     #!/usr/bin/env bash
     set -euo pipefail
-    rm -rf "{{ iso_rootfs_dir }}"
+    sudo rm -rf "{{ iso_rootfs_dir }}"
     sudo ARCH="{{ arch }}" \
          OUTPUT_DIR="{{ iso_rootfs_dir }}" \
          BASE_TARBALL="{{ iso_base_tarball }}" \
@@ -308,6 +401,51 @@ check-deps:
       echo "Optional tools are only needed for specific tasks — see labels above."
     fi
 
+tmpfs_size := "75%"
+
+# Mount a tmpfs over the working directory to keep intermediate build artifacts in RAM.
+
+# Default size is 75% of physical RAM; override with: just tmpfs_size=32G setup-workdir
+setup-workdir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WORKDIR="{{ work_dir }}"
+    mkdir -p "$WORKDIR"
+    if mountpoint -q "$WORKDIR"; then
+      echo "tmpfs is already mounted on $WORKDIR"
+      mount | grep " on $(realpath "$WORKDIR") "
+      exit 0
+    fi
+    sudo mount -t tmpfs -o size={{ tmpfs_size }},mode=0755 tmpfs "$WORKDIR"
+    echo "Mounted tmpfs (size={{ tmpfs_size }}) on $WORKDIR"
+    echo ""
+    echo "To also redirect temp files from build scripts, export TMPDIR:"
+    echo "  export TMPDIR=\"$(realpath "$WORKDIR")\""
+    echo ""
+    echo "To unmount later: just teardown-workdir"
+
+# Unmount the tmpfs from the working directory. Warns if builds left mounts inside.
+teardown-workdir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WORKDIR="{{ work_dir }}"
+    if ! mountpoint -q "$WORKDIR"; then
+      echo "$WORKDIR is not a mountpoint — nothing to do"
+      exit 0
+    fi
+    # Check for child mounts (e.g. leftover chroot bind-mounts)
+    CHILD_MOUNTS="$(findmnt -R -n -o TARGET "$WORKDIR" | tail -n +2 || true)"
+    if [ -n "$CHILD_MOUNTS" ]; then
+      echo "WARNING: child mounts still exist under $WORKDIR:"
+      echo "$CHILD_MOUNTS"
+      echo ""
+      echo "Clean them up first (e.g. just clean) or force with:"
+      echo "  sudo umount -R $WORKDIR"
+      exit 1
+    fi
+    sudo umount "$WORKDIR"
+    echo "Unmounted tmpfs from $WORKDIR"
+
 # Remove all build artifacts
 clean:
     mkdir -p "{{ work_dir }}" "{{ output_arch_dir }}"
@@ -400,8 +538,8 @@ test-shellcheck:
     #!/usr/bin/env bash
     set -euo pipefail
     echo "Running shellcheck..."
-    find image/ tests/ scripts/ iso/ -name '*.sh' -type f -print0 | xargs -0 shellcheck --severity=error
-    shellcheck --severity=error image/files/grow-root-filesystem image/files/ts-up image/files/bes-tailscale-firstboot-auth iso/rootfs-files/usr/local/bin/bes-installer-wrapper
+    find image/ tests/ scripts/ iso/ -name '*.sh' -type f -print0 | xargs -0 shellcheck -x --severity=error
+    shellcheck -x --severity=error image/files/grow-root-filesystem image/files/ts-up image/files/bes-tailscale-firstboot-auth iso/rootfs-files/usr/local/bin/bes-installer-wrapper
     echo "All scripts passed shellcheck."
 
 # Verify image structure by loopback-mounting (requires sudo)

@@ -2,23 +2,18 @@
 
 ## Configuration File
 
-> r[installer.config.location]
-> The installer must look for a TOML configuration file named
-> `bes-install.toml`. It searches the following locations in order, using
-> the first file found:
->
-> 1. The BESCONF partition (mounted at `/run/besconf/` by a udev rule or
->    mount unit in the live environment).
-> 2. `/run/live/medium/bes-install.toml` (the ISO filesystem root, as
->    mounted by `live-boot`).
-> 3. `/boot/efi/bes-install.toml` (fallback for manual placement).
-
 r[installer.config.format]
-The configuration file is in TOML format. All fields are top-level
-(no tables or sections) and all fields are optional. The installer must
-reject unknown fields with a parse error. The file configures both the
-installation process (disk selection, encryption, automation) and the
-install-time system setup (hostname, credentials, services).
+The configuration file must be in TOML format.
+The installer must reject unknown fields with a parse error.
+
+r[installer.config.location]
+The installer must look for a `bes-install.toml` file at the root of the
+BESCONF partition. If the file does not exist, it must consider it empty.
+
+r[installer.config.template]
+The BESCONF partition must have a `bes-install.toml` file containing a
+commented-out entry for every known config field. Each entry must include
+a brief description and an example value.
 
 r[installer.config.auto]
 The `auto` field is a boolean. When `true`, the installer runs fully
@@ -116,15 +111,21 @@ from a cryptographically secure random source.
 
 ## BESCONF Partition Interaction
 
-r[installer.besconf.writable-detection]
-At startup, after locating the configuration file, the installer must
-detect whether the BESCONF partition at `/run/besconf` is writable. It
-does this by attempting to remount the partition read-write
+r[installer.besconf.writable-detection+2]
+At startup, before loading the configuration file, the installer must
+mount the BESCONF partition and detect whether it is writable. Because the
+configuration file lives on the BESCONF partition
+(`/run/besconf/bes-install.toml`), BESCONF must be mounted first. When an
+explicit `--config` path is provided, the installer must still mount
+BESCONF (for failure logging and recovery key saving) but reads the
+config from the provided path instead. The installer locates the BESCONF
+partition by its well-known PARTUUID, mounts it read-only at
+`/run/besconf`, then attempts a read-write remount
 (`mount -o remount,rw /run/besconf`). If the remount succeeds, BESCONF is
-considered writable for the duration of the install. If the remount fails
-(e.g. optical media, partition absent, permissions), BESCONF is considered
-read-only and all write operations to it are silently skipped. The
-installer must track this state.
+considered writable for the duration of the install. If the partition is
+not found or the mount fails (e.g. optical media, partition absent,
+permissions), BESCONF is considered read-only and all write operations to
+it are silently skipped. The installer must track this state.
 
 r[installer.besconf.failure-log]
 When the BESCONF partition is writable and the installer encounters a fatal
@@ -277,7 +278,7 @@ for terminal events.
 
 ## TUI
 
-r[installer.tui.welcome+5]
+r[installer.tui.welcome+7]
 The TUI must open with a welcome screen that displays a description of what
 the image is for, contact information, and instructions on how to proceed.
 The user presses Enter to proceed to the disk selection screen. The welcome
@@ -286,6 +287,18 @@ Pressing `q` triggers a reboot (same as the Done/Error screens). The footer
 must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
 debug shell without leaving the installer permanently (this is the only
 screen where the hint is shown, though the keybind works everywhere).
+
+When the images partition was opened via dm-verity (see `r[iso.verity.check+5]`),
+the welcome screen must display a progress bar at the bottom labelled
+"Verifying installation media..." while the integrity check runs in the
+background. The user must not be allowed to advance past the welcome screen
+(Enter is ignored) until the check completes successfully. Once complete,
+the progress bar is replaced with a "Verification passed" message. If the
+check fails, the installer transitions to the error screen with the
+pre-write corruption message from `r[iso.verity.failure]`. The `n` (network
+check), `q` (reboot), and `Ctrl+Alt+d` (shell) keybinds remain available
+during the check. If verity is not active, no progress bar is shown and
+Enter works immediately.
 
 > r[installer.tui.network-check+4]
 > The TUI must perform network connectivity checks in the background,
@@ -524,18 +537,20 @@ rather than exiting (which would leave the machine on a dead TTY).
 This prevents the appearance of the installer being stuck between the
 keypress and the screen blanking.
 
-r[installer.tui.progress+3]
+r[installer.tui.progress+4]
 The TUI must display a single progress bar that covers the entire
 installation, not just the image write. The progress bar is shown on one
 `Installing` screen from the moment the user confirms until all steps
-complete. Partition image writes (which have byte-level progress) occupy
-approximately 90% of the bar. Each post-write step (filesystem expansion,
-UUID randomization, boot config rebuild, partition verification, install-time
-configuration, and encryption setup) occupies a small fixed slice of the
-remaining 10%, advancing the bar when the step completes. After all steps
-finish, the TUI transitions to a completion screen. For encrypted installs,
-the completion screen also displays the recovery passphrase (replacing the
-separate recovery passphrase screen).
+complete. The integrity check (see `r[iso.verity.check+5]`) is **not** part of
+this progress bar -- it runs earlier on the welcome screen. The Installing
+screen begins with partition image writes (which have byte-level progress)
+occupying approximately 90% of the bar. Each post-write step (filesystem
+expansion, UUID randomization, boot config rebuild, partition verification,
+install-time configuration, and encryption setup) occupies a small fixed
+slice of the remaining 10%, advancing the bar when the step completes. After
+all steps finish, the TUI transitions to a completion screen. For encrypted
+installs, the completion screen also displays the recovery passphrase
+(replacing the separate recovery passphrase screen).
 
 r[installer.tui.debug-shell+3]
 Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
@@ -555,17 +570,17 @@ must then create the GPT table and all three partitions (EFI, xboot, root)
 using the geometry from `partitions.json`. After writing all partition
 images, the installer must verify the partition table.
 
-> r[installer.write.source+4]
+> r[installer.write.source+5]
 > The installer must read `partitions.json` from the verity-protected images
 > partition to locate the partition images and their layout metadata. There is
 > one set of partition images per architecture, not per variant. The partition
 > images are raw (uncompressed) files inside a squashfs with transparent zstd
-> compression (see `r[iso.images-partition]`).
+> compression (see `r[iso.images-partition+3]`).
 >
-> The installer must locate the images partition by searching for a block
-> device with the filesystem label `BESIMAGES` (via `/dev/disk/by-label/`),
-> or as GPT partition 4 of the detected boot device. The partition uses the
-> self-describing verity layout from `r[iso.verity.layout]`: the installer
+> The installer must locate the images partition by its well-known GPT
+> PARTUUID (`ac9457d6-7d97-56bc-b6a6-d1bb7a00a45b`) via
+> `/dev/disk/by-partuuid/`. The partition uses the
+> self-describing verity layout from `r[iso.verity.layout+3]`: the installer
 > reads the last 8 bytes to recover the hash tree size, computes the hash
 > offset, reads the root hash from the `images.verity.roothash=` kernel
 > command line parameter, and calls `veritysetup open` with `--hash-offset`.
@@ -628,7 +643,7 @@ the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is
 needed. This ensures the installed system has a fully expanded filesystem
 without depending on a boot-time growth service.
 
-r[installer.write.randomize-uuids+2]
+r[installer.write.randomize-uuids+3]
 After expanding the root filesystem, the installer must randomize the
 filesystem UUID of each partition to ensure every installation has unique
 identifiers. For the ext4 extended boot partition, it must first run
@@ -637,27 +652,62 @@ then `tune2fs -U random`. For the BTRFS root partition (or the LUKS volume
 on top of it), it must run `btrfstune -u` while the filesystem is
 unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
-changes.
+changes. After all UUIDs have been changed, the installer must run
+`udevadm trigger --subsystem-match=block` followed by
+`udevadm settle --timeout=10` to refresh the `/dev/disk/by-uuid/` symlinks.
+These commands may fail in container environments without udevd; failures
+are non-fatal.
 
-> r[installer.write.rebuild-boot-config+4]
+> r[installer.write.rebuild-boot-config+8]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
-> `r[installer.encryption.overview]`), the installer must unconditionally
+> `r[installer.encryption.overview+5]`), the installer must unconditionally
 > rebuild the initramfs and GRUB configuration in a chroot of the installed
 > system, regardless of encryption mode. This is required because the GRUB
 > config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
 > have been rotated, and because the encryption setup writes crypttab and
-> dracut configuration that must be baked into the initramfs. The installer
-> must run `dracut --force` and `update-grub` with `/proc`, `/sys`, and
-> `/dev` bind-mounted into the target.
+> dracut configuration that must be baked into the initramfs. Before running
+> dracut, the installer must:
+>
+>   1. Delete all existing initramfs files from `/boot` (matching
+>      `initrd.img*` and `initramfs-*`). This is necessary because dracut's
+>      `hostonly` mode reads the existing initramfs to discover host devices;
+>      the image-build initramfs contains UUIDs from the build environment
+>      that no longer exist after UUID randomization, and leaving it in place
+>      causes the new initramfs to inherit stale device references that will
+>      hang at boot.
+>   2. Temporarily replace `/etc/fstab` in the target with a version that
+>      uses `UUID=` references (read via `blkid` from the actual partitions)
+>      instead of `/dev/disk/by-partlabel/` paths. This is necessary because
+>      dracut's `hostonly` mode resolves `by-partlabel` symlinks and then
+>      looks up UUIDs via `/dev/disk/by-uuid/`; if udev has not refreshed
+>      those symlinks after UUID randomization (e.g. inside a container with
+>      no udevd), dracut discovers stale UUIDs and bakes them into systemd
+>      device-wait units. After dracut completes, the original fstab must be
+>      restored.
+>   3. When encryption is enabled, open the LUKS volume using the production
+>      mapper name `root` (not the installer's internal name) so that
+>      dracut's `hostonly` mode discovers `/dev/mapper/root`. If the volume
+>      is opened under a different name, dracut bakes that name into the
+>      initramfs cmdline and the boot fails because `systemd-cryptsetup`
+>      creates `/dev/mapper/root` (from the `rd.luks.name` parameter) while
+>      the initramfs expects the installer's internal name.
+>
+> The installer must then run `dracut --force` and `update-grub` with
+> `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 >
 > When disk encryption is enabled, the installer must also, before running
 > `update-grub`:
 >
->   - Read the LUKS UUID from the raw root partition (via `blkid`).
->   - Set `GRUB_CMDLINE_LINUX` in `/etc/default/grub` to include
->     `rd.luks.name=<LUKS-UUID>=root rd.luks.options=discard` so the
->     initramfs knows to unlock the LUKS volume during early boot.
+>   - Clear `GRUB_CMDLINE_LINUX` in `/etc/default/grub` (ensure it is set
+>     to `""`). The installer must NOT place `rd.luks.name` or
+>     `rd.luks.options` on the kernel command line. The crypttab (with the
+>     `force` option) is the sole authority for LUKS unlock — it already
+>     contains the mapper name, device path, keyfile or `tpm2-device=auto`,
+>     and options like `discard`. If `rd.luks.name` appears on the cmdline,
+>     `systemd-cryptsetup-generator` treats it as an override: it creates a
+>     passphrase-prompt unit and skips the crypttab entry entirely, defeating
+>     keyfile and TPM-based auto-unlock.
 >   - Remove the serial console (`console=ttyS0,115200n8`) from
 >     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target
 >     bare-metal hardware where the serial console is not needed.
@@ -666,9 +716,9 @@ changes.
 
 ## Encryption Setup
 
-> r[installer.encryption.overview+3]
+> r[installer.encryption.overview+5]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+8]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -679,7 +729,7 @@ changes.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+8]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created
@@ -688,28 +738,43 @@ changes.
 
 
 
-> r[installer.encryption.tpm-enroll+3]
+> r[installer.encryption.tpm-enroll+5]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
 > `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
 > recovery passphrase. PCR 1 covers hardware identity (motherboard model,
 > CPU, RAM model and serials). The installer must update `/etc/crypttab` to
-> use `tpm2-device=auto` with a passphrase timeout fallback and the `force`
-> option (so dracut includes the entry in the initramfs even when the
-> build-time root is not a `crypto_LUKS` device).
+> use `tpm2-device=auto` with `token-timeout=30` and the `force` option (so
+> dracut includes the entry in the initramfs even when the build-time root is
+> not a `crypto_LUKS` device). `token-timeout=` (systemd v250+) controls how
+> long to wait for the TPM token to unseal before falling back to a
+> passphrase prompt. The `timeout=` option must be omitted (defaults to 0 =
+> unlimited) so the user has enough time to type the recovery passphrase when
+> fallback occurs. The `force` option is consumed by dracut only;
+> `systemd-cryptsetup` ignores it at runtime. The crypttab must NOT include
+> `headless=true` — when TPM unsealing fails (hardware change, VM, etc.)
+> `systemd-cryptsetup` must fall back to prompting for the recovery
+> passphrase.
 
-> r[installer.encryption.keyfile-enroll+2]
+> r[installer.encryption.keyfile-enroll+4]
 > When disk encryption is `"keyfile"`, the installer must generate a random
 > keyfile (4096 bytes from `/dev/urandom`), enroll it via
 > `cryptsetup luksAddKey` unlocking with the recovery passphrase, and
 > install it at `/etc/luks/keyfile` (mode 000) on the installed system. The
-> installer must update `/etc/crypttab` to reference the keyfile with a
-> passphrase timeout fallback, and update the dracut configuration to
-> include the new keyfile in the initramfs.
+> installer must update `/etc/crypttab` to reference the keyfile with
+> `keyfile-timeout=30` and the `force` option, and update the dracut
+> configuration to include the new keyfile in the initramfs.
+> `keyfile-timeout=` (systemd v243+) controls how long to wait for the
+> keyfile to become available before falling back to a passphrase prompt.
+> The `timeout=` option must be omitted (defaults to 0 = unlimited) so the
+> user has enough time to type the recovery passphrase when fallback occurs.
+> The crypttab must NOT include `headless=true` — if the keyfile fails for
+> any reason, `systemd-cryptsetup` must fall back to prompting for the
+> recovery passphrase.
 
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the
 > write phase begins. This passphrase is used as the initial LUKS key when
-> formatting the root partition (see `r[installer.write.luks-before-write]`),
+> formatting the root partition (see `r[installer.write.luks-before-write+2]`),
 > so it is already enrolled as a LUKS password slot — no separate
 > `luksAddKey` step is required. In interactive mode, the passphrase must be
 > generated at confirmation time and displayed on the confirmation screen so
@@ -738,7 +803,7 @@ installer must leave `/etc/hostname` as-is.
 
 r[installer.finalise.tailscale-auth]
 If `tailscale-authkey` is set and the installer knows that tailscale
-netcheck passed (i.e. `r[installer.tui.tailscale-netcheck]` completed
+netcheck passed (i.e. `r[installer.tui.tailscale-netcheck+2]` completed
 successfully), the installer must attempt to authenticate with Tailscale
 directly by chrooting into the mounted target filesystem and running
 `tailscale up --auth-key=<key> --ssh`. The installer must log the outcome

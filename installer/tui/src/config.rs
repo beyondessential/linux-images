@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::hostname_template;
 
@@ -18,7 +18,7 @@ use crate::hostname_template;
 // r[impl installer.config.timezone]
 // r[impl installer.config.recovery-passphrase]
 // r[impl installer.config.save-recovery-keys]
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
     #[serde(default)]
@@ -135,10 +135,22 @@ impl<'de> Deserialize<'de> for DiskEncryption {
     }
 }
 
+impl Serialize for DiskEncryption {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiskSelector {
     Path(PathBuf),
     Strategy(DiskStrategy),
+}
+
+impl Serialize for DiskSelector {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -367,28 +379,6 @@ impl InstallConfig {
 
         issues
     }
-}
-
-pub fn find_config_file() -> Option<PathBuf> {
-    // r[impl installer.config.location]
-    let candidates = [
-        // BESCONF partition (appended FAT32 partition on USB-booted ISO)
-        PathBuf::from("/run/besconf/bes-install.toml"),
-        // ISO filesystem root (mounted by live-boot)
-        PathBuf::from("/run/live/medium/bes-install.toml"),
-        // Legacy / manual placement paths
-        PathBuf::from("/boot/efi/bes-install.toml"),
-    ];
-
-    for candidate in &candidates {
-        if candidate.exists() {
-            tracing::info!("found config file at {}", candidate.display());
-            return Some(candidate.clone());
-        }
-    }
-
-    tracing::info!("no config file found at any known location");
-    None
 }
 
 #[cfg(test)]
@@ -1084,5 +1074,59 @@ mod tests {
     fn save_recovery_keys_defaults_false() {
         let config = InstallConfig::from_toml("").unwrap();
         assert!(!config.save_recovery_keys);
+    }
+
+    // r[verify installer.config.template]
+    #[test]
+    fn template_contains_all_config_fields() {
+        // Construct a fully-populated InstallConfig so serialization emits every key.
+        let full = InstallConfig {
+            auto: true,
+            disk_encryption: Some(DiskEncryption::Tpm),
+            disk: Some(DiskSelector::Strategy(DiskStrategy::Largest)),
+            copy_install_log: Some(true),
+            hostname: Some("test".into()),
+            hostname_from_dhcp: true,
+            hostname_template: Some("srv-{hex:4}".into()),
+            tailscale_authkey: Some("tskey-auth-xxx".into()),
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAA test".into()],
+            password: Some("pass".into()),
+            password_hash: Some("$6$hash".into()),
+            timezone: Some("UTC".into()),
+            recovery_passphrase: Some("a]9Kx#mP2vL!nQ7wR4jH6dT0y".into()),
+            save_recovery_keys: true,
+        };
+
+        let toml_value = toml::Value::try_from(&full).expect("failed to serialize InstallConfig");
+        let keys: Vec<&str> = toml_value
+            .as_table()
+            .expect("serialized InstallConfig is not a table")
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+
+        let template_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../iso/bes-install.toml.template");
+        let template = std::fs::read_to_string(&template_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to read template at {}: {e}",
+                template_path.display()
+            )
+        });
+
+        let mut missing = Vec::new();
+        for key in &keys {
+            // Look for the key as a commented-out TOML entry (e.g. "# key = " or "# key = [")
+            let pattern = format!("# {key} = ");
+            if !template.contains(&pattern) {
+                missing.push(*key);
+            }
+        }
+
+        assert!(
+            missing.is_empty(),
+            "BESCONF template is missing entries for these InstallConfig fields: {missing:?}\n\
+             Update iso/bes-install.toml.template to include commented-out entries for each field."
+        );
     }
 }

@@ -11,7 +11,6 @@ specs (
                 include (
                     image/**/*.sh
                     installer/**/*.rs
-                    installer/**/*.toml
                     iso/**/*.sh
                     scripts/**/*.sh
 
@@ -21,15 +20,16 @@ specs (
                     // manual testing procedure generator (tracey can't parse .md)
                     scripts/gen-manual-testing.sh
 
-                    // tracey doesn't yet support YAML or justfile natively.
-                    // justfile is included so future support picks it up.
-                    // For YAML, run `just tracey-setup` to create .sh copies
-                    // of the .yml files (gitignored); tracey reads those.
-                    justfile
-                    .github/workflows/*.yml
+                    // tracey doesn't yet support YAML, but there's a hack!
+                    // Run `just tracey-setup` to create .sh copies of the .yml files
+                    // tracey reads those just fine. Run again when yml files change.
                     .github/workflows/*.sh
-                    .github/*.yml
                     .github/*.sh
+
+                    // files not includes because tracey doesn't support them yet
+                    //justfile
+                    //.github/workflows/*.yml
+                    //.github/*.yml
                 )
             }
         )

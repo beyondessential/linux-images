@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::IsTerminal;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -38,7 +39,28 @@ pub struct RunContext {
 
 impl RunContext {
     pub fn from_cli(cli: Cli) -> Result<Self> {
+        let build_info = read_build_info();
+        let version = env!("CARGO_PKG_VERSION");
+        tracing::info!("bes-installer v{version} — {build_info}");
+        eprintln!("bes-installer v{version} — {build_info}");
+
+        // r[impl installer.besconf.writable-detection+2]
+        // r[impl iso.config-partition+4]
+        // Mount BESCONF before loading config: the config file lives on
+        // BESCONF at /run/besconf/bes-install.toml.
+        let mut besconf = if cli.dry_run {
+            besconf::BesconfState::readonly()
+        } else {
+            let (state, _mounted) = besconf::mount_and_detect();
+            // r[impl installer.besconf.failure-log]
+            besconf::rotate_failure_log(&state);
+            state
+        };
+
         let (mut install_config, mode) = load_config(&cli)?;
+
+        // Apply save_recovery_keys from the now-loaded config.
+        besconf = besconf::with_save_recovery_keys(besconf, install_config.save_recovery_keys);
 
         resolve_hostname_template(&mut install_config)?;
 
@@ -91,16 +113,6 @@ impl RunContext {
             tracing::warn!("config: {w}");
         }
 
-        // r[impl installer.besconf.writable-detection]
-        let besconf = if cli.dry_run {
-            besconf::BesconfState::readonly()
-        } else {
-            let state = besconf::detect_writable();
-            // r[impl installer.besconf.failure-log]
-            besconf::rotate_failure_log(&state);
-            besconf::with_save_recovery_keys(state, install_config.save_recovery_keys)
-        };
-
         Ok(Self {
             cli,
             install_config,
@@ -118,11 +130,17 @@ impl RunContext {
     pub fn run(self) -> Result<()> {
         let besconf = self.besconf.clone();
         let log_path = self.cli.log.clone();
+        let dry_run = self.cli.dry_run;
         let result = self.run_inner();
 
         // r[impl installer.besconf.failure-log]
         if result.is_err() {
             besconf::write_failure_log(&besconf, &log_path);
+        }
+
+        // r[impl iso.config-partition+4]
+        if !dry_run {
+            besconf::unmount();
         }
 
         result
@@ -178,13 +196,13 @@ impl RunContext {
 
         let target = disk::resolve_disk(disk_selector, &self.devices, self.boot_device.as_ref())?;
 
-        // r[impl installer.write.source+4]
+        // r[impl installer.write.source+5]
         // Open the images partition via dm-verity before searching for the manifest.
         // The verity mount at /run/bes-images is the primary search path.
         let _images_verity = if self.cli.dry_run {
             None
         } else {
-            match writer::open_and_mount_images(self.boot_device.as_deref()) {
+            match writer::open_and_mount_images() {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!("failed to open images verity: {e:#}");
@@ -268,7 +286,7 @@ impl RunContext {
             .context("reading partition image sizes")?;
         writer::check_disk_size(total_image_size, target.size_bytes).context("disk size check")?;
 
-        // r[impl iso.verity.check]
+        // r[impl iso.verity.check+5]
         // r[impl iso.verity.failure]
         if _images_verity.is_some() {
             eprintln!("verifying installation media integrity...");
@@ -352,7 +370,7 @@ impl RunContext {
             .randomize_filesystem_uuids()
             .context("randomizing filesystem UUIDs")?;
 
-        // r[impl installer.encryption.overview+3]
+        // r[impl installer.encryption.overview+5]
         if let Some(ref passphrase) = recovery_passphrase {
             eprintln!("setting up disk encryption...");
             let mounted = firstboot::mount_target(
@@ -471,12 +489,12 @@ impl RunContext {
                 .and_then(|resolved| self.devices.iter().position(|d| d.path == resolved.path))
         });
 
-        // r[impl installer.write.source+4]
+        // r[impl installer.write.source+5]
         // Open the images partition via dm-verity before searching for the manifest.
         let _images_verity = if self.cli.dry_run {
             None
         } else {
-            match writer::open_and_mount_images(self.boot_device.as_deref()) {
+            match writer::open_and_mount_images() {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!("failed to open images verity: {e:#}");
@@ -498,6 +516,7 @@ impl RunContext {
 
         let hostname_from_template = self.install_config.hostname_template.is_some();
 
+        let verity_active = _images_verity.is_some();
         let mut state = ui::AppState::new(
             self.devices,
             disk_encryption,
@@ -507,6 +526,7 @@ impl RunContext {
             default_disk_index,
             build_info,
             self.available_timezones,
+            verity_active,
         );
 
         // r[impl installer.config.recovery-passphrase]
@@ -580,12 +600,14 @@ fn resolve_hostname_template(cfg: &mut config::InstallConfig) -> Result<()> {
 }
 
 fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMode)> {
-    let config_path = cli.config.clone().or_else(config::find_config_file);
+    let config_path = cli
+        .config
+        .as_deref()
+        // r[impl installer.config.location]
+        .unwrap_or(Path::new("/run/besconf/bes-install.toml"));
 
-    match config_path {
-        Some(path) => {
-            let cfg = config::InstallConfig::load_from_file(&path)?.unwrap_or_default();
-
+    match config::InstallConfig::load_from_file(config_path)? {
+        Some(cfg) => {
             let mode = cfg.mode();
             tracing::info!("operating mode: {mode}");
             Ok((cfg, mode))
@@ -642,8 +664,8 @@ fn emit_plan(plan: &plan::InstallPlan, cli: &Cli) -> Result<()> {
 }
 
 fn read_build_info() -> String {
-    let commit = crate::Bosion::GIT_COMMIT_SHORTHASH;
-    let bosion_date = crate::Bosion::BUILD_DATE;
+    let commit = option_env!("VERGEN_GIT_SHA").unwrap_or("");
+    let vergen_date = option_env!("VERGEN_BUILD_DATE").unwrap_or("");
 
     let (date, arch) = match fs::read_to_string("/etc/bes-build-info") {
         Ok(contents) => {
@@ -661,7 +683,7 @@ fn read_build_info() -> String {
         Err(_) => (None, None),
     };
 
-    let date = date.unwrap_or_else(|| bosion_date.to_string());
+    let date = date.unwrap_or_else(|| vergen_date.to_string());
     let arch = arch.unwrap_or_else(detect_arch);
 
     if commit.is_empty() {
@@ -677,5 +699,58 @@ fn detect_arch() -> String {
         "x86_64" => "amd64".into(),
         "aarch64" => "arm64".into(),
         other => other.into(),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+
+    use crate::config::{DiskEncryption, DiskSelector, DiskStrategy};
+
+    fn make_cli(config: Option<PathBuf>) -> crate::Cli {
+        crate::Cli {
+            config,
+            log: crate::DEFAULT_LOG_PATH.into(),
+            dry_run: false,
+            dry_run_output: None,
+            fake_devices: None,
+            input_script: None,
+            fake_timezones: None,
+            fake_tpm: false,
+            no_reboot: false,
+            check_paths: None,
+            check_chroot_paths: None,
+        }
+    }
+
+    // r[verify installer.config.location]
+    #[test]
+    fn load_valid_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bes-install.toml");
+        std::fs::write(
+            &path,
+            r#"
+            disk-encryption = "none"
+            disk = "smallest"
+        "#,
+        )
+        .unwrap();
+        let (config, _) = super::load_config(&make_cli(Some(path))).unwrap();
+        assert_eq!(config.disk_encryption, Some(DiskEncryption::None));
+        assert_eq!(
+            config.disk,
+            Some(DiskSelector::Strategy(DiskStrategy::Smallest))
+        );
+    }
+
+    // r[verify installer.config.format]
+    #[test]
+    fn load_invalid_toml_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bes-install.toml");
+        std::fs::write(&path, "this is not valid toml {{{{").unwrap();
+        assert!(super::load_config(&make_cli(Some(path))).is_err());
     }
 }

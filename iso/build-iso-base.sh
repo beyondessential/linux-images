@@ -243,15 +243,6 @@ run_in_chroot passwd -d root
 install -D -m 644 "$ROOTFS_FILES/etc/systemd/logind.conf.d/reserve-tty2.conf" \
     "$MNT_ROOTFS/etc/systemd/logind.conf.d/reserve-tty2.conf"
 
-# r[impl iso.config-partition]
-install -D -m 644 "$ROOTFS_FILES/etc/systemd/system/run-besconf.mount" \
-    "$MNT_ROOTFS/etc/systemd/system/run-besconf.mount"
-
-install -D -m 644 "$ROOTFS_FILES/etc/systemd/system/run-besconf.automount" \
-    "$MNT_ROOTFS/etc/systemd/system/run-besconf.automount"
-
-run_in_chroot systemctl enable run-besconf.automount
-
 echo "bes-installer" > "$MNT_ROOTFS/etc/hostname"
 run_in_chroot systemd-machine-id-setup 2>/dev/null || true
 
@@ -268,6 +259,13 @@ CHROOT_MOUNTS_ACTIVE=0
 
 rm -f "$MNT_ROOTFS/etc/resolv.conf"
 ln -sf /run/systemd/resolve/stub-resolv.conf "$MNT_ROOTFS/etc/resolv.conf"
+
+find "$MNT_ROOTFS/var/log" -type f -delete
+
+rm -f "$MNT_ROOTFS/etc/passwd-" "$MNT_ROOTFS/etc/shadow-" "$MNT_ROOTFS/etc/group-" \
+      "$MNT_ROOTFS/etc/gshadow-" "$MNT_ROOTFS/etc/subuid-" "$MNT_ROOTFS/etc/subgid-"
+
+rm -rf "$MNT_ROOTFS/var/lib/dhcp/"*
 
 rm -rf "$MNT_ROOTFS/tmp/"*
 rm -rf "$MNT_ROOTFS/var/cache/apt/archives/"*.deb

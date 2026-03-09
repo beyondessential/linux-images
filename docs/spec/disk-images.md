@@ -86,6 +86,12 @@ A netplan configuration must be installed at
 address on first boot regardless of whether cloud-init or any other
 datasource is present.
 
+r[image.base.console-font]
+The `console-setup` and `kbd` packages must be installed so that
+`systemd-vconsole-setup.service` configures the Linux console with a
+readable font at boot. `/etc/default/console-setup` must be present with
+`FONTFACE="Fixed"` and `FONTSIZE="8x16"`.
+
 ## Packages
 
 r[image.packages.bes-tools]
@@ -240,6 +246,15 @@ The `root` user must have its shell set to `/sbin/nologin`.
 r[image.credentials.ssh-keys-only]
 SSH password authentication must be disabled. Only key-based authentication
 is permitted over SSH.
+
+r[image.credentials.no-host-keys]
+The image must not contain SSH host keys (`/etc/ssh/ssh_host_*`). The
+openssh-server package generates host keys at install time, but these must
+be deleted during the image build so that each deployed instance generates
+its own unique keys on first boot. Shipping shared host keys is a security
+risk (enables MITM) and leaks the build machine's hostname in the key
+comment. cloud-init's `ssh` module and Ubuntu's `sshd-keygen` generator
+both regenerate missing host keys automatically.
 
 ## Cloud-Init
 

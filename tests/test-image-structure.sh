@@ -322,6 +322,13 @@ check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
 check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/systemd/resolve/stub-resolv.conf" ]
 
+# r[verify image.base.console-font]
+check "console-setup config exists" test -f "$MNT/etc/default/console-setup"
+if [ -f "$MNT/etc/default/console-setup" ]; then
+    check "console-setup FONTFACE is Fixed" grep -q 'FONTFACE="Fixed"' "$MNT/etc/default/console-setup"
+    check "console-setup FONTSIZE is 8x16" grep -q 'FONTSIZE="8x16"' "$MNT/etc/default/console-setup"
+fi
+
 # r[verify image.base.network+2]
 check "netplan config exists" test -f "$MNT/etc/netplan/01-all-en-dhcp.yaml"
 NETPLAN_MODE="$(stat -c%a "$MNT/etc/netplan/01-all-en-dhcp.yaml" 2>/dev/null || true)"
@@ -386,6 +393,10 @@ fi
 # r[verify image.credentials.ssh-keys-only]
 check "SSH no-password config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
 check "SSH no-password config correct" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
+
+# r[verify image.credentials.no-host-keys]
+HOST_KEY_COUNT="$(find "$MNT/etc/ssh" -name 'ssh_host_*' 2>/dev/null | wc -l)"
+check "no SSH host keys in image" test "$HOST_KEY_COUNT" -eq 0
 
 # r[verify image.cloud-init.no-hostname-file]
 check "cloud-init BES config exists" test -f "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"

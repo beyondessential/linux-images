@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install tracey
-        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bearcove/tracey/releases/download/v1.2.0/tracey-installer.sh | sh
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bearcove/tracey/releases/download/v1.3.0/tracey-installer.sh | sh
 
       # tracey can't parse YAML, so we commit .sh copies of .yml files.
       # Verify the copies are up to date (run `just tracey-setup` to fix).

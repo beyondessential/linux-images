@@ -21,18 +21,51 @@
 #   "smallest"    - smallest disk of any type
 # disk = "largest-ssd"
 
+# Copy the installer log into the installed system at /var/log/bes-installer.log.
+# Default: true
+# copy-install-log = true
+
+# Static hostname for the installed system.
+# Mutually exclusive with hostname-from-dhcp and hostname-template.
 # hostname = "server-01"
+
+# Obtain hostname from DHCP instead of setting a static one.
+# Mutually exclusive with hostname and hostname-template.
+# hostname-from-dhcp = true
+
+# Generate a hostname from a template pattern. Placeholders:
+#   {hex:N}  - N-character lowercase hex string (1-32)
+#   {num:N}  - N-digit zero-padded decimal string (1-10)
+# Must contain at least one placeholder. Literal portions: [a-z0-9-].
+# Mutually exclusive with hostname and hostname-from-dhcp.
+# hostname-template = "srv-{hex:6}"
+
+# Tailscale auth key for automatic Tailscale enrollment.
 # tailscale-authkey = "tskey-auth-xxxxx"
+
+# SSH public keys to install for the ubuntu user.
 # ssh-authorized-keys = [
 #   "ssh-ed25519 AAAA... admin@example.com",
 # ]
+
+# Password for the ubuntu user (plaintext).
+# Mutually exclusive with password-hash.
+# password = "changeme"
+
+# Pre-hashed password in crypt(3) format (e.g. from mkpasswd).
+# Mutually exclusive with password.
+# password-hash = "$6$rounds=4096$salt$hash..."
+
+# IANA timezone name. Default: UTC
+# timezone = "Pacific/Auckland"
 
 # Pre-determined recovery passphrase for disk encryption.
 # Must be at least 25 characters, printable ASCII only (no whitespace).
 # If not set, a random diceware passphrase is generated.
 # recovery-passphrase = "xK9$mP2vL!nQ7wR4jH6dT0yB3fA8s"
+# ruler for password: 0------------------------^25
 
 # Save recovery keys to recovery-keys.txt on the BESCONF partition.
-# Each line contains: passphrase, root partition UUID, machine serial.
+# Each line will contain: passphrase, root partition UUID, machine serial.
 # Only works when BESCONF is writable (USB boot, not optical).
-# save-recovery-keys = false
+# save-recovery-keys = true

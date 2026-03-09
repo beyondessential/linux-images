@@ -218,18 +218,18 @@ if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
     # r[verify iso.verity.squashfs+3]
     check "grub.cfg contains live.verity.roothash" grep -q "live.verity.roothash=" "$ISO_MNT/boot/grub/grub.cfg"
 
-    # r[verify iso.verity.images+3]
+    # r[verify iso.verity.images+4]
     check "grub.cfg contains images.verity.roothash" grep -q "images.verity.roothash=" "$ISO_MNT/boot/grub/grub.cfg"
 fi
 
 # r[verify iso.contents+3]
 # Partition images are no longer in the ISO9660 filesystem.
-# They live in GPT partition 4 (the images squashfs with verity).
+# They live in a dedicated GPT partition (the images squashfs with verity).
 # Verify the old /images/ directory is NOT present in the ISO.
 if [ -d "$ISO_MNT/images" ]; then
-    fail "no /images/ directory in ISO9660 (images moved to GPT partition 4)"
+    fail "no /images/ directory in ISO9660 (images moved to images GPT partition)"
 else
-    pass "no /images/ directory in ISO9660 (images moved to GPT partition 4)"
+    pass "no /images/ directory in ISO9660 (images moved to images GPT partition)"
 fi
 
 # r[verify iso.boot.uefi]
@@ -255,6 +255,7 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
             pass "bes-installer --check-paths (ISO binaries) against squashfs"
         else
             fail "bes-installer --check-paths (ISO binaries) against squashfs"
+            # shellcheck disable=SC2001 # sed is correct here for multi-line prefix indentation
             echo "$CHECK_OUTPUT" | sed 's/^/    /'
         fi
     else
@@ -346,14 +347,15 @@ if [ -f "$ISO_MNT/live/filesystem.squashfs" ]; then
     check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$SQFS_MNT/etc/netplan/01-all-en-dhcp.yaml"
     check "resolv.conf is symlink to resolved stub" test -L "$SQFS_MNT/etc/resolv.conf"
 
-    # r[verify iso.config-partition]
-    check "run-besconf.mount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
-    check "run-besconf.automount exists" test -f "$SQFS_MNT/etc/systemd/system/run-besconf.automount"
-    if find "$SQFS_MNT/etc/systemd/system" -name "run-besconf.automount" -type l 2>/dev/null | grep -q .; then
-        pass "run-besconf.automount is enabled"
-    else
-        fail "run-besconf.automount is enabled"
-    fi
+    # r[verify iso.config-partition+4]
+    # BESCONF and images partitions are mounted by the installer at runtime,
+    # not by systemd units. Verify the old units are NOT present.
+    check "run-besconf.mount absent (installer owns mount)" test ! -f "$SQFS_MNT/etc/systemd/system/run-besconf.mount"
+    check "run-besconf.automount absent (installer owns mount)" test ! -f "$SQFS_MNT/etc/systemd/system/run-besconf.automount"
+
+    # r[verify iso.cdrom-partscan+3]
+    # CD-ROM partscan is handled by the installer, not a boot service.
+    check "bes-cdrom-partscan.service absent (installer owns partscan)" test ! -f "$SQFS_MNT/etc/systemd/system/bes-cdrom-partscan.service"
 
     # Verify build info
     check "/etc/bes-build-info exists" test -f "$SQFS_MNT/etc/bes-build-info"
@@ -395,7 +397,7 @@ fi
 echo ""
 echo "--- BESCONF Partition ---"
 
-# r[verify iso.config-partition]
+# r[verify iso.config-partition+4]
 # Set up a loop device with partition scanning to find the appended BESCONF partition.
 LOOP_DEVICE="$(losetup -f --show -P "$ISO")"
 partprobe "$LOOP_DEVICE" 2>/dev/null || true
@@ -434,18 +436,17 @@ else
 fi
 
 # ============================================================
-# 6b. Images partition (GPT partition 4) check
+# 6b. Images partition check (by type UUID)
 # ============================================================
 echo ""
 echo "--- Images Partition ---"
 
-# r[verify iso.images-partition]
-# r[verify iso.verity.images+3]
+# r[verify iso.images-partition+3]
+# r[verify iso.verity.images+4]
 # r[verify iso.verity.layout+3]
-# Find the images partition by GPT type UUID (Linux filesystem).
+# Find the images partition by GPT type code 8300 (Linux filesystem).
 # We cannot use a hardcoded partition number because xorriso may renumber
 # partitions relative to the -append_partition arguments.
-GPT_TYPE_LINUX_FILESYSTEM="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 IMAGES_PART=""
 while IFS= read -r line; do
     # sgdisk -p output: "   N  start  end  size  code  name"
@@ -483,7 +484,7 @@ if [ -n "$IMAGES_PART" ]; then
         fail "images partition is large enough for verity trailer ($IMAGES_TOTAL_SIZE bytes)"
     fi
 
-    # r[verify iso.verity.images+3]
+    # r[verify iso.verity.images+4]
     # Extract the root hash from grub.cfg and verify the images partition
     IMAGES_ROOTHASH=""
     if [ -f "$ISO_MNT/boot/grub/grub.cfg" ]; then
@@ -697,21 +698,24 @@ else
     fail "dd output contains BESCONF partition"
 fi
 
-# r[verify iso.images-partition]
-# GPT partition 4 (images) must also survive the dd
+# r[verify iso.images-partition+3]
+# Images partition must also survive the dd — find by type UUID, not number
 DD_IMAGES_FOUND=0
-for part in "${DD_LOOP}p"*; do
-    [ -b "$part" ] || continue
-    PARTNUM="$(echo "$part" | grep -o '[0-9]*$')"
-    if [ "$PARTNUM" = "4" ]; then
-        DD_IMAGES_FOUND=1
-        break
+while IFS= read -r line; do
+    PARTNUM="$(echo "$line" | awk '{print $1}')"
+    CODE="$(echo "$line" | awk '{print $6}')"
+    if [ "$CODE" = "8300" ]; then
+        CANDIDATE="${DD_LOOP}p${PARTNUM}"
+        if [ -b "$CANDIDATE" ]; then
+            DD_IMAGES_FOUND=1
+            break
+        fi
     fi
-done
+done < <(sgdisk -p "$DD_LOOP" 2>/dev/null | grep '^ *[0-9]')
 if [ "$DD_IMAGES_FOUND" -eq 1 ]; then
-    pass "dd output contains images partition (partition 4)"
+    pass "dd output contains images partition (by type UUID)"
 else
-    fail "dd output contains images partition (partition 4)"
+    fail "dd output contains images partition (by type UUID)"
 fi
 
 losetup -d "$DD_LOOP"
