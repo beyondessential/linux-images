@@ -701,9 +701,9 @@ impl AppState {
     pub fn cycle_disk_encryption(&mut self) {
         if self.tpm_present {
             self.disk_encryption = match self.disk_encryption {
-                DiskEncryption::Tpm => DiskEncryption::Keyfile,
                 DiskEncryption::Keyfile => DiskEncryption::None,
                 DiskEncryption::None => DiskEncryption::Tpm,
+                DiskEncryption::Tpm => DiskEncryption::Keyfile,
             };
         } else {
             self.disk_encryption = match self.disk_encryption {
@@ -716,8 +716,8 @@ impl AppState {
     pub fn cycle_disk_encryption_reverse(&mut self) {
         if self.tpm_present {
             self.disk_encryption = match self.disk_encryption {
-                DiskEncryption::Tpm => DiskEncryption::None,
                 DiskEncryption::Keyfile => DiskEncryption::Tpm,
+                DiskEncryption::Tpm => DiskEncryption::None,
                 DiskEncryption::None => DiskEncryption::Keyfile,
             };
         } else {
@@ -1550,11 +1550,7 @@ mod tests {
                 removable: false,
             },
         ];
-        let default_encryption = if tpm_present {
-            DiskEncryption::Tpm
-        } else {
-            DiskEncryption::Keyfile
-        };
+        let default_encryption = DiskEncryption::Keyfile;
         AppState::new(
             devices,
             default_encryption,
@@ -1574,7 +1570,7 @@ mod tests {
         let state = make_state();
         assert_eq!(state.screen, Screen::Welcome);
         assert_eq!(state.selected_disk_index, 0);
-        assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
+        assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
         assert!(state.tpm_present);
         assert_eq!(state.net_check_phase, CheckPhase::NotStarted);
         assert_eq!(state.netcheck_phase, CheckPhase::NotStarted);
@@ -1803,13 +1799,13 @@ mod tests {
     #[test]
     fn disk_encryption_cycle_with_tpm() {
         let mut state = make_state();
-        assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
-        state.cycle_disk_encryption();
         assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
         state.cycle_disk_encryption();
         assert_eq!(state.disk_encryption, DiskEncryption::None);
         state.cycle_disk_encryption();
         assert_eq!(state.disk_encryption, DiskEncryption::Tpm);
+        state.cycle_disk_encryption();
+        assert_eq!(state.disk_encryption, DiskEncryption::Keyfile);
     }
 
     // r[verify installer.tui.disk-encryption+2]

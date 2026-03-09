@@ -848,27 +848,19 @@ fn render_disk_selection(frame: &mut Frame, area: Rect, state: &AppState) {
 fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
     use crate::config::DiskEncryption;
 
-    let options: Vec<(DiskEncryption, &str)> = if state.tpm_present {
-        vec![
-            (
-                DiskEncryption::Tpm,
-                "Full-disk encryption, bound to hardware",
-            ),
-            (
-                DiskEncryption::Keyfile,
-                "Full-disk encryption, not bound to hardware",
-            ),
-            (DiskEncryption::None, "No encryption"),
-        ]
-    } else {
-        vec![
-            (
-                DiskEncryption::Keyfile,
-                "Full-disk encryption, not bound to hardware",
-            ),
-            (DiskEncryption::None, "No encryption"),
-        ]
-    };
+    let mut options: Vec<(DiskEncryption, &str)> = vec![
+        (
+            DiskEncryption::Keyfile,
+            "Full-disk encryption, not bound to hardware",
+        ),
+        (DiskEncryption::None, "No encryption"),
+    ];
+    if state.tpm_present {
+        options.push((
+            DiskEncryption::Tpm,
+            "Full-disk encryption, bound to hardware [experimental]",
+        ));
+    }
 
     let items: Vec<ListItem> = options
         .iter()
@@ -888,6 +880,11 @@ fn render_disk_encryption(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let explanation = match state.disk_encryption {
         DiskEncryption::Tpm => vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "THIS IS EXPERIMENTAL AND COULD LEAVE YOUR INSTALL UNBOOTABLE.",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
             Line::from(
                 "The disk's encryption key will be sealed to this machine's TPM using PCR 1 (hardware identity: motherboard, CPU, and RAM model/serials). The system will boot unattended as long as the hardware stays the same. If you move the disk to different hardware, you will need the recovery passphrase. Changing the CPU or RAM may also require the recovery passphrase.",

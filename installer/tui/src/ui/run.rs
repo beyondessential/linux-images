@@ -877,7 +877,7 @@ mod tests {
         ];
         AppState::new(
             devices,
-            DiskEncryption::Tpm,
+            DiskEncryption::Keyfile,
             false,
             &InstallConfig::default(),
             None,
@@ -902,9 +902,9 @@ mod tests {
             press(KeyCode::Enter),
             // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> DiskEncryptionScreen (default: Tpm)
+            // DiskSelection -> DiskEncryptionScreen (default: Keyfile)
             press(KeyCode::Enter),
-            // DiskEncryptionScreen -> Hostname
+            // DiskEncryptionScreen -> Hostname (Keyfile is encrypted, no cycling needed)
             press(KeyCode::Enter),
             // Hostname selector: Network-assigned (DHCP) is default, toggle to Static
             press(KeyCode::Down),
@@ -934,7 +934,7 @@ mod tests {
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::Installing);
-        assert_eq!(final_state.disk_encryption, DiskEncryption::Tpm);
+        assert_eq!(final_state.disk_encryption, DiskEncryption::Keyfile);
         assert_eq!(final_state.hostname_input, "myhost");
         assert_eq!(final_state.selected_disk_index, 0);
         assert!(final_state.is_confirmed());
@@ -950,10 +950,9 @@ mod tests {
             press(KeyCode::Enter),
             // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> DiskEncryptionScreen (default: Tpm)
+            // DiskSelection -> DiskEncryptionScreen (default: Keyfile)
             press(KeyCode::Enter),
-            // Cycle: Tpm -> Keyfile -> None
-            press(KeyCode::Down),
+            // Cycle: Keyfile -> None
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname
             press(KeyCode::Enter),
@@ -1253,6 +1252,7 @@ mod tests {
             press(KeyCode::Enter),
             press(KeyCode::Enter),
             press(KeyCode::Enter),
+            // DiskEncryptionScreen (default: Keyfile, still encrypted) -> Hostname selector
             press(KeyCode::Enter),
             // Hostname selector: DHCP is default, toggle to Static -> HostnameInput
             press(KeyCode::Down),
@@ -1263,7 +1263,7 @@ mod tests {
 
         let final_state = run_tui_scripted(state, events);
         assert_eq!(final_state.screen, Screen::HostnameInput);
-        assert_eq!(final_state.disk_encryption, DiskEncryption::Tpm);
+        assert_eq!(final_state.disk_encryption, DiskEncryption::Keyfile);
         assert!(final_state.hostname_input.is_empty());
     }
 
@@ -1301,10 +1301,9 @@ mod tests {
             press(KeyCode::Enter),
             // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> DiskEncryptionScreen (default: Tpm)
+            // DiskSelection -> DiskEncryptionScreen (default: Keyfile)
             press(KeyCode::Enter),
-            // Cycle: Tpm -> Keyfile -> None
-            press(KeyCode::Down),
+            // Cycle: Keyfile -> None
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
@@ -1328,10 +1327,9 @@ mod tests {
             press(KeyCode::Enter),
             // NetworkConfig -> DiskSelection
             press(KeyCode::Enter),
-            // DiskSelection -> DiskEncryptionScreen
+            // DiskSelection -> DiskEncryptionScreen (default: Keyfile)
             press(KeyCode::Enter),
-            // Cycle: Tpm -> Keyfile -> None
-            press(KeyCode::Down),
+            // Cycle: Keyfile -> None
             press(KeyCode::Down),
             // DiskEncryptionScreen -> Hostname selector
             press(KeyCode::Enter),
