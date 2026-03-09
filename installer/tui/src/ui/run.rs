@@ -86,8 +86,17 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::ALT) => {
                     state.open_network_check();
                 }
-                KeyCode::Tab => state.tab_focus_forward(),
+                // The Linux TTY emits Alt+Tab for Shift+Tab rather than BackTab.
+                // https://github.com/crossterm-rs/crossterm/issues/685#issuecomment-1509609919
+                KeyCode::Tab
+                    if key
+                        .modifiers
+                        .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
+                {
+                    state.tab_focus_backward();
+                }
                 KeyCode::BackTab => state.tab_focus_backward(),
+                KeyCode::Tab => state.tab_focus_forward(),
                 KeyCode::Down | KeyCode::Char('j') => {
                     if state.net_config_focus.is_mode_selector() {
                         match state.net_config_focus {
@@ -326,9 +335,18 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 state.filter_ssh_keys();
                 state.screen = Screen::Login;
             }
-            KeyCode::Tab => {
-                let len = state.ssh_keys.len();
-                state.ssh_key_cursor = (state.ssh_key_cursor + 1) % len;
+            // The Linux TTY emits Alt+Tab for Shift+Tab rather than BackTab.
+            // https://github.com/crossterm-rs/crossterm/issues/685#issuecomment-1509609919
+            KeyCode::Tab
+                if key
+                    .modifiers
+                    .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
+            {
+                if state.ssh_key_cursor == 0 {
+                    state.ssh_key_cursor = state.ssh_keys.len() - 1;
+                } else {
+                    state.ssh_key_cursor -= 1;
+                }
             }
             KeyCode::BackTab => {
                 if state.ssh_key_cursor == 0 {
@@ -336,6 +354,10 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 } else {
                     state.ssh_key_cursor -= 1;
                 }
+            }
+            KeyCode::Tab => {
+                let len = state.ssh_keys.len();
+                state.ssh_key_cursor = (state.ssh_key_cursor + 1) % len;
             }
             KeyCode::Backspace => {
                 state.ssh_keys[state.ssh_key_cursor].pop();
