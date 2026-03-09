@@ -22,9 +22,7 @@ target (not musl). The binary runs inside the live ISO rootfs, which is an
 Ubuntu system with glibc, so static linking is unnecessary. The CI runner's
 glibc version must be less than or equal to the glibc in the ISO rootfs
 (set by `r[ci.output-suite]`), because glibc is forward-compatible but not
-backward-compatible. When upgrading the Ubuntu suite for the ISO, verify
-that the CI runner's glibc does not exceed the new suite's glibc before
-merging.
+backward-compatible.
 
 r[ci.output-arch]
 CI must produce at least `amd64` and `arm64` outputs.
