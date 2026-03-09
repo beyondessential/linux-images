@@ -163,6 +163,34 @@ pub enum Screen {
     Error(String),
 }
 
+impl Screen {
+    /// Parse a screen name from the `--start-screen` CLI flag.
+    ///
+    /// Only screens that make sense as a starting point for scripted tests are
+    /// accepted. Sub-screens (LoginTailscale, LoginSshKeys, LoginGithub) and
+    /// terminal screens (Installing, Done, Error) are rejected.
+    pub fn parse_start_screen(s: &str) -> Result<Self, String> {
+        match s {
+            "welcome" => Ok(Self::Welcome),
+            "network-config" => Ok(Self::NetworkConfig),
+            "network-check" => Ok(Self::NetworkCheck),
+            "disk-selection" => Ok(Self::DiskSelection),
+            "disk-encryption" => Ok(Self::DiskEncryption),
+            "hostname" => Ok(Self::Hostname),
+            "hostname-input" => Ok(Self::HostnameInput),
+            "login" => Ok(Self::Login),
+            "timezone" => Ok(Self::Timezone),
+            "network-results" => Ok(Self::NetworkResults),
+            "confirmation" => Ok(Self::Confirmation),
+            _ => Err(format!(
+                "unknown start screen '{s}'; valid values: welcome, network-config, \
+                 network-check, disk-selection, disk-encryption, hostname, hostname-input, \
+                 login, timezone, network-results, confirmation"
+            )),
+        }
+    }
+}
+
 pub struct AppState {
     pub screen: Screen,
     pub devices: Vec<BlockDevice>,

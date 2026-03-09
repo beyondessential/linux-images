@@ -537,6 +537,10 @@ impl RunContext {
         // r[impl installer.dryrun.script]
         // r[impl installer.dryrun.script.headless]
         if let Some(ref script_path) = self.cli.input_script {
+            if let Some(ref name) = self.cli.start_screen {
+                state.screen =
+                    ui::Screen::parse_start_screen(name).map_err(|e| anyhow::anyhow!("{e}"))?;
+            }
             let events = script::parse_script_file(script_path)?;
             let final_state = ui::run_tui_scripted(state, events);
 
@@ -555,6 +559,10 @@ impl RunContext {
 
             eprintln!("scripted TUI finished on screen: {:?}", final_state.screen);
             return Ok(());
+        }
+
+        if self.cli.start_screen.is_some() {
+            anyhow::bail!("--start-screen requires --input-script");
         }
 
         // r[impl installer.dryrun]
@@ -744,6 +752,7 @@ mod test {
             fake_timezones: None,
             fake_tpm: false,
             no_reboot: false,
+            start_screen: None,
             check_paths: None,
             check_chroot_paths: None,
         }

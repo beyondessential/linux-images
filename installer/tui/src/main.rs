@@ -79,6 +79,12 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub no_reboot: bool,
 
+    /// Start the scripted TUI on this screen instead of Welcome.
+    /// Only valid with `--input-script`. Allows tests to skip preamble
+    /// navigation to reach the screen under test.
+    #[arg(long)]
+    pub start_screen: Option<String>,
+
     /// Verify that all hardcoded ISO-environment binary paths exist, then exit.
     /// Optionally takes a sysroot prefix (e.g. a mounted squashfs) to
     /// resolve paths against.
