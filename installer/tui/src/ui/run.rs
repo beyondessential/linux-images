@@ -508,6 +508,11 @@ fn event_loop(
         while let Ok(msg) = worker_rx.try_recv() {
             match msg {
                 WorkerMessage::Progress(snap) => {
+                    if let Some(ref prev) = state.write_progress
+                        && prev.phase != snap.phase
+                    {
+                        state.completed_phases.push(prev.phase.label());
+                    }
                     state.write_progress = Some(snap);
                 }
                 WorkerMessage::InstallDone(passphrase) => {

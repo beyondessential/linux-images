@@ -1504,12 +1504,22 @@ fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
             String::new()
         };
 
-        let info_lines = vec![
-            Line::from(""),
-            Line::from(format!("  {phase_label}")),
-            Line::from(""),
-            Line::from(detail_line),
-        ];
+        let mut info_lines = vec![Line::from("")];
+
+        for done in &state.completed_phases {
+            info_lines.push(Line::from(Span::styled(
+                format!("  [done] {done}"),
+                Style::default().fg(Color::Green),
+            )));
+        }
+
+        info_lines.push(Line::from(format!("  {phase_label}")));
+
+        if !detail_line.is_empty() {
+            info_lines.push(Line::from(""));
+            info_lines.push(Line::from(detail_line));
+        }
+
         let info = Paragraph::new(info_lines);
         frame.render_widget(info, chunks[0]);
 
