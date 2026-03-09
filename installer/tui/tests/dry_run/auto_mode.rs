@@ -442,3 +442,164 @@ fn auto_with_only_ssh_keys() {
     );
     assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 3);
 }
+
+// r[verify installer.finalise.network+4]
+// r[verify installer.dryrun.schema+6]
+#[test]
+fn auto_network_dhcp_default_in_plan() {
+    let f = Fixture::new();
+    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let config = f.write_config(
+        r#"
+        auto = true
+        disk-encryption = "none"
+        disk = "largest-ssd"
+
+        hostname = "test-host"
+    "#,
+    );
+
+    installer()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--fake-devices",
+            devices.to_str().unwrap(),
+            "--dry-run",
+            "--dry-run-output",
+            f.plan_path().to_str().unwrap(),
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let plan = f.read_plan();
+    assert_eq!(
+        plan["install_config"]["network"], "DHCP (all Ethernet interfaces)",
+        "default network mode should be DHCP"
+    );
+}
+
+// r[verify installer.finalise.network+4]
+// r[verify installer.dryrun.schema+6]
+#[test]
+fn auto_network_static_in_plan() {
+    let f = Fixture::new();
+    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let config = f.write_config(
+        r#"
+        auto = true
+        disk-encryption = "none"
+        disk = "largest-ssd"
+
+        hostname = "test-host"
+        network-mode = "static"
+        network-interface = "enp0s3"
+        network-ip = "192.168.1.10/24"
+        network-gateway = "192.168.1.1"
+        network-dns = "8.8.8.8, 1.1.1.1"
+    "#,
+    );
+
+    installer()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--fake-devices",
+            devices.to_str().unwrap(),
+            "--dry-run",
+            "--dry-run-output",
+            f.plan_path().to_str().unwrap(),
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let plan = f.read_plan();
+    let network = plan["install_config"]["network"].as_str().unwrap();
+    assert!(
+        network.starts_with("Static IP: 192.168.1.10/24 via 192.168.1.1 on enp0s3"),
+        "expected static IP summary, got: {network}"
+    );
+    assert!(
+        network.contains("8.8.8.8, 1.1.1.1"),
+        "expected DNS in summary, got: {network}"
+    );
+}
+
+// r[verify installer.finalise.network+4]
+// r[verify installer.dryrun.schema+6]
+#[test]
+fn auto_network_offline_in_plan() {
+    let f = Fixture::new();
+    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let config = f.write_config(
+        r#"
+        auto = true
+        disk-encryption = "none"
+        disk = "largest-ssd"
+
+        hostname = "test-host"
+        network-mode = "offline"
+    "#,
+    );
+
+    installer()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--fake-devices",
+            devices.to_str().unwrap(),
+            "--dry-run",
+            "--dry-run-output",
+            f.plan_path().to_str().unwrap(),
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let plan = f.read_plan();
+    assert_eq!(
+        plan["install_config"]["network"],
+        "Offline (no network configuration)",
+    );
+}
+
+// r[verify installer.finalise.network+4]
+// r[verify installer.dryrun.schema+6]
+#[test]
+fn auto_network_ipv6_slaac_in_plan() {
+    let f = Fixture::new();
+    let devices = f.write_devices(SINGLE_SSD_DEVICE);
+    let config = f.write_config(
+        r#"
+        auto = true
+        disk-encryption = "none"
+        disk = "largest-ssd"
+
+        hostname = "test-host"
+        network-mode = "ipv6-slaac"
+    "#,
+    );
+
+    installer()
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "--fake-devices",
+            devices.to_str().unwrap(),
+            "--dry-run",
+            "--dry-run-output",
+            f.plan_path().to_str().unwrap(),
+            "--log",
+            f.log_path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let plan = f.read_plan();
+    assert_eq!(plan["install_config"]["network"], "IPv6 SLAAC only",);
+}

@@ -288,7 +288,7 @@ enter
     );
 }
 
-// r[verify installer.tui.disk-detection+3]
+// r[verify installer.tui.disk-detection+4]
 #[test]
 fn interactive_selects_second_disk() {
     let f = Fixture::new();
@@ -403,7 +403,7 @@ fn interactive_empty_script_uses_initial_state() {
     assert_eq!(plan["disk_encryption"], "keyfile");
 }
 
-// r[verify installer.tui.confirmation+7]
+// r[verify installer.tui.confirmation+8]
 #[test]
 fn interactive_go_back_from_confirmation_and_change() {
     let f = Fixture::new();

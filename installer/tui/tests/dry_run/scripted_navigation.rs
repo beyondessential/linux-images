@@ -117,7 +117,7 @@ enter
     assert_eq!(plan["disk_encryption"], "keyfile");
 }
 
-// r[verify installer.tui.disk-detection+3]
+// r[verify installer.tui.disk-detection+4]
 #[test]
 fn scripted_disk_wrap_around() {
     let f = Fixture::new();
@@ -175,7 +175,7 @@ enter
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
-// r[verify installer.tui.disk-detection+3]
+// r[verify installer.tui.disk-detection+4]
 #[test]
 fn scripted_disk_up_wraps_to_last() {
     let f = Fixture::new();
@@ -350,7 +350,7 @@ enter
     assert_eq!(plan["install_config"]["ssh_authorized_keys_count"], 2);
 }
 
-// r[verify installer.tui.confirmation+7]
+// r[verify installer.tui.confirmation+8]
 #[test]
 fn scripted_wrong_confirmation_does_not_advance() {
     let f = Fixture::new();

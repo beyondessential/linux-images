@@ -128,7 +128,12 @@ fn plan_contains_all_required_fields() {
     }
 
     let fb = plan["install_config"].as_object().unwrap();
-    for key in &["hostname", "tailscale_authkey", "ssh_authorized_keys_count"] {
+    for key in &[
+        "hostname",
+        "tailscale_authkey",
+        "ssh_authorized_keys_count",
+        "network",
+    ] {
         assert!(fb.contains_key(*key), "missing install_config key: {key}");
     }
 }
