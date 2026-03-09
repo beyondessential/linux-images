@@ -58,6 +58,45 @@ pub struct InstallConfig {
 
     #[serde(default, rename = "save-recovery-keys")]
     pub save_recovery_keys: bool,
+
+    // r[impl installer.config.network-mode]
+    #[serde(default, rename = "network-mode")]
+    pub network_mode: Option<NetworkMode>,
+
+    // r[impl installer.config.network-static]
+    #[serde(default, rename = "network-interface")]
+    pub network_interface: Option<String>,
+
+    #[serde(default, rename = "network-ip")]
+    pub network_ip: Option<String>,
+
+    #[serde(default, rename = "network-gateway")]
+    pub network_gateway: Option<String>,
+
+    #[serde(default, rename = "network-dns")]
+    pub network_dns: Option<String>,
+
+    #[serde(default, rename = "network-domain")]
+    pub network_domain: Option<String>,
+
+    // r[impl installer.config.iso-network-mode]
+    #[serde(default, rename = "iso-network-mode")]
+    pub iso_network_mode: Option<NetworkMode>,
+
+    #[serde(default, rename = "iso-network-interface")]
+    pub iso_network_interface: Option<String>,
+
+    #[serde(default, rename = "iso-network-ip")]
+    pub iso_network_ip: Option<String>,
+
+    #[serde(default, rename = "iso-network-gateway")]
+    pub iso_network_gateway: Option<String>,
+
+    #[serde(default, rename = "iso-network-dns")]
+    pub iso_network_dns: Option<String>,
+
+    #[serde(default, rename = "iso-network-domain")]
+    pub iso_network_domain: Option<String>,
 }
 
 const RECOVERY_PASSPHRASE_MIN_LEN: usize = 25;
@@ -84,6 +123,53 @@ pub fn validate_recovery_passphrase(passphrase: &str) -> std::result::Result<(),
         ));
     }
     Ok(())
+}
+
+/// Network configuration mode for a pane (ISO or target).
+// r[impl installer.config.network-mode]
+// r[impl installer.config.iso-network-mode]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkMode {
+    Dhcp,
+    StaticIp,
+    Ipv6Slaac,
+    Offline,
+}
+
+impl fmt::Display for NetworkMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NetworkMode::Dhcp => write!(f, "dhcp"),
+            NetworkMode::StaticIp => write!(f, "static"),
+            NetworkMode::Ipv6Slaac => write!(f, "ipv6-slaac"),
+            NetworkMode::Offline => write!(f, "offline"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for NetworkMode {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "dhcp" => Ok(NetworkMode::Dhcp),
+            "static" => Ok(NetworkMode::StaticIp),
+            "ipv6-slaac" => Ok(NetworkMode::Ipv6Slaac),
+            "offline" => Ok(NetworkMode::Offline),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["dhcp", "static", "ipv6-slaac", "offline"],
+            )),
+        }
+    }
+}
+
+impl Serialize for NetworkMode {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -377,7 +463,48 @@ impl InstallConfig {
             issues.push("password and password-hash are mutually exclusive".into());
         }
 
+        // r[impl installer.config.network-static]
+        validate_network_static_fields(
+            "network",
+            self.network_mode,
+            self.network_ip.as_deref(),
+            self.network_gateway.as_deref(),
+            &mut issues,
+        );
+
+        // r[impl installer.config.iso-network-mode]
+        validate_network_static_fields(
+            "iso-network",
+            self.iso_network_mode,
+            self.iso_network_ip.as_deref(),
+            self.iso_network_gateway.as_deref(),
+            &mut issues,
+        );
+
         issues
+    }
+}
+
+/// Validate that when a network mode is "static", the required ip and gateway
+/// fields are present. `prefix` is either `"network"` or `"iso-network"`.
+fn validate_network_static_fields(
+    prefix: &str,
+    mode: Option<NetworkMode>,
+    ip: Option<&str>,
+    gateway: Option<&str>,
+    issues: &mut Vec<String>,
+) {
+    if mode == Some(NetworkMode::StaticIp) {
+        if ip.map_or(true, |s| s.trim().is_empty()) {
+            issues.push(format!(
+                "{prefix}-ip is required when {prefix}-mode is \"static\""
+            ));
+        }
+        if gateway.map_or(true, |s| s.trim().is_empty()) {
+            issues.push(format!(
+                "{prefix}-gateway is required when {prefix}-mode is \"static\""
+            ));
+        }
     }
 }
 
@@ -432,6 +559,13 @@ mod tests {
         assert_eq!(config.password_hash, None);
         assert_eq!(config.recovery_passphrase, None);
         assert!(!config.save_recovery_keys);
+        assert_eq!(config.network_mode, None);
+        assert_eq!(config.network_interface, None);
+        assert_eq!(config.network_ip, None);
+        assert_eq!(config.network_gateway, None);
+        assert_eq!(config.network_dns, None);
+        assert_eq!(config.network_domain, None);
+        assert_eq!(config.iso_network_mode, None);
     }
 
     // r[verify installer.config.disk-encryption+2]
@@ -963,7 +1097,160 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.disk-encryption+2]
+    // r[verify installer.config.network-mode]
+    #[test]
+    fn parse_network_mode_variants() {
+        for (input, expected) in [
+            ("dhcp", NetworkMode::Dhcp),
+            ("static", NetworkMode::StaticIp),
+            ("ipv6-slaac", NetworkMode::Ipv6Slaac),
+            ("offline", NetworkMode::Offline),
+        ] {
+            let config = InstallConfig::from_toml(&format!(r#"network-mode = "{input}""#)).unwrap();
+            assert_eq!(config.network_mode, Some(expected));
+        }
+    }
+
+    // r[verify installer.config.network-mode]
+    #[test]
+    fn parse_invalid_network_mode_rejected() {
+        let result = InstallConfig::from_toml(r#"network-mode = "bad""#);
+        assert!(result.is_err());
+    }
+
+    // r[verify installer.config.network-static]
+    #[test]
+    fn parse_network_static_fields() {
+        let toml = r#"
+            network-mode = "static"
+            network-interface = "enp0s3"
+            network-ip = "192.168.1.10/24"
+            network-gateway = "192.168.1.1"
+            network-dns = "8.8.8.8, 1.1.1.1"
+            network-domain = "example.com"
+        "#;
+        let config = InstallConfig::from_toml(toml).unwrap();
+        assert_eq!(config.network_mode, Some(NetworkMode::StaticIp));
+        assert_eq!(config.network_interface.as_deref(), Some("enp0s3"));
+        assert_eq!(config.network_ip.as_deref(), Some("192.168.1.10/24"));
+        assert_eq!(config.network_gateway.as_deref(), Some("192.168.1.1"));
+        assert_eq!(config.network_dns.as_deref(), Some("8.8.8.8, 1.1.1.1"));
+        assert_eq!(config.network_domain.as_deref(), Some("example.com"));
+    }
+
+    // r[verify installer.config.network-static]
+    #[test]
+    fn validate_static_network_missing_ip() {
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_gateway: Some("192.168.1.1".into()),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            issues.iter().any(|i| i.contains("network-ip is required")),
+            "expected network-ip required warning, got: {issues:?}"
+        );
+    }
+
+    // r[verify installer.config.network-static]
+    #[test]
+    fn validate_static_network_missing_gateway() {
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_ip: Some("192.168.1.10/24".into()),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("network-gateway is required")),
+            "expected network-gateway required warning, got: {issues:?}"
+        );
+    }
+
+    // r[verify installer.config.network-static]
+    #[test]
+    fn validate_static_network_complete_is_clean() {
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::StaticIp),
+            network_ip: Some("192.168.1.10/24".into()),
+            network_gateway: Some("192.168.1.1".into()),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            issues.is_empty(),
+            "expected no validation issues, got: {issues:?}"
+        );
+    }
+
+    // r[verify installer.config.iso-network-mode]
+    #[test]
+    fn parse_iso_network_mode() {
+        let toml = r#"
+            iso-network-mode = "static"
+            iso-network-interface = "enp0s3"
+            iso-network-ip = "10.0.0.5/24"
+            iso-network-gateway = "10.0.0.1"
+            iso-network-dns = "1.1.1.1"
+            iso-network-domain = "test.local"
+        "#;
+        let config = InstallConfig::from_toml(toml).unwrap();
+        assert_eq!(config.iso_network_mode, Some(NetworkMode::StaticIp));
+        assert_eq!(config.iso_network_interface.as_deref(), Some("enp0s3"));
+        assert_eq!(config.iso_network_ip.as_deref(), Some("10.0.0.5/24"));
+        assert_eq!(config.iso_network_gateway.as_deref(), Some("10.0.0.1"));
+        assert_eq!(config.iso_network_dns.as_deref(), Some("1.1.1.1"));
+        assert_eq!(config.iso_network_domain.as_deref(), Some("test.local"));
+    }
+
+    // r[verify installer.config.iso-network-mode]
+    #[test]
+    fn validate_iso_static_network_missing_fields() {
+        let config = InstallConfig {
+            iso_network_mode: Some(NetworkMode::StaticIp),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("iso-network-ip is required")),
+            "expected iso-network-ip required warning, got: {issues:?}"
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.contains("iso-network-gateway is required")),
+            "expected iso-network-gateway required warning, got: {issues:?}"
+        );
+    }
+
+    // r[verify installer.config.network-mode]
+    #[test]
+    fn network_mode_display() {
+        assert_eq!(NetworkMode::Dhcp.to_string(), "dhcp");
+        assert_eq!(NetworkMode::StaticIp.to_string(), "static");
+        assert_eq!(NetworkMode::Ipv6Slaac.to_string(), "ipv6-slaac");
+        assert_eq!(NetworkMode::Offline.to_string(), "offline");
+    }
+
+    // r[verify installer.config.network-mode]
+    #[test]
+    fn dhcp_network_mode_has_no_static_issues() {
+        let config = InstallConfig {
+            network_mode: Some(NetworkMode::Dhcp),
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            !issues.iter().any(|i| i.contains("network-ip")),
+            "dhcp should not require network-ip, got: {issues:?}"
+        );
+    }
+
     #[test]
     fn disk_encryption_is_encrypted() {
         assert!(DiskEncryption::Tpm.is_encrypted());
@@ -1095,6 +1382,18 @@ mod tests {
             timezone: Some("UTC".into()),
             recovery_passphrase: Some("a]9Kx#mP2vL!nQ7wR4jH6dT0y".into()),
             save_recovery_keys: true,
+            network_mode: Some(NetworkMode::StaticIp),
+            network_interface: Some("enp0s3".into()),
+            network_ip: Some("192.168.1.10/24".into()),
+            network_gateway: Some("192.168.1.1".into()),
+            network_dns: Some("8.8.8.8".into()),
+            network_domain: Some("example.com".into()),
+            iso_network_mode: Some(NetworkMode::Dhcp),
+            iso_network_interface: Some("enp0s3".into()),
+            iso_network_ip: Some("10.0.0.5/24".into()),
+            iso_network_gateway: Some("10.0.0.1".into()),
+            iso_network_dns: Some("1.1.1.1".into()),
+            iso_network_domain: Some("test.local".into()),
         };
 
         let toml_value = toml::Value::try_from(&full).expect("failed to serialize InstallConfig");
