@@ -125,12 +125,91 @@ pub enum VerityMessage {
 }
 
 // r[impl installer.tui.progress+4]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallPhase {
+    Writing,
+    Expanding,
+    RandomizingUuids,
+    EncryptionSetup,
+    RebuildingBootConfig,
+    VerifyingPartitions,
+    ApplyingConfig,
+}
+
+impl InstallPhase {
+    /// The fixed fraction of the overall progress bar at which this phase
+    /// *starts*. Writing occupies 0..90%, post-write steps share the last 10%.
+    pub fn bar_start(self) -> f64 {
+        match self {
+            Self::Writing => 0.0,
+            Self::Expanding => 0.90,
+            Self::RandomizingUuids => 0.92,
+            Self::EncryptionSetup => 0.93,
+            Self::RebuildingBootConfig => 0.94,
+            Self::VerifyingPartitions => 0.96,
+            Self::ApplyingConfig => 0.97,
+        }
+    }
+
+    /// The fixed fraction at which this phase *ends* (== next phase's start,
+    /// or 1.0 for the last phase).
+    pub fn bar_end(self) -> f64 {
+        match self {
+            Self::Writing => 0.90,
+            Self::Expanding => 0.92,
+            Self::RandomizingUuids => 0.93,
+            Self::EncryptionSetup => 0.94,
+            Self::RebuildingBootConfig => 0.96,
+            Self::VerifyingPartitions => 0.97,
+            Self::ApplyingConfig => 1.0,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Writing => "Writing partitions...",
+            Self::Expanding => "Expanding root filesystem...",
+            Self::RandomizingUuids => "Randomizing filesystem UUIDs...",
+            Self::EncryptionSetup => "Setting up encryption...",
+            Self::RebuildingBootConfig => "Rebuilding boot config...",
+            Self::VerifyingPartitions => "Verifying partition table...",
+            Self::ApplyingConfig => "Applying configuration...",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ProgressSnapshot {
     pub bytes_written: u64,
     pub total_bytes: Option<u64>,
     pub throughput_mbps: f64,
     pub eta: Option<Duration>,
+    pub phase: InstallPhase,
+}
+
+impl ProgressSnapshot {
+    /// Overall progress fraction (0.0..1.0) scaled to the full install bar.
+    /// During the Writing phase, the write's byte fraction is mapped into
+    /// 0..90%. Post-write phases jump to their fixed start fraction.
+    pub fn overall_fraction(&self) -> f64 {
+        match self.phase {
+            InstallPhase::Writing => {
+                let write_frac = self
+                    .total_bytes
+                    .map(|t| {
+                        if t == 0 {
+                            0.0
+                        } else {
+                            self.bytes_written as f64 / t as f64
+                        }
+                    })
+                    .unwrap_or(0.0)
+                    .min(1.0);
+                write_frac * InstallPhase::Writing.bar_end()
+            }
+            phase => phase.bar_start(),
+        }
+    }
 }
 
 impl From<&WriteProgress> for ProgressSnapshot {
@@ -140,6 +219,7 @@ impl From<&WriteProgress> for ProgressSnapshot {
             total_bytes: p.total_bytes,
             throughput_mbps: p.throughput_mbps(),
             eta: p.eta(),
+            phase: InstallPhase::Writing,
         }
     }
 }
@@ -944,6 +1024,7 @@ mod tests {
             total_bytes: Some(1000),
             throughput_mbps: 10.0,
             eta: None,
+            phase: InstallPhase::Writing,
         }))
         .unwrap();
 

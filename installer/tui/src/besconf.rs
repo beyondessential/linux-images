@@ -48,7 +48,7 @@ impl BesconfState {
 /// Mount the BESCONF partition and detect whether it can be made writable.
 ///
 /// r[impl iso.config-partition+4]
-// r[impl installer.besconf.writable-detection]
+// r[impl installer.besconf.writable-detection+2]
 ///
 /// Locates the BESCONF partition by its well-known PARTUUID, mounts it
 /// read-only at `/run/besconf`, then attempts a read-write remount to
@@ -329,7 +329,7 @@ pub fn append_recovery_key(
 mod tests {
     use super::*;
 
-    // r[verify installer.besconf.writable-detection]
+    // r[verify installer.besconf.writable-detection+2]
     #[test]
     fn besconf_state_tracks_writable() {
         let state = BesconfState {
@@ -341,7 +341,7 @@ mod tests {
         assert_eq!(state.mount_path(), Path::new("/tmp/test-besconf"));
     }
 
-    // r[verify installer.besconf.writable-detection]
+    // r[verify installer.besconf.writable-detection+2]
     #[test]
     fn besconf_state_tracks_readonly() {
         let state = BesconfState {

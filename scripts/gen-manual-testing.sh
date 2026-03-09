@@ -389,7 +389,7 @@ MD
 step7
 
 # r[verify iso.hybrid]
-# r[verify installer.encryption.tpm-enroll+3]
+# r[verify installer.encryption.tpm-enroll+5]
 # r[verify image.firewall.policy]
 # r[verify image.firewall.ssh]
 # r[verify image.tailscale.service-enabled]
@@ -462,7 +462,7 @@ step9
 
 # r[verify installer.config.recovery-passphrase]
 # r[verify installer.config.save-recovery-keys]
-# r[verify installer.besconf.writable-detection]
+# r[verify installer.besconf.writable-detection+2]
 # r[verify installer.besconf.failure-log]
 step10() {
     cat << 'MD'

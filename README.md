@@ -9,6 +9,8 @@
 - On bare metal: use the `metal` image
 - On bare metal where you need to install from USB/DVD: use the ISO
 
+(Prefer to use USB3 drives if you can, USB2 will be very slow.)
+
 ### The disk images
 
 The disk images are pre-prepared volumes containing a working Ubuntu Server Linux system

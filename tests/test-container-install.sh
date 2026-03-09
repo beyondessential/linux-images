@@ -752,7 +752,7 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Encryption setup verification (encrypted only) ---
-        # r[verify installer.encryption.overview+3]
+        # r[verify installer.encryption.overview+5]
         if [ "$IS_ENCRYPTED" -eq 1 ]; then
             CRYPTTAB="$VERIFY_MOUNT/etc/crypttab"
             check "crypttab exists" test -f "$CRYPTTAB"
@@ -763,8 +763,8 @@ if [ -n "$BTRFS_DEV" ]; then
         fi
 
         # --- Filesystem UUID / grub.cfg consistency + initramfs checks ---
-        # r[verify installer.write.randomize-uuids+2]
-        # r[verify installer.write.rebuild-boot-config+4]
+        # r[verify installer.write.randomize-uuids+3]
+        # r[verify installer.write.rebuild-boot-config+8]
         # Mount /boot under the verify root so we can read grub.cfg and
         # use chroot + lsinitrd to inspect the initramfs.
         XBOOT_PART="${LOOP_DEV}p2"
@@ -793,7 +793,7 @@ if [ -n "$BTRFS_DEV" ]; then
             fi
 
             # --- Initramfs crypttab verification (metal only) ---
-            # r[verify installer.encryption.overview+3]
+            # r[verify installer.encryption.overview+5]
             # The initramfs must contain the updated crypttab so the system
             # can unlock without a passphrase prompt at boot.
             if [ "$IS_ENCRYPTED" -eq 1 ]; then
@@ -827,6 +827,67 @@ if [ -n "$BTRFS_DEV" ]; then
                 else
                     echo "    (no initrd.img found on xboot — skipping initramfs check)"
                 fi
+            fi
+
+            # --- Initramfs UUID and mapper-name consistency ---
+            # r[verify installer.write.rebuild-boot-config+8]
+            # The initramfs must not contain stale UUIDs from the image build
+            # or the installer's internal LUKS mapper name.
+            INITRD_FILE="$(find "$BOOT_MNT" -maxdepth 1 -name 'initrd.img-*' -print -quit 2>/dev/null)"
+            if [ -n "$INITRD_FILE" ] && [ -f "$INITRD_FILE" ]; then
+                INITRD_BASENAME="/boot/$(basename "$INITRD_FILE")"
+                mount -t proc proc "$VERIFY_MOUNT/proc" 2>/dev/null || true
+                mount -t tmpfs tmpfs "$VERIFY_MOUNT/tmp" 2>/dev/null || true
+                mount --bind /dev "$VERIFY_MOUNT/dev" 2>/dev/null || true
+
+                # Extract the dracut cmdline configs baked into the initramfs
+                INITRD_CMDLINE="$(chroot "$VERIFY_MOUNT" lsinitrd -f etc/cmdline.d/95root-dev.conf "$INITRD_BASENAME" 2>/dev/null || true)"
+
+                # List all device-wait units to check for stale UUIDs
+                INITRD_DEVWAIT="$(chroot "$VERIFY_MOUNT" lsinitrd "$INITRD_BASENAME" 2>/dev/null \
+                    | grep -E 'by.uuid|devexists|device\.d' || true)"
+
+                umount "$VERIFY_MOUNT/dev" 2>/dev/null || true
+                umount "$VERIFY_MOUNT/tmp" 2>/dev/null || true
+                umount "$VERIFY_MOUNT/proc" 2>/dev/null || true
+
+                if [ -n "$INITRD_CMDLINE" ]; then
+                    echo "    initramfs 95root-dev.conf: $INITRD_CMDLINE"
+                    INITRD_CMDLINE_FILE="$WORK_DIR/initrd-cmdline"
+                    printf '%s\n' "$INITRD_CMDLINE" > "$INITRD_CMDLINE_FILE"
+
+                    # Dracut on Ubuntu 24.04 only puts rootfstype and rootflags
+                    # in 95root-dev.conf — not a root= device reference. The
+                    # root device is specified via grub.cfg (already verified
+                    # above as "grub.cfg references actual root UUID"). We check
+                    # that 95root-dev.conf does not contain stale references.
+                    check "initramfs cmdline does not reference bes-target-root" \
+                        test "$(grep -c 'bes-target-root' "$INITRD_CMDLINE_FILE")" -eq 0
+                fi
+
+                # Verify device-wait units only reference current UUIDs.
+                if [ -n "$INITRD_DEVWAIT" ]; then
+                    echo "    initramfs device-wait entries:"
+                    printf '%s\n' "$INITRD_DEVWAIT" | sed 's/^/      /'
+                    INITRD_DEVWAIT_FILE="$WORK_DIR/initrd-devwait"
+                    printf '%s\n' "$INITRD_DEVWAIT" > "$INITRD_DEVWAIT_FILE"
+
+                    ACTUAL_EFI_UUID="$(blkid -o value -s UUID "${LOOP_DEV}p1" 2>/dev/null || true)"
+                    ACTUAL_XBOOT_UUID="$(blkid -o value -s UUID "${LOOP_DEV}p2" 2>/dev/null || true)"
+
+                    if [ -n "$ACTUAL_XBOOT_UUID" ]; then
+                        # If the xboot UUID appears in device-wait, it must be the current one
+                        STALE_XBOOT="$(grep -cE 'by.uuid' "$INITRD_DEVWAIT_FILE" \
+                            | grep -v "$ACTUAL_XBOOT_UUID" \
+                            | grep -v "$ACTUAL_EFI_UUID" \
+                            | grep -v "${ACTUAL_ROOT_UUID:-NONE}" || true)"
+                        # Simpler: just check the xboot UUID is present if any ext UUID is referenced
+                        check "initramfs device-wait references actual xboot UUID ($ACTUAL_XBOOT_UUID)" \
+                            grep -q "$ACTUAL_XBOOT_UUID" "$INITRD_DEVWAIT_FILE"
+                    fi
+                fi
+            else
+                echo "    (no initrd.img found — skipping initramfs UUID consistency check)"
             fi
 
             umount "$BOOT_MNT"

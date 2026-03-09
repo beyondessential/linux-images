@@ -113,6 +113,19 @@ if [ "$VARIANT" = "metal" ]; then
 fi
 
 # ============================================================
+# Console font
+# ============================================================
+# r[image.base.console-font]
+cat > /etc/default/console-setup << 'EOF'
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="guess"
+FONTFACE="Fixed"
+FONTSIZE="8x16"
+VIDEOMODE=
+EOF
+
+# ============================================================
 # Variant identification
 # ============================================================
 # r[image.variant.types+3]

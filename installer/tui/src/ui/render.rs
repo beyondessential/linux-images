@@ -385,13 +385,11 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
     description.push(Line::from(""));
     match state.verity_check {
         VerityCheckState::Running => {
-            description.push(Line::from(
-                "Verifying installation media... Press Enter to begin once complete.",
-            ));
+            description.push(Line::from("Verifying installation media..."));
         }
         VerityCheckState::Passed => {
             description.push(Line::from(
-                "Verification passed. Press Enter to begin, or 'n' for a network check.",
+                "Press Enter to begin, or 'n' for a network check.",
             ));
         }
         _ => {
@@ -1102,30 +1100,26 @@ fn render_installing(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(3)]).split(area);
 
     if let Some(ref progress) = state.write_progress {
-        let fraction = progress
-            .total_bytes
-            .map(|t| {
-                if t == 0 {
-                    0.0
-                } else {
-                    (progress.bytes_written as f64 / t as f64).min(1.0)
-                }
-            })
-            .unwrap_or(0.0);
+        let fraction = progress.overall_fraction().clamp(0.0, 1.0);
 
-        let eta_str = progress.eta.map(format_eta).unwrap_or_default();
-        let label = format!(
-            "{:.1} MiB written | {:.1} MiB/s | ETA: {}",
-            progress.bytes_written as f64 / (1024.0 * 1024.0),
-            progress.throughput_mbps,
-            if eta_str.is_empty() { "..." } else { &eta_str },
-        );
+        let phase_label = progress.phase.label();
+        let detail_line = if progress.phase == super::InstallPhase::Writing {
+            let eta_str = progress.eta.map(format_eta).unwrap_or_default();
+            format!(
+                "  {:.1} MiB written | {:.1} MiB/s | ETA: {}",
+                progress.bytes_written as f64 / (1024.0 * 1024.0),
+                progress.throughput_mbps,
+                if eta_str.is_empty() { "..." } else { &eta_str },
+            )
+        } else {
+            String::new()
+        };
 
         let info_lines = vec![
             Line::from(""),
-            Line::from("  Installing to disk..."),
+            Line::from(format!("  {phase_label}")),
             Line::from(""),
-            Line::from(format!("  {label}")),
+            Line::from(detail_line),
         ];
         let info = Paragraph::new(info_lines);
         frame.render_widget(info, chunks[0]);

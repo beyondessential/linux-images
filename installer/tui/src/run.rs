@@ -40,11 +40,27 @@ pub struct RunContext {
 impl RunContext {
     pub fn from_cli(cli: Cli) -> Result<Self> {
         let build_info = read_build_info();
-        let version = crate::Bosion::CRATE_VERSION;
+        let version = env!("CARGO_PKG_VERSION");
         tracing::info!("bes-installer v{version} — {build_info}");
         eprintln!("bes-installer v{version} — {build_info}");
 
+        // r[impl installer.besconf.writable-detection+2]
+        // r[impl iso.config-partition+4]
+        // Mount BESCONF before loading config: the config file lives on
+        // BESCONF at /run/besconf/bes-install.toml.
+        let mut besconf = if cli.dry_run {
+            besconf::BesconfState::readonly()
+        } else {
+            let (state, _mounted) = besconf::mount_and_detect();
+            // r[impl installer.besconf.failure-log]
+            besconf::rotate_failure_log(&state);
+            state
+        };
+
         let (mut install_config, mode) = load_config(&cli)?;
+
+        // Apply save_recovery_keys from the now-loaded config.
+        besconf = besconf::with_save_recovery_keys(besconf, install_config.save_recovery_keys);
 
         resolve_hostname_template(&mut install_config)?;
 
@@ -96,17 +112,6 @@ impl RunContext {
         for w in &config_warnings {
             tracing::warn!("config: {w}");
         }
-
-        // r[impl installer.besconf.writable-detection]
-        // r[impl iso.config-partition+4]
-        let besconf = if cli.dry_run {
-            besconf::BesconfState::readonly()
-        } else {
-            let (state, _mounted) = besconf::mount_and_detect();
-            // r[impl installer.besconf.failure-log]
-            besconf::rotate_failure_log(&state);
-            besconf::with_save_recovery_keys(state, install_config.save_recovery_keys)
-        };
 
         Ok(Self {
             cli,
@@ -365,7 +370,7 @@ impl RunContext {
             .randomize_filesystem_uuids()
             .context("randomizing filesystem UUIDs")?;
 
-        // r[impl installer.encryption.overview+3]
+        // r[impl installer.encryption.overview+5]
         if let Some(ref passphrase) = recovery_passphrase {
             eprintln!("setting up disk encryption...");
             let mounted = firstboot::mount_target(
@@ -601,7 +606,7 @@ fn load_config(cli: &Cli) -> Result<(config::InstallConfig, config::OperatingMod
         // r[impl installer.config.location]
         .unwrap_or(Path::new("/run/besconf/bes-install.toml"));
 
-    match config::InstallConfig::load_from_file(&config_path)? {
+    match config::InstallConfig::load_from_file(config_path)? {
         Some(cfg) => {
             let mode = cfg.mode();
             tracing::info!("operating mode: {mode}");
@@ -659,8 +664,8 @@ fn emit_plan(plan: &plan::InstallPlan, cli: &Cli) -> Result<()> {
 }
 
 fn read_build_info() -> String {
-    let commit = crate::Bosion::GIT_COMMIT_SHORTHASH;
-    let bosion_date = crate::Bosion::BUILD_DATE;
+    let commit = option_env!("VERGEN_GIT_SHA").unwrap_or("");
+    let vergen_date = option_env!("VERGEN_BUILD_DATE").unwrap_or("");
 
     let (date, arch) = match fs::read_to_string("/etc/bes-build-info") {
         Ok(contents) => {
@@ -678,7 +683,7 @@ fn read_build_info() -> String {
         Err(_) => (None, None),
     };
 
-    let date = date.unwrap_or_else(|| bosion_date.to_string());
+    let date = date.unwrap_or_else(|| vergen_date.to_string());
     let arch = arch.unwrap_or_else(detect_arch);
 
     if commit.is_empty() {

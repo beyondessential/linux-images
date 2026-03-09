@@ -86,6 +86,12 @@ A netplan configuration must be installed at
 address on first boot regardless of whether cloud-init or any other
 datasource is present.
 
+r[image.base.console-font]
+The `console-setup` and `kbd` packages must be installed so that
+`systemd-vconsole-setup.service` configures the Linux console with a
+readable font at boot. `/etc/default/console-setup` must be present with
+`FONTFACE="Fixed"` and `FONTSIZE="8x16"`.
+
 ## Packages
 
 r[image.packages.bes-tools]

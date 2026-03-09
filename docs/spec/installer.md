@@ -111,15 +111,21 @@ from a cryptographically secure random source.
 
 ## BESCONF Partition Interaction
 
-r[installer.besconf.writable-detection]
-At startup, after locating the configuration file, the installer must
-detect whether the BESCONF partition at `/run/besconf` is writable. It
-does this by attempting to remount the partition read-write
+r[installer.besconf.writable-detection+2]
+At startup, before loading the configuration file, the installer must
+mount the BESCONF partition and detect whether it is writable. Because the
+configuration file lives on the BESCONF partition
+(`/run/besconf/bes-install.toml`), BESCONF must be mounted first. When an
+explicit `--config` path is provided, the installer must still mount
+BESCONF (for failure logging and recovery key saving) but reads the
+config from the provided path instead. The installer locates the BESCONF
+partition by its well-known PARTUUID, mounts it read-only at
+`/run/besconf`, then attempts a read-write remount
 (`mount -o remount,rw /run/besconf`). If the remount succeeds, BESCONF is
-considered writable for the duration of the install. If the remount fails
-(e.g. optical media, partition absent, permissions), BESCONF is considered
-read-only and all write operations to it are silently skipped. The
-installer must track this state.
+considered writable for the duration of the install. If the partition is
+not found or the mount fails (e.g. optical media, partition absent,
+permissions), BESCONF is considered read-only and all write operations to
+it are silently skipped. The installer must track this state.
 
 r[installer.besconf.failure-log]
 When the BESCONF partition is writable and the installer encounters a fatal
@@ -657,7 +663,7 @@ the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is
 needed. This ensures the installed system has a fully expanded filesystem
 without depending on a boot-time growth service.
 
-r[installer.write.randomize-uuids+2]
+r[installer.write.randomize-uuids+3]
 After expanding the root filesystem, the installer must randomize the
 filesystem UUID of each partition to ensure every installation has unique
 identifiers. For the ext4 extended boot partition, it must first run
@@ -666,27 +672,62 @@ then `tune2fs -U random`. For the BTRFS root partition (or the LUKS volume
 on top of it), it must run `btrfstune -u` while the filesystem is
 unmounted. For the FAT32 EFI partition, it must randomize the volume serial
 number with `mlabel -n`. All filesystems must be unmounted during UUID
-changes.
+changes. After all UUIDs have been changed, the installer must run
+`udevadm trigger --subsystem-match=block` followed by
+`udevadm settle --timeout=10` to refresh the `/dev/disk/by-uuid/` symlinks.
+These commands may fail in container environments without udevd; failures
+are non-fatal.
 
-> r[installer.write.rebuild-boot-config+4]
+> r[installer.write.rebuild-boot-config+8]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
 > config-file writes when encryption is enabled — see
-> `r[installer.encryption.overview+3]`), the installer must unconditionally
+> `r[installer.encryption.overview+5]`), the installer must unconditionally
 > rebuild the initramfs and GRUB configuration in a chroot of the installed
 > system, regardless of encryption mode. This is required because the GRUB
 > config (`grub.cfg`) and the initramfs both reference filesystem UUIDs that
 > have been rotated, and because the encryption setup writes crypttab and
-> dracut configuration that must be baked into the initramfs. The installer
-> must run `dracut --force` and `update-grub` with `/proc`, `/sys`, and
-> `/dev` bind-mounted into the target.
+> dracut configuration that must be baked into the initramfs. Before running
+> dracut, the installer must:
+>
+>   1. Delete all existing initramfs files from `/boot` (matching
+>      `initrd.img*` and `initramfs-*`). This is necessary because dracut's
+>      `hostonly` mode reads the existing initramfs to discover host devices;
+>      the image-build initramfs contains UUIDs from the build environment
+>      that no longer exist after UUID randomization, and leaving it in place
+>      causes the new initramfs to inherit stale device references that will
+>      hang at boot.
+>   2. Temporarily replace `/etc/fstab` in the target with a version that
+>      uses `UUID=` references (read via `blkid` from the actual partitions)
+>      instead of `/dev/disk/by-partlabel/` paths. This is necessary because
+>      dracut's `hostonly` mode resolves `by-partlabel` symlinks and then
+>      looks up UUIDs via `/dev/disk/by-uuid/`; if udev has not refreshed
+>      those symlinks after UUID randomization (e.g. inside a container with
+>      no udevd), dracut discovers stale UUIDs and bakes them into systemd
+>      device-wait units. After dracut completes, the original fstab must be
+>      restored.
+>   3. When encryption is enabled, open the LUKS volume using the production
+>      mapper name `root` (not the installer's internal name) so that
+>      dracut's `hostonly` mode discovers `/dev/mapper/root`. If the volume
+>      is opened under a different name, dracut bakes that name into the
+>      initramfs cmdline and the boot fails because `systemd-cryptsetup`
+>      creates `/dev/mapper/root` (from the `rd.luks.name` parameter) while
+>      the initramfs expects the installer's internal name.
+>
+> The installer must then run `dracut --force` and `update-grub` with
+> `/proc`, `/sys`, and `/dev` bind-mounted into the target.
 >
 > When disk encryption is enabled, the installer must also, before running
 > `update-grub`:
 >
->   - Read the LUKS UUID from the raw root partition (via `blkid`).
->   - Set `GRUB_CMDLINE_LINUX` in `/etc/default/grub` to include
->     `rd.luks.name=<LUKS-UUID>=root rd.luks.options=discard` so the
->     initramfs knows to unlock the LUKS volume during early boot.
+>   - Clear `GRUB_CMDLINE_LINUX` in `/etc/default/grub` (ensure it is set
+>     to `""`). The installer must NOT place `rd.luks.name` or
+>     `rd.luks.options` on the kernel command line. The crypttab (with the
+>     `force` option) is the sole authority for LUKS unlock — it already
+>     contains the mapper name, device path, keyfile or `tpm2-device=auto`,
+>     and options like `discard`. If `rd.luks.name` appears on the cmdline,
+>     `systemd-cryptsetup-generator` treats it as an override: it creates a
+>     passphrase-prompt unit and skips the crypttab entry entirely, defeating
+>     keyfile and TPM-based auto-unlock.
 >   - Remove the serial console (`console=ttyS0,115200n8`) from
 >     `GRUB_CMDLINE_LINUX_DEFAULT`, since encrypted installs target
 >     bare-metal hardware where the serial console is not needed.
@@ -695,9 +736,9 @@ changes.
 
 ## Encryption Setup
 
-> r[installer.encryption.overview+3]
+> r[installer.encryption.overview+5]
 > After writing the image, expanding partitions, and randomizing UUIDs, but
-> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+4]`),
+> **before** rebuilding the boot config (`r[installer.write.rebuild-boot-config+8]`),
 > when disk encryption is `"tpm"` or `"keyfile"`, the installer must perform
 > encryption setup on the target disk. The LUKS volume already has the
 > recovery passphrase as its sole key (enrolled during
@@ -708,7 +749,7 @@ changes.
 >    into the installed system's root filesystem.
 >
 > The initramfs rebuild is **not** performed here; it is handled by
-> `r[installer.write.rebuild-boot-config+4]`, which runs afterwards and picks
+> `r[installer.write.rebuild-boot-config+8]`, which runs afterwards and picks
 > up the updated crypttab and keyfile configuration.
 >
 > No key rotation or empty-slot wipe is needed because the installer created
@@ -717,23 +758,38 @@ changes.
 
 
 
-> r[installer.encryption.tpm-enroll+3]
+> r[installer.encryption.tpm-enroll+5]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
 > `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
 > recovery passphrase. PCR 1 covers hardware identity (motherboard model,
 > CPU, RAM model and serials). The installer must update `/etc/crypttab` to
-> use `tpm2-device=auto` with a passphrase timeout fallback and the `force`
-> option (so dracut includes the entry in the initramfs even when the
-> build-time root is not a `crypto_LUKS` device).
+> use `tpm2-device=auto` with `token-timeout=30` and the `force` option (so
+> dracut includes the entry in the initramfs even when the build-time root is
+> not a `crypto_LUKS` device). `token-timeout=` (systemd v250+) controls how
+> long to wait for the TPM token to unseal before falling back to a
+> passphrase prompt. The `timeout=` option must be omitted (defaults to 0 =
+> unlimited) so the user has enough time to type the recovery passphrase when
+> fallback occurs. The `force` option is consumed by dracut only;
+> `systemd-cryptsetup` ignores it at runtime. The crypttab must NOT include
+> `headless=true` — when TPM unsealing fails (hardware change, VM, etc.)
+> `systemd-cryptsetup` must fall back to prompting for the recovery
+> passphrase.
 
-> r[installer.encryption.keyfile-enroll+2]
+> r[installer.encryption.keyfile-enroll+4]
 > When disk encryption is `"keyfile"`, the installer must generate a random
 > keyfile (4096 bytes from `/dev/urandom`), enroll it via
 > `cryptsetup luksAddKey` unlocking with the recovery passphrase, and
 > install it at `/etc/luks/keyfile` (mode 000) on the installed system. The
-> installer must update `/etc/crypttab` to reference the keyfile with a
-> passphrase timeout fallback, and update the dracut configuration to
-> include the new keyfile in the initramfs.
+> installer must update `/etc/crypttab` to reference the keyfile with
+> `keyfile-timeout=30` and the `force` option, and update the dracut
+> configuration to include the new keyfile in the initramfs.
+> `keyfile-timeout=` (systemd v243+) controls how long to wait for the
+> keyfile to become available before falling back to a passphrase prompt.
+> The `timeout=` option must be omitted (defaults to 0 = unlimited) so the
+> user has enough time to type the recovery passphrase when fallback occurs.
+> The crypttab must NOT include `headless=true` — if the keyfile fails for
+> any reason, `systemd-cryptsetup` must fall back to prompting for the
+> recovery passphrase.
 
 > r[installer.encryption.recovery-passphrase+3]
 > The installer must generate a human-readable recovery passphrase before the

@@ -12,7 +12,8 @@ use crate::paths;
 
 use super::device::{partition_path, reread_partition_table, run_command, sync_device};
 use super::luks::{
-    LUKS_NAME, close_luks_root, create_passphrase_keyfile, format_luks_for_root, open_luks_root,
+    LUKS_NAME, close_luks, close_luks_root, create_passphrase_keyfile, format_luks_for_root,
+    open_luks_root, open_luks_root_as,
 };
 use super::manifest::{PartitionManifest, image_size, partition_images_total_size};
 use super::progress::{WriteProgress, format_size};
@@ -307,7 +308,7 @@ impl<'a> DiskWriter<'a> {
         Ok(())
     }
 
-    // r[impl installer.write.randomize-uuids+2]
+    // r[impl installer.write.randomize-uuids+3]
     pub fn randomize_filesystem_uuids(&self) -> Result<()> {
         tracing::info!("randomizing filesystem UUIDs on {}", self.target.display());
 
@@ -390,11 +391,24 @@ impl<'a> DiskWriter<'a> {
             );
         }
 
-        tracing::info!("filesystem UUIDs randomized");
+        tracing::info!("filesystem UUIDs randomized, refreshing udev symlinks");
+
+        // After changing filesystem UUIDs, the /dev/disk/by-uuid/ symlinks
+        // are stale. dracut's hostonly mode walks these symlinks to discover
+        // which devices the host needs, so if we don't refresh them the new
+        // initramfs will contain systemd device units for the old UUIDs and
+        // hang at boot waiting for devices that no longer exist.
+        let _ = Command::new(paths::UDEVADM)
+            .args(["trigger", "--subsystem-match=block"])
+            .status();
+        let _ = Command::new(paths::UDEVADM)
+            .args(["settle", "--timeout=10"])
+            .status();
+
         Ok(())
     }
 
-    // r[impl installer.write.rebuild-boot-config+4]
+    // r[impl installer.write.rebuild-boot-config+8]
     pub fn rebuild_boot_config(&self) -> Result<()> {
         tracing::info!("rebuilding boot config (initramfs + grub)");
 
@@ -403,24 +417,27 @@ impl<'a> DiskWriter<'a> {
         let efi_part = partition_path(self.target, 1)?;
         let is_encrypted = self.disk_encryption.is_encrypted();
 
-        let luks_uuid = if is_encrypted {
-            Some(
-                blkid_value(&root_part, "UUID")
-                    .context("reading LUKS UUID from raw root partition")?,
-            )
-        } else {
-            None
-        };
-
+        // Open LUKS as "root" (matching the production mapper name in
+        // crypttab and fstab) so that dracut's hostonly mode discovers
+        // /dev/mapper/root — not the installer's internal "bes-target-root"
+        // name. If the initramfs is built while the volume is open as
+        // "bes-target-root", dracut bakes that name into its cmdline config
+        // and the boot fails because systemd-cryptsetup creates
+        // /dev/mapper/root instead.
+        const BOOT_REBUILD_LUKS_NAME: &str = "root";
         let luks_opened = if is_encrypted {
-            let _ = open_luks_root(&root_part, self.passphrase.unwrap_or_default())?;
+            let _ = open_luks_root_as(
+                &root_part,
+                self.passphrase.unwrap_or_default(),
+                BOOT_REBUILD_LUKS_NAME,
+            )?;
             true
         } else {
             false
         };
 
         let btrfs_dev = if luks_opened {
-            PathBuf::from(format!("/dev/mapper/{LUKS_NAME}"))
+            PathBuf::from(format!("/dev/mapper/{BOOT_REBUILD_LUKS_NAME}"))
         } else {
             root_part.clone()
         };
@@ -428,6 +445,7 @@ impl<'a> DiskWriter<'a> {
         let root_uuid = blkid_value(&btrfs_dev, "UUID").context("reading root filesystem UUID")?;
         let xboot_uuid =
             blkid_value(&xboot_part, "UUID").context("reading xboot filesystem UUID")?;
+        let efi_uuid = blkid_value(&efi_part, "UUID").context("reading EFI filesystem UUID")?;
 
         let mount_path = PathBuf::from(MOUNT_BASE);
         fs::create_dir_all(&mount_path).context("creating mount point")?;
@@ -503,6 +521,53 @@ impl<'a> DiskWriter<'a> {
             None
         };
 
+        // Delete the old initramfs before running dracut. The image-build
+        // initramfs was created with hostonly=yes against the build host's
+        // loop devices. dracut's hostonly logic reads the *existing* initramfs
+        // to discover host devices, so if we leave the stale one in place the
+        // new initramfs inherits pre-randomization UUIDs that no longer exist
+        // on the target disk, causing the boot to hang forever waiting for a
+        // device that will never appear.
+        let boot_dir = mount_path.join("boot");
+        if let Ok(entries) = fs::read_dir(&boot_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("initrd.img") || name_str.starts_with("initramfs-") {
+                    tracing::info!("removing stale initramfs: {}", entry.path().display());
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+
+        // Temporarily rewrite /etc/fstab with UUID= references for dracut.
+        // The production fstab uses /dev/disk/by-partlabel/ which is stable
+        // across UUID changes, but dracut's hostonly mode resolves those
+        // symlinks and then looks up UUIDs via /dev/disk/by-uuid/. If udev
+        // hasn't refreshed those symlinks after randomize_filesystem_uuids
+        // (e.g. inside a container with no udevd), dracut discovers stale
+        // UUIDs and bakes them into systemd device-wait units, causing boot
+        // to hang forever. Writing UUID= entries directly avoids the
+        // symlink resolution entirely.
+        let fstab_path = mount_path.join("etc/fstab");
+        let original_fstab = fs::read_to_string(&fstab_path).ok();
+
+        let root_device_fstab = if is_encrypted {
+            "/dev/mapper/root".to_string()
+        } else {
+            format!("UUID={root_uuid}")
+        };
+        let dracut_fstab = format!(
+            "# Temporary fstab for dracut initramfs generation\n\
+             {root_device_fstab}  /                    btrfs subvol=@,compress=zstd:6         0 1\n\
+             {root_device_fstab}  /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:6 0 2\n\
+             UUID={xboot_uuid}    /boot                ext4  defaults                         0 2\n\
+             UUID={efi_uuid}      /boot/efi            vfat  umask=0077                       0 1\n",
+        );
+        fs::write(&fstab_path, &dracut_fstab)
+            .context("writing temporary UUID-based fstab for dracut")?;
+        tracing::info!("wrote temporary UUID-based fstab for dracut");
+
         let dracut_result = if let Some(ref kver) = kernel_version {
             tracing::info!("rebuilding initramfs for kernel {kver}");
             run_command(
@@ -517,8 +582,14 @@ impl<'a> DiskWriter<'a> {
             )
         };
 
-        if let Some(ref luks_id) = luks_uuid {
-            patch_grub_defaults_for_luks(&mount_path, luks_id)
+        // Restore the original fstab (by-partlabel references for production)
+        if let Some(ref original) = original_fstab {
+            fs::write(&fstab_path, original).context("restoring original fstab")?;
+            tracing::info!("restored original fstab");
+        }
+
+        if is_encrypted {
+            patch_grub_defaults_for_luks(&mount_path)
                 .context("patching /etc/default/grub for LUKS")?;
         }
 
@@ -549,7 +620,7 @@ impl<'a> DiskWriter<'a> {
         let _ = run_command(paths::UMOUNT, &[mount_path.to_str().unwrap_or_default()]);
 
         if luks_opened {
-            let _ = close_luks_root();
+            let _ = close_luks(BOOT_REBUILD_LUKS_NAME);
         }
 
         dracut_result.context("rebuilding initramfs with dracut in chroot")?;
@@ -624,24 +695,35 @@ fn blkid_value(device: &Path, tag: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Patch `/etc/default/grub` inside the target so `update-grub` produces a
-/// kernel command line that tells dracut to unlock the LUKS root volume.
-fn patch_grub_defaults_for_luks(mount_path: &Path, luks_uuid: &str) -> Result<()> {
+/// Patch `/etc/default/grub` inside the target for encrypted installs.
+///
+/// The crypttab (with the `force` option) is the sole authority for LUKS
+/// unlock — it already contains the mapper name, device path, keyfile (or
+/// `tpm2-device=auto`), and options like `discard`. We intentionally do NOT
+/// put `rd.luks.name` or `rd.luks.options` on the kernel command line
+/// because `systemd-cryptsetup-generator` treats cmdline parameters as
+/// overriding the crypttab: it creates a passphrase-prompt unit and skips
+/// the crypttab entry entirely (logging "Not creating device 'root' because
+/// it was not specified on the kernel command line"). That defeats keyfile
+/// and TPM-based auto-unlock.
+///
+/// What we do here:
+///   - Remove the serial console from GRUB_CMDLINE_LINUX_DEFAULT (encrypted
+///     installs target bare-metal hardware).
+///   - Clear GRUB_CMDLINE_LINUX (ensure no stale rd.luks.* parameters).
+fn patch_grub_defaults_for_luks(mount_path: &Path) -> Result<()> {
     let grub_defaults = mount_path.join("etc/default/grub");
     let contents = fs::read_to_string(&grub_defaults).context("reading /etc/default/grub")?;
 
-    let luks_cmdline = format!("rd.luks.name={luks_uuid}=root rd.luks.options=discard");
-
     let mut new_lines: Vec<String> = Vec::new();
-    let mut found_cmdline_linux = false;
     let mut found_cmdline_default = false;
 
     for line in contents.lines() {
         if line.starts_with("GRUB_CMDLINE_LINUX=")
             && !line.starts_with("GRUB_CMDLINE_LINUX_DEFAULT=")
         {
-            new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{luks_cmdline}\""));
-            found_cmdline_linux = true;
+            // Clear any existing rd.luks.* parameters
+            new_lines.push("GRUB_CMDLINE_LINUX=\"\"".to_string());
         } else if line.starts_with("GRUB_CMDLINE_LINUX_DEFAULT=") {
             // Remove serial console for encrypted installs
             let patched = line
@@ -656,10 +738,6 @@ fn patch_grub_defaults_for_luks(mount_path: &Path, luks_uuid: &str) -> Result<()
         }
     }
 
-    if !found_cmdline_linux {
-        new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{luks_cmdline}\""));
-    }
-
     // Ensure there's a trailing newline
     let mut output = new_lines.join("\n");
     if !output.ends_with('\n') {
@@ -671,7 +749,7 @@ fn patch_grub_defaults_for_luks(mount_path: &Path, luks_uuid: &str) -> Result<()
     if found_cmdline_default {
         tracing::info!("patched GRUB_CMDLINE_LINUX_DEFAULT (removed serial console)");
     }
-    tracing::info!("set GRUB_CMDLINE_LINUX for LUKS: {luks_cmdline}");
+    tracing::info!("cleared GRUB_CMDLINE_LINUX (crypttab drives LUKS unlock)");
 
     Ok(())
 }
@@ -877,9 +955,9 @@ mod tests {
         assert_eq!(manifest.partitions[2].size_mib, 0);
     }
 
-    // r[verify installer.write.rebuild-boot-config+4]
+    // r[verify installer.write.rebuild-boot-config+8]
     #[test]
-    fn patch_grub_defaults_sets_luks_cmdline() {
+    fn patch_grub_defaults_clears_cmdline_linux_and_removes_console() {
         let dir = tempfile::tempdir().unwrap();
         let etc = dir.path().join("etc/default");
         fs::create_dir_all(&etc).unwrap();
@@ -887,22 +965,25 @@ mod tests {
             etc.join("grub"),
             "GRUB_DEFAULT=0\n\
              GRUB_CMDLINE_LINUX_DEFAULT=\"noresume console=ttyS0,115200n8\"\n\
-             GRUB_CMDLINE_LINUX=\"\"\n",
+             GRUB_CMDLINE_LINUX=\"rd.luks.name=old-uuid=root rd.luks.options=discard\"\n",
         )
         .unwrap();
 
-        let luks_uuid = "abcd1234-5678-9abc-def0-123456789abc";
-        patch_grub_defaults_for_luks(dir.path(), luks_uuid).unwrap();
+        patch_grub_defaults_for_luks(dir.path()).unwrap();
 
         let result = fs::read_to_string(etc.join("grub")).unwrap();
 
         assert!(
-            result.contains(&format!("rd.luks.name={luks_uuid}=root")),
-            "should contain rd.luks.name: {result}",
+            result.contains("GRUB_CMDLINE_LINUX=\"\""),
+            "should clear GRUB_CMDLINE_LINUX: {result}",
         );
         assert!(
-            result.contains("rd.luks.options=discard"),
-            "should contain rd.luks.options=discard: {result}",
+            !result.contains("rd.luks.name"),
+            "should not contain rd.luks.name: {result}",
+        );
+        assert!(
+            !result.contains("rd.luks.options"),
+            "should not contain rd.luks.options: {result}",
         );
         assert!(
             !result.contains("console=ttyS0,115200n8"),
@@ -914,29 +995,31 @@ mod tests {
         );
     }
 
-    // r[verify installer.write.rebuild-boot-config+4]
+    // r[verify installer.write.rebuild-boot-config+8]
     #[test]
-    fn patch_grub_defaults_adds_cmdline_linux_when_missing() {
+    fn patch_grub_defaults_preserves_empty_cmdline_linux() {
         let dir = tempfile::tempdir().unwrap();
         let etc = dir.path().join("etc/default");
         fs::create_dir_all(&etc).unwrap();
         fs::write(
             etc.join("grub"),
             "GRUB_DEFAULT=0\n\
-             GRUB_CMDLINE_LINUX_DEFAULT=\"noresume\"\n",
+             GRUB_CMDLINE_LINUX_DEFAULT=\"noresume\"\n\
+             GRUB_CMDLINE_LINUX=\"\"\n",
         )
         .unwrap();
 
-        let luks_uuid = "aaaa-bbbb-cccc";
-        patch_grub_defaults_for_luks(dir.path(), luks_uuid).unwrap();
+        patch_grub_defaults_for_luks(dir.path()).unwrap();
 
         let result = fs::read_to_string(etc.join("grub")).unwrap();
 
         assert!(
-            result.contains(&format!(
-                "GRUB_CMDLINE_LINUX=\"rd.luks.name={luks_uuid}=root rd.luks.options=discard\""
-            )),
-            "should add GRUB_CMDLINE_LINUX when absent: {result}",
+            result.contains("GRUB_CMDLINE_LINUX=\"\""),
+            "should keep GRUB_CMDLINE_LINUX empty: {result}",
+        );
+        assert!(
+            !result.contains("rd.luks"),
+            "should not contain any rd.luks parameters: {result}",
         );
     }
 }

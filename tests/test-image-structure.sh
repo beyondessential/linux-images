@@ -322,6 +322,13 @@ check "/etc/resolv.conf is a symlink" test -L "$MNT/etc/resolv.conf"
 RESOLV_TARGET="$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)"
 check "/etc/resolv.conf points to stub-resolv.conf" [ "$RESOLV_TARGET" = "/run/systemd/resolve/stub-resolv.conf" ]
 
+# r[verify image.base.console-font]
+check "console-setup config exists" test -f "$MNT/etc/default/console-setup"
+if [ -f "$MNT/etc/default/console-setup" ]; then
+    check "console-setup FONTFACE is Fixed" grep -q 'FONTFACE="Fixed"' "$MNT/etc/default/console-setup"
+    check "console-setup FONTSIZE is 8x16" grep -q 'FONTSIZE="8x16"' "$MNT/etc/default/console-setup"
+fi
+
 # r[verify image.base.network+2]
 check "netplan config exists" test -f "$MNT/etc/netplan/01-all-en-dhcp.yaml"
 NETPLAN_MODE="$(stat -c%a "$MNT/etc/netplan/01-all-en-dhcp.yaml" 2>/dev/null || true)"
