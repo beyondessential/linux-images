@@ -304,6 +304,24 @@ rm -rvf /etc/cloud/cloud.cfg.d/90-installer-network.cfg
 : > /etc/machine-id
 
 # ============================================================
+# Hostname
+# ============================================================
+# Set hostname before initramfs generation so dracut does not embed a
+# stale build-host hostname into the initramfs.
+if [ "$VARIANT" = "metal" ]; then
+    # r[image.hostname.metal-dhcp+2]
+    : > /etc/hostname
+    echo "127.0.0.1 localhost" > /etc/hosts
+    echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
+else
+    # r[image.hostname.cloud-default+2]
+    echo "ubuntu" > /etc/hostname
+    echo "127.0.0.1 localhost" > /etc/hosts
+    echo "127.0.1.1 ubuntu" >> /etc/hosts
+    echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
+fi
+
+# ============================================================
 # Generate initramfs and install bootloader
 # ============================================================
 # Determine kernel version (there should be exactly one)
@@ -329,22 +347,6 @@ grub-install \
     --bootloader-id=ubuntu \
     --no-nvram \
     --removable
-
-# ============================================================
-# Hostname
-# ============================================================
-if [ "$VARIANT" = "metal" ]; then
-    # r[image.hostname.metal-dhcp+2]
-    : > /etc/hostname
-    echo "127.0.0.1 localhost" > /etc/hosts
-    echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
-else
-    # r[image.hostname.cloud-default+2]
-    echo "ubuntu" > /etc/hostname
-    echo "127.0.0.1 localhost" > /etc/hosts
-    echo "127.0.1.1 ubuntu" >> /etc/hosts
-    echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
-fi
 
 # ============================================================
 # Final package cleanup
