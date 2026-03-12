@@ -77,14 +77,13 @@ All fields are also documented together in a table at the bottom of this file.
 
 There are two separate network configurations you can set: the one for the current "live" system (the installer's own network), and the one that will be configured on the target machine.
 For example, you might want to use DHCP for the installer, but configure a static IP for the final install.
-By default, the installation target inherits the settings from the installer.
 
 ![Console interface with four "windows" vertically stacked: a titlebar reading "BES Installer -- Network Configuration"; a "Live ISO (current)" main window with four radio buttons for "DHCP", "Static IP", "IPv6 SLAAC only", "Offline"; a collapsed window "Installation Target [Tab to expand]"; and the menu bar](./images/02-network-current.png)
 
 #### Live ISO (current)
 
 Use arrow keys to select one of:
-- DHCP
+- DHCP (default)
 - Static IP
 - IPv6 SLAAC only
 - Offline
@@ -113,7 +112,7 @@ When done, hit Tab to get to the next pane:
 
 Use arrow keys to select one of:
 - Copy current config
-- DHCP
+- DHCP (default)
 - Static IP
 - IPv6 SLAAC only
 - Offline
