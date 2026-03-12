@@ -247,6 +247,10 @@ PasswordAuthentication no
 EOF
 systemctl enable ssh
 
+# r[impl image.credentials.host-key-regen]
+install -m 644 /tmp/files/systemd/bes-ssh-keygen.service /etc/systemd/system/bes-ssh-keygen.service
+systemctl enable bes-ssh-keygen.service
+
 # ============================================================
 # Snapper
 # ============================================================

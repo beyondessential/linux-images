@@ -394,9 +394,13 @@ fi
 check "SSH no-password config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
 check "SSH no-password config correct" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
 
-# r[verify image.credentials.no-host-keys]
+# r[verify image.credentials.no-host-keys+2]
 HOST_KEY_COUNT="$(find "$MNT/etc/ssh" -name 'ssh_host_*' 2>/dev/null | wc -l)"
 check "no SSH host keys in image" test "$HOST_KEY_COUNT" -eq 0
+
+# r[verify image.credentials.host-key-regen]
+check "bes-ssh-keygen.service exists" test -f "$MNT/etc/systemd/system/bes-ssh-keygen.service"
+check "bes-ssh-keygen.service is enabled" test -L "$MNT/etc/systemd/system/multi-user.target.wants/bes-ssh-keygen.service"
 
 # r[verify image.cloud-init.no-hostname-file]
 check "cloud-init BES config exists" test -f "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"

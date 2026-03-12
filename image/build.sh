@@ -320,7 +320,7 @@ ln -snf /run/systemd/resolve/stub-resolv.conf "$MNT/etc/resolv.conf"
 # r[image.base.machine-id]
 : > "$MNT/etc/machine-id"
 
-# r[impl image.credentials.no-host-keys]
+# r[impl image.credentials.no-host-keys+2]
 rm -f "$MNT/etc/ssh/ssh_host_"*
 
 # r[image.cloud-init.no-network]
