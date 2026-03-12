@@ -116,6 +116,18 @@ contain at least one placeholder, literal portions must consist only of
 fully expanded hostname must not exceed 63 characters. Values are generated
 from a cryptographically secure random source.
 
+r[installer.config.web]
+The `web` field is a boolean controlling whether the embedded web UI
+server is started. The default is `true`. When set to `false`, the web
+server does not start and only the TUI is available. There is no TUI
+control for this option.
+
+r[installer.config.web-password]
+The `web-password` field is an optional string setting the password for
+the web UI (see `r[web.auth.password-source]`). If absent, the installer
+generates a random password at startup. This field is ignored when the
+web UI is disabled (see `r[installer.config.web]`).
+
 > r[installer.config.network-mode]
 > The `network-mode` field is a string selecting the network configuration
 > for the installed target system. Valid values are `"dhcp"` (default),
