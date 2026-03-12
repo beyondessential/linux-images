@@ -539,7 +539,7 @@ if [ -n "$BTRFS_DEV" ]; then
         check "btrfs root mounted successfully" true
 
         # --- Hostname ---
-        # r[verify installer.finalise.hostname]
+        # r[verify installer.finalise.hostname+2]
         if [ -n "$SET_HOSTNAME_FROM_DHCP" ]; then
             # DHCP hostname: /etc/hostname must be empty
             if [ -f "$VERIFY_MOUNT/etc/hostname" ]; then

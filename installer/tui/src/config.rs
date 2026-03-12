@@ -11,14 +11,14 @@ use crate::hostname_template;
 // r[impl installer.config.disk-encryption+2]
 // r[impl installer.config.disk]
 // r[impl installer.config.copy-install-log]
-// r[impl installer.config.hostname]
+// r[impl installer.config.hostname+2]
 // r[impl installer.config.tailscale-authkey+3]
 // r[impl installer.config.ssh-authorized-keys+2]
 // r[impl installer.config.password]
 // r[impl installer.config.timezone]
 // r[impl installer.config.recovery-passphrase]
 // r[impl installer.config.save-recovery-keys]
-#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct InstallConfig {
     #[serde(default)]
@@ -34,7 +34,7 @@ pub struct InstallConfig {
 
     pub hostname: Option<String>,
 
-    #[serde(default, rename = "hostname-from-dhcp")]
+    #[serde(default = "default_true", rename = "hostname-from-dhcp")]
     pub hostname_from_dhcp: bool,
 
     #[serde(default, rename = "hostname-template")]
@@ -97,6 +97,43 @@ pub struct InstallConfig {
 
     #[serde(default, rename = "iso-network-domain")]
     pub iso_network_domain: Option<String>,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+impl Default for InstallConfig {
+    fn default() -> Self {
+        Self {
+            auto: false,
+            disk_encryption: None,
+            disk: None,
+            copy_install_log: None,
+            hostname: None,
+            hostname_from_dhcp: true,
+            hostname_template: None,
+            tailscale_authkey: None,
+            ssh_authorized_keys: Vec::new(),
+            password: None,
+            password_hash: None,
+            timezone: None,
+            recovery_passphrase: None,
+            save_recovery_keys: false,
+            network_mode: None,
+            network_interface: None,
+            network_ip: None,
+            network_gateway: None,
+            network_dns: None,
+            network_domain: None,
+            iso_network_mode: None,
+            iso_network_interface: None,
+            iso_network_ip: None,
+            iso_network_gateway: None,
+            iso_network_dns: None,
+            iso_network_domain: None,
+        }
+    }
 }
 
 const RECOVERY_PASSPHRASE_MIN_LEN: usize = 25;
@@ -292,7 +329,7 @@ impl InstallConfig {
     }
 
     pub fn has_hostname_config(&self) -> bool {
-        self.hostname.is_some() || self.hostname_from_dhcp || self.hostname_template.is_some()
+        self.hostname.is_some() || self.hostname_template.is_some() || self.hostname_from_dhcp
     }
 
     pub fn has_install_config_fields(&self) -> bool {
@@ -391,28 +428,6 @@ impl InstallConfig {
     pub fn validate(&self) -> Vec<String> {
         let mut issues = Vec::new();
 
-        // Three-way mutual exclusivity for hostname fields
-        let hostname_set = self.hostname.is_some();
-        let dhcp_set = self.hostname_from_dhcp;
-        let template_set = self.hostname_template.is_some();
-        let hostname_count = hostname_set as u8 + dhcp_set as u8 + template_set as u8;
-        if hostname_count > 1 {
-            let mut conflicting = Vec::new();
-            if hostname_set {
-                conflicting.push("hostname");
-            }
-            if dhcp_set {
-                conflicting.push("hostname-from-dhcp");
-            }
-            if template_set {
-                conflicting.push("hostname-template");
-            }
-            issues.push(format!(
-                "{} are mutually exclusive",
-                conflicting.join(" and ")
-            ));
-        }
-
         if let Some(ref hostname) = self.hostname
             && let Err(e) = validate_hostname(hostname)
         {
@@ -423,12 +438,6 @@ impl InstallConfig {
             && let Err(e) = hostname_template::parse(tmpl)
         {
             issues.push(format!("hostname-template: {e}"));
-        }
-
-        if self.hostname_from_dhcp {
-            issues.push(
-                "hostname-from-dhcp has no special effect (network-assigned is already the default)".into(),
-            );
         }
 
         for (i, key) in self.ssh_authorized_keys.iter().enumerate() {
@@ -501,7 +510,7 @@ mod tests {
     // r[verify installer.config.auto+2]
     // r[verify installer.config.disk-encryption+2]
     // r[verify installer.config.disk]
-    // r[verify installer.config.hostname]
+    // r[verify installer.config.hostname+2]
     // r[verify installer.config.tailscale-authkey+3]
     // r[verify installer.config.ssh-authorized-keys+2]
     // r[verify installer.config.password]
@@ -665,7 +674,7 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.config.hostname]
+    // r[verify installer.config.hostname+2]
     #[test]
     fn validate_bad_hostname() {
         let config = InstallConfig {
@@ -680,7 +689,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.hostname]
+    // r[verify installer.config.hostname+2]
     #[test]
     fn validate_long_hostname() {
         let config = InstallConfig {
@@ -706,14 +715,13 @@ mod tests {
     #[test]
     fn validate_good_config_has_no_issues() {
         let config = InstallConfig {
-            auto: true,
             disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             hostname: Some("server-01".into()),
             tailscale_authkey: Some("tskey-auth-xxxxx".into()),
-            ssh_authorized_keys: vec!["ssh-ed25519 AAAA... admin@example.com".into()],
-            password: Some("changeme".into()),
-            recovery_passphrase: None,
+            ssh_authorized_keys: vec!["ssh-ed25519 AAAA admin@example.com".into()],
+            password: Some("testpass".into()),
+            hostname_from_dhcp: true,
             ..Default::default()
         };
         let issues = config.validate();
@@ -749,7 +757,7 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.hostname]
+    // r[verify installer.config.hostname+2]
     // r[verify installer.config.tailscale-authkey+3]
     // r[verify installer.config.ssh-authorized-keys+2]
     #[test]
@@ -818,7 +826,44 @@ mod tests {
         );
     }
 
-    // r[verify installer.config.password]
+    // r[verify installer.config.hostname+2]
+    #[test]
+    fn hostname_from_dhcp_defaults_to_true() {
+        let config = InstallConfig::default();
+        assert!(config.hostname_from_dhcp);
+    }
+
+    // r[verify installer.config.hostname+2]
+    #[test]
+    fn hostname_priority_hostname_wins() {
+        let config = InstallConfig {
+            hostname: Some("server-01".into()),
+            hostname_template: Some("srv-{hex:6}".into()),
+            hostname_from_dhcp: true,
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            !issues.iter().any(|i| i.contains("mutually exclusive")),
+            "should not report mutual exclusivity: {issues:?}"
+        );
+    }
+
+    // r[verify installer.config.hostname+2]
+    #[test]
+    fn hostname_priority_template_over_dhcp() {
+        let config = InstallConfig {
+            hostname_template: Some("srv-{hex:6}".into()),
+            hostname_from_dhcp: true,
+            ..Default::default()
+        };
+        let issues = config.validate();
+        assert!(
+            !issues.iter().any(|i| i.contains("mutually exclusive")),
+            "should not report mutual exclusivity: {issues:?}"
+        );
+    }
+
     #[test]
     fn validate_password_and_hash_mutually_exclusive() {
         let config = InstallConfig {
@@ -834,39 +879,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn validate_hostname_fields_mutually_exclusive() {
-        let config = InstallConfig {
-            hostname: Some("server-01".into()),
-            hostname_from_dhcp: true,
-            ..Default::default()
-        };
-        let issues = config.validate();
-        assert!(issues.iter().any(|i| i.contains("mutually exclusive")));
-    }
-
-    #[test]
-    fn validate_hostname_and_template_mutually_exclusive() {
-        let config = InstallConfig {
-            hostname: Some("server-01".into()),
-            hostname_template: Some("srv-{hex:6}".into()),
-            ..Default::default()
-        };
-        let issues = config.validate();
-        assert!(issues.iter().any(|i| i.contains("mutually exclusive")));
-    }
-
-    #[test]
-    fn validate_dhcp_and_template_mutually_exclusive() {
-        let config = InstallConfig {
-            hostname_from_dhcp: true,
-            hostname_template: Some("srv-{hex:6}".into()),
-            ..Default::default()
-        };
-        let issues = config.validate();
-        assert!(issues.iter().any(|i| i.contains("mutually exclusive")));
-    }
-
+    // r[verify installer.config.hostname+2]
     #[test]
     fn validate_bad_hostname_template() {
         let config = InstallConfig {
@@ -878,34 +891,20 @@ mod tests {
     }
 
     #[test]
-    fn validate_dhcp_always_warns() {
+    fn validate_dhcp_default_no_warnings() {
         let config = InstallConfig {
             disk_encryption: Some(DiskEncryption::Tpm),
-            hostname_from_dhcp: true,
             ..Default::default()
         };
         let issues = config.validate();
         assert!(
-            issues
-                .iter()
-                .any(|i| i.contains("hostname-from-dhcp has no special effect"))
-        );
-
-        let config_none = InstallConfig {
-            disk_encryption: Some(DiskEncryption::None),
-            hostname_from_dhcp: true,
-            ..Default::default()
-        };
-        let issues_none = config_none.validate();
-        assert!(
-            issues_none
-                .iter()
-                .any(|i| i.contains("hostname-from-dhcp has no special effect"))
+            !issues.iter().any(|i| i.contains("hostname-from-dhcp")),
+            "should not warn about hostname-from-dhcp: {issues:?}"
         );
     }
 
     #[test]
-    fn parse_hostname_from_dhcp() {
+    fn parse_hostname_from_dhcp_explicit_true() {
         let config = InstallConfig::from_toml(
             r#"
             hostname-from-dhcp = true
@@ -915,6 +914,25 @@ mod tests {
         assert!(config.hostname_from_dhcp);
         assert_eq!(config.hostname, None);
         assert_eq!(config.hostname_template, None);
+    }
+
+    // r[verify installer.config.hostname+2]
+    #[test]
+    fn parse_hostname_from_dhcp_explicit_false() {
+        let config = InstallConfig::from_toml(
+            r#"
+            hostname-from-dhcp = false
+        "#,
+        )
+        .unwrap();
+        assert!(!config.hostname_from_dhcp);
+    }
+
+    // r[verify installer.config.hostname+2]
+    #[test]
+    fn parse_hostname_from_dhcp_defaults_true() {
+        let config = InstallConfig::from_toml("").unwrap();
+        assert!(config.hostname_from_dhcp);
     }
 
     #[test]
@@ -927,13 +945,13 @@ mod tests {
         .unwrap();
         assert_eq!(config.hostname_template.as_deref(), Some("srv-{hex:6}"));
         assert_eq!(config.hostname, None);
-        assert!(!config.hostname_from_dhcp);
+        assert!(config.hostname_from_dhcp);
     }
 
     #[test]
-    fn has_hostname_config_none() {
+    fn has_hostname_config_default_is_true() {
         let cfg = InstallConfig::default();
-        assert!(!cfg.has_hostname_config());
+        assert!(cfg.has_hostname_config());
     }
 
     #[test]

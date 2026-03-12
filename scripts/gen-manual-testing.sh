@@ -342,9 +342,9 @@ step6
 # r[verify installer.config.auto+2]
 # r[verify installer.config.disk-encryption+2]
 # r[verify installer.config.disk]
-# r[verify installer.config.hostname]
+# r[verify installer.config.hostname+2]
 # r[verify installer.config.password]
-# r[verify installer.finalise.hostname]
+# r[verify installer.finalise.hostname+2]
 # r[verify installer.finalise.password]
 # r[verify iso.usb]
 step7() {

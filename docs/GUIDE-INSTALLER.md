@@ -150,6 +150,12 @@ There are no partitioning options: we will use the entire disk and configure it 
 
 #### BESCONF
 
+```toml
+disk = "smallest"
+```
+
+| `disk` | string | `"largest-ssd"` | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity; the default), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
+
 ### Disk Encryption
 
 Use arrow keys to select whether to encrypt the disk, and how to unlock it if so.
@@ -182,6 +188,8 @@ It will not be available again, so make sure to note it down and store that secu
 disk-encryption = "none"
 ```
 
+| `disk-encryption` | string | `"keyfile"` | Disk encryption mode. `"tpm"` for LUKS + TPM PCR 1 (requires a TPM; experimental), `"keyfile"` for LUKS + keyfile on boot partition (default), or `"none"` for no encryption. |
+
 ### Hostname
 
 Use arrow keys to select:
@@ -197,9 +205,21 @@ Alternatively, cloud-init is available and enabled, so it may provide the hostna
 
 #### BESCONF
 
+A static hostname:
+
 ```toml
 hostname = "server-02"
 ```
+
+A hostname template (this can only be set using the configuration file):
+
+```toml
+hostname-template = "server-{hex:6}"
+```
+
+| `hostname-from-dhcp` | boolean | `true` | Use the DHCP-provided hostname instead of a static one. When enabled, `/etc/hostname` is left empty so that `systemd-hostnamed` accepts the transient hostname from DHCP. |
+| `hostname-template` | string | — | Generate a unique hostname from a template pattern. The template contains literal characters and `{hex:N}` or `{num:N}` placeholders (e.g. `"tamanu-{hex:6}"` produces `"tamanu-a3f1b2"`). Must contain at least one placeholder; literals must be `[a-z0-9-]`; result must not exceed 63 characters. Setting it overrides `hostname-from-dhcp`. |
+| `hostname` | string | — | Hostname to set during installation. When omitted (and no other hostname strategy is set), the system uses the DHCP-assigned hostname. Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Setting it overrides `hostname-from-dhcp` and `hostname-template`. |
 
 ### Login
 
@@ -217,12 +237,41 @@ Typing correct authkeys or SSH keys without copy-paste is difficult, so if you h
 
 #### BESCONF
 
+Set a password:
+
 ```toml
-# Plaintext (mutually exclusive with password-hash):
 password = "orca-passage-story-8199"
-# Or pre-hashed (crypt(3) format, e.g. from mkpasswd):
+```
+
+Set a password in pre-hashed form (so it's not revealed to someone picking up the USB drive):
+
+```bash
+$ mkpasswd
+```
+
+```toml
 password-hash = "$6$rounds=4096$..."
 ```
+
+Add SSH keys:
+
+```toml
+ssh-authorized-keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIA3mjq5QvWZzP73fbFqpD/TZ++n8S8JzhmTIwMHZ6rG",
+    "ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAklOUpkDHrfHY17SbrmTIpNLTGK9Tjom/BWDSUGPl+nafzlHDTYW7hdI4yZ5ew18JH4JW9jbhUFrviQzM7xlELEVf4h9lFX5QVkbPppSwg0cda3Pbv7kOdJ/MTyBlWXFCR+HAo3FXRitBqxiX1nKhXpHAZsMciLq8V6RjsNAQwdsdMFvSlVK/7XAt3FaoJoAsncM1Q9x5+3V0Ww68/eIFmb1zuUFljQJKprrX88XypNDvjYNby6vw/Pb0rwert/EnmZ+AW4OZPnTPI89ZPmVMLuayrD2cE86Z/il8b+gw3r3+1nKatmIkjn2so1d01QraTlMqVSsbxNrRFi9wrf+M7Q== schacon@mylaptop.local"
+]
+```
+
+Set the tailscale authkey:
+
+```toml
+tailscale-authkey = "tskey-auth-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+| `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. |
+| `password-hash` | string | — | Pre-hashed password for the `ubuntu` user in crypt(3) format (e.g. from `mkpasswd --method=sha-512`). Written directly to `/etc/shadow` with the expiry flag cleared. Overrides `password` if set. |
+| `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`). If tailscale netcheck passed during installation, the installer attempts to authenticate directly by chrooting into the target system. If that doesn't run or fails, the key is written to `/etc/bes/tailscale-authkey` for first-boot authentication. |
+| `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
 
 ### Timezone
 
@@ -279,7 +328,15 @@ This does also mean that there is no recourse if you have a disk in a server wit
 However, when setting up a large number of servers, or when typing at the console is not convenient, this can be very useful.
 We do recommend testing it first, though.
 
-Example of an automatic config:
+| `auto` | boolean | `false` | Run fully automatically without prompts. All other fields are optional and fall back to their defaults. |
+
+The simplest automatic config is just:
+
+```toml
+auto = true
+```
+
+With a static hostname and Tailscale:
 
 ```toml
 auto = true
@@ -287,14 +344,7 @@ hostname = "server-01"
 tailscale-authkey = "tskey-auth-xxxxx"
 ```
 
-Example using DHCP hostname (encrypted, no static hostname):
-
-```toml
-auto = true
-hostname-from-dhcp = true
-```
-
-Example using a hostname template (generates a unique hostname per install):
+With a hostname template (generates a unique hostname per install):
 
 ```toml
 auto = true
@@ -314,15 +364,15 @@ All fields are optional. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto` | boolean | `false` | Run fully automatically without prompts. All other fields are optional and fall back to their defaults (`disk-encryption` defaults to `"keyfile"`, `disk` defaults to `"largest-ssd"`, hostname defaults to DHCP-assigned). |
+| `auto` | boolean | `false` | Run fully automatically without prompts. All other fields are optional and fall back to their defaults. |
 | `disk-encryption` | string | `"keyfile"` | Disk encryption mode. `"tpm"` for LUKS + TPM PCR 1 (requires a TPM; experimental), `"keyfile"` for LUKS + keyfile on boot partition (default), or `"none"` for no encryption. |
 | `disk` | string | `"largest-ssd"` | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity; the default), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
 | `copy-install-log` | boolean | `true` | Copy the installer log into the installed system at `/var/log/bes-installer.log`. Set to `false` to disable. No TUI control for this option. |
-| `hostname` | string | — | Hostname to set during installation. When omitted (and no other hostname strategy is set), the system uses the DHCP-assigned hostname. Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Mutually exclusive with `hostname-from-dhcp` and `hostname-template`. |
-| `hostname-from-dhcp` | boolean | `false` | Use the DHCP-provided hostname instead of a static one. When enabled, `/etc/hostname` is left empty so that `systemd-hostnamed` accepts the transient hostname from DHCP. Mutually exclusive with `hostname` and `hostname-template`. |
-| `hostname-template` | string | — | Generate a unique hostname from a template pattern. The template contains literal characters and `{hex:N}` or `{num:N}` placeholders (e.g. `"tamanu-{hex:6}"` produces `"tamanu-a3f1b2"`). Must contain at least one placeholder; literals must be `[a-z0-9-]`; result must not exceed 63 characters. Mutually exclusive with `hostname` and `hostname-from-dhcp`. |
+| `hostname-from-dhcp` | boolean | `true` | Use the DHCP-provided hostname instead of a static one. When enabled, `/etc/hostname` is left empty so that `systemd-hostnamed` accepts the transient hostname from DHCP. |
+| `hostname-template` | string | — | Generate a unique hostname from a template pattern. The template contains literal characters and `{hex:N}` or `{num:N}` placeholders (e.g. `"tamanu-{hex:6}"` produces `"tamanu-a3f1b2"`). Must contain at least one placeholder; literals must be `[a-z0-9-]`; result must not exceed 63 characters. Setting it overrides `hostname-from-dhcp`. |
+| `hostname` | string | — | Hostname to set during installation. When omitted (and no other hostname strategy is set), the system uses the DHCP-assigned hostname. Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Setting it overrides `hostname-from-dhcp` and `hostname-template`. |
+| `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. |
+| `password-hash` | string | — | Pre-hashed password for the `ubuntu` user in crypt(3) format (e.g. from `mkpasswd --method=sha-512`). Written directly to `/etc/shadow` with the expiry flag cleared. Overrides `password` if set. |
 | `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`). If tailscale netcheck passed during installation, the installer attempts to authenticate directly by chrooting into the target system. If that doesn't run or fails, the key is written to `/etc/bes/tailscale-authkey` for first-boot authentication. |
 | `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
-| `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. Mutually exclusive with `password-hash`. |
-| `password-hash` | string | — | Pre-hashed password for the `ubuntu` user in crypt(3) format (e.g. from `mkpasswd --method=sha-512`). Written directly to `/etc/shadow` with the expiry flag cleared. Mutually exclusive with `password`. |
 | `timezone` | string | `"UTC"` | IANA timezone for the installed system (e.g. `"Pacific/Auckland"`, `"America/New_York"`). The installer creates a symlink at `/etc/localtime` pointing to `/usr/share/zoneinfo/<timezone>` and writes the name to `/etc/timezone`. In the TUI, a searchable list of timezones is presented; type to filter and use Up/Down to navigate. |

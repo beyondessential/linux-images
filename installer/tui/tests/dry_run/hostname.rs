@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use super::common::{Fixture, SINGLE_SSD_DEVICE};
 
-// r[verify installer.config.hostname]
+// r[verify installer.config.hostname+2]
 // r[verify installer.dryrun.schema+6]
 #[test]
 fn auto_encrypted_hostname_from_dhcp() {
@@ -110,37 +110,9 @@ fn auto_encrypted_hostname_template_num() {
     );
 }
 
-// r[verify installer.config.hostname]
+// r[verify installer.config.hostname+2]
 #[test]
-fn auto_hostname_and_dhcp_mutually_exclusive() {
-    let f = Fixture::new();
-    let plan = f
-        .scripted_run(SINGLE_SSD_DEVICE)
-        .config(
-            r#"
-            auto = true
-            disk-encryption = "tpm"
-            disk = "largest-ssd"
-
-            hostname = "server-01"
-            hostname-from-dhcp = true
-        "#,
-        )
-        .run()
-        .read_plan();
-
-    let warnings = plan["config_warnings"].as_array().unwrap();
-    assert!(
-        warnings
-            .iter()
-            .any(|w| w.as_str().unwrap().contains("mutually exclusive")),
-        "should warn about mutually exclusive hostname fields, got: {warnings:?}"
-    );
-}
-
-// r[verify installer.config.hostname]
-#[test]
-fn auto_hostname_and_template_mutually_exclusive() {
+fn auto_hostname_wins_over_template_and_dhcp() {
     let f = Fixture::new();
     let plan = f
         .scripted_run(SINGLE_SSD_DEVICE)
@@ -152,23 +124,28 @@ fn auto_hostname_and_template_mutually_exclusive() {
 
             hostname = "server-01"
             hostname-template = "srv-{hex:6}"
+            hostname-from-dhcp = true
         "#,
         )
         .run()
         .read_plan();
 
+    assert_eq!(
+        plan["install_config"]["hostname"], "server-01",
+        "static hostname should take priority over template and DHCP"
+    );
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
-        warnings
+        !warnings
             .iter()
             .any(|w| w.as_str().unwrap().contains("mutually exclusive")),
-        "should warn about mutually exclusive hostname fields, got: {warnings:?}"
+        "should not warn about mutual exclusivity, got: {warnings:?}"
     );
 }
 
-// r[verify installer.config.hostname]
+// r[verify installer.config.hostname+2]
 #[test]
-fn auto_dhcp_always_emits_warning() {
+fn auto_default_dhcp_no_warnings() {
     let f = Fixture::new();
     let plan = f
         .scripted_run(SINGLE_SSD_DEVICE)
@@ -177,8 +154,6 @@ fn auto_dhcp_always_emits_warning() {
             auto = true
             disk-encryption = "none"
             disk = "largest-ssd"
-
-            hostname-from-dhcp = true
         "#,
         )
         .run()
@@ -186,11 +161,14 @@ fn auto_dhcp_always_emits_warning() {
 
     let warnings = plan["config_warnings"].as_array().unwrap();
     assert!(
-        warnings.iter().any(|w| w
-            .as_str()
-            .unwrap()
-            .contains("hostname-from-dhcp has no special effect")),
-        "should warn about redundant hostname-from-dhcp, got: {warnings:?}"
+        !warnings
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("hostname-from-dhcp")),
+        "should not warn about hostname-from-dhcp, got: {warnings:?}"
+    );
+    assert_eq!(
+        plan["install_config"]["hostname"], "dhcp",
+        "default should be DHCP hostname"
     );
 }
 

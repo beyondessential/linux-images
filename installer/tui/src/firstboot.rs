@@ -90,10 +90,11 @@ pub fn apply_firstboot(
 ) -> Result<()> {
     let root = target.path();
 
-    if config.hostname_from_dhcp {
-        apply_dhcp_hostname(root)?;
-    } else if let Some(ref hostname) = config.hostname {
+    // r[impl installer.finalise.hostname+2]
+    if let Some(ref hostname) = config.hostname {
         apply_hostname(root, hostname)?;
+    } else if config.hostname_from_dhcp {
+        apply_dhcp_hostname(root)?;
     }
 
     if let Some(ref authkey) = config.tailscale_authkey {
@@ -312,7 +313,7 @@ fn apply_password(root: &Path, config: &InstallConfig) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.finalise.hostname]
+// r[impl installer.finalise.hostname+2]
 fn apply_dhcp_hostname(root: &Path) -> Result<()> {
     let hostname_path = root.join("etc/hostname");
     fs::write(&hostname_path, "")
@@ -338,7 +339,7 @@ fn apply_dhcp_hostname(root: &Path) -> Result<()> {
     Ok(())
 }
 
-// r[impl installer.finalise.hostname]
+// r[impl installer.finalise.hostname+2]
 fn apply_hostname(root: &Path, hostname: &str) -> Result<()> {
     let path = root.join("etc/hostname");
     fs::write(&path, format!("{hostname}\n"))
@@ -1017,7 +1018,7 @@ mod tests {
         assert!(ubuntu_line.contains("$6$new$newhash"));
     }
 
-    // r[verify installer.finalise.hostname]
+    // r[verify installer.finalise.hostname+2]
     #[test]
     fn apply_dhcp_hostname_truncates_etc_hostname() {
         let dir = tempfile::tempdir().unwrap();
@@ -1041,7 +1042,7 @@ mod tests {
         assert!(hosts.contains("::1 localhost"));
     }
 
-    // r[verify installer.finalise.hostname]
+    // r[verify installer.finalise.hostname+2]
     #[test]
     fn apply_dhcp_hostname_no_hosts_file() {
         let dir = tempfile::tempdir().unwrap();

@@ -40,14 +40,21 @@ installer copies its log into the installed system at
 `/var/log/bes-installer.log`. The default is `true`. There is no TUI
 control for this option.
 
-r[installer.config.hostname]
-The `hostname` field is a string setting a static hostname for the
-installed system (e.g. `"server-01"`). The `hostname-from-dhcp` field is
-a boolean; when `true`, the installed system obtains its hostname from
-DHCP. The `hostname-template` field is a string that generates a hostname
-from a template pattern (see `installer.config.hostname-template`). These
-three fields are mutually exclusive; if more than one is present the
-installer must report a validation error.
+r[installer.config.hostname+2]
+The three hostname fields form a priority chain rather than being
+mutually exclusive. The installer resolves the effective hostname as
+follows:
+
+1. If `hostname` is set, use that static hostname.
+2. Otherwise, if `hostname-template` is set, generate a hostname from the
+   template pattern (see `installer.config.hostname-template`).
+3. Otherwise, use the DHCP-assigned hostname (`hostname-from-dhcp`
+   behaviour). This is the default.
+
+The `hostname-from-dhcp` field is a boolean that defaults to `true`. When
+the effective strategy is DHCP, the installed system obtains its hostname
+from the network. Setting `hostname` or `hostname-template` implicitly
+overrides it.
 
 r[installer.config.tailscale-authkey+3]
 The `tailscale-authkey` field is a string containing a Tailscale auth key
@@ -899,13 +906,15 @@ BTRFS partition (subvol `@`) to apply install-time configuration. For the
 metal variant (disk encryption `"tpm"` or `"keyfile"`), it must unlock the
 LUKS volume using the recovery passphrase.
 
-r[installer.finalise.hostname]
-If `hostname` is set (including hostnames generated from a template), the
-installer must write it to `/etc/hostname` and add a `127.0.1.1` entry to
-`/etc/hosts` on the installed system. If `hostname-from-dhcp` is true, the
-installer must write an empty `/etc/hostname` (truncate) and remove any
-`127.0.1.1` line from `/etc/hosts`. If neither is set (cloud only), the
-installer must leave `/etc/hostname` as-is.
+r[installer.finalise.hostname+2]
+The installer must apply the effective hostname strategy determined by
+the priority chain in `installer.config.hostname`:
+
+1. If `hostname` is set (including hostnames generated from a template),
+   write it to `/etc/hostname` and add a `127.0.1.1` entry to
+   `/etc/hosts` on the installed system.
+2. Otherwise (DHCP is the default), write an empty `/etc/hostname`
+   (truncate) and remove any `127.0.1.1` line from `/etc/hosts`.
 
 r[installer.finalise.tailscale-auth]
 If `tailscale-authkey` is set and the installer knows that tailscale

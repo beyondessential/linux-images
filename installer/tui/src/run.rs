@@ -235,10 +235,10 @@ impl RunContext {
         );
         eprintln!("  tpm:        {}", self.tpm_present);
 
-        if self.install_config.hostname_from_dhcp {
-            eprintln!("  hostname:   (from DHCP)");
-        } else if let Some(ref h) = self.install_config.hostname {
+        if let Some(ref h) = self.install_config.hostname {
             eprintln!("  hostname:   {h}");
+        } else if self.install_config.hostname_from_dhcp {
+            eprintln!("  hostname:   (from DHCP)");
         }
         if let Some(ref tz) = self.install_config.timezone {
             eprintln!("  timezone:   {tz}");
@@ -572,6 +572,9 @@ impl RunContext {
 }
 
 fn resolve_hostname_template(cfg: &mut config::InstallConfig) -> Result<()> {
+    if cfg.hostname.is_some() {
+        return Ok(());
+    }
     let Some(ref tmpl) = cfg.hostname_template.clone() else {
         return Ok(());
     };

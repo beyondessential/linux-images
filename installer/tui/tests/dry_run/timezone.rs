@@ -18,12 +18,15 @@ fn auto_timezone_defaults_to_utc() {
         .run()
         .read_plan();
 
-    // When no install-time fields are set, install_config is null.
-    // The effective timezone defaults to UTC, but there is no install_config
-    // object to carry it.
-    assert!(
-        plan["install_config"].is_null(),
-        "install_config should be null when no fields are configured"
+    // hostname-from-dhcp defaults to true, so install_config is always
+    // populated. The effective timezone defaults to UTC.
+    assert_eq!(
+        plan["install_config"]["timezone"], "UTC",
+        "default timezone should be UTC"
+    );
+    assert_eq!(
+        plan["install_config"]["hostname"], "dhcp",
+        "default hostname should be DHCP"
     );
 }
 

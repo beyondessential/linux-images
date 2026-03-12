@@ -129,11 +129,14 @@ fn auto_none_encryption_no_install_config() {
         .read_plan();
 
     assert_eq!(plan["disk_encryption"], "none");
-    assert!(plan["install_config"].is_null());
+    assert_eq!(
+        plan["install_config"]["hostname"], "dhcp",
+        "default hostname should be DHCP when no hostname is configured"
+    );
     assert!(!plan["tpm_present"].as_bool().unwrap());
 }
 
-// r[verify installer.config.hostname]
+// r[verify installer.config.hostname+2]
 #[test]
 fn auto_bad_hostname_emits_warning() {
     let f = Fixture::new();
@@ -219,7 +222,7 @@ fn auto_bare_minimum_only_auto_true() {
     assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
-// r[verify installer.config.hostname]
+// r[verify installer.config.hostname+2]
 #[test]
 fn auto_with_minimal_install_config() {
     let f = Fixture::new();

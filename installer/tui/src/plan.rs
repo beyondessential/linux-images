@@ -57,10 +57,12 @@ impl InstallConfigInfo {
         timezone: &str,
         network_summary: &str,
     ) -> Self {
-        let hostname = if cfg.hostname_from_dhcp {
+        let hostname = if cfg.hostname.is_some() {
+            cfg.hostname.clone()
+        } else if cfg.hostname_from_dhcp {
             Some("dhcp".to_string())
         } else {
-            cfg.hostname.clone()
+            None
         };
         InstallConfigInfo {
             hostname,
