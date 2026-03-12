@@ -5,7 +5,7 @@
 # will be used as defaults (or to drive a fully automatic install).
 
 # Run fully automatically without prompts.
-# Requires at minimum: disk-encryption and disk.
+# Requires at minimum: disk-encryption, disk, a hostname.
 # auto = true
 
 # Disk encryption mode: "tpm", "keyfile", or "none".
