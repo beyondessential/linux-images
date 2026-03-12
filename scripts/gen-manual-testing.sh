@@ -338,8 +338,8 @@ MD
 }
 step6
 
-# r[verify installer.mode.auto+4]
-# r[verify installer.config.auto]
+# r[verify installer.mode.auto+5]
+# r[verify installer.config.auto+2]
 # r[verify installer.config.disk-encryption+2]
 # r[verify installer.config.disk]
 # r[verify installer.config.hostname]

@@ -167,7 +167,6 @@ impl<'a> InstallPlanBuilder<'a> {
             OperatingMode::Interactive => "interactive",
             OperatingMode::Prefilled => "prefilled",
             OperatingMode::Auto => "auto",
-            OperatingMode::AutoIncomplete { .. } => "auto-incomplete",
         };
 
         InstallPlan {
@@ -399,14 +398,6 @@ mod tests {
             (OperatingMode::Interactive, "interactive"),
             (OperatingMode::Prefilled, "prefilled"),
             (OperatingMode::Auto, "auto"),
-            (
-                OperatingMode::AutoIncomplete {
-                    missing_disk_encryption: true,
-                    missing_disk: true,
-                    missing_hostname: false,
-                },
-                "auto-incomplete",
-            ),
         ];
 
         for (mode, expected_str) in cases {

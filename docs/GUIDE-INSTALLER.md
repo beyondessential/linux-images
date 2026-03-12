@@ -70,7 +70,7 @@ All fields are also documented together in a table at the bottom of this file.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `disk-encryption`, `disk`, and a hostname to be set. |
+| `auto` | boolean | `false` | Run fully automatically without prompts. All other fields are optional and fall back to their defaults. |
 
 ### Network Configuration
 
@@ -272,12 +272,17 @@ If you have encryption enabled, the recovery passphrase will be shown one last t
 
 ## Automatic install
 
+If you set `auto = true` in the BESCONF config, the installer will attempt an automatic install.
+That means it will not prompt you or even show the interactive interface at all, and perform the install using its defaults or the settings you provide in the file.
+
+This does also mean that there is no recourse if you have a disk in a server with data and it picks it for install: it will happily overwrite any data present without pause.
+However, when setting up a large number of servers, or when typing at the console is not convenient, this can be very useful.
+We do recommend testing it first, though.
+
 Example of an automatic config:
 
 ```toml
 auto = true
-disk-encryption = "tpm"
-disk = "largest-ssd"
 hostname = "server-01"
 tailscale-authkey = "tskey-auth-xxxxx"
 ```
@@ -286,8 +291,6 @@ Example using DHCP hostname (encrypted, no static hostname):
 
 ```toml
 auto = true
-disk-encryption = "keyfile"
-disk = "largest-ssd"
 hostname-from-dhcp = true
 ```
 
@@ -295,8 +298,6 @@ Example using a hostname template (generates a unique hostname per install):
 
 ```toml
 auto = true
-disk-encryption = "tpm"
-disk = "largest-ssd"
 hostname-template = "tamanu-{hex:6}"
 ```
 
@@ -313,11 +314,11 @@ All fields are optional. Unknown fields are rejected.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto` | boolean | `false` | Run fully automatically without prompts. Requires `disk-encryption`, `disk`, and a hostname strategy (`hostname`, `hostname-from-dhcp`, or `hostname-template`). |
+| `auto` | boolean | `false` | Run fully automatically without prompts. All other fields are optional and fall back to their defaults (`disk-encryption` defaults to `"keyfile"`, `disk` defaults to `"largest-ssd"`, hostname defaults to DHCP-assigned). |
 | `disk-encryption` | string | `"keyfile"` | Disk encryption mode. `"tpm"` for LUKS + TPM PCR 1 (requires a TPM; experimental), `"keyfile"` for LUKS + keyfile on boot partition (default), or `"none"` for no encryption. |
-| `disk` | string | — | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
+| `disk` | string | `"largest-ssd"` | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity; the default), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
 | `copy-install-log` | boolean | `true` | Copy the installer log into the installed system at `/var/log/bes-installer.log`. Set to `false` to disable. No TUI control for this option. |
-| `hostname` | string | — | Hostname to set during installation. Required when `disk-encryption` is `"tpm"` or `"keyfile"` unless `hostname-from-dhcp` or `hostname-template` is used; optional for `"none"` (defaults to `ubuntu`, typically overridden by DHCP/cloud-init). Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Mutually exclusive with `hostname-from-dhcp` and `hostname-template`. |
+| `hostname` | string | — | Hostname to set during installation. When omitted (and no other hostname strategy is set), the system uses the DHCP-assigned hostname. Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Mutually exclusive with `hostname-from-dhcp` and `hostname-template`. |
 | `hostname-from-dhcp` | boolean | `false` | Use the DHCP-provided hostname instead of a static one. When enabled, `/etc/hostname` is left empty so that `systemd-hostnamed` accepts the transient hostname from DHCP. Mutually exclusive with `hostname` and `hostname-template`. |
 | `hostname-template` | string | — | Generate a unique hostname from a template pattern. The template contains literal characters and `{hex:N}` or `{num:N}` placeholders (e.g. `"tamanu-{hex:6}"` produces `"tamanu-a3f1b2"`). Must contain at least one placeholder; literals must be `[a-z0-9-]`; result must not exceed 63 characters. Mutually exclusive with `hostname` and `hostname-from-dhcp`. |
 | `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`). If tailscale netcheck passed during installation, the installer attempts to authenticate directly by chrooting into the target system. If that doesn't run or fails, the key is written to `/etc/bes/tailscale-authkey` for first-boot authentication. |

@@ -1,11 +1,9 @@
-use predicates::prelude::*;
-
 use super::common::{Fixture, SINGLE_SSD_DEVICE, TWO_DISK_DEVICES};
 
 // r[verify installer.dryrun]
 // r[verify installer.dryrun.output]
 // r[verify installer.dryrun.schema+6]
-// r[verify installer.mode.auto+4]
+// r[verify installer.mode.auto+5]
 #[test]
 fn auto_full_config_produces_correct_plan() {
     let f = Fixture::new();
@@ -163,73 +161,62 @@ fn auto_bad_hostname_emits_warning() {
     );
 }
 
-// r[verify installer.mode.auto-incomplete+3]
+// r[verify installer.config.auto+2]
+// r[verify installer.mode.auto+5]
 #[test]
-fn auto_incomplete_missing_disk_encryption_falls_back() {
+fn auto_defaults_disk_encryption_to_keyfile() {
     let f = Fixture::new();
-    f.scripted_run(SINGLE_SSD_DEVICE)
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
         .config(
             r#"
             auto = true
             disk = "largest-ssd"
+            hostname = "test-host"
         "#,
         )
-        .timezones()
-        .script(
-            "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
-        )
-        .build()
-        .assert()
-        .success()
-        .stderr(predicates::str::contains("disk-encryption"));
+        .run()
+        .read_plan();
 
-    let plan = f.read_plan();
-    assert_eq!(plan["mode"], "auto-incomplete");
+    assert_eq!(plan["mode"], "auto");
+    assert_eq!(plan["disk_encryption"], "keyfile");
 }
 
-// r[verify installer.mode.auto-incomplete+3]
+// r[verify installer.config.auto+2]
+// r[verify installer.mode.auto+5]
 #[test]
-fn auto_incomplete_missing_disk_falls_back() {
+fn auto_defaults_disk_to_largest_ssd() {
     let f = Fixture::new();
-    f.scripted_run(SINGLE_SSD_DEVICE)
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
         .config(
             r#"
             auto = true
             disk-encryption = "tpm"
+            hostname = "test-host"
         "#,
         )
-        .timezones()
-        .script(
-            "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
-        )
-        .build()
-        .assert()
-        .success()
-        .stderr(predicates::str::contains("disk").and(predicates::str::contains("hostname")));
+        .run()
+        .read_plan();
 
-    let plan = f.read_plan();
-    assert_eq!(plan["mode"], "auto-incomplete");
+    assert_eq!(plan["mode"], "auto");
+    assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
-// r[verify installer.mode.auto-incomplete+3]
+// r[verify installer.config.auto+2]
+// r[verify installer.mode.auto+5]
 #[test]
-fn auto_incomplete_missing_both_falls_back() {
+fn auto_bare_minimum_only_auto_true() {
     let f = Fixture::new();
-    f.scripted_run(SINGLE_SSD_DEVICE)
+    let plan = f
+        .scripted_run(SINGLE_SSD_DEVICE)
         .config("auto = true\n")
-        .timezones()
-        .script(
-            "enter\nenter\nenter\nenter\ntype:h\nenter\nenter\ntab\nenter\nenter\nenter\ntype:yes\nenter\n",
-        )
-        .build()
-        .assert()
-        .success()
-        .stderr(
-            predicates::str::contains("disk-encryption").and(predicates::str::contains("disk")),
-        );
+        .run()
+        .read_plan();
 
-    let plan = f.read_plan();
-    assert_eq!(plan["mode"], "auto-incomplete");
+    assert_eq!(plan["mode"], "auto");
+    assert_eq!(plan["disk_encryption"], "keyfile");
+    assert_eq!(plan["disk"]["path"], "/dev/nvme0n1");
 }
 
 // r[verify installer.config.hostname]

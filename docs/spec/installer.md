@@ -15,11 +15,12 @@ The BESCONF partition must have a `bes-install.toml` file containing a
 commented-out entry for every known config field. Each entry must include
 a brief description and an example value.
 
-r[installer.config.auto]
+r[installer.config.auto+2]
 The `auto` field is a boolean. When `true`, the installer runs fully
-automatically without interactive prompts. Automatic mode requires at
-minimum `disk-encryption` and `disk` to be set; if they are missing the
-installer must report a validation error.
+automatically without interactive prompts. All other fields are optional
+and fall back to their defaults (`disk-encryption` defaults to
+`"keyfile"`, `disk` defaults to `"largest-ssd"`, hostname defaults to
+DHCP-assigned).
 
 r[installer.config.disk-encryption+2]
 The `disk-encryption` field is a string selecting the disk encryption
@@ -188,9 +189,9 @@ When a configuration file is present but `auto` is false or absent, the
 installer must launch the TUI with values from the file pre-filled as
 defaults. The user can override any value.
 
-> r[installer.mode.auto+4]
-> When `auto = true` and all required fields are present, the installer must
-> proceed without any interactive prompts. It must:
+> r[installer.mode.auto+5]
+> When `auto = true`, the installer must proceed without any interactive
+> prompts. It must:
 >
 > 1. Log its configuration to the console.
 > 2. Display progress during image writing.
@@ -200,10 +201,8 @@ defaults. The user can override any value.
 > 5. Reboot automatically on success.
 > 6. Print an error and exit with a non-zero status on failure.
 >
-> Required fields: `disk-encryption`, `disk`. Additionally, when
-> `disk-encryption` is `"tpm"` or `"keyfile"`, at least one hostname
-> strategy must be specified: `hostname`,
-> `hostname-from-dhcp = true`, or `hostname-template`.
+> Any field not explicitly set falls back to its default (see
+> `installer.config.auto`).
 
 r[installer.mode.auto.progress]
 In automatic mode, the installer must detect whether standard error is
@@ -214,12 +213,6 @@ suppress the per-update progress lines entirely and instead print a
 single summary line after the write completes (total bytes written,
 throughput, and elapsed time). This avoids flooding non-interactive
 logs with thousands of nearly-identical progress lines.
-
-r[installer.mode.auto-incomplete+3]
-When `auto = true` but required fields are missing (`disk-encryption`,
-`disk`, or a hostname strategy for encrypted variants), the installer
-must print an error describing the missing fields and fall back to
-interactive mode.
 
 ## Testing Flags
 
@@ -247,7 +240,7 @@ plan. If omitted, the plan is written to stdout.
 >
 > ```json
 > {
->   "mode": "auto | prefilled | interactive | auto-incomplete",
+>   "mode": "auto | prefilled | interactive",
 >   "disk_encryption": "tpm | keyfile | none",
 >   "disk": {
 >     "path": "/dev/nvme0n1",

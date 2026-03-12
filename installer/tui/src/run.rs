@@ -149,46 +149,21 @@ impl RunContext {
     fn run_inner(self) -> Result<()> {
         match self.mode {
             config::OperatingMode::Auto => self.run_auto(),
-            // r[impl installer.mode.auto-incomplete+3]
-            config::OperatingMode::AutoIncomplete {
-                missing_disk_encryption,
-                missing_disk,
-                missing_hostname,
-            } => {
-                let mut missing = Vec::new();
-                if missing_disk_encryption {
-                    missing.push("disk-encryption");
-                }
-                if missing_disk {
-                    missing.push("disk");
-                }
-                if missing_hostname {
-                    missing.push("hostname strategy (hostname, hostname-from-dhcp, or hostname-template required for encrypted variants)");
-                }
-                eprintln!(
-                    "auto mode requested but required fields are missing: {}",
-                    missing.join(", ")
-                );
-                eprintln!("falling back to interactive mode");
-                self.run_interactive()
-            }
             config::OperatingMode::Interactive | config::OperatingMode::Prefilled => {
                 self.run_interactive()
             }
         }
     }
 
-    // r[impl installer.mode.auto+4]
+    // r[impl installer.mode.auto+5]
+    // r[impl installer.config.auto+2]
     fn run_auto(self) -> Result<()> {
         let disk_encryption = self
             .install_config
             .disk_encryption
-            .expect("auto mode requires disk-encryption");
-        let disk_selector = self
-            .install_config
-            .disk
-            .as_ref()
-            .expect("auto mode requires disk");
+            .unwrap_or(config::DiskEncryption::Keyfile);
+        let default_disk = config::DiskSelector::Strategy(config::DiskStrategy::LargestSsd);
+        let disk_selector = self.install_config.disk.as_ref().unwrap_or(&default_disk);
 
         let copy_install_log = self.install_config.copy_install_log.unwrap_or(true);
 

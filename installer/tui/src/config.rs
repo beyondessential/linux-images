@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::hostname_template;
 
 // r[impl installer.config.format]
-// r[impl installer.config.auto]
+// r[impl installer.config.auto+2]
 // r[impl installer.config.disk-encryption+2]
 // r[impl installer.config.disk]
 // r[impl installer.config.copy-install-log]
@@ -331,18 +331,12 @@ pub fn validate_hostname(hostname: &str) -> Result<(), String> {
 
 // r[impl installer.mode.interactive+2]
 // r[impl installer.mode.prefilled]
-// r[impl installer.mode.auto+4]
-// r[impl installer.mode.auto-incomplete+3]
+// r[impl installer.mode.auto+5]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperatingMode {
     Interactive,
     Prefilled,
     Auto,
-    AutoIncomplete {
-        missing_disk_encryption: bool,
-        missing_disk: bool,
-        missing_hostname: bool,
-    },
 }
 
 impl fmt::Display for OperatingMode {
@@ -351,9 +345,6 @@ impl fmt::Display for OperatingMode {
             OperatingMode::Interactive => write!(f, "interactive"),
             OperatingMode::Prefilled => write!(f, "prefilled"),
             OperatingMode::Auto => write!(f, "automatic"),
-            OperatingMode::AutoIncomplete { .. } => {
-                write!(f, "automatic (incomplete config)")
-            }
         }
     }
 }
@@ -377,26 +368,13 @@ impl InstallConfig {
         toml::from_str(s).context("parsing TOML config")
     }
 
-    // r[impl installer.mode.auto+4]
-    // r[impl installer.mode.auto-incomplete+3]
+    // r[impl installer.mode.auto+5]
+    // r[impl installer.config.auto+2]
     pub fn mode(&self) -> OperatingMode {
-        if !self.auto {
-            return OperatingMode::Prefilled;
-        }
-
-        let missing_disk_encryption = self.disk_encryption.is_none();
-        let missing_disk = self.disk.is_none();
-        let missing_hostname =
-            self.disk_encryption.is_some_and(|de| de.is_encrypted()) && !self.has_hostname_config();
-
-        if !missing_disk_encryption && !missing_disk && !missing_hostname {
+        if self.auto {
             OperatingMode::Auto
         } else {
-            OperatingMode::AutoIncomplete {
-                missing_disk_encryption,
-                missing_disk,
-                missing_hostname,
-            }
+            OperatingMode::Prefilled
         }
     }
 
@@ -520,7 +498,7 @@ mod tests {
     }
 
     // r[verify installer.config.format]
-    // r[verify installer.config.auto]
+    // r[verify installer.config.auto+2]
     // r[verify installer.config.disk-encryption+2]
     // r[verify installer.config.disk]
     // r[verify installer.config.hostname]
@@ -625,21 +603,10 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Prefilled);
     }
 
-    // r[verify installer.mode.auto+4]
+    // r[verify installer.mode.auto+5]
+    // r[verify installer.config.auto+2]
     #[test]
-    fn mode_auto_when_complete_none() {
-        let config = InstallConfig {
-            auto: true,
-            disk_encryption: Some(DiskEncryption::None),
-            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            ..Default::default()
-        };
-        assert_eq!(config.mode(), OperatingMode::Auto);
-    }
-
-    // r[verify installer.mode.auto+4]
-    #[test]
-    fn mode_auto_when_complete_tpm_with_hostname() {
+    fn mode_auto_with_all_fields() {
         let config = InstallConfig {
             auto: true,
             disk_encryption: Some(DiskEncryption::Tpm),
@@ -650,129 +617,48 @@ mod tests {
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.mode.auto+4]
+    // r[verify installer.mode.auto+5]
+    // r[verify installer.config.auto+2]
     #[test]
-    fn mode_auto_when_complete_keyfile_with_dhcp() {
+    fn mode_auto_with_no_optional_fields() {
         let config = InstallConfig {
             auto: true,
-            disk_encryption: Some(DiskEncryption::Keyfile),
-            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            hostname_from_dhcp: true,
             ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.mode.auto+4]
+    // r[verify installer.mode.auto+5]
+    // r[verify installer.config.auto+2]
     #[test]
-    fn mode_auto_when_complete_tpm_with_template() {
+    fn mode_auto_without_disk_encryption() {
         let config = InstallConfig {
             auto: true,
-            disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            hostname_template: Some("srv-{hex:6}".into()),
             ..Default::default()
         };
         assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.mode.auto-incomplete+3]
+    // r[verify installer.mode.auto+5]
+    // r[verify installer.config.auto+2]
     #[test]
-    fn mode_auto_incomplete_tpm_missing_hostname() {
-        let config = InstallConfig {
-            auto: true,
-            disk_encryption: Some(DiskEncryption::Tpm),
-            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
-            ..Default::default()
-        };
-        assert_eq!(
-            config.mode(),
-            OperatingMode::AutoIncomplete {
-                missing_disk_encryption: false,
-                missing_disk: false,
-                missing_hostname: true,
-            }
-        );
-    }
-
-    // r[verify installer.mode.auto-incomplete+3]
-    #[test]
-    fn mode_auto_incomplete_keyfile_missing_hostname() {
+    fn mode_auto_without_disk() {
         let config = InstallConfig {
             auto: true,
             disk_encryption: Some(DiskEncryption::Keyfile),
-            disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             ..Default::default()
         };
-        assert_eq!(
-            config.mode(),
-            OperatingMode::AutoIncomplete {
-                missing_disk_encryption: false,
-                missing_disk: false,
-                missing_hostname: true,
-            }
-        );
+        assert_eq!(config.mode(), OperatingMode::Auto);
     }
 
-    // r[verify installer.mode.auto-incomplete+3]
+    // r[verify installer.mode.auto+5]
+    // r[verify installer.config.auto+2]
     #[test]
-    fn mode_auto_incomplete_missing_disk_encryption() {
+    fn mode_auto_encrypted_without_hostname() {
         let config = InstallConfig {
             auto: true,
-            disk: Some(DiskSelector::Strategy(DiskStrategy::Largest)),
-            ..Default::default()
-        };
-        assert_eq!(
-            config.mode(),
-            OperatingMode::AutoIncomplete {
-                missing_disk_encryption: true,
-                missing_disk: false,
-                missing_hostname: false,
-            }
-        );
-    }
-
-    // r[verify installer.mode.auto-incomplete+3]
-    #[test]
-    fn mode_auto_incomplete_missing_disk() {
-        let config = InstallConfig {
-            auto: true,
-            disk_encryption: Some(DiskEncryption::None),
-            ..Default::default()
-        };
-        assert_eq!(
-            config.mode(),
-            OperatingMode::AutoIncomplete {
-                missing_disk_encryption: false,
-                missing_disk: true,
-                missing_hostname: false,
-            }
-        );
-    }
-
-    // r[verify installer.mode.auto-incomplete+3]
-    #[test]
-    fn mode_auto_incomplete_missing_both() {
-        let config = InstallConfig {
-            auto: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            config.mode(),
-            OperatingMode::AutoIncomplete {
-                missing_disk_encryption: true,
-                missing_disk: true,
-                missing_hostname: false,
-            }
-        );
-    }
-
-    // r[verify installer.mode.auto+4]
-    #[test]
-    fn mode_auto_none_does_not_require_hostname() {
-        let config = InstallConfig {
-            auto: true,
-            disk_encryption: Some(DiskEncryption::None),
+            disk_encryption: Some(DiskEncryption::Tpm),
             disk: Some(DiskSelector::Strategy(DiskStrategy::LargestSsd)),
             ..Default::default()
         };
@@ -1079,22 +965,12 @@ mod tests {
 
     // r[verify installer.mode.interactive+2]
     // r[verify installer.mode.prefilled]
-    // r[verify installer.mode.auto+4]
-    // r[verify installer.mode.auto-incomplete+3]
+    // r[verify installer.mode.auto+5]
     #[test]
     fn operating_mode_display() {
         assert_eq!(OperatingMode::Interactive.to_string(), "interactive");
         assert_eq!(OperatingMode::Prefilled.to_string(), "prefilled");
         assert_eq!(OperatingMode::Auto.to_string(), "automatic");
-        assert_eq!(
-            OperatingMode::AutoIncomplete {
-                missing_disk_encryption: true,
-                missing_disk: true,
-                missing_hostname: false,
-            }
-            .to_string(),
-            "automatic (incomplete config)"
-        );
     }
 
     // r[verify installer.config.network-mode]
