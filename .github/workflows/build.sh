@@ -492,9 +492,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           body: |
-            ### Downloads
-
-            Artifacts are hosted on S3: `https://tools.ops.tamanu.io/linux-images/${{ env.VERSION }}/`
+            **Downloads: <https://tools.ops.tamanu.io/linux-images/${{ env.VERSION }}/>**
 
             ### Variants
             | Variant | Use case |
