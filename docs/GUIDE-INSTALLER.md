@@ -313,7 +313,7 @@ tailscale-authkey = "tskey-auth-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 |-------|------|---------|-------------|
 | `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. |
 | `password-hash` | string | — | Pre-hashed password for the `ubuntu` user in crypt(3) format (e.g. from `mkpasswd --method=sha-512`). Written directly to `/etc/shadow` with the expiry flag cleared. Overrides `password` if set. |
-| `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`). If tailscale netcheck passed during installation, the installer attempts to authenticate directly by chrooting into the target system. If that doesn't run or fails, the key is written to `/etc/bes/tailscale-authkey` for first-boot authentication. |
+| `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`). If tailscale netcheck passes during installation, the installer attempts to authenticate directly by chrooting into the target system. If that doesn't run or fails, the key is written to `/etc/bes/tailscale-authkey` for first-boot authentication. |
 | `ssh-authorized-keys` | array of strings | `[]` | SSH public keys to install for the default user. Each entry must be a non-empty SSH public key string (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). |
 
 ### Timezone
