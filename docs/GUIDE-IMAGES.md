@@ -6,9 +6,10 @@ Select the right image for your environment and CPU architecture, write it to yo
 
 ## Checksums
 
-SHA256 checksums are provided by GitHub in the releases page.
-
+SHA256 checksums are provided.
 Please verify images before writing them to disks.
+
+All images are signed by [GitHub Attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations#verifying-an-artifact-attestation-for-binaries) to establish provenance.
 
 ## Version
 

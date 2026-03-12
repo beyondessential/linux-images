@@ -13,11 +13,13 @@ Installation requires no internet: all installation files are included on the im
 
 ## Checksums
 
-SHA256 checksums are provided by GitHub in the releases page.
+SHA256 checksums for the whole ISOs are provided.
 
 The installer image also embeds checksums for its own data, and verifies them on boot.
 This makes it very unlikely that corrupt images will be able to proceed with an install, even if you didn't check the sums before/after writing to USB.
 However, as the checksums are embeded in the image, it doesn't protect against malicious tampering.
+
+All images are signed by [GitHub Attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations#verifying-an-artifact-attestation-for-binaries) to establish provenance.
 
 ## Version
 
