@@ -380,6 +380,8 @@ This does also mean that there is no recourse if you have a disk in a server wit
 However, when setting up a large number of servers, or when typing at the console is not convenient, this can be very useful.
 We do recommend testing it first, though.
 
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `auto` | boolean | `false` | Run fully automatically without prompts. All other fields are optional and fall back to their defaults. |
 
 The simplest automatic config is just:
