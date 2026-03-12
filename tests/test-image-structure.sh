@@ -390,9 +390,17 @@ if [ -f "$MNT/boot/grub/grub.cfg" ]; then
     fi
 fi
 
-# r[verify image.credentials.ssh-keys-only]
-check "SSH no-password config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
-check "SSH no-password config correct" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-no-password.conf"
+# r[verify image.credentials.no-root-ssh]
+check "SSH no-root config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-no-root.conf"
+check "SSH no-root config correct" grep -q "PermitRootLogin no" "$MNT/etc/ssh/sshd_config.d/50-bes-no-root.conf"
+
+# r[verify image.credentials.ssh-password-auth]
+check "SSH password-auth config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-password-auth.conf"
+if [ "$VARIANT" = "metal" ]; then
+    check "SSH password auth enabled for metal" grep -q "PasswordAuthentication yes" "$MNT/etc/ssh/sshd_config.d/50-bes-password-auth.conf"
+else
+    check "SSH password auth disabled for cloud" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-password-auth.conf"
+fi
 
 # r[verify image.credentials.no-host-keys+2]
 HOST_KEY_COUNT="$(find "$MNT/etc/ssh" -name 'ssh_host_*' 2>/dev/null | wc -l)"

@@ -71,6 +71,17 @@ Otherwise, set the timezone using `timedatectl set-timezone Australia/Melbourne`
 The `ubuntu` user is the only login account.
 It has passwordless `sudo` access.
 
+### cloud image
+
+SSH password authentication is disabled.
+
+If you're installing the cloud image on hardware, you need to either log in directly at the console, or add SSH keys to `/home/ubuntu/.ssh/authorized_keys` before booting.
+Otherwise, configure your cloud-init user-data to write SSH keys.
+
+### metal image
+
+SSH password authentication is enabled.
+
 The initial password is `bes`.
 You will be prompted to change it at first login.
 

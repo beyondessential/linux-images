@@ -240,11 +240,22 @@ install -m 600 /tmp/files/netplan/01-all-en-dhcp.yaml /etc/netplan/01-all-en-dhc
 # ============================================================
 # SSH
 # ============================================================
-# r[image.credentials.ssh-keys-only]
+# r[impl image.credentials.no-root-ssh]
 mkdir -p /etc/ssh/sshd_config.d
-cat > /etc/ssh/sshd_config.d/50-bes-no-password.conf << 'EOF'
+cat > /etc/ssh/sshd_config.d/50-bes-no-root.conf << 'EOF'
+PermitRootLogin no
+EOF
+
+# r[impl image.credentials.ssh-password-auth]
+if [ "$VARIANT" = "cloud" ]; then
+    cat > /etc/ssh/sshd_config.d/50-bes-password-auth.conf << 'EOF'
 PasswordAuthentication no
 EOF
+else
+    cat > /etc/ssh/sshd_config.d/50-bes-password-auth.conf << 'EOF'
+PasswordAuthentication yes
+EOF
+fi
 systemctl enable ssh
 
 # r[impl image.credentials.host-key-regen]
@@ -286,10 +297,16 @@ usermod -s /sbin/nologin root
 
 # r[image.cloud-init.no-hostname-file]
 mkdir -p /etc/cloud/cloud.cfg.d
-cat > /etc/cloud/cloud.cfg.d/99-bes.cfg << 'EOF'
+if [ "$VARIANT" = "cloud" ]; then
+    cat > /etc/cloud/cloud.cfg.d/99-bes.cfg << 'EOF'
 create_hostname_file: false
 ssh_pwauth: false
 EOF
+else
+    cat > /etc/cloud/cloud.cfg.d/99-bes.cfg << 'EOF'
+create_hostname_file: false
+EOF
+fi
 
 # Allow the default user to sudo without password (cloud-init default)
 cat > /etc/sudoers.d/90-cloud-init-users << 'EOF'

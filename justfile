@@ -635,7 +635,7 @@ _make-test-cloud-init: _ensure-dirs
         FAILED_UNITS=$(systemctl --failed --no-legend --no-pager | wc -l)
         check "no failed systemd units" test "$FAILED_UNITS" -eq 0
 
-        # r[verify image.credentials.ssh-keys-only]
+        # r[verify image.credentials.ssh-password-auth]
         check "sshd is active" systemctl is-active ssh
         # r[verify image.firewall.enabled]
         check "ufw is active" systemctl is-active ufw

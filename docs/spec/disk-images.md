@@ -243,9 +243,14 @@ be marked expired so that console login forces an immediate password change.
 r[image.credentials.root-disabled]
 The `root` user must have its shell set to `/sbin/nologin`.
 
-r[image.credentials.ssh-keys-only]
-SSH password authentication must be disabled. Only key-based authentication
-is permitted over SSH.
+r[image.credentials.no-root-ssh]
+SSH access for the `root` user must be disabled via `PermitRootLogin no`.
+
+r[image.credentials.ssh-password-auth]
+The cloud build-time image must have SSH password authentication disabled;
+only key-based authentication is permitted. The metal build-time image must
+have SSH password authentication enabled so that the pre-set `ubuntu` user
+credentials are usable over SSH.
 
 r[image.credentials.no-host-keys+2]
 The image must not contain SSH host keys (`/etc/ssh/ssh_host_*`). The
