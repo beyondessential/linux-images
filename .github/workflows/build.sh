@@ -13,6 +13,8 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 env:
   UBUNTU_SUITE: noble # r[impl ci.output-suite] r[verify ci.output-suite]
@@ -283,6 +285,9 @@ jobs:
         with:
           path: artifacts/
 
+      - name: Derive version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
       - name: Prepare release assets
         run: |
           mkdir -p release
@@ -315,11 +320,182 @@ jobs:
           rm -f SHA256SUMS
           sha256sum * | tee SHA256SUMS
 
+      - name: Generate manifest.json
+        run: |
+          cd release
+          jq -n \
+            --arg version "$VERSION" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg repo "https://github.com/${{ github.repository }}" \
+            --arg tag "${{ github.ref_name }}" \
+            '{ version: $version, date: $date, repo: $repo, tag: $tag, files: [] }' \
+            > manifest.json
+
+          for f in *; do
+            [ "$f" = "manifest.json" ] && continue
+            [ "$f" = "index.html" ] && continue
+
+            size=$(stat --format='%s' "$f")
+            sha256=$(grep " ${f}\$" SHA256SUMS | cut -d' ' -f1 || true)
+
+            variant=""
+            arch=""
+            format="$f"
+
+            case "$f" in
+              ubuntu-*-bes-*-*-*.raw.zst)
+                variant=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-([^-]+)-.*$/\1/')
+                arch=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-[^-]+-([^-]+)-.*$/\1/')
+                format="raw.zst"
+                ;;
+              ubuntu-*-bes-*-*-*.vmdk)
+                variant=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-([^-]+)-.*$/\1/')
+                arch=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-[^-]+-([^-]+)-.*$/\1/')
+                format="vmdk"
+                ;;
+              ubuntu-*-bes-*-*-*.qcow2)
+                variant=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-([^-]+)-.*$/\1/')
+                arch=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-[^-]+-([^-]+)-.*$/\1/')
+                format="qcow2"
+                ;;
+              bes-installer-*.iso)
+                variant="installer"
+                arch=$(echo "$f" | sed -E 's/bes-installer-([^.]+)\.iso/\1/')
+                format="iso"
+                ;;
+              SHA256SUMS)
+                format="checksums"
+                ;;
+            esac
+
+            manifest_entry=$(jq -n \
+              --arg name "$f" \
+              --argjson size "$size" \
+              --arg sha256 "$sha256" \
+              --arg variant "$variant" \
+              --arg arch "$arch" \
+              --arg format "$format" \
+              '{ name: $name, size: $size, sha256: $sha256, variant: $variant, arch: $arch, format: $format }
+               | del(.[] | select(. == ""))')
+
+            jq --argjson entry "$manifest_entry" '.files += [$entry]' manifest.json > manifest.tmp
+            mv manifest.tmp manifest.json
+          done
+
+      - name: Generate index.html
+        run: |
+          cd release
+          cat > index.html <<'HTMLEOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>BES Linux Images — VERSION_PLACEHOLDER</title>
+          <style>
+            body { font-family: system-ui, -apple-system, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+            h1 { font-size: 1.4rem; }
+            a { color: #0060df; }
+            table { border-collapse: collapse; width: 100%; margin: 1.5rem 0; }
+            th, td { text-align: left; padding: 0.4rem 0.8rem; border-bottom: 1px solid #ddd; }
+            th { font-weight: 600; border-bottom: 2px solid #999; }
+            td.size { text-align: right; font-variant-numeric: tabular-nums; }
+            code { font-size: 0.85em; background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; }
+            .meta { color: #555; font-size: 0.9rem; margin-bottom: 1.5rem; }
+          </style>
+          </head>
+          <body>
+          <h1>BES Linux Images &mdash; VERSION_PLACEHOLDER</h1>
+          <p class="meta">
+            Source: <a href="REPO_PLACEHOLDER">REPO_PLACEHOLDER</a>
+            &middot; Tag: <a href="REPO_PLACEHOLDER/releases/tag/TAG_PLACEHOLDER"><code>TAG_PLACEHOLDER</code></a>
+            &middot; <a href="manifest.json">manifest.json</a>
+          </p>
+          <table>
+          <thead><tr><th>File</th><th>Variant</th><th>Arch</th><th>Format</th><th class="size">Size</th></tr></thead>
+          <tbody>
+          TABLE_ROWS_PLACEHOLDER
+          </tbody>
+          </table>
+          </body>
+          </html>
+          HTMLEOF
+
+          repo="https://github.com/${{ github.repository }}"
+          tag="${{ github.ref_name }}"
+
+          human_size() {
+            local bytes=$1
+            if [ "$bytes" -ge 1073741824 ]; then
+              awk "BEGIN { printf \"%.1f GiB\", $bytes/1073741824 }"
+            elif [ "$bytes" -ge 1048576 ]; then
+              awk "BEGIN { printf \"%.1f MiB\", $bytes/1048576 }"
+            else
+              awk "BEGIN { printf \"%.0f KiB\", $bytes/1024 }"
+            fi
+          }
+
+          rows=""
+          jq -c '.files[]' manifest.json | while IFS= read -r entry; do
+            name=$(echo "$entry" | jq -r '.name')
+            size=$(echo "$entry" | jq -r '.size')
+            variant=$(echo "$entry" | jq -r '.variant // ""')
+            arch=$(echo "$entry" | jq -r '.arch // ""')
+            format=$(echo "$entry" | jq -r '.format')
+            hsize=$(human_size "$size")
+            echo "<tr><td><a href=\"${name}\">${name}</a></td><td>${variant}</td><td>${arch}</td><td>${format}</td><td class=\"size\">${hsize}</td></tr>"
+          done > table_rows.tmp
+
+          sed -i "s|VERSION_PLACEHOLDER|${VERSION}|g" index.html
+          sed -i "s|REPO_PLACEHOLDER|${repo}|g" index.html
+          sed -i "s|TAG_PLACEHOLDER|${tag}|g" index.html
+          sed -i "/TABLE_ROWS_PLACEHOLDER/{
+            r table_rows.tmp
+            d
+          }" index.html
+          rm -f table_rows.tmp
+
       - run: ls -lh release/
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release/*
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-southeast-2
+          role-to-assume: arn:aws:iam::143295493206:role/gha-tamanu-tools-upload
+          role-session-name: GHA@linux-images=Release
+
+      - name: Upload to S3
+        run: |
+          for f in release/*; do
+            name=$(basename "$f")
+            content_type=""
+            case "$name" in
+              index.html)     content_type="text/html" ;;
+              manifest.json)  content_type="application/json" ;;
+              SHA256SUMS)     content_type="text/plain" ;;
+            esac
+            if [ -n "$content_type" ]; then
+              aws s3 cp "$f" "s3://bes-ops-tools/linux-images/${{ env.VERSION }}/$name" --no-progress --content-type "$content_type"
+            else
+              aws s3 cp "$f" "s3://bes-ops-tools/linux-images/${{ env.VERSION }}/$name" --no-progress
+            fi
+          done
+
+      - name: Invalidate CloudFront cache
+        run: aws cloudfront create-invalidation --distribution-id=EDAG0UBS1MN74 --paths '/linux-images/*'
 
       - uses: softprops/action-gh-release@v2
         with:
           body: |
+            ### Downloads
+
+            Artifacts are hosted on S3: `https://tools.ops.tamanu.io/linux-images/${{ env.VERSION }}/`
+
             ### Variants
             | Variant | Use case |
             |---------|----------|
@@ -333,6 +509,6 @@ jobs:
             |  raw   | Write directly to server disk |
             |  vmdk  | VMware / vSphere |
             |  qcow2 | KVM / libvirt / Proxmox |
-          files: release/*
-          fail_on_unmatched_files: false
+          files: release/SHA256SUMS
+          fail_on_unmatched_files: true
           make_latest: true
