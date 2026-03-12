@@ -201,7 +201,7 @@ This provides little security on a day to day basis, but means that:
 If you choose "no encryption", you can't later re-encrypt the disk without downtime or risk of data loss.
 
 An experimental "bound to hardware" mode is available.
-This will attempt to use TPM2 hardware module, if present, to decrypt the disk.
+This will attempt to use a TPM2 hardware module, if present, to decrypt the disk.
 If selected, no keyfile is stored in plaintext on the disk.
 However, if unlock fails on reboot, you will need to enter the recovery passphrase to boot, and you may need to manually configure keyfile unlock.
 No support is provided for this mode.
