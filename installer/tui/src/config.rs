@@ -14,7 +14,7 @@ use crate::hostname_template;
 // r[impl installer.config.hostname+2]
 // r[impl installer.config.tailscale-authkey+3]
 // r[impl installer.config.ssh-authorized-keys+2]
-// r[impl installer.config.password]
+// r[impl installer.config.password+2]
 // r[impl installer.config.timezone]
 // r[impl installer.config.recovery-passphrase]
 // r[impl installer.config.save-recovery-keys]
@@ -446,10 +446,6 @@ impl InstallConfig {
             }
         }
 
-        if self.password.is_some() && self.password_hash.is_some() {
-            issues.push("password and password-hash are mutually exclusive".into());
-        }
-
         // r[impl installer.config.network-static]
         validate_network_static_fields(
             "network",
@@ -513,7 +509,7 @@ mod tests {
     // r[verify installer.config.hostname+2]
     // r[verify installer.config.tailscale-authkey+3]
     // r[verify installer.config.ssh-authorized-keys+2]
-    // r[verify installer.config.password]
+    // r[verify installer.config.password+2]
     #[test]
     fn parse_full_config() {
         let toml = r#"
@@ -810,7 +806,7 @@ mod tests {
         assert!(InstallConfig::load_from_file(&path).is_err());
     }
 
-    // r[verify installer.config.password]
+    // r[verify installer.config.password+2]
     #[test]
     fn parse_password_hash() {
         let config = InstallConfig::from_toml(
@@ -864,8 +860,9 @@ mod tests {
         );
     }
 
+    // r[verify installer.config.password+2]
     #[test]
-    fn validate_password_and_hash_mutually_exclusive() {
+    fn validate_password_and_hash_not_mutually_exclusive() {
         let config = InstallConfig {
             password: Some("changeme".into()),
             password_hash: Some("$6$rounds=4096$salt$hash".into()),
@@ -873,9 +870,10 @@ mod tests {
         };
         let issues = config.validate();
         assert!(
-            issues
+            !issues
                 .iter()
-                .any(|i| i.contains("password") && i.contains("mutually exclusive"))
+                .any(|i| i.contains("password") && i.contains("mutually exclusive")),
+            "should not report mutual exclusivity: {issues:?}"
         );
     }
 

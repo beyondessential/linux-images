@@ -70,12 +70,12 @@ public key line (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). When
 set, the installer writes these keys into the installed system (see
 `r[installer.finalise.ssh-keys]`).
 
-r[installer.config.password]
+r[installer.config.password+2]
 The `password` field is a string containing a plaintext password for the
 `ubuntu` user. The `password-hash` field is a string containing a
 pre-hashed password in crypt(3) format (e.g. `"$6$rounds=4096$..."`).
-These two fields are mutually exclusive; if both are present the installer
-must report a validation error.
+If both are present, `password-hash` takes priority and `password` is
+ignored.
 
 r[installer.config.timezone]
 The `timezone` field is a string containing an IANA timezone name (e.g.

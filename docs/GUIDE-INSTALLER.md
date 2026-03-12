@@ -246,7 +246,7 @@ password = "orca-passage-story-8199"
 Set a password in pre-hashed form (so it's not revealed to someone picking up the USB drive):
 
 ```bash
-$ mkpasswd
+$ mkpasswd --method=sha-512
 ```
 
 ```toml
@@ -285,6 +285,8 @@ Tamanu has its own timezone settings at the application level and does not need 
 We do recommend using the local timezone just so it's easier to relate to times while troubleshooting; some people prefer to set all servers to UTC and that's fine too.
 
 #### BESCONF
+
+| `timezone` | string | `"UTC"` | IANA timezone for the installed system (e.g. `"Pacific/Auckland"`, `"America/New_York"`). The installer creates a symlink at `/etc/localtime` pointing to `/usr/share/zoneinfo/<timezone>` and writes the name to `/etc/timezone`. In the TUI, a searchable list of timezones is presented; type to filter and use Up/Down to navigate. |
 
 ### Network check
 
