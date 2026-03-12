@@ -71,6 +71,7 @@ All fields are also documented together in a table at the bottom of this file.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `auto` | boolean | `false` | Run fully automatically without prompts. All other fields are optional and fall back to their defaults. |
+| `copy-install-log` | boolean | `true` | Copy the installer log into the installed system at `/var/log/bes-installer.log`. Set to `false` to disable. No TUI control for this option. |
 
 ### Network Configuration
 
@@ -137,8 +138,6 @@ Network connectivity is not a requirement for the installer, so the network chec
 
 Hit Escape to get back to the Network configuration screen.
 
-#### BESCONF
-
 ### Target Disk
 
 All disks will be shown, with their hardware type, device path, and size.
@@ -154,6 +153,8 @@ There are no partitioning options: we will use the entire disk and configure it 
 disk = "smallest"
 ```
 
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `disk` | string | `"largest-ssd"` | Target disk for installation. Either a device path (e.g. `"/dev/sda"`) or a selection strategy: `"largest-ssd"` (largest SSD by capacity; the default), `"largest"` (largest disk of any type), or `"smallest"` (smallest disk of any type). |
 
 ### Disk Encryption
@@ -188,6 +189,8 @@ It will not be available again, so make sure to note it down and store that secu
 disk-encryption = "none"
 ```
 
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `disk-encryption` | string | `"keyfile"` | Disk encryption mode. `"tpm"` for LUKS + TPM PCR 1 (requires a TPM; experimental), `"keyfile"` for LUKS + keyfile on boot partition (default), or `"none"` for no encryption. |
 
 ### Hostname
@@ -217,6 +220,8 @@ A hostname template (this can only be set using the configuration file):
 hostname-template = "server-{hex:6}"
 ```
 
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `hostname-from-dhcp` | boolean | `true` | Use the DHCP-provided hostname instead of a static one. When enabled, `/etc/hostname` is left empty so that `systemd-hostnamed` accepts the transient hostname from DHCP. |
 | `hostname-template` | string | — | Generate a unique hostname from a template pattern. The template contains literal characters and `{hex:N}` or `{num:N}` placeholders (e.g. `"tamanu-{hex:6}"` produces `"tamanu-a3f1b2"`). Must contain at least one placeholder; literals must be `[a-z0-9-]`; result must not exceed 63 characters. Setting it overrides `hostname-from-dhcp`. |
 | `hostname` | string | — | Hostname to set during installation. When omitted (and no other hostname strategy is set), the system uses the DHCP-assigned hostname. Must be 1--63 characters, containing only ASCII alphanumerics and hyphens, and must not start or end with a hyphen. Setting it overrides `hostname-from-dhcp` and `hostname-template`. |
@@ -268,6 +273,8 @@ Set the tailscale authkey:
 tailscale-authkey = "tskey-auth-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `password` | string | — | Plaintext password for the `ubuntu` user. Hashed with SHA-512 crypt and written to `/etc/shadow` on the installed system, with the expiry flag cleared. |
 | `password-hash` | string | — | Pre-hashed password for the `ubuntu` user in crypt(3) format (e.g. from `mkpasswd --method=sha-512`). Written directly to `/etc/shadow` with the expiry flag cleared. Overrides `password` if set. |
 | `tailscale-authkey` | string | — | Tailscale authentication key (e.g. `"tskey-auth-xxxxx"`). If tailscale netcheck passed during installation, the installer attempts to authenticate directly by chrooting into the target system. If that doesn't run or fails, the key is written to `/etc/bes/tailscale-authkey` for first-boot authentication. |
@@ -286,6 +293,12 @@ We do recommend using the local timezone just so it's easier to relate to times 
 
 #### BESCONF
 
+```toml
+timezone = "Australia/Melbourne"
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
 | `timezone` | string | `"UTC"` | IANA timezone for the installed system (e.g. `"Pacific/Auckland"`, `"America/New_York"`). The installer creates a symlink at `/etc/localtime` pointing to `/usr/share/zoneinfo/<timezone>` and writes the name to `/etc/timezone`. In the TUI, a searchable list of timezones is presented; type to filter and use Up/Down to navigate. |
 
 ### Network check
