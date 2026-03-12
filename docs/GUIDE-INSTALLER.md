@@ -19,7 +19,29 @@ The installer image also embeds checksums for its own data, and verifies them on
 This makes it very unlikely that corrupt images will be able to proceed with an install, even if you didn't check the sums before/after writing to USB.
 However, as the checksums are embeded in the image, it doesn't protect against malicious tampering.
 
-All images are signed by [GitHub Attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations#verifying-an-artifact-attestation-for-binaries) to establish provenance.
+All images are signed by [GitHub Attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations#verifying-an-artifact-attestation-for-binaries) to establish provenance:
+
+```console
+$ gh attestation verify --owner beyondessential bes-installer-amd64.iso
+Loaded digest sha256:fcb3a11c025b4a7fb833e909899d2720c2d36b0faf45ae256ee0280bd6c0ed78 for file:///home/Downloads/bes-installer-amd64.iso
+Loaded 1 attestation from GitHub API
+
+The following policy criteria will be enforced:
+- Predicate type must match:................ https://slsa.dev/provenance/v1
+- Source Repository Owner URI must match:... https://github.com/beyondessential
+- Subject Alternative Name must match regex: (?i)^https://github.com/beyondessential/
+- OIDC Issuer must match:................... https://token.actions.githubusercontent.com
+
+✓ Verification succeeded!
+
+The following 1 attestation matched the policy criteria
+
+- Attestation #1
+  - Build repo:..... beyondessential/linux-images
+  - Build workflow:. .github/workflows/build.yml@refs/tags/v24.04.20260312
+  - Signer repo:.... beyondessential/linux-images
+  - Signer workflow: .github/workflows/build.yml@refs/tags/v24.04.20260312
+```
 
 ## Version
 
