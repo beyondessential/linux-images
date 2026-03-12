@@ -1,6 +1,6 @@
 # Guide for BES Linux ISO/USB installer
 
-[![asciicast](./demo.gif)](https://asciinema.org/a/ZlN92tFyAEpc7cun)
+[![Animated GIF demoing the entire process](./images/demo.gif)](https://asciinema.org/a/ZlN92tFyAEpc7cun)
 
 The installer is a custom terminal graphics ("TUI") application which runs from a CD/DVD image or bootable USB.
 It asks setup questions, writes Linux to the selected disk, and then configures the system.
@@ -61,7 +61,7 @@ On USB2 devices, this might take several minutes, due to needing to read about 4
 Prefer using USB3 devices; if you're installing in a virtual machine, change the virtual controller type to "virtio" or similar.
 For example, in VirtualBox:
 
-![VirtualBox Storage configuration window in Expert mode, showing the "Removable" controller which has a "bes-installer-amd64.iso" file loaded as a CD image. In its attributes, the Type of the controller is set to "virtio-scsi".](./images/01-virtualbox-storage.png)
+![VirtualBox Storage configuration window in Expert mode, showing the "Removable" controller which has a "bes-installer-amd64.iso" file loaded as a CD image. In its attributes, the Type of the controller is set to "virtio-scsi".](./images/01-virtualbox.png)
 
 #### BESCONF
 
@@ -108,7 +108,7 @@ When done, hit Tab to get to the next pane:
 
 #### Installation Target
 
-![Console interface with four "windows" vertically stacked: a titlebar reading "BES Installer -- Network Configuration"; a collapsed window "Live ISO (current)"; a main window "Installation Target" with five radio buttons for "Copy current config", "DHCP", "Static IP", "IPv6 SLAAC only", "Offline"; and the menu bar](./images/02-network-current.png)
+![Console interface with four "windows" vertically stacked: a titlebar reading "BES Installer -- Network Configuration"; a collapsed window "Live ISO (current)"; a main window "Installation Target" with five radio buttons for "Copy current config", "DHCP", "Static IP", "IPv6 SLAAC only", "Offline"; and the menu bar](./images/02-network-target.png)
 
 Use arrow keys to select one of:
 - Copy current config
@@ -232,7 +232,7 @@ The system timezone defaults to `UTC`.
 
 You can select the correct timezone using arrow keys or by typing a search string.
 
-Tamanu has its own timezone settings at the application level and does not need the system to be in the correct local timezone, or UTC for that matter.
+Tamanu has its own timezone settings at the application level and does not need the system to be in a specific timezone, or UTC for that matter.
 We do recommend using the local timezone just so it's easier to relate to times while troubleshooting; some people prefer to set all servers to UTC and that's fine too.
 
 #### BESCONF
