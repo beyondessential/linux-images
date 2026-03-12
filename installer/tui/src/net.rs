@@ -57,15 +57,7 @@ pub struct GithubKeysResult {
 #[derive(Debug, Clone)]
 pub struct NetInterface {
     pub name: String,
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "stored for future interface dropdown display")
-    )]
     pub mac: String,
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "stored for future interface dropdown display")
-    )]
     pub state: String,
 }
 

@@ -6,7 +6,7 @@ use ratatui::widgets::{Block, Borders, Clear, Gauge, List, ListItem, Padding, Pa
 
 use crate::config::NetworkMode;
 use crate::disk::BlockDevice;
-use crate::net::{CheckPhase, NetConnectivityStatus};
+use crate::net::{CheckPhase, NetConnectivityStatus, NetInterface};
 use crate::writer::format_eta;
 
 use super::{
@@ -387,10 +387,14 @@ fn render_iso_pane(frame: &mut Frame, area: Rect, state: &AppState) {
     // Static IP fields (only if Static IP is selected)
     if state.iso_network_mode == NetworkMode::StaticIp {
         lines.push(Line::from(""));
+        let iso_iface_display = format_interface_display(
+            &state.iso_static_config.interface,
+            &state.detected_interfaces,
+        );
         render_text_field(
             &mut lines,
             "Interface",
-            &state.iso_static_config.interface,
+            &iso_iface_display,
             state.net_config_focus == NetConfigFocus::IsoInterface
                 && state.net_config_pane == NetConfigPane::Iso,
             true,
@@ -494,10 +498,14 @@ fn render_target_pane(frame: &mut Frame, area: Rect, state: &AppState) {
     // Static IP fields (only if Static IP is selected for target)
     if state.target_network_mode == TargetNetworkMode::StaticIp {
         lines.push(Line::from(""));
+        let target_iface_display = format_interface_display(
+            &state.target_static_config.interface,
+            &state.detected_interfaces,
+        );
         render_text_field(
             &mut lines,
             "Interface",
-            &state.target_static_config.interface,
+            &target_iface_display,
             state.net_config_focus == NetConfigFocus::TargetInterface
                 && state.net_config_pane == NetConfigPane::Target,
             true,
@@ -538,6 +546,16 @@ fn render_target_pane(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
+}
+
+fn format_interface_display(name: &str, interfaces: &[NetInterface]) -> String {
+    if name.is_empty() {
+        return String::new();
+    }
+    match interfaces.iter().find(|i| i.name == name) {
+        Some(iface) => format!("{} ({}, {})", iface.name, iface.mac, iface.state),
+        None => name.to_string(),
+    }
 }
 
 fn render_text_field(
