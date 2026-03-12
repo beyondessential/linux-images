@@ -499,7 +499,6 @@ compress:
       echo "Already compressed: {{ output_raw }}.zst (skipping)"
       exit 0
     fi
-    stat --format='%s' '{{ output_raw }}' > '{{ output_raw }}.size'
     zstd -6 --rm -o '{{ output_raw }}.zst' '{{ output_raw }}'
 
 # Generate SHA256 checksums for all outputs
