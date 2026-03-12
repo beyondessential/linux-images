@@ -71,6 +71,9 @@ Otherwise, set the timezone using `timedatectl set-timezone Australia/Melbourne`
 The `ubuntu` user is the only login account.
 It has passwordless `sudo` access.
 
+The initial password is `bes`.
+You will be prompted to change it at first login.
+
 ### Root account
 
 The `root` user has no password and its shell is set to `/sbin/nologin`, so direct root login is not possible.
