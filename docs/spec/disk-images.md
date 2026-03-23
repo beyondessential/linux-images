@@ -2,22 +2,17 @@
 
 ## Partition Layout
 
-r[image.partition.table]
-The disk image must use a GPT partition table.
+> r[image.partition.table]
+> The disk image must use a GPT partition table.
 
-r[image.partition.count]
-The disk image must contain exactly three partitions: EFI, extended boot, and
-root. There is no swap partition.
+> r[image.partition.count]
+> The disk image must contain exactly three partitions: EFI, extended boot, and root. There is no swap partition.
 
-r[image.partition.efi]
-The first partition must be an EFI System Partition (type UUID
-`C12A7328-F81F-11D2-BA4B-00A0C93EC93B`), formatted as FAT32, labeled `efi`,
-and sized 512 MiB.
+> r[image.partition.efi]
+> The first partition must be an EFI System Partition (type UUID `C12A7328-F81F-11D2-BA4B-00A0C93EC93B`), formatted as FAT32, labeled `efi`, and sized 512 MiB.
 
-r[image.partition.xboot]
-The second partition must be a Linux extended boot partition (type UUID
-`BC13C2FF-59E6-4262-A352-B275FD6F7172`), formatted as ext4, labeled `xboot`,
-and sized 1 GiB.
+> r[image.partition.xboot]
+> The second partition must be a Linux extended boot partition (type UUID `BC13C2FF-59E6-4262-A352-B275FD6F7172`), formatted as ext4, labeled `xboot`, and sized 1 GiB.
 
 > r[image.partition.root]
 > The third partition must be a Linux root partition, labeled `root`, using all
@@ -28,21 +23,17 @@ and sized 1 GiB.
 
 ## BTRFS Configuration
 
-r[image.btrfs.format+2]
-The root partition (or the LUKS volume on top of it, for the encrypted
-variant) must be formatted as BTRFS with the label `ROOT`, the xxhash
-checksum algorithm, and the `block-group-tree` and `squota` features enabled.
+> r[image.btrfs.format+2]
+> The root partition (or the LUKS volume on top of it, for the encrypted variant) must be formatted as BTRFS with the label `ROOT`, the xxhash checksum algorithm, and the `block-group-tree` and `squota` features enabled.
 
-r[image.btrfs.subvolumes]
-The BTRFS filesystem must contain two subvolumes: `@` mounted at `/`, and
-`@postgres` mounted at `/var/lib/postgresql`.
+> r[image.btrfs.subvolumes]
+> The BTRFS filesystem must contain two subvolumes: `@` mounted at `/`, and `@postgres` mounted at `/var/lib/postgresql`.
 
-r[image.btrfs.compression]
-All BTRFS mounts must use transparent zstd compression at level 6 via the
-`compress=zstd:6` mount option.
+> r[image.btrfs.compression]
+> All BTRFS mounts must use transparent zstd compression at level 6 via the `compress=zstd:6` mount option.
 
-r[image.btrfs.quotas]
-BTRFS simple quotas must be enabled on the filesystem.
+> r[image.btrfs.quotas]
+> BTRFS simple quotas must be enabled on the filesystem.
 
 ## Variants
 
@@ -68,57 +59,45 @@ BTRFS simple quotas must be enabled on the filesystem.
 
 ## Base System
 
-r[image.base.debootstrap]
-The base system must be debootstrapped into the `@` subvolume.
-The debootstrap must create the minimal viable bootable system.
+> r[image.base.debootstrap]
+> The base system must be debootstrapped into the `@` subvolume. The debootstrap must create the minimal viable bootable system.
 
-r[image.base.machine-id]
-`/etc/machine-id` must be truncated to zero bytes so that systemd generates a
-unique machine ID on each first boot.
+> r[image.base.machine-id]
+> `/etc/machine-id` must be truncated to zero bytes so that systemd generates a unique machine ID on each first boot.
 
-r[image.base.resolver]
-systemd-resolved must be enabled and configured as the system DNS resolver.
+> r[image.base.resolver]
+> systemd-resolved must be enabled and configured as the system DNS resolver.
 
-r[image.base.network+2]
-A netplan configuration must be installed at
-`/etc/netplan/01-all-en-dhcp.yaml` that matches all Ethernet interfaces
-(`en*`) and enables DHCPv4. This ensures that all images obtain an IP
-address on first boot regardless of whether cloud-init or any other
-datasource is present.
+> r[image.base.network+2]
+> A netplan configuration must be installed at `/etc/netplan/01-all-en-dhcp.yaml` that matches all Ethernet interfaces (`en*`) and enables DHCPv4. This ensures that all images obtain an IP address on first boot regardless of whether cloud-init or any other datasource is present.
 
-r[image.base.console-font]
-The `console-setup` and `kbd` packages must be installed so that
-`systemd-vconsole-setup.service` configures the Linux console with a
-readable font at boot. `/etc/default/console-setup` must be present with
-`FONTFACE="Fixed"` and `FONTSIZE="8x16"`.
+> r[image.base.console-font]
+> The `console-setup` and `kbd` packages must be installed so that `systemd-vconsole-setup.service` configures the Linux console with a readable font at boot. `/etc/default/console-setup` must be present with `FONTFACE="Fixed"` and `FONTSIZE="8x16"`.
 
 ## Packages
 
-r[image.packages.bes-tools]
-The bes-tools APT repo must be configured and preferred.
+> r[image.packages.bes-tools]
+> The bes-tools APT repo must be configured and preferred.
 
-r[image.packages.caddy]
-Caddy version >=2.10.0 must be pre-installed.
+> r[image.packages.caddy]
+> Caddy version >=2.10.0 must be pre-installed.
 
-r[image.packages.podman]
-Podman version >=5.0.0 must be pre-installed.
+> r[image.packages.podman]
+> Podman version >=5.0.0 must be pre-installed.
 
-r[image.packages.kopia]
-Kopia version >=0.22.0 must be pre-installed.
-The official Kopia apt repository must be configured and preferred.
+> r[image.packages.kopia]
+> Kopia version >=0.22.0 must be pre-installed. The official Kopia apt repository must be configured and preferred.
 
-r[image.packages.tailscale]
-Tailscale version >=1.92.0 must be pre-installed.
-The official Tailscale apt repository must be configured and preferred.
+> r[image.packages.tailscale]
+> Tailscale version >=1.92.0 must be pre-installed. The official Tailscale apt repository must be configured and preferred.
 
-r[image.packages.bestool+2]
-bestool version >=1.4.0 must be pre-installed.
+> r[image.packages.bestool+2]
+> bestool version >=1.4.0 must be pre-installed.
 
 ## Bootloader
 
-r[image.boot.dracut]
-The initramfs must be generated using dracut, not initramfs-tools. Dracut must
-be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
+> r[image.boot.dracut]
+> The initramfs must be generated using dracut, not initramfs-tools. Dracut must be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 
 > r[image.boot.hardware-drivers+3]
 > Both variants must force-include kernel modules into the initramfs for
@@ -143,57 +122,42 @@ be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 > - **AWS:** `ena`, `xen_blkfront`
 > - **GCP:** `gve`
 
-r[image.boot.grub-install]
-GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
+> r[image.boot.grub-install]
+> GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
 
-r[image.boot.grub-timeout]
-GRUB must be configured with `GRUB_TIMEOUT=5`,
-`GRUB_TIMEOUT_STYLE=menu`, and `GRUB_RECORDFAIL_TIMEOUT=5`.
+> r[image.boot.grub-timeout]
+> GRUB must be configured with `GRUB_TIMEOUT=5`, `GRUB_TIMEOUT_STYLE=menu`, and `GRUB_RECORDFAIL_TIMEOUT=5`.
 
-r[image.boot.grub-cmdline]
-The GRUB kernel command line must include `noresume`.
+> r[image.boot.grub-cmdline]
+> The GRUB kernel command line must include `noresume`.
 
-r[image.boot.cloud-console]
-The cloud variant must append `console=ttyS0,115200n8` to the GRUB kernel
-command line so that boot output is visible on the EC2 serial console (and
-equivalent serial consoles on other cloud providers).
+> r[image.boot.cloud-console]
+> The cloud variant must append `console=ttyS0,115200n8` to the GRUB kernel command line so that boot output is visible on the EC2 serial console (and equivalent serial consoles on other cloud providers).
 
-r[image.boot.grub-uuids]
-The generated `grub.cfg` must reference filesystem UUIDs that match the
-actual on-disk filesystems. Specifically, every `search --no-floppy --fs-uuid
---set=root` directive and every `root=UUID=` kernel parameter in `grub.cfg`
-must correspond to a UUID present on one of the image's partitions or
-volumes. A mismatch means the system will fail to boot.
+> r[image.boot.grub-uuids]
+> The generated `grub.cfg` must reference filesystem UUIDs that match the actual on-disk filesystems. Specifically, every `search --no-floppy --fs-uuid --set=root` directive and every `root=UUID=` kernel parameter in `grub.cfg` must correspond to a UUID present on one of the image's partitions or volumes. A mismatch means the system will fail to boot.
 
 ## Firewall
 
-r[image.firewall.policy]
-UFW must be configured with default deny incoming, allow outgoing, and allow
-forwarding policies.
+> r[image.firewall.policy]
+> UFW must be configured with default deny incoming, allow outgoing, and allow forwarding policies.
 
-r[image.firewall.ssh]
-SSH (port 22/tcp) must be allowed from all sources by default. This rule is
-removed when Tailscale connects successfully.
+> r[image.firewall.ssh]
+> SSH (port 22/tcp) must be allowed from all sources by default. This rule is removed when Tailscale connects successfully.
 
-r[image.firewall.http]
-HTTP (port 80/tcp), HTTPS (port 443/tcp), and HTTP/3 (port 443/udp) must be
-allowed.
+> r[image.firewall.http]
+> HTTP (port 80/tcp), HTTPS (port 443/tcp), and HTTP/3 (port 443/udp) must be allowed.
 
-r[image.firewall.enabled]
-UFW must be force-enabled during image configuration.
+> r[image.firewall.enabled]
+> UFW must be force-enabled during image configuration.
 
 ## Tailscale
 
-r[image.tailscale.service-enabled]
-The `tailscaled` systemd service must be enabled but Tailscale must not be
-joined to any tailnet — that happens either via `ts-up` or via the installer's
-first-boot configuration.
+> r[image.tailscale.service-enabled]
+> The `tailscaled` systemd service must be enabled but Tailscale must not be joined to any tailnet — that happens either via `ts-up` or via the installer's first-boot configuration.
 
-r[image.tailscale.ts-up]
-A helper script must be installed at `/usr/local/bin/ts-up` that interactively
-prompts for a Tailscale auth key, connects to the tailnet with `--ssh`, and on
-success restricts the SSH UFW rule to LAN ranges (RFC 1918, ULA) and the
-`tailscale0` interface.
+> r[image.tailscale.ts-up]
+> A helper script must be installed at `/usr/local/bin/ts-up` that interactively prompts for a Tailscale auth key, connects to the tailnet with `--ssh`, and on success restricts the SSH UFW rule to LAN ranges (RFC 1918, ULA) and the `tailscale0` interface.
 
 > r[image.tailscale.firstboot-auth]
 > A systemd service must be installed and enabled with a run condition for the file `/etc/bes/tailscale-authkey` existing.
@@ -204,23 +168,19 @@ success restricts the SSH UFW rule to LAN ranges (RFC 1918, ULA) and the
 >
 > On failure the service must log the error but not prevent boot. The service must be ordered after `tailscaled.service` and `network-online.target`.
 
-r[image.tailscale.auto-update]
-A weekly cron job must be present to run `apt install -y tailscale`.
+> r[image.tailscale.auto-update]
+> A weekly cron job must be present to run `apt install -y tailscale`.
 
 ## Snapper
 
-r[image.snapper.root]
-Snapper must be configured for the root subvolume (`/`) with timeline
-snapshots enabled and retention of 10 hourly, 7 daily, 4 weekly, and
-12 monthly snapshots.
+> r[image.snapper.root]
+> Snapper must be configured for the root subvolume (`/`) with timeline snapshots enabled and retention of 10 hourly, 7 daily, 4 weekly, and 12 monthly snapshots.
 
-r[image.snapper.postgres]
-Snapper must be configured for the PostgreSQL subvolume
-(`/var/lib/postgresql`) with the same retention settings as the root config.
+> r[image.snapper.postgres]
+> Snapper must be configured for the PostgreSQL subvolume (`/var/lib/postgresql`) with the same retention settings as the root config.
 
-r[image.snapper.timers]
-The `snapper-timeline.timer` and `snapper-cleanup.timer` systemd timers must
-be enabled.
+> r[image.snapper.timers]
+> The `snapper-timeline.timer` and `snapper-cleanup.timer` systemd timers must be enabled.
 
 ## Disk Growth
 
@@ -236,91 +196,70 @@ be enabled.
 
 ## Credentials
 
-r[image.credentials.ubuntu-user]
-A `ubuntu` user must exist with the pre-set password `bes`. The password must
-be marked expired so that console login forces an immediate password change.
+> r[image.credentials.ubuntu-user]
+> A `ubuntu` user must exist with the pre-set password `bes`. The password must be marked expired so that console login forces an immediate password change.
 
-r[image.credentials.root-disabled]
-The `root` user must have its shell set to `/sbin/nologin`.
+> r[image.credentials.root-disabled]
+> The `root` user must have its shell set to `/sbin/nologin`.
 
-r[image.credentials.no-root-ssh]
-SSH access for the `root` user must be disabled via `PermitRootLogin no`.
+> r[image.credentials.no-root-ssh]
+> SSH access for the `root` user must be disabled via `PermitRootLogin no`.
 
-r[image.credentials.ssh-password-auth]
-The cloud build-time image must have SSH password authentication disabled;
-only key-based authentication is permitted. The metal build-time image must
-have SSH password authentication enabled so that the pre-set `ubuntu` user
-credentials are usable over SSH.
+> r[image.credentials.ssh-password-auth]
+> The cloud build-time image must have SSH password authentication disabled; only key-based authentication is permitted. The metal build-time image must have SSH password authentication enabled so that the pre-set `ubuntu` user credentials are usable over SSH.
 
-r[image.credentials.no-host-keys+2]
-The image must not contain SSH host keys (`/etc/ssh/ssh_host_*`). The
-openssh-server package generates host keys at install time, but these must
-be deleted during the image build so that each deployed instance generates
-its own unique keys on first boot. Shipping shared host keys is a security
-risk (enables MITM) and leaks the build machine's hostname in the key
-comment.
+> r[image.credentials.no-host-keys+2]
+> The image must not contain SSH host keys (`/etc/ssh/ssh_host_*`). The openssh-server package generates host keys at install time, but these must be deleted during the image build so that each deployed instance generates its own unique keys on first boot. Shipping shared host keys is a security risk (enables MITM) and leaks the build machine's hostname in the key comment.
 
-r[image.credentials.host-key-regen]
-A service must be installed and enabled that regenerates SSH host keys on
-first boot when they are missing. The service must run before the SSH
-daemon starts and must be conditioned on a host key file not existing so
-that it is a no-op on subsequent boots.
+> r[image.credentials.host-key-regen]
+> A service must be installed and enabled that regenerates SSH host keys on first boot when they are missing. The service must run before the SSH daemon starts and must be conditioned on a host key file not existing so that it is a no-op on subsequent boots.
 
 ## Cloud-Init
 
-r[image.cloud-init.enabled]
-cloud-init must be installed and enabled, allowing cloud providers and NoCloud
-data sources to inject configuration (networking, SSH keys) at first boot.
+> r[image.cloud-init.enabled]
+> cloud-init must be installed and enabled, allowing cloud providers and NoCloud data sources to inject configuration (networking, SSH keys) at first boot.
 
-r[image.cloud-init.no-hostname-file]
-cloud-init must be configured with `create_hostname_file: false` so that the
-hostname is provided by DHCP rather than a static file.
+> r[image.cloud-init.no-hostname-file]
+> cloud-init must be configured with `create_hostname_file: false` so that the hostname is provided by DHCP rather than a static file.
 
-r[image.cloud-init.no-network]
-cloud-init must not have network configs in the image.
+> r[image.cloud-init.no-network]
+> cloud-init must not have network configs in the image.
 
-r[image.cloud-init.no-machineid]
-The /etc/machine-id file must be blank in the image so it's unique per install.
+> r[image.cloud-init.no-machineid]
+> The /etc/machine-id file must be blank in the image so it's unique per install.
 
 ## Hostname
 
-r[image.hostname.metal-dhcp+2]
-The metal build-time image must ship with an empty `/etc/hostname` (zero
-bytes) so that `systemd-hostnamed` accepts DHCP-provided transient
-hostnames. `/etc/hosts` must contain only `localhost` entries (no
-`127.0.1.1` line).
+> r[image.hostname.metal-dhcp+2]
+> The metal build-time image must ship with an empty `/etc/hostname` (zero bytes) so that `systemd-hostnamed` accepts DHCP-provided transient hostnames. `/etc/hosts` must contain only `localhost` entries (no `127.0.1.1` line).
 
-r[image.hostname.cloud-default+2]
-The cloud build-time image must ship with `ubuntu` as the static hostname
-in `/etc/hostname`. Cloud-init with `create_hostname_file: false` prevents
-cloud-init from touching this file; the hostname comes from DHCP or
-instance metadata at runtime.
+> r[image.hostname.cloud-default+2]
+> The cloud build-time image must ship with `ubuntu` as the static hostname in `/etc/hostname`. Cloud-init with `create_hostname_file: false` prevents cloud-init from touching this file; the hostname comes from DHCP or instance metadata at runtime.
 
 ## Encryption (Metal Build Variant)
 
 ### LUKS
 
-r[image.luks.format]
-The root partition must be formatted with LUKS2 using an empty passphrase in
-key slot 0.
+> r[image.luks.format]
+> The root partition must be formatted with LUKS2 using an empty passphrase in key slot 0.
 
-r[image.luks.keyfile]
-An empty keyfile must be installed at `/etc/luks/empty-keyfile` with mode 000.
-Dracut must be configured to include this keyfile in the initramfs.
+> r[image.luks.keyfile]
+> An empty keyfile must be installed at `/etc/luks/empty-keyfile` with mode 000. Dracut must be configured to include this keyfile in the initramfs.
 
-r[image.luks.crypttab]
-`/etc/crypttab` must be configured to automatically decrypt the root on boot.
+> r[image.luks.crypttab]
+> `/etc/crypttab` must be configured to automatically decrypt the root on boot.
 
 ## Output
 
-r[image.output.raw]
-A raw disk image file (`.raw`) must be produced, and compressed with zstd.
+> r[image.output.raw]
+> A raw disk image file (`.raw`) must be produced, and compressed with zstd.
 
-r[image.output.vmdk]
-A VMDK image must be produced.
+> r[image.output.vmdk]
+> A VMDK image must be produced.
 
-r[image.output.qcow2]
-A qcow2 image must be produced.
+> r[image.output.qcow2]
+> A qcow2 image must be produced.
 
-r[image.output.checksum]
-SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
+> r[image.output.checksum]
+> SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
+

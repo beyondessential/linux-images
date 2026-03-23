@@ -2,119 +2,52 @@
 
 ## Configuration File
 
-r[installer.config.format]
-The configuration file must be in TOML format.
-The installer must reject unknown fields with a parse error.
+> r[installer.config.format]
+> The configuration file must be in TOML format. The installer must reject unknown fields with a parse error.
 
-r[installer.config.location]
-The installer must look for a `bes-install.toml` file at the root of the
-BESCONF partition. If the file does not exist, it must consider it empty.
+> r[installer.config.location]
+> The installer must look for a `bes-install.toml` file at the root of the BESCONF partition. If the file does not exist, it must consider it empty.
 
-r[installer.config.template]
-The BESCONF partition must have a `bes-install.toml` file containing a
-commented-out entry for every known config field. Each entry must include
-a brief description and an example value.
+> r[installer.config.template]
+> The BESCONF partition must have a `bes-install.toml` file containing a commented-out entry for every known config field. Each entry must include a brief description and an example value.
 
-r[installer.config.auto+2]
-The `auto` field is a boolean. When `true`, the installer runs fully
-automatically without interactive prompts. All other fields are optional
-and fall back to their defaults (`disk-encryption` defaults to
-`"keyfile"`, `disk` defaults to `"largest-ssd"`, hostname defaults to
-DHCP-assigned).
+> r[installer.config.auto+2]
+> The `auto` field is a boolean. When `true`, the installer runs fully automatically without interactive prompts. All other fields are optional and fall back to their defaults (`disk-encryption` defaults to `"keyfile"`, `disk` defaults to `"largest-ssd"`, hostname defaults to DHCP-assigned).
 
-r[installer.config.disk-encryption+2]
-The `disk-encryption` field is a string selecting the disk encryption
-mode. Valid values are `"tpm"` (LUKS + TPM PCR 1; requires a TPM and is
-marked experimental), `"keyfile"` (LUKS + keyfile on the boot partition;
-the default), or `"none"` (no encryption).
+> r[installer.config.disk-encryption+2]
+> The `disk-encryption` field is a string selecting the disk encryption mode. Valid values are `"tpm"` (LUKS + TPM PCR 1; requires a TPM and is marked experimental), `"keyfile"` (LUKS + keyfile on the boot partition; the default), or `"none"` (no encryption).
 
-r[installer.config.disk]
-The `disk` field is a string selecting the target disk. It may be a
-device path (e.g. `"/dev/sda"`) or a strategy name. Valid strategies are
-`"largest-ssd"` (the largest SSD/NVMe device), `"largest"` (the largest
-device regardless of transport), and `"smallest"` (the smallest device).
+> r[installer.config.disk]
+> The `disk` field is a string selecting the target disk. It may be a device path (e.g. `"/dev/sda"`) or a strategy name. Valid strategies are `"largest-ssd"` (the largest SSD/NVMe device), `"largest"` (the largest device regardless of transport), and `"smallest"` (the smallest device).
 
-r[installer.config.copy-install-log]
-The `copy-install-log` field is a boolean controlling whether the
-installer copies its log into the installed system at
-`/var/log/bes-installer.log`. The default is `true`. There is no TUI
-control for this option.
+> r[installer.config.copy-install-log]
+> The `copy-install-log` field is a boolean controlling whether the installer copies its log into the installed system at `/var/log/bes-installer.log`. The default is `true`. There is no TUI control for this option.
 
-r[installer.config.hostname+2]
-The three hostname fields form a priority chain rather than being
-mutually exclusive. The installer resolves the effective hostname as
-follows:
+> r[installer.config.hostname+2]
+> The three hostname fields form a priority chain rather than being mutually exclusive. The installer resolves the effective hostname as follows:
 
-1. If `hostname` is set, use that static hostname.
-2. Otherwise, if `hostname-template` is set, generate a hostname from the
-   template pattern (see `installer.config.hostname-template`).
-3. Otherwise, use the DHCP-assigned hostname (`hostname-from-dhcp`
-   behaviour). This is the default.
+The `hostname-from-dhcp` field is a boolean that defaults to `true`. When the effective strategy is DHCP, the installed system obtains its hostname from the network. Setting `hostname` or `hostname-template` implicitly overrides it.
 
-The `hostname-from-dhcp` field is a boolean that defaults to `true`. When
-the effective strategy is DHCP, the installed system obtains its hostname
-from the network. Setting `hostname` or `hostname-template` implicitly
-overrides it.
+> r[installer.config.tailscale-authkey+3]
+> The `tailscale-authkey` field is a string containing a Tailscale auth key (e.g. `"tskey-auth-xxxxx"`). When set, the installer uses it to authenticate the installed system with Tailscale (see `r[installer.finalise.tailscale-auth]` and `r[installer.finalise.tailscale-firstboot]` for the authentication procedure).
 
-r[installer.config.tailscale-authkey+3]
-The `tailscale-authkey` field is a string containing a Tailscale auth key
-(e.g. `"tskey-auth-xxxxx"`). When set, the installer uses it to
-authenticate the installed system with Tailscale (see
-`r[installer.finalise.tailscale-auth]` and
-`r[installer.finalise.tailscale-firstboot]` for the authentication
-procedure).
+> r[installer.config.ssh-authorized-keys+2]
+> The `ssh-authorized-keys` field is an array of strings, each an OpenSSH public key line (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). When set, the installer writes these keys into the installed system (see `r[installer.finalise.ssh-keys]`).
 
-r[installer.config.ssh-authorized-keys+2]
-The `ssh-authorized-keys` field is an array of strings, each an OpenSSH
-public key line (e.g. `"ssh-ed25519 AAAA... admin@example.com"`). When
-set, the installer writes these keys into the installed system (see
-`r[installer.finalise.ssh-keys]`).
+> r[installer.config.password+2]
+> The `password` field is a string containing a plaintext password for the `ubuntu` user. The `password-hash` field is a string containing a pre-hashed password in crypt(3) format (e.g. `"$6$rounds=4096$..."`). If both are present, `password-hash` takes priority and `password` is ignored.
 
-r[installer.config.password+2]
-The `password` field is a string containing a plaintext password for the
-`ubuntu` user. The `password-hash` field is a string containing a
-pre-hashed password in crypt(3) format (e.g. `"$6$rounds=4096$..."`).
-If both are present, `password-hash` takes priority and `password` is
-ignored.
+> r[installer.config.timezone]
+> The `timezone` field is a string containing an IANA timezone name (e.g. `"Pacific/Auckland"`). The default is `"UTC"`.
 
-r[installer.config.timezone]
-The `timezone` field is a string containing an IANA timezone name (e.g.
-`"Pacific/Auckland"`). The default is `"UTC"`.
+> r[installer.config.recovery-passphrase]
+> The `recovery-passphrase` field is an optional string containing a pre-determined recovery passphrase to use instead of generating a random one. When set and disk encryption is enabled, the installer uses this passphrase as the initial LUKS key. The passphrase must be at least 25 characters long and contain only printable ASCII characters excluding whitespace (i.e. characters in the range `!` U+0021 through `~` U+007E). If the passphrase is present but does not meet these requirements, the installer must refuse to proceed with a validation error (not a warning). When not set, the installer generates a random diceware passphrase as usual.
 
-r[installer.config.recovery-passphrase]
-The `recovery-passphrase` field is an optional string containing a
-pre-determined recovery passphrase to use instead of generating a random
-one. When set and disk encryption is enabled, the installer uses this
-passphrase as the initial LUKS key. The passphrase must be at least 25
-characters long and contain only printable ASCII characters excluding
-whitespace (i.e. characters in the range `!` U+0021 through `~` U+007E).
-If the passphrase is present but does not meet these requirements, the
-installer must refuse to proceed with a validation error (not a warning).
-When not set, the installer generates a random diceware passphrase as
-usual.
+> r[installer.config.save-recovery-keys]
+> The `save-recovery-keys` field is a boolean. When `true` and the BESCONF partition is writable, the installer appends the recovery passphrase to a file named `recovery-keys.txt` on the BESCONF partition after a successful encrypted install. Each line contains the recovery passphrase, a tab character, the UUID of the root partition (as reported by `blkid`), a tab character, and the machine serial number if available or the literal string `unknown`. The machine serial is read from DMI/SMBIOS data: `/sys/class/dmi/id/product_serial` is preferred (this is the serial number most commonly printed on the outside of the chassis), falling back to `/sys/class/dmi/id/board_serial` if the product serial is absent or empty. The default is `false`. There is no TUI control for this option.
 
-r[installer.config.save-recovery-keys]
-The `save-recovery-keys` field is a boolean. When `true` and the BESCONF
-partition is writable, the installer appends the recovery passphrase to a
-file named `recovery-keys.txt` on the BESCONF partition after a successful
-encrypted install. Each line contains the recovery passphrase, a tab
-character, the UUID of the root partition (as reported by `blkid`), a tab
-character, and the machine serial number if available or the literal string
-`unknown`. The machine serial is read from DMI/SMBIOS data:
-`/sys/class/dmi/id/product_serial` is preferred (this is the serial number
-most commonly printed on the outside of the chassis), falling back to
-`/sys/class/dmi/id/board_serial` if the product serial is absent or empty.
-The default is `false`. There is no TUI control for this option.
-
-r[installer.config.hostname-template]
-The `hostname-template` field value is a string containing literal characters
-and placeholder expressions enclosed in `{...}`. Supported placeholders:
-`{hex:N}` (N-character lowercase hex string, 1 <= N <= 32) and `{num:N}`
-(N-digit zero-padded decimal string, 1 <= N <= 10). The template must
-contain at least one placeholder, literal portions must consist only of
-`[a-z0-9-]`, the template must not start or end with a hyphen, and the
-fully expanded hostname must not exceed 63 characters. Values are generated
-from a cryptographically secure random source.
+> r[installer.config.hostname-template]
+> The `hostname-template` field value is a string containing literal characters and placeholder expressions enclosed in `{...}`. Supported placeholders: `{hex:N}` (N-character lowercase hex string, 1 <= N <= 32) and `{num:N}` (N-digit zero-padded decimal string, 1 <= N <= 10). The template must contain at least one placeholder, literal portions must consist only of `[a-z0-9-]`, the template must not start or end with a hyphen, and the fully expanded hostname must not exceed 63 characters. Values are generated from a cryptographically secure random source.
 
 > r[installer.config.network-mode]
 > The `network-mode` field is a string selecting the network configuration
@@ -159,42 +92,19 @@ from a cryptographically secure random source.
 
 ## BESCONF Partition Interaction
 
-r[installer.besconf.writable-detection+2]
-At startup, before loading the configuration file, the installer must
-mount the BESCONF partition and detect whether it is writable. Because the
-configuration file lives on the BESCONF partition
-(`/run/besconf/bes-install.toml`), BESCONF must be mounted first. When an
-explicit `--config` path is provided, the installer must still mount
-BESCONF (for failure logging and recovery key saving) but reads the
-config from the provided path instead. The installer locates the BESCONF
-partition by its well-known PARTUUID, mounts it read-only at
-`/run/besconf`, then attempts a read-write remount
-(`mount -o remount,rw /run/besconf`). If the remount succeeds, BESCONF is
-considered writable for the duration of the install. If the partition is
-not found or the mount fails (e.g. optical media, partition absent,
-permissions), BESCONF is considered read-only and all write operations to
-it are silently skipped. The installer must track this state.
+> r[installer.besconf.writable-detection+2]
+> At startup, before loading the configuration file, the installer must mount the BESCONF partition and detect whether it is writable. Because the configuration file lives on the BESCONF partition (`/run/besconf/bes-install.toml`), BESCONF must be mounted first. When an explicit `--config` path is provided, the installer must still mount BESCONF (for failure logging and recovery key saving) but reads the config from the provided path instead. The installer locates the BESCONF partition by its well-known PARTUUID, mounts it read-only at `/run/besconf`, then attempts a read-write remount (`mount -o remount,rw /run/besconf`). If the remount succeeds, BESCONF is considered writable for the duration of the install. If the partition is not found or the mount fails (e.g. optical media, partition absent, permissions), BESCONF is considered read-only and all write operations to it are silently skipped. The installer must track this state.
 
-r[installer.besconf.failure-log]
-When the BESCONF partition is writable and the installer encounters a fatal
-error, it must copy its log file to `/run/besconf/installer-failed.log`.
-At installer startup, if a file named `installer-failed.log` already exists
-on a writable BESCONF partition, the installer must rename it to
-`installer-failed.log.old` (clobbering any existing `.old` file). This
-allows diagnosing installation failures on headless machines by removing the
-USB stick and reading the log from another computer.
+> r[installer.besconf.failure-log]
+> When the BESCONF partition is writable and the installer encounters a fatal error, it must copy its log file to `/run/besconf/installer-failed.log`. At installer startup, if a file named `installer-failed.log` already exists on a writable BESCONF partition, the installer must rename it to `installer-failed.log.old` (clobbering any existing `.old` file). This allows diagnosing installation failures on headless machines by removing the USB stick and reading the log from another computer.
 
 ## Operating Modes
 
-r[installer.mode.interactive+2]
-When no configuration file is found, the installer must launch a fully
-interactive TUI with sensible defaults (disk encryption auto-detected based
-on TPM presence, disk strategy `largest-ssd`).
+> r[installer.mode.interactive+2]
+> When no configuration file is found, the installer must launch a fully interactive TUI with sensible defaults (disk encryption auto-detected based on TPM presence, disk strategy `largest-ssd`).
 
-r[installer.mode.prefilled]
-When a configuration file is present but `auto` is false or absent, the
-installer must launch the TUI with values from the file pre-filled as
-defaults. The user can override any value.
+> r[installer.mode.prefilled]
+> When a configuration file is present but `auto` is false or absent, the installer must launch the TUI with values from the file pre-filled as defaults. The user can override any value.
 
 > r[installer.mode.auto+5]
 > When `auto = true`, the installer must proceed without any interactive
@@ -211,36 +121,21 @@ defaults. The user can override any value.
 > Any field not explicitly set falls back to its default (see
 > `installer.config.auto`).
 
-r[installer.mode.auto.progress]
-In automatic mode, the installer must detect whether standard error is
-connected to a terminal. When it is a terminal (interactive), progress
-updates use a carriage return (`\r`) to overwrite the current line.
-When it is not a terminal (e.g. CI log output), the installer must
-suppress the per-update progress lines entirely and instead print a
-single summary line after the write completes (total bytes written,
-throughput, and elapsed time). This avoids flooding non-interactive
-logs with thousands of nearly-identical progress lines.
+> r[installer.mode.auto.progress]
+> In automatic mode, the installer must detect whether standard error is connected to a terminal. When it is a terminal (interactive), progress updates use a carriage return (`\r`) to overwrite the current line. When it is not a terminal (e.g. CI log output), the installer must suppress the per-update progress lines entirely and instead print a single summary line after the write completes (total bytes written, throughput, and elapsed time). This avoids flooding non-interactive logs with thousands of nearly-identical progress lines.
 
 ## Testing Flags
 
-r[installer.no-reboot]
-When the `--no-reboot` flag is passed, the installer must not call `reboot`
-after a successful installation. Instead it must exit cleanly with status 0.
-This is required for container-based testing where reboot is not meaningful.
+> r[installer.no-reboot]
+> When the `--no-reboot` flag is passed, the installer must not call `reboot` after a successful installation. Instead it must exit cleanly with status 0. This is required for container-based testing where reboot is not meaningful.
 
 ## Dry-Run / Testing Mode
 
-r[installer.dryrun]
-When the `--dry-run` flag is passed, the installer must not perform any
-destructive operations (no disk wiping, no image writing, no filesystem
-mounting, no rebooting). Instead, after collecting all user decisions —
-whether from automatic mode, prefilled mode, or the interactive TUI — it
-must write a JSON file (the "install plan") summarising what it *would* do
-and exit with status 0.
+> r[installer.dryrun]
+> When the `--dry-run` flag is passed, the installer must not perform any destructive operations (no disk wiping, no image writing, no filesystem mounting, no rebooting). Instead, after collecting all user decisions — whether from automatic mode, prefilled mode, or the interactive TUI — it must write a JSON file (the "install plan") summarising what it would do and exit with status 0.
 
-r[installer.dryrun.output]
-The `--dry-run-output <path>` flag specifies the path for the JSON install
-plan. If omitted, the plan is written to stdout.
+> r[installer.dryrun.output]
+> The `--dry-run-output <path>` flag specifies the path for the JSON install plan. If omitted, the plan is written to stdout.
 
 > r[installer.dryrun.schema+6]
 > The install plan JSON has the following structure:
@@ -283,18 +178,11 @@ plan. If omitted, the plan is written to stdout.
 > it is `false`. `timezone` is always present in the `install_config`
 > object and defaults to `"UTC"`.
 
-r[installer.dryrun.devices]
-In dry-run mode the installer must still detect real block devices (via
-`lsblk`) unless a `--fake-devices <path>` flag is given, in which case
-it reads device definitions from a JSON file instead. The JSON file must
-be an array of objects with the same fields as the `disk` object in the
-install plan (`path`, `model`, `size_bytes`, `transport`), plus an
-optional `removable` boolean (default false).
+> r[installer.dryrun.devices]
+> In dry-run mode the installer must still detect real block devices (via `lsblk`) unless a `--fake-devices <path>` flag is given, in which case it reads device definitions from a JSON file instead. The JSON file must be an array of objects with the same fields as the `disk` object in the install plan (`path`, `model`, `size_bytes`, `transport`), plus an optional `removable` boolean (default false).
 
-r[installer.dryrun.fake-tpm]
-The `--fake-tpm` flag forces the installer to behave as if a TPM device is
-present, regardless of whether `/dev/tpm0` exists. This is used for testing
-the TPM-bound encryption path in environments without a real TPM.
+> r[installer.dryrun.fake-tpm]
+> The `--fake-tpm` flag forces the installer to behave as if a TPM device is present, regardless of whether `/dev/tpm0` exists. This is used for testing the TPM-bound encryption path in environments without a real TPM.
 
 ### Scripted TUI Input
 
@@ -309,12 +197,8 @@ the TPM-bound encryption path in environments without a real TPM.
 > - Lines starting with `#` are comments and must be ignored.
 > - Empty lines must be ignored.
 
-r[installer.dryrun.script.headless]
-When `--input-script` is used, the TUI must not initialise the real terminal
-(no raw mode, no alternate screen). It must process events from the script
-file, update state, and — when the script is exhausted — produce the install
-plan from whatever screen state was reached. The TUI must not block waiting
-for terminal events.
+> r[installer.dryrun.script.headless]
+> When `--input-script` is used, the TUI must not initialise the real terminal (no raw mode, no alternate screen). It must process events from the script file, update state, and — when the script is exhausted — produce the install plan from whatever screen state was reached. The TUI must not block waiting for terminal events.
 
 ## TUI
 
@@ -326,7 +210,7 @@ for terminal events.
 > must show the `Ctrl+Alt+d: shell` keybind so users know how to access a
 > debug shell without leaving the installer permanently (this is the only
 > screen where the hint is shown, though the keybind works everywhere).
-> 
+>
 > When the images partition was opened via dm-verity (see `r[iso.verity.check+6]`),
 > the welcome screen must display a progress bar at the bottom labelled
 > "Verifying installation media..." while the integrity check runs in the
@@ -477,19 +361,11 @@ for terminal events.
 > debounce), the connectivity checks and tailscale netcheck are restarted
 > automatically.
 
-r[installer.tui.tailscale-netcheck+3]
-The TUI must run `tailscale netcheck` in the background (the `tailscale`
-binary must be available on the live ISO). The check starts automatically
-alongside the network connectivity checks when the network configuration
-screen is first shown. If the `tailscale` binary is not found or the command
-fails, the result stores an appropriate error message. The tailscale netcheck
-output is displayed on both the dedicated network check screen and the
-pre-summary network results screen, below the endpoint check results.
+> r[installer.tui.tailscale-netcheck+3]
+> The TUI must run `tailscale netcheck` in the background (the `tailscale` binary must be available on the live ISO). The check starts automatically alongside the network connectivity checks when the network configuration screen is first shown. If the `tailscale` binary is not found or the command fails, the result stores an appropriate error message. The tailscale netcheck output is displayed on both the dedicated network check screen and the pre-summary network results screen, below the endpoint check results.
 
-r[installer.tui.disk-detection+4]
-After the network configuration screen (or automatically in automatic mode),
-the TUI must detect available block devices and display their device path,
-size, model name, and transport type (SSD, HDD, NVMe, USB, etc.).
+> r[installer.tui.disk-detection+4]
+> After the network configuration screen (or automatically in automatic mode), the TUI must detect available block devices and display their device path, size, model name, and transport type (SSD, HDD, NVMe, USB, etc.).
 
 > r[installer.tui.disk-encryption+2]
 > After the disk selection screen, the TUI must present a "Disk Encryption"
@@ -520,8 +396,6 @@ size, model name, and transport type (SSD, HDD, NVMe, USB, etc.).
 >   partition. The system will boot unattended on any hardware. If the boot
 >   partition is lost, you will need the recovery passphrase."
 > - **No encryption**: "The root partition will not be encrypted."
-
-
 
 > r[installer.tui.hostname+6]
 > After disk encryption selection, the TUI presents a hostname selection
@@ -556,75 +430,20 @@ size, model name, and transport type (SSD, HDD, NVMe, USB, etc.).
 > and the selector defaults to "Static hostname" regardless of encryption
 > mode.
 
-r[installer.tui.tailscale+3]
-After the hostname screen, the TUI presents a Login screen. The Login screen
-has inline password entry and keybinds to open sub-screens for Tailscale
-auth key, SSH keys, and GitHub SSH key import. The Tailscale sub-screen is
-accessed via the `Alt+t` keybind from the Login screen and presents a text input
-for a Tailscale auth key. The field may be pre-filled from the configuration
-file. The user can leave it empty to skip Tailscale configuration. Enter or
-Esc returns to the Login screen.
+> r[installer.tui.tailscale+3]
+> After the hostname screen, the TUI presents a Login screen. The Login screen has inline password entry and keybinds to open sub-screens for Tailscale auth key, SSH keys, and GitHub SSH key import. The Tailscale sub-screen is accessed via the `Alt+t` keybind from the Login screen and presents a text input for a Tailscale auth key. The field may be pre-filled from the configuration file. The user can leave it empty to skip Tailscale configuration. Enter or Esc returns to the Login screen.
 
-r[installer.tui.ssh-keys+5]
-The SSH keys sub-screen is accessed via the `Alt+s` keybind from the Login
-screen. It displays a list of individual key entry fields with a trailing
-blank field always present at the end. The selected field is expanded for
-editing as a bordered text input; non-selected fields are collapsed to a
-one-line summary showing the key type, start of the key material, and the
-comment (if any). Empty entries are shown as `(empty)` in gray. Non-empty
-entries that do not pass the validity check are highlighted in red (both
-when selected for editing and when collapsed) to indicate they will be
-discarded on exit. When the
-user types into the trailing blank field, a new blank field is automatically
-appended so there is always a blank field at the end. Tab cycles forward
-through the fields (wrapping from the last to the first). Shift+Tab cycles
-backward (wrapping from the first to the last). Enter or Esc returns to the
-Login screen after filtering out empty and invalid entries. A minimal
-validity check requires the line to start with a recognized key type prefix
-(`ssh-rsa`, `ssh-ed25519`, `ssh-dss`, `ecdsa-sha2-nistp256`,
-`ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`,
-`sk-ssh-ed25519@openssh.com`, `sk-ecdsa-sha2-nistp256@openssh.com`)
-followed by a space and at least one more non-whitespace character. After
-filtering, if the vec is empty, a single empty string is re-added so the
-screen always has at least one field.
+> r[installer.tui.ssh-keys+5]
+> The SSH keys sub-screen is accessed via the `Alt+s` keybind from the Login screen. It displays a list of individual key entry fields with a trailing blank field always present at the end. The selected field is expanded for editing as a bordered text input; non-selected fields are collapsed to a one-line summary showing the key type, start of the key material, and the comment (if any). Empty entries are shown as `(empty)` in gray. Non-empty entries that do not pass the validity check are highlighted in red (both when selected for editing and when collapsed) to indicate they will be discarded on exit. When the user types into the trailing blank field, a new blank field is automatically appended so there is always a blank field at the end. Tab cycles forward through the fields (wrapping from the last to the first). Shift+Tab cycles backward (wrapping from the first to the last). Enter or Esc returns to the Login screen after filtering out empty and invalid entries. A minimal validity check requires the line to start with a recognized key type prefix (`ssh-rsa`, `ssh-ed25519`, `ssh-dss`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`, `sk-ssh-ed25519@openssh.com`, `sk-ecdsa-sha2-nistp256@openssh.com`) followed by a space and at least one more non-whitespace character. After filtering, if the vec is empty, a single empty string is re-added so the screen always has at least one field.
 
-r[installer.tui.ssh-keys.github+4]
-The GitHub import sub-screen is accessed via the `Alt+g` keybind from the Login
-screen, only when `github.com` is reachable per the background network
-checks. It presents a text input for a GitHub username. When the user
-presses Enter, the installer fetches `https://github.com/<username>.keys`.
-If the fetch succeeds and returns one or more keys, they are appended as
-individual entries in the SSH keys list, then the screen navigates to the
-SSH Keys sub-screen so the user can review the imported keys.
-If the fetch fails or returns no keys, an inline error is displayed. The
-fetch must time out after 5 seconds. Esc returns to the Login screen.
+> r[installer.tui.ssh-keys.github+4]
+> The GitHub import sub-screen is accessed via the `Alt+g` keybind from the Login screen, only when `github.com` is reachable per the background network checks. It presents a text input for a GitHub username. When the user presses Enter, the installer fetches `https://github.com/<username>.keys`. If the fetch succeeds and returns one or more keys, they are appended as individual entries in the SSH keys list, then the screen navigates to the SSH Keys sub-screen so the user can review the imported keys. If the fetch fails or returns no keys, an inline error is displayed. The fetch must time out after 5 seconds. Esc returns to the Login screen.
 
-r[installer.tui.password+4]
-Password entry is inline on the Login screen. The user types a password,
-then confirms it by typing it again. Both fields are masked (displayed as
-asterisks). If the two entries do not match, the TUI must display an inline
-error and not advance. The password must not be empty in interactive mode;
-if the user attempts to advance with both fields empty, the TUI must display
-an inline error ("Password is required") and not advance. When a password is
-provided via the configuration file (`password` or `password-hash`), the
-password fields are pre-satisfied and the screen is skipped in prefilled and
-auto modes. Below the password fields, the Login
-screen shows keybind hints for the sub-screens (`Alt+t`: Tailscale, `Alt+s`:
-SSH keys, `Alt+g`: GitHub import). The Alt modifier prevents the keybinds
-from interfering with password input. A yellow `*` indicator is appended to
-each hint when a value is set (Tailscale auth key is non-empty, or SSH keys
-are present). The `Alt+g` hint is only shown when `github.com` is reachable.
+> r[installer.tui.password+4]
+> Password entry is inline on the Login screen. The user types a password, then confirms it by typing it again. Both fields are masked (displayed as asterisks). If the two entries do not match, the TUI must display an inline error and not advance. The password must not be empty in interactive mode; if the user attempts to advance with both fields empty, the TUI must display an inline error ("Password is required") and not advance. When a password is provided via the configuration file (`password` or `password-hash`), the password fields are pre-satisfied and the screen is skipped in prefilled and auto modes. Below the password fields, the Login screen shows keybind hints for the sub-screens (`Alt+t`: Tailscale, `Alt+s`: SSH keys, `Alt+g`: GitHub import). The Alt modifier prevents the keybinds from interfering with password input. A yellow `*` indicator is appended to each hint when a value is set (Tailscale auth key is non-empty, or SSH keys are present). The `Alt+g` hint is only shown when `github.com` is reachable.
 
-r[installer.tui.timezone]
-After the password screen, the TUI must present a timezone selection screen.
-The screen displays a searchable list of IANA timezones read from the
-system's `/usr/share/zoneinfo` (specifically by parsing
-`/usr/share/zoneinfo/zone1970.tab`). The user types to filter the list and
-uses Up/Down arrows to navigate the filtered results. Enter selects the
-highlighted timezone and advances to the next screen. The field defaults to
-`UTC` and may be pre-filled from the configuration file. If a
-`--fake-timezones <path>` flag is given, the installer reads timezone names
-(one per line) from that file instead of the system tzdata.
+> r[installer.tui.timezone]
+> After the password screen, the TUI must present a timezone selection screen. The screen displays a searchable list of IANA timezones read from the system's `/usr/share/zoneinfo` (specifically by parsing `/usr/share/zoneinfo/zone1970.tab`). The user types to filter the list and uses Up/Down arrows to navigate the filtered results. Enter selects the highlighted timezone and advances to the next screen. The field defaults to `UTC` and may be pre-filled from the configuration file. If a `--fake-timezones <path>` flag is given, the installer reads timezone names (one per line) from that file instead of the system tzdata.
 
 > r[installer.tui.confirmation+8]
 > After the timezone screen, and after the pre-summary network results screen,
@@ -636,7 +455,7 @@ highlighted timezone and advances to the next screen. The field defaults to
 > (no network configuration)"). The summary must clearly state that all data
 > on the target disk will be destroyed. The user must type an explicit
 > confirmation (not just press Enter). The confirmation screen is step 6/6.
-> 
+>
 > When disk encryption is enabled (`"tpm"` or `"keyfile"`), the confirmation
 > screen must also generate and display the recovery passphrase. This gives
 > the user an opportunity to write it down before the destructive write
@@ -645,62 +464,25 @@ highlighted timezone and advances to the next screen. The field defaults to
 > again as a final reminder; the user must press Enter to acknowledge before
 > the system reboots.
 
-r[installer.tui.ascii-rendering]
-All text rendered by the TUI must use only printable ASCII characters. In
-particular, em dashes, curly quotes, ellipsis characters, and other
-non-ASCII punctuation must be replaced with their ASCII equivalents (e.g.
-`--` instead of U+2014). The Linux console (the default terminal on bare
-metal) does not have Unicode fonts; non-ASCII characters render as
-replacement blocks.
+> r[installer.tui.ascii-rendering]
+> All text rendered by the TUI must use only printable ASCII characters. In particular, em dashes, curly quotes, ellipsis characters, and other non-ASCII punctuation must be replaced with their ASCII equivalents (e.g. `--` instead of U+2014). The Linux console (the default terminal on bare metal) does not have Unicode fonts; non-ASCII characters render as replacement blocks.
 
-r[installer.tui.error-reboot]
-When the installer encounters a fatal error during the write or post-write
-phases, the TUI must display the error message and wait for a keypress.
-Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is
-set), not simply quit the process. On bare-metal hardware, quitting without
-rebooting leaves the machine in an unusable state.
+> r[installer.tui.error-reboot]
+> When the installer encounters a fatal error during the write or post-write phases, the TUI must display the error message and wait for a keypress. Pressing any key must trigger a reboot (or exit cleanly if `--no-reboot` is set), not simply quit the process. On bare-metal hardware, quitting without rebooting leaves the machine in an unusable state.
 
-r[installer.tui.reboot-feedback+2]
-When a reboot is triggered (from the Done screen or the Error screen), the
-TUI must immediately leave the alternate screen, print a visible
-"Rebooting..." message to stdout, and switch back to tty1 (via `chvt 1`) so
-the user can see systemd shutdown output. Only then must it call `reboot`.
-If the `reboot` command is not found or fails, `systemctl reboot` must be
-tried as a fallback. If both fail, the TUI must print an error message
-directing the user to use Ctrl-Alt-F1 for a shell and block indefinitely
-rather than exiting (which would leave the machine on a dead TTY).
-This prevents the appearance of the installer being stuck between the
-keypress and the screen blanking.
+> r[installer.tui.reboot-feedback+2]
+> When a reboot is triggered (from the Done screen or the Error screen), the TUI must immediately leave the alternate screen, print a visible "Rebooting..." message to stdout, and switch back to tty1 (via `chvt 1`) so the user can see systemd shutdown output. Only then must it call `reboot`. If the `reboot` command is not found or fails, `systemctl reboot` must be tried as a fallback. If both fail, the TUI must print an error message directing the user to use Ctrl-Alt-F1 for a shell and block indefinitely rather than exiting (which would leave the machine on a dead TTY). This prevents the appearance of the installer being stuck between the keypress and the screen blanking.
 
-r[installer.tui.progress+4]
-The TUI must display a single progress bar that covers the entire
-installation. The progress bar is shown on the `Installing` screen from
-the moment the user confirms until all steps complete. The Installing
-screen begins with partition image writes (which have byte-level progress)
-occupying approximately 90% of the bar. Each post-write step (filesystem
-expansion, UUID randomization, boot config rebuild, partition verification,
-install-time configuration, and encryption setup) occupies a small fixed
-slice of the remaining 10%, advancing the bar when the step completes. After
-all steps finish, the TUI transitions to a completion screen. For encrypted
-installs, the completion screen also displays the recovery passphrase.
+> r[installer.tui.progress+4]
+> The TUI must display a single progress bar that covers the entire installation. The progress bar is shown on the `Installing` screen from the moment the user confirms until all steps complete. The Installing screen begins with partition image writes (which have byte-level progress) occupying approximately 90% of the bar. Each post-write step (filesystem expansion, UUID randomization, boot config rebuild, partition verification, install-time configuration, and encryption setup) occupies a small fixed slice of the remaining 10%, advancing the bar when the step completes. After all steps finish, the TUI transitions to a completion screen. For encrypted installs, the completion screen also displays the recovery passphrase.
 
-r[installer.tui.debug-shell+3]
-Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an
-interactive shell (`/bin/sh`). The TUI must leave the alternate screen,
-disable raw mode, and spawn the shell as a child process, waiting for it to
-exit. When the shell exits, the TUI must re-enter the alternate screen,
-re-enable raw mode, and redraw. The keybind must be shown in the footer
-hints on the welcome screen so users can discover it; it does not need to
-be repeated on every screen.
+> r[installer.tui.debug-shell+3]
+> Pressing `Ctrl+Alt+d` at any point in the TUI must drop the user into an interactive shell (`/bin/sh`). The TUI must leave the alternate screen, disable raw mode, and spawn the shell as a child process, waiting for it to exit. When the shell exits, the TUI must re-enter the alternate screen, re-enable raw mode, and redraw. The keybind must be shown in the footer hints on the welcome screen so users can discover it; it does not need to be repeated on every screen.
 
 ## Image Writing
 
-r[installer.write.partitions+2]
-Before writing partition images, the installer must wipe all existing
-filesystem, RAID, and partition-table signatures from the target disk. It
-must then create the GPT table and all three partitions (EFI, xboot, root)
-using the geometry from `partitions.json`. After writing all partition
-images, the installer must verify the partition table.
+> r[installer.write.partitions+2]
+> Before writing partition images, the installer must wipe all existing filesystem, RAID, and partition-table signatures from the target disk. It must then create the GPT table and all three partitions (EFI, xboot, root) using the geometry from `partitions.json`. After writing all partition images, the installer must verify the partition table.
 
 > r[installer.write.source+5]
 > The installer must read `partitions.json` from the verity-protected images
@@ -725,69 +507,26 @@ images, the installer must verify the partition table.
 > directly without verity. This fallback must log a warning that integrity
 > verification is not active.
 
-r[installer.write.disk-size-check+3]
-Before writing, the installer must determine the uncompressed size of each
-partition image by calling `stat` on the raw image files (which are mounted
-from the images squashfs and appear at their real uncompressed size). It must
-verify that the target disk is at least as large as the sum of all partition
-sizes (plus GPT overhead). If the disk is too small, the installer must
-refuse to write and report the required size and disk size in the error
-message.
+> r[installer.write.disk-size-check+3]
+> Before writing, the installer must determine the uncompressed size of each partition image by calling `stat` on the raw image files (which are mounted from the images squashfs and appear at their real uncompressed size). It must verify that the target disk is at least as large as the sum of all partition sizes (plus GPT overhead). If the disk is too small, the installer must refuse to write and report the required size and disk size in the error message.
 
-r[installer.write.stream-copy+2]
-The installer must stream-copy each raw partition image directly to its
-corresponding partition device (or to the opened LUKS mapper device for the
-root partition when encryption is enabled) with progress reporting. The copy
-must be efficient: data should not be buffered entirely in userspace. Since
-the images are stored in a squashfs with transparent compression, the kernel
-handles decompression on read; dm-verity verification also happens
-transparently on each block read.
+> r[installer.write.stream-copy+2]
+> The installer must stream-copy each raw partition image directly to its corresponding partition device (or to the opened LUKS mapper device for the root partition when encryption is enabled) with progress reporting. The copy must be efficient: data should not be buffered entirely in userspace. Since the images are stored in a squashfs with transparent compression, the kernel handles decompression on read; dm-verity verification also happens transparently on each block read.
 
-r[installer.write.luks-before-write+2]
-When disk encryption is not `"none"`, the installer must format the root
-partition with LUKS2 using the recovery passphrase as the initial key and
-open the LUKS volume before writing the root partition image. After writing,
-the LUKS volume must be closed. The recovery passphrase must be generated
-before the write begins (in interactive mode it is generated at confirmation
-time; in automatic mode it is generated before the write phase). Since the
-installer creates the LUKS volume itself, there is no need for a key
-rotation step or an empty-passphrase slot. The same recovery passphrase is
-used to unlock the volume during subsequent post-write steps (expand root,
-randomize UUIDs, rebuild boot config).
+> r[installer.write.luks-before-write+2]
+> When disk encryption is not `"none"`, the installer must format the root partition with LUKS2 using the recovery passphrase as the initial key and open the LUKS volume before writing the root partition image. After writing, the LUKS volume must be closed. The recovery passphrase must be generated before the write begins (in interactive mode it is generated at confirmation time; in automatic mode it is generated before the write phase). Since the installer creates the LUKS volume itself, there is no need for a key rotation step or an empty-passphrase slot. The same recovery passphrase is used to unlock the volume during subsequent post-write steps (expand root, randomize UUIDs, rebuild boot config).
 
-r[installer.write.fstab-fixup]
-When disk encryption is not `"none"`, the installer must rewrite `/etc/fstab`
-on the installed system to reference `/dev/mapper/root` instead of
-`/dev/disk/by-partlabel/root` for the root and postgresql mount entries.
+> r[installer.write.fstab-fixup]
+> When disk encryption is not `"none"`, the installer must rewrite `/etc/fstab` on the installed system to reference `/dev/mapper/root` instead of `/dev/disk/by-partlabel/root` for the root and postgresql mount entries.
 
-r[installer.write.variant-fixup+2]
-The installer must write the chosen disk-encryption mode to
-`/etc/bes/image-variant` on the installed system: `luks-tpm` when disk
-encryption is `"tpm"`, `luks-keyfile` when `"keyfile"`, or `plain` when
-`"none"`.
+> r[installer.write.variant-fixup+2]
+> The installer must write the chosen disk-encryption mode to `/etc/bes/image-variant` on the installed system: `luks-tpm` when disk encryption is `"tpm"`, `luks-keyfile` when `"keyfile"`, or `plain` when `"none"`.
 
-r[installer.write.expand-root]
-After writing the root partition image, the installer must expand the root
-filesystem to fill the partition. When disk encryption is enabled, the
-installer must first open the LUKS volume and run `cryptsetup resize` to
-expand it to fill the partition, then run `btrfs filesystem resize max` on
-the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is
-needed. This ensures the installed system has a fully expanded filesystem
-without depending on a boot-time growth service.
+> r[installer.write.expand-root]
+> After writing the root partition image, the installer must expand the root filesystem to fill the partition. When disk encryption is enabled, the installer must first open the LUKS volume and run `cryptsetup resize` to expand it to fill the partition, then run `btrfs filesystem resize max` on the mounted BTRFS. When encryption is `"none"`, only the BTRFS resize is needed. This ensures the installed system has a fully expanded filesystem without depending on a boot-time growth service.
 
-r[installer.write.randomize-uuids+4]
-After expanding the root filesystem, the installer must randomize the
-filesystem UUID of each partition to ensure every installation has unique
-identifiers. For the ext4 extended boot partition, it must first run
-`e2fsck -f -y` (required by `tune2fs` before modifying the superblock),
-then `tune2fs -U random`. For the BTRFS root partition (or the LUKS volume
-on top of it), it must run `btrfstune -u` while the filesystem is
-unmounted. For the FAT32 EFI partition, it must randomize the volume serial
-number with `mlabel -n`. All filesystems must be unmounted during UUID
-changes. After all UUIDs have been changed, the installer must trigger a
-udev refresh so that `/dev/disk/by-uuid/` symlinks reflect the new UUIDs.
-The refresh may fail in container environments without udevd; failures are
-non-fatal.
+> r[installer.write.randomize-uuids+4]
+> After expanding the root filesystem, the installer must randomize the filesystem UUID of each partition to ensure every installation has unique identifiers. For the ext4 extended boot partition, it must first run `e2fsck -f -y` (required by `tune2fs` before modifying the superblock), then `tune2fs -U random`. For the BTRFS root partition (or the LUKS volume on top of it), it must run `btrfstune -u` while the filesystem is unmounted. For the FAT32 EFI partition, it must randomize the volume serial number with `mlabel -n`. All filesystems must be unmounted during UUID changes. After all UUIDs have been changed, the installer must trigger a udev refresh so that `/dev/disk/by-uuid/` symlinks reflect the new UUIDs. The refresh may fail in container environments without udevd; failures are non-fatal.
 
 > r[installer.write.rebuild-boot-config+9]
 > After randomizing filesystem UUIDs (and after encryption enrollment and
@@ -855,8 +594,6 @@ non-fatal.
 > the LUKS volume with fresh key material and the recovery passphrase as the
 > initial key.
 
-
-
 > r[installer.encryption.tpm-enroll+6]
 > When disk encryption is `"tpm"`, the installer must enroll the TPM using
 > `systemd-cryptenroll` with `--tpm2-pcrs=1`, unlocking the volume with the
@@ -896,72 +633,31 @@ non-fatal.
 > acknowledge. In automatic mode, the passphrase is generated before the
 > write phase and printed to stderr after install completes.
 
-
-
 ## Install-Time Configuration
 
-r[installer.finalise.mount+4]
-After writing the image, the installer must mount the target disk's root
-BTRFS partition (subvol `@`) to apply install-time configuration. For the
-metal variant (disk encryption `"tpm"` or `"keyfile"`), it must unlock the
-LUKS volume using the recovery passphrase.
+> r[installer.finalise.mount+4]
+> After writing the image, the installer must mount the target disk's root BTRFS partition (subvol `@`) to apply install-time configuration. For the metal variant (disk encryption `"tpm"` or `"keyfile"`), it must unlock the LUKS volume using the recovery passphrase.
 
-r[installer.finalise.hostname+2]
-The installer must apply the effective hostname strategy determined by
-the priority chain in `installer.config.hostname`:
+> r[installer.finalise.hostname+2]
+> The installer must apply the effective hostname strategy determined by the priority chain in `installer.config.hostname`:
 
-1. If `hostname` is set (including hostnames generated from a template),
-   write it to `/etc/hostname` and add a `127.0.1.1` entry to
-   `/etc/hosts` on the installed system.
-2. Otherwise (DHCP is the default), write an empty `/etc/hostname`
-   (truncate) and remove any `127.0.1.1` line from `/etc/hosts`.
+> r[installer.finalise.tailscale-auth]
+> If `tailscale-authkey` is set and the installer knows that tailscale netcheck passed (i.e. `r[installer.tui.tailscale-netcheck+2]` completed successfully), the installer must attempt to authenticate with Tailscale directly by chrooting into the mounted target filesystem and running `tailscale up --auth-key=<key> --ssh`. The installer must log the outcome of the authentication attempt (success, invalid key, network error). If the attempt succeeds, the installer must not write the key file and the firstboot service will be skipped automatically (since its `ConditionPathExists` will not be satisfied).
 
-r[installer.finalise.tailscale-auth]
-If `tailscale-authkey` is set and the installer knows that tailscale
-netcheck passed (i.e. `r[installer.tui.tailscale-netcheck+2]` completed
-successfully), the installer must attempt to authenticate with Tailscale
-directly by chrooting into the mounted target filesystem and running
-`tailscale up --auth-key=<key> --ssh`. The installer must log the outcome
-of the authentication attempt (success, invalid key, network error). If
-the attempt succeeds, the installer must not write the key file and the
-firstboot service will be skipped automatically (since its
-`ConditionPathExists` will not be satisfied).
+> r[installer.finalise.tailscale-firstboot]
+> If `tailscale-authkey` is set and `r[installer.finalise.tailscale-auth]` either did not run (netcheck did not pass or was not performed) or did not succeed, the installer must write the auth key to `/etc/bes/tailscale-authkey` (mode 0600) for first-boot authentication via the `r[image.tailscale.firstboot-auth]` systemd service.
 
-r[installer.finalise.tailscale-firstboot]
-If `tailscale-authkey` is set and `r[installer.finalise.tailscale-auth]`
-either did not run (netcheck did not pass or was not performed) or did not
-succeed, the installer must write the auth key to
-`/etc/bes/tailscale-authkey` (mode 0600) for first-boot authentication via
-the `r[image.tailscale.firstboot-auth]` systemd service.
+> r[installer.finalise.ssh-keys]
+> If `ssh-authorized-keys` is set, the installer must append each key to `/home/ubuntu/.ssh/authorized_keys` with correct ownership and permissions (directory 700, file 600, owned by `ubuntu`).
 
-r[installer.finalise.ssh-keys]
-If `ssh-authorized-keys` is set, the installer must append each key to
-`/home/ubuntu/.ssh/authorized_keys` with correct ownership and permissions
-(directory 700, file 600, owned by `ubuntu`).
+> r[installer.finalise.password]
+> If a password is provided (either plaintext or pre-hashed), the installer must update the `ubuntu` user's password in `/etc/shadow` on the installed system. When a plaintext password is given, it must be hashed with SHA-512 crypt (`$6$`). When a pre-hashed password is given, it must be written directly. In either case, the password expiry flag must be cleared so that the user is not forced to change the password on first login.
 
-r[installer.finalise.password]
-If a password is provided (either plaintext or pre-hashed), the installer
-must update the `ubuntu` user's password in `/etc/shadow` on the installed
-system. When a plaintext password is given, it must be hashed with SHA-512
-crypt (`$6$`). When a pre-hashed password is given, it must be written
-directly. In either case, the password expiry flag must be cleared so that
-the user is not forced to change the password on first login.
+> r[installer.finalise.timezone]
+> The installer must set the system timezone on the installed system by creating a symlink at `/etc/localtime` pointing to the corresponding file under `/usr/share/zoneinfo/` and writing the timezone name to `/etc/timezone`. The default timezone is `UTC`.
 
-r[installer.finalise.timezone]
-The installer must set the system timezone on the installed system by
-creating a symlink at `/etc/localtime` pointing to the corresponding
-file under `/usr/share/zoneinfo/` and writing the timezone name to
-`/etc/timezone`. The default timezone is `UTC`.
-
-r[installer.finalise.copy-install-log+2]
-After applying install-time configuration and before encryption setup, the
-installer must copy its own log file into the installed system at
-`/var/log/bes-installer.log`. This is enabled by default. When
-`copy-install-log` is set to `false` in the configuration file, the copy
-must be skipped. If the copy fails (e.g. the target filesystem is full or
-the source log file does not exist), the installer must log a warning but
-must not treat it as a fatal error. There is no TUI control for this
-option.
+> r[installer.finalise.copy-install-log+2]
+> After applying install-time configuration and before encryption setup, the installer must copy its own log file into the installed system at `/var/log/bes-installer.log`. This is enabled by default. When `copy-install-log` is set to `false` in the configuration file, the copy must be skipped. If the copy fails (e.g. the target filesystem is full or the source log file does not exist), the installer must log a warning but must not treat it as a fatal error. There is no TUI control for this option.
 
 > r[installer.finalise.network+4]
 > After applying other install-time configuration, the installer must write
@@ -984,9 +680,8 @@ option.
 > - **Copy current (non-DHCP)**: the effective ISO config is resolved first
 >   and then the corresponding rule above applies.
 
-r[installer.finalise.unmount]
-After applying configuration, the installer must cleanly unmount all
-filesystems and close any LUKS volumes before prompting for reboot.
+> r[installer.finalise.unmount]
+> After applying configuration, the installer must cleanly unmount all filesystems and close any LUKS volumes before prompting for reboot.
 
 ## Container Isolation
 
@@ -1022,20 +717,11 @@ filesystems and close any LUKS volumes before prompting for reboot.
 > the installer and confirming that no host block devices (e.g. `/dev/sda`,
 > `/dev/nvme*`) are visible inside.
 
-r[installer.container.partition-devices+3]
-Inside a container with a private `/dev`, partition device nodes created by
-`partprobe` appear on the host's devtmpfs, not inside the container. The
-installer must ensure that partition device nodes exist (with correct
-major:minor numbers) before any operation that accesses them (e.g.
-`cryptsetup open`, `mount`). It must not derive partition major:minor
-numbers from the parent device — the kernel assigns them dynamically.
+> r[installer.container.partition-devices+3]
+> Inside a container with a private `/dev`, partition device nodes created by `partprobe` appear on the host's devtmpfs, not inside the container. The installer must ensure that partition device nodes exist (with correct major:minor numbers) before any operation that accesses them (e.g. `cryptsetup open`, `mount`). It must not derive partition major:minor numbers from the parent device — the kernel assigns them dynamically.
 
-r[installer.container.swtpm+2]
-Container-based integration tests that exercise TPM disk encryption must
-use a software TPM 2.0 emulator (`swtpm`) to provide a `/dev/tpmN` device
-inside the container so that `systemd-cryptenroll --tpm2-device=auto` works.
-The emulator must be started before the container launches and cleaned up
-when the test scenario finishes.
+> r[installer.container.swtpm+2]
+> Container-based integration tests that exercise TPM disk encryption must use a software TPM 2.0 emulator (`swtpm`) to provide a `/dev/tpmN` device inside the container so that `systemd-cryptenroll --tpm2-device=auto` works. The emulator must be started before the container launches and cleaned up when the test scenario finishes.
 
 > r[installer.container.fake-luks+2]
 > Container-based integration tests must be able to run metal (encrypted)
@@ -1056,3 +742,4 @@ when the test scenario finishes.
 >
 > The host-side verification phase (mounting the installed filesystem to
 > check its contents) must also account for the fake mode.
+
