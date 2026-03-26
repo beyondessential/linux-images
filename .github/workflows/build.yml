@@ -510,3 +510,42 @@ jobs:
           files: release/SHA256SUMS
           fail_on_unmatched_files: true
           make_latest: true
+
+  register-amis:
+    needs: [images-cloud]
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Derive version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Install zstd
+        run: sudo apt-get install -y --no-install-recommends zstd
+
+      - name: Download cloud raw image
+        uses: actions/download-artifact@v8
+        with:
+          name: image-raw-cloud-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/cloud/
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-southeast-2
+          role-to-assume: arn:aws:iam::143295493206:role/gha-tamanu-tools-upload
+          role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.arch }}
+
+      - name: Register AMI
+        run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ env.VERSION }}"
+        timeout-minutes: 60
