@@ -35,7 +35,7 @@ case "$ARCH" in
     *) echo "ERROR: arch must be amd64 or arm64, got: $ARCH"; exit 1 ;;
 esac
 
-# r[impl ci.release.aws-ami.name]
+# r[impl ci.release.aws-ami]
 AMI_NAME="ubuntu-24.04-bes-cloud-${ARCH}-${VERSION}"
 OUTPUT_DIR="$REPO_ROOT/output/${ARCH}/cloud"
 
@@ -177,7 +177,7 @@ echo ""
 
 # --- Tag AMI and snapshot ---
 
-# r[impl ci.release.aws-ami.tags]
+# r[verify ci.release.aws-ami]
 aws ec2 create-tags \
     --region "$REGION" \
     --resources "$AMI_ID" "$SNAPSHOT_ID" \
