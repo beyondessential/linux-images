@@ -13,7 +13,7 @@ set -euo pipefail
 #   arch       Architecture: amd64 or arm64
 #   version    Release version string (e.g. "1.2.3", without leading "v")
 #   region     AWS region (default: ap-southeast-2)
-#   s3-bucket  S3 bucket for import staging (default: bes-image-imports)
+#   s3-bucket  S3 bucket for import staging (default: bes-ops-tools)
 #
 # The raw.zst image is expected under output/<arch>/cloud/*.raw.zst
 
@@ -23,7 +23,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ARCH="${1:-}"
 VERSION="${2:-}"
 REGION="${3:-ap-southeast-2}"
-BUCKET="${4:-bes-image-imports}"
+BUCKET="${4:-bes-ops-tools}"
 
 if [ -z "$ARCH" ] || [ -z "$VERSION" ]; then
     echo "Usage: $0 <arch> <version> [region] [s3-bucket]"
@@ -74,7 +74,7 @@ echo ""
 
 # --- Upload to S3 ---
 
-S3_KEY="ci-imports/${AMI_NAME}.raw"
+S3_KEY="linux-images/${VERSION}/${AMI_NAME}.raw"
 echo "Uploading to s3://${BUCKET}/${S3_KEY} ..."
 aws s3 cp "$RAW_FILE" "s3://${BUCKET}/${S3_KEY}" \
     --region "$REGION" \
