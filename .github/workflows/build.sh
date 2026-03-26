@@ -511,14 +511,13 @@ jobs:
           fail_on_unmatched_files: true
           make_latest: true
 
-  # r[impl ci.release.aws-ami] r[verify ci.release.aws-ami]
   register-amis:
     needs: [images-cloud]
     if: startsWith(github.ref, 'refs/tags/')
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64] # r[impl ci.output-arch]
+        arch: [amd64, arm64]
         include:
           - arch: amd64
             runner: ubuntu-24.04
@@ -547,6 +546,6 @@ jobs:
           role-to-assume: arn:aws:iam::143295493206:role/gha-linux-images-upload
           role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.arch }}
 
-      - name: Register AMI # r[impl ci.release.aws-ami.name] r[impl ci.release.aws-ami.tags] r[verify ci.release.aws-ami.name] r[verify ci.release.aws-ami.tags]
+      - name: Register AMI
         run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ env.VERSION }}"
         timeout-minutes: 60
