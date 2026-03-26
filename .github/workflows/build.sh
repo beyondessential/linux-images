@@ -466,7 +466,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ap-southeast-2
-          role-to-assume: arn:aws:iam::143295493206:role/gha-tamanu-tools-upload
+          role-to-assume: arn:aws:iam::143295493206:role/gha-linux-images-upload
           role-session-name: GHA@linux-images=Release
 
       - name: Upload to S3
@@ -544,7 +544,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ap-southeast-2
-          role-to-assume: arn:aws:iam::143295493206:role/gha-tamanu-tools-upload
+          role-to-assume: arn:aws:iam::143295493206:role/gha-linux-images-upload
           role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.arch }}
 
       - name: Register AMI # r[impl ci.release.aws-ami.name] r[impl ci.release.aws-ami.tags] r[verify ci.release.aws-ami.name] r[verify ci.release.aws-ami.tags]
