@@ -489,7 +489,7 @@ jobs:
       - name: Invalidate CloudFront cache
         run: aws cloudfront create-invalidation --distribution-id=EDAG0UBS1MN74 --paths '/linux-images/*'
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           body: |
             **Downloads: <https://tools.ops.tamanu.io/linux-images/${{ env.VERSION }}/>**
