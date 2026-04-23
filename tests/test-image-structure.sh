@@ -512,8 +512,8 @@ check "Tailscale apt prefer configured" test -f "$MNT/etc/apt/preferences.d/99-t
 check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-tailscale"
 
 # r[verify image.boot.dracut]
-check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
-check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly-noble.conf"
+check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
+check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
 
 # r[verify image.boot.hardware-drivers+3]
 check "dracut hardware-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"

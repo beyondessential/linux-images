@@ -106,8 +106,8 @@ bash /tmp/scripts/setup-kopia.sh
 # r[image.boot.dracut]
 apt-get install -y -q dracut  # this removes initramfs-tools
 
-install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
-    /etc/dracut.conf.d/01-fix-hostonly-noble.conf
+install -m 644 /tmp/files/dracut/01-fix-hostonly.conf \
+    /etc/dracut.conf.d/01-fix-hostonly.conf
 
 # r[impl image.boot.hardware-drivers+3]
 install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
