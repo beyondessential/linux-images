@@ -1,6 +1,9 @@
 linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
 ubuntu_version := "24.04"
 ubuntu_suite := "noble"
+# Tailscale's apt repo may lag new Ubuntu releases (e.g. during RC).
+# Override with tailscale_suite=noble when building 26.04 pre-release.
+tailscale_suite := ubuntu_suite
 arch := "amd64"
 variant := "metal"
 qemu_memory := "4096"
@@ -21,6 +24,7 @@ _default:
     @echo "Variable: variant={{ variant }} (metal, cloud)"
     @echo "Variable: ubuntu_version={{ ubuntu_version }}"
     @echo "Variable: ubuntu_suite={{ ubuntu_suite }}"
+    @echo "Variable: tailscale_suite={{ tailscale_suite }}"
     @echo "Variable: ubuntu_mirror={{ ubuntu_mirror }}"
     @echo "Variable: qemu_memory={{ qemu_memory }}"
     @echo "Variable: qemu_cores={{ qemu_cores }}"
@@ -110,6 +114,7 @@ iso-base: _validate-arch _ensure-dirs
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         TAILSCALE_SUITE="{{ tailscale_suite }}" \
          iso/build-iso-base.sh
 
 # Build the live rootfs (unpack base + inject installer + squashfs + verity).
@@ -253,6 +258,7 @@ iso-base-rebuild: _validate-arch _ensure-dirs
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         TAILSCALE_SUITE="{{ tailscale_suite }}" \
          iso/build-iso-base.sh
 
 # Force-rebuild the ISO rootfs (removes cached rootfs, keeps base tarball)
@@ -477,6 +483,7 @@ raw: _validate-variant _validate-arch _ensure-dirs
          IMAGE_SIZE=5G \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         TAILSCALE_SUITE="{{ tailscale_suite }}" \
          image/build.sh
 
 # Convert raw image to VMDK (streamOptimized)

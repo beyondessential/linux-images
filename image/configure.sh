@@ -26,7 +26,9 @@ echo "--- configure.sh: arch=$ARCH variant=$VARIANT grub_target=$GRUB_TARGET ---
 # ============================================================
 # Apt sources
 # ============================================================
-# Ubuntu 24.04 uses DEB822 format
+# Modern Ubuntu (>=24.04) uses DEB822 format.
+UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
+
 if [ "$ARCH" = "arm64" ]; then
     MIRROR="http://ports.ubuntu.com/ubuntu-ports"
 else
@@ -36,13 +38,13 @@ fi
 cat > /etc/apt/sources.list.d/ubuntu.sources << EOF
 Types: deb
 URIs: $MIRROR
-Suites: noble noble-updates noble-backports
+Suites: $UBUNTU_SUITE $UBUNTU_SUITE-updates $UBUNTU_SUITE-backports
 Components: main restricted universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
 Types: deb
 URIs: $MIRROR
-Suites: noble-security
+Suites: $UBUNTU_SUITE-security
 Components: main restricted universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF

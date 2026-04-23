@@ -306,7 +306,10 @@ cp -r "$SCRIPT_DIR/files"      "$MNT/tmp/files/"
 # Phase 6: Run in-chroot configuration
 # ============================================================
 echo "==> Running configure.sh inside chroot..."
-chroot "$MNT" /bin/bash /tmp/configure.sh "$ARCH" "$VARIANT" "$GRUB_TARGET"
+chroot "$MNT" /usr/bin/env \
+    UBUNTU_SUITE="$UBUNTU_SUITE" \
+    TAILSCALE_SUITE="${TAILSCALE_SUITE:-$UBUNTU_SUITE}" \
+    /bin/bash /tmp/configure.sh "$ARCH" "$VARIANT" "$GRUB_TARGET"
 
 # ============================================================
 # Phase 7: Post-chroot cleanup

@@ -22,6 +22,10 @@ ROOTFS_FILES="$SCRIPT_DIR/rootfs-files"
 
 ARCH="${ARCH:-amd64}"
 UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
+# Tailscale's apt repo is keyed by Ubuntu codename. It may lag new Ubuntu
+# releases (e.g. during RC), so allow an override via TAILSCALE_SUITE — the
+# packages themselves are compatible across recent Ubuntu versions.
+TAILSCALE_SUITE="${TAILSCALE_SUITE:-$UBUNTU_SUITE}"
 OUTPUT="${OUTPUT:?OUTPUT must be set to the tarball path}"
 
 # r[impl iso.per-arch]
@@ -184,9 +188,9 @@ run_in_chroot bash -c "
         usbutils \
         curl
 
-    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/${UBUNTU_SUITE}.noarmor.gpg \
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/${TAILSCALE_SUITE}.noarmor.gpg \
         -o /usr/share/keyrings/tailscale-archive-keyring.gpg
-    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/${UBUNTU_SUITE}.tailscale-keyring.list \
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/${TAILSCALE_SUITE}.tailscale-keyring.list \
         -o /etc/apt/sources.list.d/tailscale.list
     apt-get update -q
     apt-get install -y -q --no-install-recommends tailscale
