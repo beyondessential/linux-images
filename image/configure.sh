@@ -108,17 +108,22 @@ bash /tmp/scripts/setup-kopia.sh
 # r[image.boot.dracut]
 apt-get install -y -q dracut  # this removes initramfs-tools
 
-install -m 644 /tmp/files/dracut/01-fix-hostonly.conf \
-    /etc/dracut.conf.d/01-fix-hostonly.conf
+# The hostonly workaround (and the force-include driver lists it requires)
+# apply only to noble. On 26.04+, dracut's default non-hostonly mode includes
+# all hardware/cloud modules automatically.
+if [ "$UBUNTU_SUITE" = "noble" ]; then
+    install -m 644 /tmp/files/dracut/01-fix-hostonly.conf \
+        /etc/dracut.conf.d/01-fix-hostonly.conf
 
-# r[impl image.boot.hardware-drivers+3]
-install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
-    /etc/dracut.conf.d/03-hardware-drivers.conf
+    # r[impl image.boot.hardware-drivers+3]
+    install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
+        /etc/dracut.conf.d/03-hardware-drivers.conf
 
-# r[impl image.boot.cloud-drivers+5]
-if [ "$VARIANT" = "cloud" ]; then
-    install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
-        /etc/dracut.conf.d/04-cloud-drivers.conf
+    # r[impl image.boot.cloud-drivers+5]
+    if [ "$VARIANT" = "cloud" ]; then
+        install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
+            /etc/dracut.conf.d/04-cloud-drivers.conf
+    fi
 fi
 
 if [ "$VARIANT" = "metal" ]; then
