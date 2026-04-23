@@ -122,13 +122,19 @@ systemd-timesyncd) may be active on the running image.
 ## Bootloader
 
 r[image.boot.dracut]
-The initramfs must be generated using dracut, not initramfs-tools. Dracut must
-be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
+The initramfs must be generated using dracut, not initramfs-tools. On Ubuntu
+24.04 (noble), dracut must be configured with `hostonly="yes"` and
+`hostonly_mode="sloppy"` as a workaround for a dracut bug in that release
+where non-hostonly mode produces a non-functional initramfs. On Ubuntu 26.04
+and later, dracut runs in its default (non-hostonly) mode, which includes
+kernel modules for all hardware automatically.
 
 > r[image.boot.hardware-drivers+3]
-> Both variants must force-include kernel modules into the initramfs for
-> hardware not present at image-build time. The following module categories
-> must be included:
+> Both variants' initramfs must contain kernel modules for hardware not
+> present at image-build time. Under the Ubuntu 24.04 hostonly workaround,
+> these modules must be explicitly force-included; on Ubuntu 26.04 and later,
+> dracut's default mode includes them automatically. The following module
+> categories must be present:
 >
 > - **NVMe:** `nvme`, `nvme_core`
 > - **SATA/AHCI:** `ahci`
@@ -142,8 +148,10 @@ be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 > - **Hyper-V:** `hv_storvsc`, `hv_netvsc`, `hv_vmbus`
 
 > r[image.boot.cloud-drivers+5]
-> The cloud variant must additionally force-include cloud-specific kernel
-> modules into the initramfs:
+> The cloud variant's initramfs must additionally contain cloud-specific
+> kernel modules. Force-inclusion applies only under the Ubuntu 24.04
+> hostonly workaround; on Ubuntu 26.04 and later, dracut's default mode
+> includes them automatically. The required modules:
 >
 > - **AWS:** `ena`, `xen_blkfront`
 > - **GCP:** `gve`
