@@ -6,6 +6,10 @@ ubuntu_suite := "noble"
 tailscale_suite := ubuntu_suite
 arch := "amd64"
 variant := "metal"
+# Build-time partition size. Metal needs more headroom than cloud because it
+# also installs linux-firmware, which is large; resolute's package set in
+# particular does not fit in 5G with metal extras. Both grow at first boot.
+image_size := if variant == "metal" { "8G" } else { "5G" }
 qemu_memory := "4096"
 qemu_cores := "2"
 container_test_filter := ""
@@ -480,7 +484,7 @@ raw: _validate-variant _validate-arch _ensure-dirs
     sudo ARCH="{{ arch }}" \
          VARIANT="{{ variant }}" \
          OUTPUT="{{ output_raw }}" \
-         IMAGE_SIZE=5G \
+         IMAGE_SIZE="{{ image_size }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
          TAILSCALE_SUITE="{{ tailscale_suite }}" \
