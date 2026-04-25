@@ -83,6 +83,17 @@ if [ "${#PACKAGES[@]}" -gt 0 ]; then
     apt-get install -y -q --no-install-recommends "${PACKAGES[@]}"
 fi
 
+# r[impl image.packages.chrony]
+# chrony enables itself via its postinst; defensively disable
+# systemd-timesyncd in case it was pulled in as a dependency (noble's
+# systemd-sysv depends on it). chrony.service has a runtime Conflicts=
+# directive against systemd-timesyncd, but leaving both enabled means one
+# fails to start at boot — better to disable it deterministically here.
+if [ -x /usr/lib/systemd/systemd-timesyncd ] || [ -f /usr/lib/systemd/system/systemd-timesyncd.service ]; then
+    systemctl disable systemd-timesyncd.service 2>/dev/null || true
+    systemctl mask systemd-timesyncd.service
+fi
+
 # ============================================================
 # Third-party APT repositories
 # ============================================================

@@ -26,6 +26,12 @@ PACKAGES=(
     # Cloud
     cloud-init
 
+    # Time synchronization. systemd-timesyncd is only a Recommends of
+    # systemd-sysv, so --no-install-recommends leaves the image without any
+    # time-sync daemon by default. Ship chrony explicitly so first boot has
+    # working NTP.
+    chrony
+
     # System
     systemd-resolved
     rsync
