@@ -26,6 +26,10 @@ PACKAGES=(
     # Cloud
     cloud-init
 
+    # Time synchronization (replaces systemd-timesyncd, which is shipped as a
+    # noble dependency of systemd-sysv but no longer exists on 26.04+)
+    chrony
+
     # System
     systemd-resolved
     rsync
