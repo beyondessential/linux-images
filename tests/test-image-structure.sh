@@ -562,11 +562,14 @@ if [ "$SUITE" = "noble" ]; then
     fi
 else
     # r[verify image.boot.dracut]
-    check_not "no dracut hostonly config on non-noble" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
+    check_not "no dracut hostonly fix config on non-noble" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
     # r[verify image.boot.hardware-drivers+3]
     check_not "no dracut hardware-drivers config on non-noble" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
     # r[verify image.boot.cloud-drivers+5]
     check_not "no dracut cloud-drivers config on non-noble" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+    # r[verify image.boot.dracut]: portable image config supplies hostonly=no
+    check "dracut portable-image config exists on non-noble" test -f "$MNT/etc/dracut.conf.d/01-portable-image.conf"
+    check "dracut portable-image config sets hostonly=no" grep -q 'hostonly="no"' "$MNT/etc/dracut.conf.d/01-portable-image.conf"
 fi
 
 # r[verify image.boot.grub-timeout]
