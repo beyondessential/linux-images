@@ -634,7 +634,15 @@ check_service_enabled "snapper-cleanup.timer"         "snapper-cleanup.timer is 
 check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is enabled"
 
 # r[verify image.cloud-init.enabled]
-check_service_enabled "cloud-init.service"            "cloud-init is enabled"
+# On noble, cloud-init.service is the static entry point that gets enabled into
+# multi-user.target.wants. On 26.04+, the unified service was removed and
+# cloud-init.target is wired in dynamically by cloud-init-generator at boot.
+if [ "$SUITE" = "noble" ]; then
+    check_service_enabled "cloud-init.service"            "cloud-init is enabled"
+else
+    check "cloud-init-generator exists" test -x "$MNT/usr/lib/systemd/system-generators/cloud-init-generator"
+    check "cloud-init.target.wants populated" test -d "$MNT/etc/systemd/system/cloud-init.target.wants"
+fi
 
 # r[verify image.packages.chrony]
 check_service_enabled "chrony.service"                "chrony is enabled"
@@ -762,7 +770,16 @@ if [ -x "$MNT/usr/bin/dpkg-query" ]; then
     done
 
     # r[verify image.packages.caddy]
-    check_pkg_version caddy    2.10.0 "image.packages.caddy"
+    if [ "$SUITE" = "noble" ]; then
+        check_pkg_version caddy    2.10.0 "image.packages.caddy"
+    else
+        # shellcheck disable=SC2016 # ${Status} is a dpkg format string, not a bash variable
+        if chroot "$MNT" dpkg-query -W -f='${Status}\n' caddy 2>/dev/null | grep -q "install ok installed"; then
+            fail "caddy is not pre-installed on non-noble"
+        else
+            pass "caddy is not pre-installed on non-noble"
+        fi
+    fi
     # r[verify image.packages.podman]
     check_pkg_version podman   5.0.0  "image.packages.podman"
     # r[verify image.packages.kopia]
