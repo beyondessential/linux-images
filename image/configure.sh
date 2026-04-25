@@ -108,9 +108,18 @@ bash /tmp/scripts/setup-kopia.sh
 # r[image.boot.dracut]
 apt-get install -y -q dracut  # this removes initramfs-tools
 
-# The hostonly workaround (and the force-include driver lists it requires)
-# apply only to noble. On 26.04+, dracut's default non-hostonly mode includes
-# all hardware/cloud modules automatically.
+# Dracut's default is hostonly=yes (per the dracut.conf manpage on every
+# supported suite), which produces an initramfs bound to the build host.
+# The shipped image needs to be portable across hardware, so we override:
+#
+# - On noble, hostonly=no is broken — we keep hostonly=yes + sloppy mode and
+#   force-include the hardware/cloud module lists.
+# - On 26.04+, hostonly=no works correctly and pulls in all kernel modules,
+#   so a single drop-in is enough.
+#
+# The installer strips the 26.04+ override post-install so the target
+# machine's initramfs is hostonly=yes (the default), specialised to its
+# actual hardware (see r[installer.write.rebuild-boot-config+9]).
 if [ "$UBUNTU_SUITE" = "noble" ]; then
     install -m 644 /tmp/files/dracut/01-fix-hostonly.conf \
         /etc/dracut.conf.d/01-fix-hostonly.conf
@@ -124,6 +133,10 @@ if [ "$UBUNTU_SUITE" = "noble" ]; then
         install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
             /etc/dracut.conf.d/04-cloud-drivers.conf
     fi
+else
+    # r[impl image.boot.hardware-drivers+3] r[impl image.boot.cloud-drivers+5]
+    install -m 644 /tmp/files/dracut/01-portable-image.conf \
+        /etc/dracut.conf.d/01-portable-image.conf
 fi
 
 if [ "$VARIANT" = "metal" ]; then
