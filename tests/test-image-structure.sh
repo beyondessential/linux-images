@@ -613,6 +613,18 @@ check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is e
 # r[verify image.cloud-init.enabled]
 check_service_enabled "cloud-init.service"            "cloud-init is enabled"
 
+# r[verify image.packages.chrony]
+check_service_enabled "chrony.service"                "chrony is enabled"
+check "chrony binary exists" test -x "$MNT/usr/sbin/chronyd"
+# systemd-timesyncd must not be enabled — chrony is the time daemon.
+if [ -L "$MNT/etc/systemd/system/multi-user.target.wants/systemd-timesyncd.service" ] \
+        || [ -L "$MNT/etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service" ] \
+        || [ -L "$MNT/etc/systemd/system/dbus-org.freedesktop.timesync1.service" ]; then
+    fail "systemd-timesyncd is not enabled"
+else
+    pass "systemd-timesyncd is not enabled"
+fi
+
 if [ "$VARIANT" = "metal" ]; then
     # r[verify image.luks.keyfile]
     check "LUKS empty keyfile exists" test -f "$MNT/etc/luks/empty-keyfile"
