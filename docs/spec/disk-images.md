@@ -128,18 +128,26 @@ systemd-timesyncd) may be active on the running image.
 ## Bootloader
 
 r[image.boot.dracut]
-The initramfs must be generated using dracut, not initramfs-tools. On Ubuntu
-24.04 (noble), dracut must be configured with `hostonly="yes"` and
-`hostonly_mode="sloppy"` as a workaround for a dracut bug in that release
-where non-hostonly mode produces a non-functional initramfs. On Ubuntu 26.04
-and later, dracut runs in its default (non-hostonly) mode, which includes
-kernel modules for all hardware automatically.
+The initramfs must be generated using dracut, not initramfs-tools. The
+shipped image's initramfs must be portable across hardware — it is not yet
+bound to a specific machine. The mechanism is suite-dependent:
+
+- On Ubuntu 24.04 (noble), dracut must be configured with `hostonly="yes"`
+  and `hostonly_mode="sloppy"` as a workaround for a dracut bug in that
+  release where `hostonly="no"` produces a non-functional initramfs. The
+  required hardware modules are then force-included via the
+  `add_drivers+=` mechanism (see `image.boot.hardware-drivers`).
+- On Ubuntu 26.04 and later, dracut must be configured with `hostonly="no"`,
+  which automatically includes all kernel modules.
+
+The installer specialises the initramfs to the target machine after install
+(see `installer.write.rebuild-boot-config`).
 
 > r[image.boot.hardware-drivers+3]
 > Both variants' initramfs must contain kernel modules for hardware not
 > present at image-build time. Under the Ubuntu 24.04 hostonly workaround,
 > these modules must be explicitly force-included; on Ubuntu 26.04 and later,
-> dracut's default mode includes them automatically. The following module
+> they are included automatically by `hostonly="no"`. The following module
 > categories must be present:
 >
 > - **NVMe:** `nvme`, `nvme_core`
@@ -156,8 +164,8 @@ kernel modules for all hardware automatically.
 > r[image.boot.cloud-drivers+5]
 > The cloud variant's initramfs must additionally contain cloud-specific
 > kernel modules. Force-inclusion applies only under the Ubuntu 24.04
-> hostonly workaround; on Ubuntu 26.04 and later, dracut's default mode
-> includes them automatically. The required modules:
+> hostonly workaround; on Ubuntu 26.04 and later, they are included
+> automatically by `hostonly="no"`. The required modules:
 >
 > - **AWS:** `ena`, `xen_blkfront`
 > - **GCP:** `gve`
