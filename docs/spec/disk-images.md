@@ -95,10 +95,16 @@ readable font at boot. `/etc/default/console-setup` must be present with
 ## Packages
 
 r[image.packages.bes-tools]
-The bes-tools APT repo must be configured and preferred.
+The bes-tools APT repo must be configured. The `bestool` package must be
+installed from this repo, where it is exclusively published. On Ubuntu 24.04
+(noble), `caddy` and `podman` must also be installed from this repo because
+the noble archive ships insufficiently recent versions. On Ubuntu 26.04 and
+later, `caddy` is not installed and `podman` is installed from the Ubuntu
+archive.
 
 r[image.packages.caddy]
-Caddy version >=2.10.0 must be pre-installed.
+On Ubuntu 24.04 (noble), Caddy version >=2.10.0 must be pre-installed. On
+Ubuntu 26.04 and later, Caddy is not pre-installed.
 
 r[image.packages.podman]
 Podman version >=5.0.0 must be pre-installed.
