@@ -431,10 +431,13 @@ check "snapper root config exists" test -f "$SNAPPER_ROOT_CFG"
 if [ -f "$SNAPPER_ROOT_CFG" ]; then
     check "snapper root: TIMELINE_CREATE=yes" grep -q '^TIMELINE_CREATE="yes"' "$SNAPPER_ROOT_CFG"
     check "snapper root: TIMELINE_CLEANUP=yes" grep -q '^TIMELINE_CLEANUP="yes"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_HOURLY=10" grep -q '^TIMELINE_LIMIT_HOURLY="10"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_DAILY=7" grep -q '^TIMELINE_LIMIT_DAILY="7"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_WEEKLY=4" grep -q '^TIMELINE_LIMIT_WEEKLY="4"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_MONTHLY=12" grep -q '^TIMELINE_LIMIT_MONTHLY="12"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: NUMBER_CLEANUP=yes" grep -q '^NUMBER_CLEANUP="yes"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: NUMBER_LIMIT=10" grep -q '^NUMBER_LIMIT="10"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_HOURLY=6" grep -q '^TIMELINE_LIMIT_HOURLY="6"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_DAILY=0" grep -q '^TIMELINE_LIMIT_DAILY="0"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_WEEKLY=0" grep -q '^TIMELINE_LIMIT_WEEKLY="0"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_MONTHLY=0" grep -q '^TIMELINE_LIMIT_MONTHLY="0"' "$SNAPPER_ROOT_CFG"
+    check "snapper root: TIMELINE_LIMIT_YEARLY=0" grep -q '^TIMELINE_LIMIT_YEARLY="0"' "$SNAPPER_ROOT_CFG"
 fi
 
 # r[verify image.snapper.postgres]
@@ -443,10 +446,13 @@ check "snapper postgres config exists" test -f "$SNAPPER_PG_CFG"
 if [ -f "$SNAPPER_PG_CFG" ]; then
     check "snapper postgres: TIMELINE_CREATE=yes" grep -q '^TIMELINE_CREATE="yes"' "$SNAPPER_PG_CFG"
     check "snapper postgres: TIMELINE_CLEANUP=yes" grep -q '^TIMELINE_CLEANUP="yes"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_HOURLY=10" grep -q '^TIMELINE_LIMIT_HOURLY="10"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_DAILY=7" grep -q '^TIMELINE_LIMIT_DAILY="7"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_WEEKLY=4" grep -q '^TIMELINE_LIMIT_WEEKLY="4"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_MONTHLY=12" grep -q '^TIMELINE_LIMIT_MONTHLY="12"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: NUMBER_CLEANUP=yes" grep -q '^NUMBER_CLEANUP="yes"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: NUMBER_LIMIT=10" grep -q '^NUMBER_LIMIT="10"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_HOURLY=6" grep -q '^TIMELINE_LIMIT_HOURLY="6"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_DAILY=0" grep -q '^TIMELINE_LIMIT_DAILY="0"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_WEEKLY=0" grep -q '^TIMELINE_LIMIT_WEEKLY="0"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_MONTHLY=0" grep -q '^TIMELINE_LIMIT_MONTHLY="0"' "$SNAPPER_PG_CFG"
+    check "snapper postgres: TIMELINE_LIMIT_YEARLY=0" grep -q '^TIMELINE_LIMIT_YEARLY="0"' "$SNAPPER_PG_CFG"
 fi
 
 # ============================================================
