@@ -524,6 +524,11 @@ checksum:
 # Build everything: raw + vmdk + qcow2 + compress + checksum
 build: vmdk qcow && compress checksum
 
+# Pi images are flashed to SD/USB/NVMe, so the vmdk/qcow2 conversions don't apply.
+
+# Build pi-only artifacts: raw + compress + checksum
+pi-build: raw && compress checksum
+
 # Build all variants for the current architecture (pi only on arm64)
 build-all-variants:
     #!/usr/bin/env bash
@@ -531,7 +536,7 @@ build-all-variants:
     just arch={{ arch }} variant=metal build
     just arch={{ arch }} variant=cloud build
     if [ "{{ arch }}" = "arm64" ]; then
-        just arch=arm64 variant=pi build
+        just arch=arm64 variant=pi pi-build
     fi
 
 # Build all variants for all architectures
@@ -540,13 +545,13 @@ build-all:
     just arch=amd64 variant=cloud build
     just arch=arm64 variant=metal build
     just arch=arm64 variant=cloud build
-    just arch=arm64 variant=pi build
+    just arch=arm64 variant=pi pi-build
 
 # Verify output formats and checksums
 
 # r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
 verify-outputs: _validate-variant _validate-arch
-    scripts/verify-outputs.sh "{{ output_dir }}" "{{ filestem }}"
+    scripts/verify-outputs.sh "{{ output_dir }}" "{{ filestem }}" "{{ variant }}"
 
 # ============================================================
 # Testing
