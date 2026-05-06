@@ -114,6 +114,11 @@ The official Tailscale apt repository must be configured and preferred.
 r[image.packages.bestool+2]
 bestool version >=1.4.0 must be pre-installed.
 
+r[image.packages.chrony]
+Chrony must be installed and enabled as the system time synchronization
+daemon. No other time synchronization daemon (in particular,
+systemd-timesyncd) may be active on the running image.
+
 ## Bootloader
 
 r[image.boot.dracut]
