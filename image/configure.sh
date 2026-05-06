@@ -125,7 +125,14 @@ apt-get install -y -q dracut  # this removes initramfs-tools
 # The installer strips the 26.04+ override post-install so the target
 # machine's initramfs is hostonly=yes (the default), specialised to its
 # actual hardware (see r[installer.write.rebuild-boot-config+9]).
-if [ "$UBUNTU_SUITE" = "noble" ]; then
+if [ "$VARIANT" = "pi" ]; then
+    # The hardware/cloud driver lists are x86-server-leaning (e1000e, ixgbe,
+    # etc.) and many of those modules don't exist in linux-raspi. Pi always
+    # uses the portable-image config (hostonly=no) regardless of suite, so
+    # dracut just bundles whatever linux-raspi ships.
+    install -m 644 /tmp/files/dracut/01-portable-image.conf \
+        /etc/dracut.conf.d/01-portable-image.conf
+elif [ "$UBUNTU_SUITE" = "noble" ]; then
     install -m 644 /tmp/files/dracut/01-fix-hostonly.conf \
         /etc/dracut.conf.d/01-fix-hostonly.conf
 
@@ -169,12 +176,43 @@ mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 
 # ============================================================
-# GRUB configuration
+# Bootloader configuration (GRUB for metal/cloud, Pi firmware for pi)
 # ============================================================
-# Ensure /etc/default/grub exists (grub package should create it)
-if [ ! -f /etc/default/grub ]; then
-    mkdir -p /etc/default
-    cat > /etc/default/grub << 'GRUBEOF'
+if [ "$VARIANT" = "pi" ]; then
+    # r[image.boot.pi-firmware] r[image.boot.pi-cmdline] r[image.boot.pi-uart] r[image.boot.pi-pcie-gen3]
+    # The Pi 5 EEPROM reads config.txt from /boot/firmware; the kernel,
+    # initramfs and DTB are copied alongside it by bes-pi-firmware-update,
+    # both at build time (below) and on every kernel apt upgrade (via the
+    # /etc/kernel/postinst.d hook installed further down).
+    # serial0,115200 is the Pi 5 PL011 UART (mapped via enable_uart=1 in
+    # config.txt). It comes last so systemd's serial-getty starts there for
+    # login, while kernel boot messages still mirror to tty1 (HDMI) for the
+    # rare case a screen is attached.
+    mkdir -p /boot/firmware
+    install -m 644 /tmp/files/pi/config.txt /boot/firmware/config.txt
+    cat > /boot/firmware/cmdline.txt << 'EOF'
+console=tty1 console=serial0,115200 root=/dev/mapper/root rootflags=subvol=@,compress=zstd:6 rootfstype=btrfs ro noresume rootwait
+EOF
+
+    # r[image.boot.pi-firmware-update]
+    # Install the firmware-partition updater plus its kernel-postinst hook.
+    # The updater is invoked in two places: explicitly after dracut (below),
+    # and on every kernel apt upgrade via the postinst hook.
+    install -m 755 /tmp/files/pi/bes-pi-firmware-update /usr/local/sbin/bes-pi-firmware-update
+    install -m 755 /tmp/files/pi/zz-bes-pi-firmware /etc/kernel/postinst.d/zz-bes-pi-firmware
+
+    # r[image.boot.pi-power-key]
+    # Pin the power-button behaviour to a clean shutdown. Default systemd
+    # behaviour matches, but shipping it explicitly makes the contract
+    # discoverable for whoever wants to flip it (e.g. to `reboot` or
+    # `ignore`).
+    mkdir -p /etc/systemd/logind.conf.d
+    install -m 644 /tmp/files/pi/50-bes-power.conf /etc/systemd/logind.conf.d/50-bes-power.conf
+else
+    # Ensure /etc/default/grub exists (grub package should create it)
+    if [ ! -f /etc/default/grub ]; then
+        mkdir -p /etc/default
+        cat > /etc/default/grub << 'GRUBEOF'
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=5
 GRUB_TIMEOUT_STYLE=menu
@@ -183,16 +221,15 @@ GRUB_CMDLINE_LINUX_DEFAULT="noresume"
 GRUB_CMDLINE_LINUX=""
 GRUB_RECORDFAIL_TIMEOUT=5
 GRUBEOF
-fi
+    fi
 
-# r[image.boot.cloud-console]
-if [ "$VARIANT" = "cloud" ]; then
-    GRUB_CMDLINE="noresume console=ttyS0,115200n8"
-else
-    GRUB_CMDLINE="noresume"
-fi
+    # r[image.boot.cloud-console]
+    if [ "$VARIANT" = "cloud" ]; then
+        GRUB_CMDLINE="noresume console=ttyS0,115200n8"
+    else
+        GRUB_CMDLINE="noresume"
+    fi
 
-if [ -f /etc/default/grub ]; then
     # r[image.boot.grub-timeout]
     sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=5/' /etc/default/grub
     sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=menu/' /etc/default/grub
@@ -211,40 +248,52 @@ fi
 # ============================================================
 # fstab and crypttab
 # ============================================================
-if [ "$VARIANT" = "metal" ]; then
-    # r[image.luks.keyfile]
-    mkdir -p /etc/luks
-    touch /etc/luks/empty-keyfile
-    chmod 000 /etc/luks/empty-keyfile
+case "$VARIANT" in
+    metal|pi)
+        # r[image.luks.keyfile]
+        mkdir -p /etc/luks
+        touch /etc/luks/empty-keyfile
+        chmod 000 /etc/luks/empty-keyfile
 
-    install -m 644 /tmp/files/dracut/02-luks-keyfile.conf \
-        /etc/dracut.conf.d/02-luks-keyfile.conf
+        install -m 644 /tmp/files/dracut/02-luks-keyfile.conf \
+            /etc/dracut.conf.d/02-luks-keyfile.conf
 
-    # r[image.luks.crypttab]
-    cat > /etc/crypttab << 'EOF'
+        # r[image.luks.crypttab]
+        cat > /etc/crypttab << 'EOF'
 # <name> <device>                    <keyfile>                 <options>
 root     /dev/disk/by-partlabel/root /etc/luks/empty-keyfile  force,luks,discard,headless=true,try-empty-password=true
 EOF
+        ;;
+esac
 
-    cat > /etc/fstab << 'EOF'
+# Boot1 fstab line varies: efi (UEFI) → /boot/efi, firmware (Pi) → /boot/firmware.
+if [ "$VARIANT" = "pi" ]; then
+    BOOT1_FSTAB_LINE="/dev/disk/by-partlabel/firmware /boot/firmware       vfat  umask=0077                               0 1"
+else
+    BOOT1_FSTAB_LINE="/dev/disk/by-partlabel/efi      /boot/efi            vfat  umask=0077                               0 1"
+fi
+
+case "$VARIANT" in
+    metal|pi)
+        cat > /etc/fstab << EOF
 # <device>                   <mountpoint>         <fs>  <options>                           <dump> <pass>
 /dev/mapper/root             /                    btrfs subvol=@,compress=zstd:6                 0 1
 /dev/mapper/root             /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:6         0 2
 /dev/disk/by-partlabel/xboot /boot                ext4  defaults                                 0 2
-/dev/disk/by-partlabel/efi   /boot/efi            vfat  umask=0077                               0 1
+$BOOT1_FSTAB_LINE
 EOF
-else
-    cat > /etc/fstab << 'EOF'
+        ;;
+    cloud)
+        cat > /etc/fstab << EOF
 # <device>                   <mountpoint>         <fs>  <options>                           <dump> <pass>
 /dev/disk/by-partlabel/root  /                    btrfs subvol=@,compress=zstd:6                 0 1
 /dev/disk/by-partlabel/root  /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:6         0 2
 /dev/disk/by-partlabel/xboot /boot                ext4  defaults                                 0 2
-/dev/disk/by-partlabel/efi   /boot/efi            vfat  umask=0077                               0 1
+$BOOT1_FSTAB_LINE
 EOF
-
-    # Ensure no crypttab exists
-    rm -f /etc/crypttab
-fi
+        rm -f /etc/crypttab
+        ;;
+esac
 
 # ============================================================
 # Firewall
@@ -365,18 +414,21 @@ rm -rvf /etc/cloud/cloud.cfg.d/90-installer-network.cfg
 # ============================================================
 # Set hostname before initramfs generation so dracut does not embed a
 # stale build-host hostname into the initramfs.
-if [ "$VARIANT" = "metal" ]; then
-    # r[image.hostname.metal-dhcp+2]
-    : > /etc/hostname
-    echo "127.0.0.1 localhost" > /etc/hosts
-    echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
-else
-    # r[image.hostname.cloud-default+2]
-    echo "ubuntu" > /etc/hostname
-    echo "127.0.0.1 localhost" > /etc/hosts
-    echo "127.0.1.1 ubuntu" >> /etc/hosts
-    echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
-fi
+case "$VARIANT" in
+    metal|pi)
+        # r[image.hostname.metal-dhcp+2]
+        : > /etc/hostname
+        echo "127.0.0.1 localhost" > /etc/hosts
+        echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
+        ;;
+    cloud)
+        # r[image.hostname.cloud-default+2]
+        echo "ubuntu" > /etc/hostname
+        echo "127.0.0.1 localhost" > /etc/hosts
+        echo "127.0.1.1 ubuntu" >> /etc/hosts
+        echo "::1       localhost ip6-localhost ip6-loopback" >> /etc/hosts
+        ;;
+esac
 
 # ============================================================
 # Generate initramfs and install bootloader
@@ -393,17 +445,26 @@ echo "Kernel version: $KVER"
 echo "Generating initramfs with dracut..."
 dracut --force --kver "$KVER"
 
-# r[image.boot.grub-install] r[image.boot.grub-uuids]
-echo "Installing GRUB (target=$GRUB_TARGET)..."
-rm -rf /boot/grub
-mkdir -p /boot/grub
-update-grub
-grub-install \
-    --target="$GRUB_TARGET" \
-    --efi-directory=/boot/efi \
-    --bootloader-id=ubuntu \
-    --no-nvram \
-    --removable
+if [ "$VARIANT" = "pi" ]; then
+    # r[image.boot.pi-firmware-update]
+    # Populate /boot/firmware with the kernel, initramfs and DTB freshly
+    # produced by dracut. Future kernel apt upgrades trigger the same script
+    # via /etc/kernel/postinst.d/zz-bes-pi-firmware.
+    echo "Populating /boot/firmware for Pi 5..."
+    /usr/local/sbin/bes-pi-firmware-update "$KVER"
+else
+    # r[image.boot.grub-install] r[image.boot.grub-uuids]
+    echo "Installing GRUB (target=$GRUB_TARGET)..."
+    rm -rf /boot/grub
+    mkdir -p /boot/grub
+    update-grub
+    grub-install \
+        --target="$GRUB_TARGET" \
+        --efi-directory=/boot/efi \
+        --bootloader-id=ubuntu \
+        --no-nvram \
+        --removable
+fi
 
 # ============================================================
 # Final package cleanup
