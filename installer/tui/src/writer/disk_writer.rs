@@ -10,7 +10,9 @@ use anyhow::{Context, Result, bail};
 use crate::config::DiskEncryption;
 use crate::paths;
 
-use super::device::{partition_path, reread_partition_table, run_command, sync_device};
+use super::device::{
+    open_partition_for_writing, partition_path, reread_partition_table, run_command, sync_device,
+};
 use super::luks::{
     LUKS_NAME, close_luks, close_luks_root, create_passphrase_keyfile, format_luks_for_root,
     open_luks_root, open_luks_root_as,
@@ -140,10 +142,11 @@ impl<'a> DiskWriter<'a> {
             .with_context(|| format!("opening source image {}", source.display()))?;
         let expected = image_size(source).ok();
 
-        let output = OpenOptions::new()
-            .write(true)
-            .open(device)
-            .with_context(|| format!("opening target device {}", device.display()))?;
+        // r[impl installer.container.partition-open-retry+3]
+        // open() can fail with ENOENT (no /dev node yet) or ENXIO (node
+        // exists but the kernel hasn't attached the partition yet) on
+        // slower arm64 container runners; retry briefly before giving up.
+        let output = open_partition_for_writing(device)?;
 
         let partition_bytes_written = splice_fd_to_fd(
             input.as_raw_fd(),

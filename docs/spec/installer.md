@@ -1030,6 +1030,18 @@ major:minor numbers) before any operation that accesses them (e.g.
 `cryptsetup open`, `mount`). It must not derive partition major:minor
 numbers from the parent device — the kernel assigns them dynamically.
 
+> r[installer.container.partition-open-retry+3]
+> Even after partition device nodes are created, opening them for I/O can
+> still race the kernel: an `open(2)` may briefly return `ENOENT` (the
+> sysfs entry has not yet surfaced) or `ENXIO` (the entry is there but the
+> partition's `gendisk` has not yet been attached). On slower container
+> runners (observed on the GitHub Actions arm64 runner) this window
+> persists past the post-`partprobe` settle.
+>
+> The installer must retry `open` on these specific errno values with a
+> bounded budget (multiple seconds) before failing. Other errors (e.g.
+> `EACCES`, `EIO`) must not be retried.
+
 r[installer.container.swtpm+2]
 Container-based integration tests that exercise TPM disk encryption must
 use a software TPM 2.0 emulator (`swtpm`) to provide a `/dev/tpmN` device
