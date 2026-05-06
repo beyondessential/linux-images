@@ -524,10 +524,15 @@ checksum:
 # Build everything: raw + vmdk + qcow2 + compress + checksum
 build: vmdk qcow && compress checksum
 
-# Build all variants for the current architecture
+# Build all variants for the current architecture (pi only on arm64)
 build-all-variants:
+    #!/usr/bin/env bash
+    set -euo pipefail
     just arch={{ arch }} variant=metal build
     just arch={{ arch }} variant=cloud build
+    if [ "{{ arch }}" = "arm64" ]; then
+        just arch=arm64 variant=pi build
+    fi
 
 # Build all variants for all architectures
 build-all:
@@ -535,6 +540,7 @@ build-all:
     just arch=amd64 variant=cloud build
     just arch=arm64 variant=metal build
     just arch=arm64 variant=cloud build
+    just arch=arm64 variant=pi build
 
 # Verify output formats and checksums
 
@@ -669,7 +675,7 @@ _make-test-cloud-init: _ensure-dirs
         VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "unknown")
         echo "Variant: $VARIANT"
 
-        if [ "$VARIANT" = "metal" ]; then
+        if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
           # r[verify image.luks.format]
           check "LUKS volume is active" test -e /dev/mapper/root
         fi
@@ -681,8 +687,12 @@ _make-test-cloud-init: _ensure-dirs
 
         # r[verify image.partition.xboot]
         check "/boot is mounted" mountpoint -q /boot
-        # r[verify image.partition.efi]
-        check "/boot/efi is mounted" mountpoint -q /boot/efi
+        # r[verify image.partition.efi] r[verify image.partition.pi-firmware]
+        if [ "$VARIANT" = "pi" ]; then
+          check "/boot/firmware is mounted" mountpoint -q /boot/firmware
+        else
+          check "/boot/efi is mounted" mountpoint -q /boot/efi
+        fi
 
         echo ""
         echo "RESULTS: $PASS passed, $FAIL failed"
