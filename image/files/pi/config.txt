@@ -1,0 +1,33 @@
+# BES Linux — Raspberry Pi 5 boot config.
+# Read by the Pi 5 firmware (in EEPROM) at boot. flash-kernel populates the
+# kernel image, initramfs, DTB and overlays into this same FAT partition
+# (/boot/firmware) on every kernel update.
+
+# r[image.boot.pi-firmware] r[image.boot.pi-uart] r[image.boot.pi-peripherals]
+# r[image.boot.pi-tpm-overlay] r[image.boot.pi-pcie-gen3]
+# enable_uart=1 routes the primary PL011 UART to GPIO 14/15 so a USB-TTL
+# adapter is the supported headless console; HDMI may not be attached.
+# I2C and SPI are enabled for sensor / peripheral attach, paired with the
+# i2c-tools userspace package.
+# The tpm-slb9670 overlay enables the Infineon SLB9670 SPI TPM 2.0 module
+# on SPI0 CE1, for shipments that include a TPM HAT. With no TPM attached,
+# the kernel probes SPI, sees no response, and skips — boot is unaffected.
+# pciex1_gen=3 raises the Pi 5's onboard PCIe x1 lane from gen 2 to gen 3,
+# which roughly doubles sequential throughput for NVMe HATs. Older or
+# marginal drives may need to be flipped back to gen 2.
+# disable_splash=1 skips the rainbow splash on boot — cosmetic, but keeps
+# the console clean for headless servers.
+[all]
+arm_64bit=1
+auto_initramfs=1
+disable_overscan=1
+disable_splash=1
+enable_uart=1
+dtparam=i2c_arm=on
+dtparam=spi=on
+dtparam=pciex1_gen=3
+dtoverlay=tpm-slb9670
+kernel=vmlinuz
+cmdline=cmdline.txt
+initramfs initrd.img followkernel
+device_tree_address=0x03000000
