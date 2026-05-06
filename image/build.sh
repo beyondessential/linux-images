@@ -29,8 +29,14 @@ esac
 # r[image.variant.types+3]
 case "$VARIANT" in
     metal|cloud) ;;
+    pi)
+        if [ "$ARCH" != "arm64" ]; then
+            echo "ERROR: variant=pi requires arch=arm64 (got: $ARCH)"
+            exit 1
+        fi
+        ;;
     *)
-        echo "ERROR: variant must be metal or cloud (got: $VARIANT)"
+        echo "ERROR: variant must be metal, cloud, or pi (got: $VARIANT)"
         exit 1
         ;;
 esac
@@ -45,7 +51,7 @@ MISSING=()
 for cmd in debootstrap sgdisk mkfs.vfat mkfs.ext4 mkfs.btrfs losetup btrfs chroot rsync; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
-if [ "$VARIANT" = "metal" ]; then
+if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     command -v cryptsetup &>/dev/null || MISSING+=("cryptsetup")
 fi
 if [ "${#MISSING[@]}" -gt 0 ]; then

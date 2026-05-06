@@ -11,8 +11,10 @@ arch := "amd64"
 variant := "metal"
 # Build-time partition size. Metal needs more headroom than cloud because it
 # also installs linux-firmware, which is large; resolute's package set in
-# particular does not fit in 5G with metal extras. Both grow at first boot.
-image_size := if variant == "metal" { "8G" } else { "5G" }
+# particular does not fit in 5G with metal extras. Pi follows metal-style
+# headroom (linux-firmware-raspi + Pi firmware blobs in /boot/firmware).
+# Both grow at first boot.
+image_size := if variant == "cloud" { "5G" } else { "8G" }
 qemu_memory := "4096"
 qemu_cores := "2"
 container_test_filter := ""
@@ -28,7 +30,7 @@ _default:
     @just --list
     @echo ""
     @echo "Variable: arch={{ arch }} (amd64, arm64)"
-    @echo "Variable: variant={{ variant }} (metal, cloud)"
+    @echo "Variable: variant={{ variant }} (metal, cloud, pi)"
     @echo "Variable: ubuntu_version={{ ubuntu_version }}"
     @echo "Variable: ubuntu_suite={{ ubuntu_suite }}"
     @echo "Variable: tailscale_suite={{ tailscale_suite }}"
@@ -41,7 +43,12 @@ _validate-variant:
     #!/usr/bin/env bash
     case "{{ variant }}" in
       metal|cloud) ;;
-      *) echo "ERROR: variant must be one of: metal, cloud (got: {{ variant }})"; exit 1 ;;
+      pi)
+        if [ "{{ arch }}" != "arm64" ]; then
+          echo "ERROR: variant=pi requires arch=arm64 (got: {{ arch }})"; exit 1
+        fi
+        ;;
+      *) echo "ERROR: variant must be one of: metal, cloud, pi (got: {{ variant }})"; exit 1 ;;
     esac
 
 _validate-arch:
