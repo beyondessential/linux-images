@@ -58,14 +58,19 @@ apt-get update -q
 # Bootstrap essential packages
 # ============================================================
 # minbase is very minimal — we need systemd, a kernel, and dbus before
-# we can install the rest of the package list.
+# we can install the rest of the package list. The kernel package is
+# variant-specific: pi uses linux-raspi.
+case "$VARIANT" in
+    pi)         BOOTSTRAP_KERNEL="linux-raspi" ;;
+    metal|cloud) BOOTSTRAP_KERNEL="linux-generic" ;;
+esac
 apt-get install -y -q --no-install-recommends \
     systemd \
     systemd-sysv \
     dbus \
     sudo \
     locales \
-    linux-generic
+    "$BOOTSTRAP_KERNEL"
 
 # Generate all English locales
 sed -i '/^# *en_.*UTF-8/s/^# *//' /etc/locale.gen
