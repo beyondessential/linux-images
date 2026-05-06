@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::OnceLock;
 
 // Absolute paths for external binaries used by the installer.
 //
@@ -9,7 +10,27 @@ use std::path::Path;
 pub const MOUNT: &str = "/usr/bin/mount";
 pub const UMOUNT: &str = "/usr/bin/umount";
 pub const MKNOD: &str = "/usr/bin/mknod";
-pub const CHROOT: &str = "/usr/sbin/chroot";
+
+// Ubuntu 26.04 (resolute) split coreutils into alternative providers
+// (`coreutils-from-{gnu,uutils,busybox,toybox}`) that ship `chroot` at
+// different paths: GNU at /usr/sbin/chroot, the rest at /usr/bin/chroot.
+// We don't pin a specific provider in the live rootfs, so resolve the
+// path at runtime against whichever is actually installed.
+pub const CHROOT_CANDIDATES: &[&str] = &["/usr/bin/chroot", "/usr/sbin/chroot"];
+
+/// First-existing path for the `chroot` binary, or the first candidate as
+/// a fallback. Cached on first call.
+pub fn chroot() -> &'static str {
+    static CACHED: OnceLock<&'static str> = OnceLock::new();
+    CACHED.get_or_init(|| {
+        for c in CHROOT_CANDIDATES {
+            if Path::new(c).exists() {
+                return c;
+            }
+        }
+        CHROOT_CANDIDATES[0]
+    })
+}
 pub const LSBLK: &str = "/usr/bin/lsblk";
 pub const BLKID: &str = "/usr/sbin/blkid";
 pub const SFDISK: &str = "/usr/sbin/sfdisk";
@@ -57,11 +78,12 @@ pub const NETPLAN: &str = "/usr/sbin/netplan";
 pub const TAILSCALE: &str = "/usr/bin/tailscale";
 
 // Binaries executed directly by the installer in the live ISO environment.
+// `chroot` is checked separately (see CHROOT_CANDIDATES — it can live at
+// any of multiple paths depending on which coreutils alternative shipped).
 const ISO_PATHS: &[(&str, &str)] = &[
     ("mount", MOUNT),
     ("umount", UMOUNT),
     ("mknod", MKNOD),
-    ("chroot", CHROOT),
     ("lsblk", LSBLK),
     ("blkid", BLKID),
     ("sfdisk", SFDISK),
@@ -122,7 +144,47 @@ fn check_paths(paths: &[(&str, &str)], sysroot: Option<&Path>) -> Result<(), Str
 /// every missing binary. When `sysroot` is `Some`, paths are resolved relative
 /// to that directory (e.g. a mounted squashfs).
 pub fn check_iso(sysroot: Option<&Path>) -> Result<(), String> {
-    check_paths(ISO_PATHS, sysroot)
+    let mut errors: Vec<String> = Vec::new();
+    if let Err(e) = check_paths(ISO_PATHS, sysroot) {
+        errors.push(e);
+    }
+    if let Err(e) = check_any_path("chroot", CHROOT_CANDIDATES, sysroot) {
+        errors.push(e);
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("\n"))
+    }
+}
+
+fn check_any_path(name: &str, candidates: &[&str], sysroot: Option<&Path>) -> Result<(), String> {
+    let any = candidates.iter().any(|p| {
+        let full = match sysroot {
+            Some(root) => root.join(p.strip_prefix('/').unwrap_or(p)),
+            None => Path::new(p).to_path_buf(),
+        };
+        full.exists()
+    });
+    if any {
+        Ok(())
+    } else {
+        let checked: Vec<String> = candidates
+            .iter()
+            .map(|p| match sysroot {
+                Some(root) => root
+                    .join(p.strip_prefix('/').unwrap_or(p))
+                    .display()
+                    .to_string(),
+                None => (*p).to_string(),
+            })
+            .collect();
+        Err(format!(
+            "1 missing binary path(s):\n  {name}: any of {} (checked: {})",
+            candidates.join(", "),
+            checked.join(", "),
+        ))
+    }
 }
 
 /// Check that every hardcoded chroot-target binary path exists on disk.

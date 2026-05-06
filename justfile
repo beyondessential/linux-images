@@ -1,8 +1,11 @@
 linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
-ubuntu_version := "24.04"
 ubuntu_suite := "noble"
-# Tailscale's apt repo may lag new Ubuntu releases (e.g. during RC).
-# Override with tailscale_suite=noble when building 26.04 pre-release.
+# Derived from ubuntu_suite — mapping is 1:1, so callers only need to pass
+# `ubuntu_suite=...` when building. Override `ubuntu_version=...` on the
+# command line if you need to force a different value (e.g. testing pre-release).
+ubuntu_version := if ubuntu_suite == "noble" { "24.04" } else if ubuntu_suite == "resolute" { "26.04" } else { error("unknown ubuntu_suite (add a mapping to ubuntu_version): " + ubuntu_suite) }
+# Tailscale's apt repo can lag new Ubuntu releases during their RC window;
+# override `tailscale_suite=<earlier-suite>` when that's the case.
 tailscale_suite := ubuntu_suite
 arch := "amd64"
 variant := "metal"
@@ -55,8 +58,8 @@ output_dir := output_arch_dir / variant
 output_raw := output_dir / filestem + ".raw"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
-output_iso := output_arch_dir / "bes-installer-" + arch + ".iso"
-output_iso_vdi := output_arch_dir / "bes-installer-" + arch + ".vdi"
+output_iso := output_arch_dir / "bes-installer-" + ubuntu_version + "-" + arch + ".iso"
+output_iso_vdi := output_arch_dir / "bes-installer-" + ubuntu_version + "-" + arch + ".vdi"
 iso_base_tarball := work_dir / "iso-base.tar"
 iso_rootfs_dir := work_dir / "iso-rootfs"
 

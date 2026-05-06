@@ -591,13 +591,13 @@ impl<'a> DiskWriter<'a> {
         let dracut_result = if let Some(ref kver) = kernel_version {
             tracing::info!("rebuilding initramfs for kernel {kver}");
             run_command(
-                paths::CHROOT,
+                paths::chroot(),
                 &[mount_str, paths::DRACUT, "--force", "--kver", kver],
             )
         } else {
             tracing::warn!("no kernel version found in target, running dracut without --kver");
             run_command(
-                paths::CHROOT,
+                paths::chroot(),
                 &[mount_str, paths::DRACUT, "--force", "--regenerate-all"],
             )
         };
@@ -624,7 +624,7 @@ impl<'a> DiskWriter<'a> {
         )
         .context("installing grub-probe wrapper")?;
 
-        let grub_result = run_command(paths::CHROOT, &[mount_str, "update-grub"]);
+        let grub_result = run_command(paths::chroot(), &[mount_str, "update-grub"]);
 
         remove_grub_probe_wrapper(&mount_path, grub_probe_backup);
 

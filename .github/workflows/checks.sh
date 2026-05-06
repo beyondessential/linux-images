@@ -182,7 +182,7 @@ jobs:
         run: scripts/gen-manual-testing.sh --check
 
   all-green:
-    name: All green
+    name: All checks green
     if: always()
     needs: [rust-test, rust-lint, tracey, manual-docs]
     runs-on: ubuntu-latest
