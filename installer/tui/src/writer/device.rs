@@ -1,9 +1,10 @@
-use std::fs;
+use std::fs::{File, OpenOptions};
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
+use std::{fs, io};
 
 use anyhow::{Context, Result, bail};
 
@@ -199,6 +200,78 @@ pub(crate) fn sync_device(file: &std::fs::File) -> Result<()> {
     Ok(())
 }
 
+// r[impl installer.container.partition-open-retry+3]
+/// Open a partition device for writing, retrying on the kernel-side races
+/// that show up on slower (notably arm64 GHA) container runners after
+/// `partprobe` + `udevadm settle` + `ensure_partition_devices`:
+///
+/// - **ENOENT** — `/dev/loopNpM` doesn't exist yet because the partition
+///   sysfs entry hasn't surfaced. `ensure_partition_devices` already
+///   tries to bridge this with its own retry, but on arm64 it can still
+///   not have surfaced by the time it gives up.
+/// - **ENXIO** — the device file exists (we mknod'd it from the sysfs
+///   major/minor) but the kernel hasn't finished attaching the underlying
+///   partition. Opens fail until the partition's gendisk is published.
+///
+/// Both clear within seconds in our observation; we retry with a generous
+/// budget rather than fail the install.
+pub fn open_partition_for_writing(device: &Path) -> Result<File> {
+    const MAX_RETRIES: u32 = 25;
+    const RETRY_DELAY: Duration = Duration::from_millis(200);
+
+    let mut last_err: Option<io::Error> = None;
+    for attempt in 0..MAX_RETRIES {
+        match OpenOptions::new().write(true).open(device) {
+            Ok(f) => {
+                if attempt > 0 {
+                    tracing::info!(
+                        "opened {} for writing after {} retries ({:.1}s)",
+                        device.display(),
+                        attempt,
+                        (attempt as f64) * RETRY_DELAY.as_secs_f64(),
+                    );
+                }
+                return Ok(f);
+            }
+            Err(e) if is_partition_not_ready(&e) => {
+                tracing::debug!(
+                    "open({}) attempt {}/{} not ready: {} ({:?}); retrying in {}ms",
+                    device.display(),
+                    attempt + 1,
+                    MAX_RETRIES,
+                    e,
+                    e.kind(),
+                    RETRY_DELAY.as_millis(),
+                );
+                last_err = Some(e);
+                if attempt + 1 < MAX_RETRIES {
+                    thread::sleep(RETRY_DELAY);
+                }
+            }
+            Err(e) => {
+                return Err(anyhow::Error::new(e))
+                    .with_context(|| format!("opening target device {}", device.display()));
+            }
+        }
+    }
+
+    Err(anyhow::Error::new(last_err.expect("retried at least once"))).with_context(|| {
+        format!(
+            "opening target device {} after {} retries ({:.1}s)",
+            device.display(),
+            MAX_RETRIES,
+            (MAX_RETRIES as f64) * RETRY_DELAY.as_secs_f64(),
+        )
+    })
+}
+
+fn is_partition_not_ready(e: &io::Error) -> bool {
+    if e.kind() == io::ErrorKind::NotFound {
+        return true;
+    }
+    matches!(e.raw_os_error(), Some(libc::ENXIO))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +337,23 @@ mod tests {
             ensure_partition_devices_via_sysfs("nonexistent_device_xyzzy_test").unwrap();
         assert_eq!(created, 0);
         assert_eq!(found, 0);
+    }
+
+    // r[verify installer.container.partition-open-retry+3]
+    #[test]
+    fn is_partition_not_ready_classifies_errors() {
+        let enoent = io::Error::from(io::ErrorKind::NotFound);
+        assert!(is_partition_not_ready(&enoent));
+
+        let enxio = io::Error::from_raw_os_error(libc::ENXIO);
+        assert!(is_partition_not_ready(&enxio));
+
+        // EACCES (permission denied) is a real error, not a race.
+        let eacces = io::Error::from_raw_os_error(libc::EACCES);
+        assert!(!is_partition_not_ready(&eacces));
+
+        // EIO is a real I/O failure, not a race.
+        let eio = io::Error::from_raw_os_error(libc::EIO);
+        assert!(!is_partition_not_ready(&eio));
     }
 }
