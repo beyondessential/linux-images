@@ -3,7 +3,7 @@
 # This runs in CI without KVM.
 #
 # Usage: test-image-structure.sh <image.img> <variant> <arch>
-#   variant: metal | cloud
+#   variant: metal | cloud | pi
 #   arch:    amd64 | arm64
 set -euo pipefail
 
@@ -114,10 +114,11 @@ EFI_MOUNTED=0
 cleanup() {
     set +e
     [ "$EFI_MOUNTED" -eq 1 ]  && umount "$MNT/boot/efi" 2>/dev/null
+    [ "$EFI_MOUNTED" -eq 1 ]  && umount "$MNT/boot/firmware" 2>/dev/null
     [ "$BOOT_MOUNTED" -eq 1 ] && umount "$MNT/boot" 2>/dev/null
     [ "$PG_MOUNTED" -eq 1 ]   && umount "$MNT/var/lib/postgresql" 2>/dev/null
     [ "$ROOT_MOUNTED" -eq 1 ] && umount "$MNT" 2>/dev/null
-    if [ "$VARIANT" = "metal" ]; then
+    if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
         cryptsetup close "$LUKS_NAME" 2>/dev/null
     fi
     [ -n "$LOOP_DEVICE" ] && losetup -d "$LOOP_DEVICE" 2>/dev/null
@@ -151,10 +152,14 @@ fi
 get_part_label() { sgdisk -i "$1" "$LOOP_DEVICE" 2>/dev/null | grep "Partition name" | sed "s/.*'\(.*\)'/\1/"; }
 get_part_type() { sgdisk -i "$1" "$LOOP_DEVICE" 2>/dev/null | grep "Partition GUID code" | awk '{print $4}'; }
 
-# r[verify image.partition.efi]
+# r[verify image.partition.efi] r[verify image.partition.pi-firmware]
 EFI_LABEL="$(get_part_label 1)"
 EFI_TYPE="$(get_part_type 1)"
-check "partition 1 label is 'efi'" [ "$EFI_LABEL" = "efi" ]
+if [ "$VARIANT" = "pi" ]; then
+    check "partition 1 label is 'firmware'" [ "$EFI_LABEL" = "firmware" ]
+else
+    check "partition 1 label is 'efi'" [ "$EFI_LABEL" = "efi" ]
+fi
 check "partition 1 type is EFI System" [ "$EFI_TYPE" = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" ]
 
 # r[verify image.partition.xboot]
@@ -197,9 +202,9 @@ BOOT_FSLABEL="$(blkid -o value -s LABEL "$BOOT_PART" 2>/dev/null || true)"
 check "boot partition label is 'xboot'" [ "$BOOT_FSLABEL" = "xboot" ]
 
 # r[verify image.luks.format]
-if [ "$VARIANT" = "metal" ]; then
+if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     ROOT_FSTYPE="$(blkid -o value -s TYPE "$ROOT_PART" 2>/dev/null || true)"
-    check "root partition is crypto_LUKS (metal)" [ "$ROOT_FSTYPE" = "crypto_LUKS" ]
+    check "root partition is crypto_LUKS ($VARIANT)" [ "$ROOT_FSTYPE" = "crypto_LUKS" ]
 
     LUKS_VERSION="$(cryptsetup luksDump "$ROOT_PART" 2>/dev/null | grep "^Version:" | awk '{print $2}')"
     check "LUKS version is 2" [ "$LUKS_VERSION" = "2" ]
@@ -278,8 +283,13 @@ mkdir -p "$MNT/boot"
 mount "$BOOT_PART" "$MNT/boot"
 BOOT_MOUNTED=1
 
-mkdir -p "$MNT/boot/efi"
-mount "$EFI_PART" "$MNT/boot/efi"
+if [ "$VARIANT" = "pi" ]; then
+    mkdir -p "$MNT/boot/firmware"
+    mount "$EFI_PART" "$MNT/boot/firmware"
+else
+    mkdir -p "$MNT/boot/efi"
+    mount "$EFI_PART" "$MNT/boot/efi"
+fi
 EFI_MOUNTED=1
 
 # Detect the Ubuntu suite of the built image so suite-specific checks can
@@ -313,10 +323,10 @@ MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
 
 # r[verify image.hostname.metal-dhcp+2] r[verify image.hostname.cloud-default+2]
-if [ "$VARIANT" = "metal" ]; then
+if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     HOSTNAME_SIZE="$(stat -c%s "$MNT/etc/hostname" 2>/dev/null || echo "missing")"
-    check "/etc/hostname is empty for metal (size=0)" [ "$HOSTNAME_SIZE" = "0" ]
-    check_not "/etc/hosts has no 127.0.1.1 line for metal" grep -q '127\.0\.1\.1' "$MNT/etc/hosts"
+    check "/etc/hostname is empty for $VARIANT (size=0)" [ "$HOSTNAME_SIZE" = "0" ]
+    check_not "/etc/hosts has no 127.0.1.1 line for $VARIANT" grep -q '127\.0\.1\.1' "$MNT/etc/hosts"
 else
     HOSTNAME_CONTENT="$(tr -d '[:space:]' < "$MNT/etc/hostname" 2>/dev/null || echo "")"
     check "/etc/hostname contains 'ubuntu' for cloud" [ "$HOSTNAME_CONTENT" = "ubuntu" ]
@@ -345,16 +355,58 @@ check "netplan config enables dhcp4" grep -q 'dhcp4:.*true' "$MNT/etc/netplan/01
 check "kernel exists in /boot" ls "$MNT"/boot/vmlinuz-* >/dev/null 2>&1
 check "initramfs exists in /boot" ls "$MNT"/boot/initrd.img-* >/dev/null 2>&1
 
-# r[verify image.boot.grub-install]
-check "GRUB config exists" test -f "$MNT/boot/grub/grub.cfg"
-if [ "$ARCH" = "amd64" ]; then
-    check "EFI bootloader exists (BOOTX64.EFI)" test -f "$MNT/boot/efi/EFI/BOOT/BOOTX64.EFI"
+if [ "$VARIANT" = "pi" ]; then
+    # r[verify image.boot.pi-firmware] r[verify image.boot.pi-cmdline]
+    check "Pi config.txt exists" test -f "$MNT/boot/firmware/config.txt"
+    check "Pi cmdline.txt exists" test -f "$MNT/boot/firmware/cmdline.txt"
+    if [ -f "$MNT/boot/firmware/config.txt" ]; then
+        check "config.txt enables arm_64bit" grep -q '^arm_64bit=1' "$MNT/boot/firmware/config.txt"
+        check "config.txt selects vmlinuz kernel" grep -q '^kernel=vmlinuz' "$MNT/boot/firmware/config.txt"
+        # r[verify image.boot.pi-uart]
+        check "config.txt enables UART" grep -q '^enable_uart=1' "$MNT/boot/firmware/config.txt"
+        # r[verify image.boot.pi-peripherals]
+        check "config.txt enables I2C" grep -q '^dtparam=i2c_arm=on' "$MNT/boot/firmware/config.txt"
+        check "config.txt enables SPI" grep -q '^dtparam=spi=on' "$MNT/boot/firmware/config.txt"
+        # r[verify image.boot.pi-tpm-overlay]
+        check "config.txt enables tpm-slb9670 overlay" grep -q '^dtoverlay=tpm-slb9670' "$MNT/boot/firmware/config.txt"
+        # r[verify image.boot.pi-pcie-gen3]
+        check "config.txt sets PCIe gen 3" grep -q '^dtparam=pciex1_gen=3' "$MNT/boot/firmware/config.txt"
+        check "config.txt disables splash" grep -q '^disable_splash=1' "$MNT/boot/firmware/config.txt"
+    fi
+    if [ -f "$MNT/boot/firmware/cmdline.txt" ]; then
+        check "cmdline.txt references LUKS-mapped root" grep -q 'root=/dev/mapper/root' "$MNT/boot/firmware/cmdline.txt"
+        check "cmdline.txt sets btrfs subvol" grep -q 'subvol=@' "$MNT/boot/firmware/cmdline.txt"
+        # r[verify image.boot.pi-uart]
+        check "cmdline.txt sets serial0 console" grep -q 'console=serial0,115200' "$MNT/boot/firmware/cmdline.txt"
+    fi
+    # r[verify image.boot.pi-firmware-update]
+    check "firmware-update script installed" test -x "$MNT/usr/local/sbin/bes-pi-firmware-update"
+    check "kernel postinst hook installed" test -x "$MNT/etc/kernel/postinst.d/zz-bes-pi-firmware"
+    check "/boot/firmware has kernel" test -f "$MNT/boot/firmware/vmlinuz"
+    check "/boot/firmware has initramfs" test -f "$MNT/boot/firmware/initrd.img"
+    check "/boot/firmware has Pi 5 DTB" test -f "$MNT/boot/firmware/bcm2712-rpi-5-b.dtb"
+    # No GRUB on pi.
+    check_not "no /boot/grub on pi" test -d "$MNT/boot/grub"
+    check_not "no GRUB EFI binary on pi (BOOTAA64.EFI)" test -f "$MNT/boot/firmware/EFI/BOOT/BOOTAA64.EFI"
+    # r[verify image.boot.pi-peripherals]
+    check "i2c-tools installed (i2cdetect)" test -x "$MNT/usr/sbin/i2cdetect"
+    # r[verify image.boot.pi-power-key]
+    check "logind power-key drop-in installed" test -f "$MNT/etc/systemd/logind.conf.d/50-bes-power.conf"
+    if [ -f "$MNT/etc/systemd/logind.conf.d/50-bes-power.conf" ]; then
+        check "logind power-key set to poweroff" grep -q '^HandlePowerKey=poweroff' "$MNT/etc/systemd/logind.conf.d/50-bes-power.conf"
+    fi
 else
-    check "EFI bootloader exists (BOOTAA64.EFI)" test -f "$MNT/boot/efi/EFI/BOOT/BOOTAA64.EFI"
+    # r[verify image.boot.grub-install]
+    check "GRUB config exists" test -f "$MNT/boot/grub/grub.cfg"
+    if [ "$ARCH" = "amd64" ]; then
+        check "EFI bootloader exists (BOOTX64.EFI)" test -f "$MNT/boot/efi/EFI/BOOT/BOOTX64.EFI"
+    else
+        check "EFI bootloader exists (BOOTAA64.EFI)" test -f "$MNT/boot/efi/EFI/BOOT/BOOTAA64.EFI"
+    fi
 fi
 
 # r[verify image.boot.grub-uuids]
-if [ -f "$MNT/boot/grub/grub.cfg" ]; then
+if [ "$VARIANT" != "pi" ] && [ -f "$MNT/boot/grub/grub.cfg" ]; then
     GRUB_CFG="$MNT/boot/grub/grub.cfg"
 
     ACTUAL_ROOT_UUID="$(blkid -o value -s UUID "$BTRFS_DEV" 2>/dev/null || true)"
@@ -401,10 +453,10 @@ check "SSH no-root config correct" grep -q "PermitRootLogin no" "$MNT/etc/ssh/ss
 
 # r[verify image.credentials.ssh-password-auth]
 check "SSH password-auth config exists" test -f "$MNT/etc/ssh/sshd_config.d/50-bes-password-auth.conf"
-if [ "$VARIANT" = "metal" ]; then
-    check "SSH password auth enabled for metal" grep -q "PasswordAuthentication yes" "$MNT/etc/ssh/sshd_config.d/50-bes-password-auth.conf"
-else
+if [ "$VARIANT" = "cloud" ]; then
     check "SSH password auth disabled for cloud" grep -q "PasswordAuthentication no" "$MNT/etc/ssh/sshd_config.d/50-bes-password-auth.conf"
+else
+    check "SSH password auth enabled for $VARIANT" grep -q "PasswordAuthentication yes" "$MNT/etc/ssh/sshd_config.d/50-bes-password-auth.conf"
 fi
 
 # r[verify image.credentials.no-host-keys+2]
@@ -519,7 +571,16 @@ check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-t
 # The hostonly workaround and its force-include driver lists only apply on
 # noble. On 26.04+, dracut's default mode includes hardware modules without
 # explicit dracut.conf.d overrides.
-if [ "$SUITE" = "noble" ]; then
+if [ "$VARIANT" = "pi" ]; then
+    # Pi always uses the portable-image config (hostonly=no), independent of
+    # suite — the hardware-drivers list is x86-server-leaning and many of
+    # those modules don't exist in linux-raspi.
+    check "dracut portable-image config exists on pi" test -f "$MNT/etc/dracut.conf.d/01-portable-image.conf"
+    check "dracut portable-image config sets hostonly=no on pi" grep -q 'hostonly="no"' "$MNT/etc/dracut.conf.d/01-portable-image.conf"
+    check_not "no dracut hostonly fix config on pi" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
+    check_not "no dracut hardware-drivers config on pi" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
+    check_not "no dracut cloud-drivers config on pi" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+elif [ "$SUITE" = "noble" ]; then
     # r[verify image.boot.dracut]
     check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
     check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
@@ -558,7 +619,7 @@ if [ "$SUITE" = "noble" ]; then
         check "dracut cloud-drivers has xen_blkfront" grep -wq 'xen_blkfront' "$CLOUDDRV"
         check "dracut cloud-drivers has gve" grep -wq 'gve' "$CLOUDDRV"
     else
-        check_not "no cloud-drivers config for metal variant" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
+        check_not "no cloud-drivers config for $VARIANT variant" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
     fi
 else
     # r[verify image.boot.dracut]
@@ -572,19 +633,22 @@ else
     check "dracut portable-image config sets hostonly=no" grep -q 'hostonly="no"' "$MNT/etc/dracut.conf.d/01-portable-image.conf"
 fi
 
-# r[verify image.boot.grub-timeout]
-check "GRUB timeout is 5" grep -q '^GRUB_TIMEOUT=5' "$MNT/etc/default/grub"
-check "GRUB timeout style is menu" grep -q '^GRUB_TIMEOUT_STYLE=menu' "$MNT/etc/default/grub"
-check "GRUB recordfail timeout is 5" grep -q '^GRUB_RECORDFAIL_TIMEOUT=5' "$MNT/etc/default/grub"
+# GRUB doesn't apply to the pi variant (it boots via the Pi 5 firmware).
+if [ "$VARIANT" != "pi" ]; then
+    # r[verify image.boot.grub-timeout]
+    check "GRUB timeout is 5" grep -q '^GRUB_TIMEOUT=5' "$MNT/etc/default/grub"
+    check "GRUB timeout style is menu" grep -q '^GRUB_TIMEOUT_STYLE=menu' "$MNT/etc/default/grub"
+    check "GRUB recordfail timeout is 5" grep -q '^GRUB_RECORDFAIL_TIMEOUT=5' "$MNT/etc/default/grub"
 
-# r[verify image.boot.grub-cmdline]
-check "GRUB cmdline has noresume" grep -q 'noresume' "$MNT/etc/default/grub"
+    # r[verify image.boot.grub-cmdline]
+    check "GRUB cmdline has noresume" grep -q 'noresume' "$MNT/etc/default/grub"
 
-# r[verify image.boot.cloud-console]
-if [ "$VARIANT" = "cloud" ]; then
-    check "GRUB cmdline has serial console for cloud" grep -q 'console=ttyS0,115200n8' "$MNT/etc/default/grub"
-else
-    check_not "GRUB cmdline has no serial console for metal" grep -q 'console=ttyS0' "$MNT/etc/default/grub"
+    # r[verify image.boot.cloud-console]
+    if [ "$VARIANT" = "cloud" ]; then
+        check "GRUB cmdline has serial console for cloud" grep -q 'console=ttyS0,115200n8' "$MNT/etc/default/grub"
+    else
+        check_not "GRUB cmdline has no serial console for metal" grep -q 'console=ttyS0' "$MNT/etc/default/grub"
+    fi
 fi
 
 # r[verify image.credentials.ubuntu-user]
@@ -659,22 +723,25 @@ else
     pass "systemd-timesyncd is not enabled"
 fi
 
-if [ "$VARIANT" = "metal" ]; then
-    # r[verify image.luks.keyfile]
-    check "LUKS empty keyfile exists" test -f "$MNT/etc/luks/empty-keyfile"
-    KEYFILE_MODE="$(stat -c%a "$MNT/etc/luks/empty-keyfile" 2>/dev/null || true)"
-    check "LUKS empty keyfile has mode 000" [ "$KEYFILE_MODE" = "0" ]
+case "$VARIANT" in
+    metal|pi)
+        # r[verify image.luks.keyfile]
+        check "LUKS empty keyfile exists" test -f "$MNT/etc/luks/empty-keyfile"
+        KEYFILE_MODE="$(stat -c%a "$MNT/etc/luks/empty-keyfile" 2>/dev/null || true)"
+        check "LUKS empty keyfile has mode 000" [ "$KEYFILE_MODE" = "0" ]
 
-    # r[verify image.luks.crypttab]
-    check "crypttab exists" test -f "$MNT/etc/crypttab"
-    check "crypttab references by-partlabel/root" grep -q "by-partlabel/root" "$MNT/etc/crypttab"
-    check "crypttab has force option" grep -q "force" "$MNT/etc/crypttab"
+        # r[verify image.luks.crypttab]
+        check "crypttab exists" test -f "$MNT/etc/crypttab"
+        check "crypttab references by-partlabel/root" grep -q "by-partlabel/root" "$MNT/etc/crypttab"
+        check "crypttab has force option" grep -q "force" "$MNT/etc/crypttab"
 
-    # r[verify image.luks.keyfile]
-    check "dracut LUKS keyfile config exists" test -f "$MNT/etc/dracut.conf.d/02-luks-keyfile.conf"
-else
-    check_not "no crypttab for cloud variant" test -f "$MNT/etc/crypttab"
-fi
+        # r[verify image.luks.keyfile]
+        check "dracut LUKS keyfile config exists" test -f "$MNT/etc/dracut.conf.d/02-luks-keyfile.conf"
+        ;;
+    cloud)
+        check_not "no crypttab for cloud variant" test -f "$MNT/etc/crypttab"
+        ;;
+esac
 
 # ============================================================
 # 6. fstab validation
@@ -685,36 +752,42 @@ echo "--- fstab ---"
 FSTAB="$MNT/etc/fstab"
 if [ -f "$FSTAB" ]; then
     check "fstab has / mount" grep -qE '^\S+\s+/\s+btrfs\s+.*subvol=@' "$FSTAB"
-        check "fstab has /var/lib/postgresql mount" grep -qE '^\S+\s+/var/lib/postgresql\s+btrfs\s+.*subvol=@postgres' "$FSTAB"
-        check "fstab has /boot mount" grep -qE '^\S+\s+/boot\s+ext4' "$FSTAB"
+    check "fstab has /var/lib/postgresql mount" grep -qE '^\S+\s+/var/lib/postgresql\s+btrfs\s+.*subvol=@postgres' "$FSTAB"
+    check "fstab has /boot mount" grep -qE '^\S+\s+/boot\s+ext4' "$FSTAB"
+    if [ "$VARIANT" = "pi" ]; then
+        check "fstab has /boot/firmware mount" grep -qE '^\S+\s+/boot/firmware\s+vfat' "$FSTAB"
+    else
         check "fstab has /boot/efi mount" grep -qE '^\S+\s+/boot/efi\s+vfat' "$FSTAB"
+    fi
 
-        # r[verify image.btrfs.compression]
-        if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q 'compress=zstd:6'; then
-            pass "fstab has compress=zstd:6 on root"
-        else
-            fail "fstab has compress=zstd:6 on root"
-        fi
+    # r[verify image.btrfs.compression]
+    if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q 'compress=zstd:6'; then
+        pass "fstab has compress=zstd:6 on root"
+    else
+        fail "fstab has compress=zstd:6 on root"
+    fi
 
-        # r[verify image.partition.count]
-        if grep -qE '^\S+\s+\S+\s+swap\s' "$FSTAB"; then
-            fail "fstab has no swap entries"
-        else
-            pass "fstab has no swap entries"
-        fi
+    # r[verify image.partition.count]
+    if grep -qE '^\S+\s+\S+\s+swap\s' "$FSTAB"; then
+        fail "fstab has no swap entries"
+    else
+        pass "fstab has no swap entries"
+    fi
 
-        if [ "$VARIANT" = "metal" ]; then
+    case "$VARIANT" in
+        metal|pi)
             if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q '/dev/mapper/root'; then
-                pass "fstab uses /dev/mapper/root for / (metal)"
+                pass "fstab uses /dev/mapper/root for / ($VARIANT)"
             else
-                fail "fstab uses /dev/mapper/root for / (metal)"
+                fail "fstab uses /dev/mapper/root for / ($VARIANT)"
             fi
             if grep -E '^\S+\s+/var/lib/postgresql\s' "$FSTAB" | grep -q '/dev/mapper/root'; then
-                pass "fstab uses /dev/mapper/root for pg (metal)"
+                pass "fstab uses /dev/mapper/root for pg ($VARIANT)"
             else
-                fail "fstab uses /dev/mapper/root for pg (metal)"
+                fail "fstab uses /dev/mapper/root for pg ($VARIANT)"
             fi
-        else
+            ;;
+        cloud)
             if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q 'by-partlabel/root'; then
                 pass "fstab uses by-partlabel/root for / (cloud)"
             else
@@ -725,17 +798,26 @@ if [ -f "$FSTAB" ]; then
             else
                 fail "fstab uses by-partlabel/root for pg (cloud)"
             fi
-        fi
-        if grep -E '^\S+\s+/boot\s' "$FSTAB" | grep -q 'by-partlabel/xboot'; then
-            pass "fstab uses by-partlabel/xboot for /boot"
+            ;;
+    esac
+    if grep -E '^\S+\s+/boot\s' "$FSTAB" | grep -q 'by-partlabel/xboot'; then
+        pass "fstab uses by-partlabel/xboot for /boot"
+    else
+        fail "fstab uses by-partlabel/xboot for /boot"
+    fi
+    if [ "$VARIANT" = "pi" ]; then
+        if grep -E '^\S+\s+/boot/firmware\s' "$FSTAB" | grep -q 'by-partlabel/firmware'; then
+            pass "fstab uses by-partlabel/firmware for /boot/firmware"
         else
-            fail "fstab uses by-partlabel/xboot for /boot"
+            fail "fstab uses by-partlabel/firmware for /boot/firmware"
         fi
+    else
         if grep -E '^\S+\s+/boot/efi\s' "$FSTAB" | grep -q 'by-partlabel/efi'; then
             pass "fstab uses by-partlabel/efi for /boot/efi"
         else
             fail "fstab uses by-partlabel/efi for /boot/efi"
         fi
+    fi
 else
     fail "fstab exists"
 fi
