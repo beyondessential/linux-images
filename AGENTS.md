@@ -1,8 +1,8 @@
 ## LLM Rules to follow
+- When available, use jj locally instead of git.
 - Spec items in docs/spec must describe **what** the system requires, not **how** the code achieves it. Keep tool names (`sfdisk`, `qemu-img`), exact command lines, syscall names (`splice(2)`), internal API details (`MetadataExt::rdev()`), env var names used only by the implementation, and similar out of spec text. Acceptable: interface contracts (config file paths, partition UUIDs, crypttab option values) that external actors or other components depend on. When in doubt, ask whether someone re-implementing the feature from scratch would be constrained to the same choice; if not, it is an implementation detail.
 - When adding or changing features, or when fixing bugs, first change the tracey spec in docs/spec, then implement, then add tests whenever possible.
 - Remember to annotate implementations and tests with tracey references: https://tracey.bearcove.eu/guide/annotating-code/
-- After changing the content of a tracey spec item, `git add` the spec file (stage it), then run `tracey bump` to mark the changed requirements as stale, and then update the implementation and test to match. Do not mass-update the rule IDs, go through every affected site to verify it complies with the updated requirement.
 - Commit granularly. That helps if you need to revert files, instead of throwing away hours of work.
 - If you find changes that you did not make, DO NOT THROW THEM AWAY. Leave them out of commits if necessary, or ask.
 - Run `cargo clippy`, `cargo fmt`, and `tracey query status` before finishing an edit round.
@@ -10,7 +10,6 @@
 - Ask the user instead of making an assumption if there's a major detail missing from instructions that could affect code quality or implementation design.
 - Don't use emojis unless absolutely necessary.
 - When removing code that has already been committed, delete it unless explicitly requested that it be commented out.
-- Use `--no-pager` with `git log`, `git diff`, etc commands. The option goes before the subcommand, e.g. `git --no-pager log`. NEVER use any interactive commands, including commands that require an editor. You can't use those and they'll just block you.
 - Imports: merge them and group them by std, then third-party/workspace, then local (crate, super, self).
 - Prefer using small dependencies instead of reimplementing the wheel. Ask the user to pick a dependency if there is no obvious choice.
 - Prefer using `cargo add` to set dependencies, or if doing it manually, always write the full version numbers in Cargo.toml; `clap = "4.5.60"`, not `clap = "4"`.

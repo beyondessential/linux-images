@@ -128,15 +128,11 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                         state.cycle_interface(true);
                     }
                 }
-                KeyCode::Backspace => {
-                    if state.net_config_focus.is_text_input() {
-                        state.net_config_backspace();
-                    }
+                KeyCode::Backspace if state.net_config_focus.is_text_input() => {
+                    state.net_config_backspace();
                 }
-                KeyCode::Char(c) => {
-                    if state.net_config_focus.is_text_input() {
-                        state.net_config_push_char(c);
-                    }
+                KeyCode::Char(c) if state.net_config_focus.is_text_input() => {
+                    state.net_config_push_char(c);
                 }
                 _ => {}
             }
@@ -170,10 +166,8 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             KeyCode::Esc => state.go_back(),
             KeyCode::Up | KeyCode::Char('k') => state.select_prev_disk(),
             KeyCode::Down | KeyCode::Char('j') => state.select_next_disk(),
-            KeyCode::Enter => {
-                if state.selected_disk().is_some() {
-                    state.advance();
-                }
+            KeyCode::Enter if state.selected_disk().is_some() => {
+                state.advance();
             }
             _ => {}
         },
@@ -383,10 +377,8 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             KeyCode::Esc => {
                 state.screen = Screen::Login;
             }
-            KeyCode::Enter => {
-                if !state.ssh_github_fetching {
-                    state.start_github_key_fetch();
-                }
+            KeyCode::Enter if !state.ssh_github_fetching => {
+                state.start_github_key_fetch();
             }
             KeyCode::Backspace => {
                 state.ssh_github_input.pop();
@@ -406,15 +398,11 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
                 state.timezone_selected = state.timezone_highlighted().to_string();
                 state.advance();
             }
-            KeyCode::Up => {
-                if state.timezone_cursor > 0 {
-                    state.timezone_cursor -= 1;
-                }
+            KeyCode::Up if state.timezone_cursor > 0 => {
+                state.timezone_cursor -= 1;
             }
-            KeyCode::Down => {
-                if state.timezone_cursor + 1 < state.timezone_filtered.len() {
-                    state.timezone_cursor += 1;
-                }
+            KeyCode::Down if state.timezone_cursor + 1 < state.timezone_filtered.len() => {
+                state.timezone_cursor += 1;
             }
             KeyCode::Backspace => {
                 state.timezone_search.pop();
@@ -436,11 +424,9 @@ fn handle_key(key: KeyEvent, state: &mut AppState) -> KeyAction {
             KeyCode::Backspace => {
                 state.confirm_input.pop();
             }
-            KeyCode::Enter => {
-                if state.is_confirmed() {
-                    state.advance();
-                    return KeyAction::StartWrite;
-                }
+            KeyCode::Enter if state.is_confirmed() => {
+                state.advance();
+                return KeyAction::StartWrite;
             }
             KeyCode::Char(c) => {
                 state.confirm_input.push(c);
