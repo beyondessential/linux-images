@@ -1,12 +1,74 @@
 # r[impl ci.uptodate] Keep all `uses:` actions up to date (see dependabot.yml)
-name: Tracey Spec Validation
+name: Checks
 
 on:
   pull_request:
   push:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
+  rust-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # r[impl ci.installer-target] r[verify ci.installer-target]
+          - runner: ubuntu-24.04
+            cargo_target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            cargo_target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # r[impl ci.rust-stable] r[verify ci.rust-stable]
+      - run: |
+          rustup update stable
+          rustup default stable
+          rustup target add ${{ matrix.cargo_target }}
+
+      # r[impl ci.rust-cache] r[verify ci.rust-cache]
+      - uses: Swatinem/rust-cache@v2
+
+      # r[impl ci.unit-test] r[verify ci.unit-test]
+      - run: cargo test -p bes-installer
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.cargo_target }} -p bes-installer
+
+      - name: Verify binary is dynamically linked against glibc
+        run: |
+          file target/${{ matrix.cargo_target }}/release/bes-installer
+          ldd target/${{ matrix.cargo_target }}/release/bes-installer | grep -q libc.so || \
+            echo "::warning::Binary does not appear to link against glibc"
+
+  rust-lint:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # r[impl ci.rust-stable] r[verify ci.rust-stable]
+      - run: |
+          rustup update stable
+          rustup default stable
+
+      # r[impl ci.rust-cache] r[verify ci.rust-cache]
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo clippy -- -D warnings
+      - run: cargo fmt --check
+
   tracey:
     runs-on: ubuntu-latest
     steps:
@@ -110,3 +172,23 @@ jobs:
             echo "| Verified | $VERIFIED |"
             echo "| Stale | $STALE |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  manual-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check generated files are up to date
+        run: scripts/gen-manual-testing.sh --check
+
+  all-green:
+    name: All green
+    if: always()
+    needs: [rust-test, rust-lint, tracey, manual-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        run: |
+          result='${{ toJSON(needs) }}'
+          echo "$result" | jq .
+          echo "$result" | jq -e 'all(.result == "success")'

@@ -274,6 +274,18 @@ jobs:
         run: just arch=${{ matrix.arch }} test-container-install
         timeout-minutes: 30
 
+  all-green:
+    name: All green
+    if: always()
+    needs: [images-cloud, images-metal, iso, container-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        run: |
+          result='${{ toJSON(needs) }}'
+          echo "$result" | jq .
+          echo "$result" | jq -e 'all(.result == "success")'
+
   release:
     needs: [images-cloud, images-metal, iso, container-test]
     if: startsWith(github.ref, 'refs/tags/')
