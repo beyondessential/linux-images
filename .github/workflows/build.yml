@@ -76,7 +76,7 @@ jobs:
             output/${{ matrix.arch }}/cloud/*.raw.size
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
       - name: Upload converted formats (needed by release)
         uses: actions/upload-artifact@v7
@@ -87,7 +87,7 @@ jobs:
             output/${{ matrix.arch }}/cloud/*.qcow2
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
   images-metal:
     strategy:
@@ -137,7 +137,7 @@ jobs:
             output/${{ matrix.arch }}/metal/*.raw.size
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
       - name: Upload converted formats (needed by release)
         uses: actions/upload-artifact@v7
@@ -148,7 +148,7 @@ jobs:
             output/${{ matrix.arch }}/metal/*.qcow2
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
   iso:
     needs: [images-cloud]
@@ -213,7 +213,7 @@ jobs:
           path: output/${{ matrix.arch }}/bes-installer-*.iso
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
   container-test:
     needs: [iso]
