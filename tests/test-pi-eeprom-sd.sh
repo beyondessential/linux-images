@@ -55,7 +55,7 @@ check "BOOT_UART=1 baked in"            expect_setting BOOT_UART=1
 check "BOOT_ORDER=0xf61 baked in"       expect_setting BOOT_ORDER=0xf61
 check "POWER_OFF_ON_HALT=1 baked in"    expect_setting POWER_OFF_ON_HALT=1
 check "PCIE_PROBE=1 baked in"           expect_setting PCIE_PROBE=1
-check "BOOT_WATCHDOG_TIMEOUT=15 baked in" expect_setting BOOT_WATCHDOG_TIMEOUT=15
+check "BOOT_WATCHDOG_TIMEOUT=30 baked in" expect_setting BOOT_WATCHDOG_TIMEOUT=30
 check "HDMI_DELAY=0 baked in"           expect_setting HDMI_DELAY=0
 check "PSU_MAX_CURRENT=5000 baked in"   expect_setting PSU_MAX_CURRENT=5000
 
