@@ -86,10 +86,7 @@ jobs:
       - name: Upload raw image (needed by ISO build)
         uses: actions/upload-artifact@v7
         with:
-          name: image-raw-cloud-${{ matrix.suite }}-${{ matrix.arch }}
-          path: |
-            output/${{ matrix.arch }}/cloud/*.raw.zst
-            output/${{ matrix.arch }}/cloud/*.raw.size
+          path: output/${{ matrix.arch }}/cloud/*.raw.zst
           if-no-files-found: error
           retention-days: 1
           archive: false
@@ -99,7 +96,6 @@ jobs:
       - name: Upload VMDK (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-vmdk-cloud-${{ matrix.suite }}-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/cloud/*.vmdk
           if-no-files-found: error
           retention-days: 1
@@ -108,7 +104,6 @@ jobs:
       - name: Upload qcow2 (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-qcow2-cloud-${{ matrix.suite }}-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/cloud/*.qcow2
           if-no-files-found: error
           retention-days: 1
@@ -159,10 +154,7 @@ jobs:
       - name: Upload raw image (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-raw-metal-${{ matrix.suite }}-${{ matrix.arch }}
-          path: |
-            output/${{ matrix.arch }}/metal/*.raw.zst
-            output/${{ matrix.arch }}/metal/*.raw.size
+          path: output/${{ matrix.arch }}/metal/*.raw.zst
           if-no-files-found: error
           retention-days: 1
           archive: false
@@ -170,7 +162,6 @@ jobs:
       - name: Upload VMDK (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-vmdk-metal-${{ matrix.suite }}-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/metal/*.vmdk
           if-no-files-found: error
           retention-days: 1
@@ -179,7 +170,6 @@ jobs:
       - name: Upload qcow2 (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-qcow2-metal-${{ matrix.suite }}-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/metal/*.qcow2
           if-no-files-found: error
           retention-days: 1
@@ -248,7 +238,6 @@ jobs:
       - name: Upload ISO
         uses: actions/upload-artifact@v7
         with:
-          name: iso-${{ matrix.suite }}-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/bes-installer-*.iso
           if-no-files-found: error
           retention-days: 1
