@@ -38,9 +38,8 @@ jobs:
     needs: [prep]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
-    # r[impl ci.output-suite] r[verify ci.output-suite]
-    # r[impl ci.output-arch] r[verify ci.output-arch]
     # The (arch × suite) matrix produces all four combinations.
+    # r[impl ci.output-arch] r[verify ci.output-arch] r[impl ci.output-suite] r[verify ci.output-suite]
     strategy:
       fail-fast: false
       matrix:
