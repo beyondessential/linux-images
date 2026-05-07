@@ -78,13 +78,22 @@ jobs:
           retention-days: 1
           archive: false
 
-      - name: Upload converted formats (needed by release)
+      # Per-format uploads: each artifact is a single file, so archive: false
+      # works (it requires exactly one file).
+      - name: Upload VMDK (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-formats-cloud-${{ matrix.suite }}-${{ matrix.arch }}
-          path: |
-            output/${{ matrix.arch }}/cloud/*.vmdk
-            output/${{ matrix.arch }}/cloud/*.qcow2
+          name: image-vmdk-cloud-${{ matrix.suite }}-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/cloud/*.vmdk
+          if-no-files-found: error
+          retention-days: 1
+          archive: false
+
+      - name: Upload qcow2 (needed by release)
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-qcow2-cloud-${{ matrix.suite }}-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/cloud/*.qcow2
           if-no-files-found: error
           retention-days: 1
           archive: false
@@ -139,13 +148,20 @@ jobs:
           retention-days: 1
           archive: false
 
-      - name: Upload converted formats (needed by release)
+      - name: Upload VMDK (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-formats-metal-${{ matrix.suite }}-${{ matrix.arch }}
-          path: |
-            output/${{ matrix.arch }}/metal/*.vmdk
-            output/${{ matrix.arch }}/metal/*.qcow2
+          name: image-vmdk-metal-${{ matrix.suite }}-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/metal/*.vmdk
+          if-no-files-found: error
+          retention-days: 1
+          archive: false
+
+      - name: Upload qcow2 (needed by release)
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-qcow2-metal-${{ matrix.suite }}-${{ matrix.arch }}
+          path: output/${{ matrix.arch }}/metal/*.qcow2
           if-no-files-found: error
           retention-days: 1
           archive: false
@@ -289,19 +305,17 @@ jobs:
         run: |
           mkdir -p release
 
-          # Copy image artifacts (raw.zst, vmdk, qcow2)
+          # Copy image artifacts (raw.zst, vmdk, qcow2). Each format lives
+          # in its own artifact dir.
           for variant in metal cloud; do
             for suite in noble resolute; do
               for arch in amd64 arm64; do
                 raw_dir="artifacts/image-raw-${variant}-${suite}-${arch}"
-                fmt_dir="artifacts/image-formats-${variant}-${suite}-${arch}"
-                if [ -d "$raw_dir" ]; then
-                  cp "$raw_dir"/*.raw.zst release/ 2>/dev/null || true
-                fi
-                if [ -d "$fmt_dir" ]; then
-                  cp "$fmt_dir"/*.vmdk release/ 2>/dev/null || true
-                  cp "$fmt_dir"/*.qcow2 release/ 2>/dev/null || true
-                fi
+                vmdk_dir="artifacts/image-vmdk-${variant}-${suite}-${arch}"
+                qcow_dir="artifacts/image-qcow2-${variant}-${suite}-${arch}"
+                [ -d "$raw_dir" ]  && cp "$raw_dir"/*.raw.zst release/ 2>/dev/null || true
+                [ -d "$vmdk_dir" ] && cp "$vmdk_dir"/*.vmdk release/ 2>/dev/null || true
+                [ -d "$qcow_dir" ] && cp "$qcow_dir"/*.qcow2 release/ 2>/dev/null || true
               done
             done
           done
