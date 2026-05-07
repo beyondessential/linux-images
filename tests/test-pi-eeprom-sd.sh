@@ -83,12 +83,15 @@ if [ -n "$IMAGE_PATH" ] && [ -f "$IMAGE_PATH" ]; then
         check ".img FAT contains pieeprom.sig" \
             bash -c '[[ "'"$FAT_LISTING"'" == *"PIEEPROM.SIG"* || "'"$FAT_LISTING"'" == *"pieeprom.sig"* ]]'
 
-        VOL_LABEL="$(MTOOLS_SKIP_CHECK=1 mlabel -s -i "${IMAGE_PATH}@@1048576" 2>/dev/null | sed -n 's/^Volume label is //p' || true)"
-        check ".img volume label is RECOVERY" \
-            bash -c '[[ "'"$VOL_LABEL"'" == *"RECOVERY"* ]]'
     else
         echo "SKIP: mtools not installed — skipping FAT contents check"
     fi
+
+    # Read the FAT16 volume label straight from the boot-sector BPB at
+    # partition offset 43 (11 bytes, space-padded). Independent of mtools
+    # version. Partition starts at 1 MiB, so absolute offset is 1048619.
+    VOL_LABEL="$(dd if="$IMAGE_PATH" bs=1 skip=1048619 count=11 status=none 2>/dev/null | tr -d '\000' | sed 's/ *$//')"
+    check ".img volume label is RECOVERY" test "$VOL_LABEL" = "RECOVERY"
 fi
 
 echo ""
