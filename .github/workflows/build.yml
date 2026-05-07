@@ -232,6 +232,49 @@ jobs:
           retention-days: 1
           archive: false
 
+  # Standalone Pi 5 EEPROM-config SD artifact. Architecture-independent —
+  # the .img boots on any Pi 5 regardless of where it was built. Runs on
+  # arm64 for consistency with the other Pi job; the underlying script
+  # works on amd64 too.
+  pi-eeprom:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git python3 dosfstools mtools util-linux zstd
+
+      - name: Build artifact
+        run: just pi-eeprom-img
+        timeout-minutes: 10
+
+      - name: Test artifact
+        run: just test-pi-eeprom
+
+      - name: List outputs
+        run: ls -lh output/pi-eeprom/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pi-eeprom-config
+          path: |
+            output/pi-eeprom/recovery.bin
+            output/pi-eeprom/pieeprom.upd
+            output/pi-eeprom/pieeprom.sig
+            output/pi-eeprom/bes-pi-eeprom-config.img.zst
+            output/pi-eeprom/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
   iso:
     needs: [prep, images-cloud]
     env:
@@ -346,7 +389,7 @@ jobs:
   all-green:
     name: All builds green
     if: always()
-    needs: [images-cloud, images-metal, images-pi, iso, container-test]
+    needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso, container-test]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
@@ -356,7 +399,7 @@ jobs:
           echo "$result" | jq -e 'all(.result == "success")'
 
   release:
-    needs: [images-cloud, images-metal, images-pi, iso, container-test]
+    needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso, container-test]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -385,6 +428,11 @@ jobs:
 
           # ISOs: bes-installer-{version}-{arch}.iso
           cp artifacts/bes-installer-*.iso release/ 2>/dev/null || true
+
+          # Pi 5 EEPROM-config SD artifact. Only the flashable .img.zst is
+          # shipped — the loose files are present in the CI artifact for
+          # debugging but are not user-facing.
+          cp artifacts/bes-pi-eeprom-config.img.zst release/ 2>/dev/null || true
 
           # r[image.output.checksum]
           cd release
@@ -439,6 +487,10 @@ jobs:
                 variant="installer"
                 arch=$(echo "$f" | sed -E 's/bes-installer-[^-]+-([^.]+)\.iso/\1/')
                 format="iso"
+                ;;
+              bes-pi-eeprom-config.img.zst)
+                variant="pi-eeprom"
+                format="img.zst"
                 ;;
               SHA256SUMS)
                 format="checksums"
@@ -583,17 +635,19 @@ jobs:
             ### Variants
             | Variant | Use case |
             |---------|----------|
-            | metal | Install directly on hardware |
-            | cloud | For cloud/VM deployments (including on-prem virtualisation) |
-            | pi    | Raspberry Pi 5 (arm64 only); flash to SD/USB/NVMe |
+            | metal     | Install directly on hardware |
+            | cloud     | For cloud/VM deployments (including on-prem virtualisation) |
+            | pi        | Raspberry Pi 5 (arm64 only); flash to SD/USB/NVMe |
+            | pi-eeprom | Pi 5 EEPROM-config SD: flashes a known bootloader config and reboots |
 
             ### Formats
-            | Format | Use case |
-            |--------|----------|
-            |  iso   | Boot from USB for interactive or automated install |
-            |  raw   | Write directly to server disk |
-            |  vmdk  | VMware / vSphere |
-            |  qcow2 | KVM / libvirt / Proxmox |
+            | Format  | Use case |
+            |---------|----------|
+            |  iso    | Boot from USB for interactive or automated install |
+            |  raw    | Write directly to server disk |
+            |  vmdk   | VMware / vSphere |
+            |  qcow2  | KVM / libvirt / Proxmox |
+            |  img    | Pi EEPROM SD recovery image — flash with rpi-imager / dd / etc |
           files: release/SHA256SUMS
           fail_on_unmatched_files: true
           make_latest: true
