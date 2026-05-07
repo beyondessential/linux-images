@@ -71,6 +71,13 @@ The system timezone is set to `UTC`.
 
 Otherwise, set the timezone using `timedatectl set-timezone Australia/Melbourne`.
 
+### Time sync
+
+NTP is configured using [Chrony](https://chrony-project.org/), which is the default since 26.04 but we also configure it for our 24.04 images for consistency.
+Both the Canonical and ntp.org pools are used, and the AWS pool may also be used in EC2.
+
+You can check on the sync status using `chronyc tracking`.
+
 ## Login
 
 The `ubuntu` user is the only login account.
