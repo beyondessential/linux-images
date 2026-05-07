@@ -21,7 +21,23 @@ env:
   UBUNTU_PORTS_MIRROR: http://ports.ubuntu.com/ubuntu-ports
 
 jobs:
+  # Single source of truth for the build datestamp. Every matrix leg picks
+  # this up via $BUILD_DATE and writes filenames containing it; downstream
+  # jobs that look up artifacts by basename use the same value. Without
+  # this, a long build crossing midnight UTC would produce inconsistent
+  # filenames between parallel matrix entries.
+  prep:
+    runs-on: ubuntu-24.04
+    outputs:
+      build_date: ${{ steps.d.outputs.value }}
+    steps:
+      - id: d
+        run: echo "value=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
   images-cloud:
+    needs: [prep]
+    env:
+      BUILD_DATE: ${{ needs.prep.outputs.build_date }}
     # r[impl ci.output-suite] r[verify ci.output-suite]
     # r[impl ci.output-arch] r[verify ci.output-arch]
     # The (arch × suite) matrix produces all four combinations.
@@ -99,6 +115,9 @@ jobs:
           archive: false
 
   images-metal:
+    needs: [prep]
+    env:
+      BUILD_DATE: ${{ needs.prep.outputs.build_date }}
     strategy:
       fail-fast: false
       matrix:
@@ -167,7 +186,9 @@ jobs:
           archive: false
 
   iso:
-    needs: [images-cloud]
+    needs: [prep, images-cloud]
+    env:
+      BUILD_DATE: ${{ needs.prep.outputs.build_date }}
     strategy:
       fail-fast: false
       matrix:
@@ -204,14 +225,12 @@ jobs:
       # r[impl ci.rust-cache] r[verify ci.rust-cache]
       - uses: Swatinem/rust-cache@v2
 
-      # archive: false names the artifact after the file's basename
-      # (ubuntu-{version}-bes-cloud-{arch}-{date}.raw.zst). Match by
-      # pattern since the date suffix isn't known at consumer time.
+      # archive: false names the artifact after the file's basename. The
+      # date suffix comes from prep, so we can match by exact name.
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          pattern: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-*.raw.zst
-          merge-multiple: true
+          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.raw.zst
           path: output/${{ matrix.arch }}/cloud/
 
       - name: List inputs
@@ -536,7 +555,7 @@ jobs:
           make_latest: true
 
   register-ami:
-    needs: [images-cloud]
+    needs: [prep, images-cloud]
     if: startsWith(github.ref, 'refs/tags/')
     strategy:
       fail-fast: false
@@ -556,8 +575,7 @@ jobs:
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          pattern: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-*.raw.zst
-          merge-multiple: true
+          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.raw.zst
           path: output/${{ matrix.arch }}/cloud/
 
       - name: Configure AWS Credentials

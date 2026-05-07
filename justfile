@@ -51,7 +51,13 @@ _validate-arch:
       *) echo "ERROR: arch must be one of: amd64, arm64 (got: {{ arch }})"; exit 1 ;;
     esac
 
-filestem := "ubuntu-" + ubuntu_version + "-bes-" + variant + "-" + arch + "-" + datetime_utc("%Y%m%d")
+# Build date is parameterised so a CI run with parallel matrix entries gets
+# the same timestamp across all jobs (otherwise a build crossing midnight
+# would produce different filenames between matrix legs and break artifact
+# lookups). CI sets BUILD_DATE in a top-level prep job; locally it defaults
+# to today's UTC date.
+build_date := env("BUILD_DATE", datetime_utc("%Y%m%d"))
+filestem := "ubuntu-" + ubuntu_version + "-bes-" + variant + "-" + arch + "-" + build_date
 work_dir := "working" / arch
 output_arch_dir := "output" / arch
 output_dir := output_arch_dir / variant
