@@ -6,8 +6,9 @@ on:
   push:
     branches: [main]
 
+# Per-commit concurrency group — see build.yml for rationale.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 permissions:
