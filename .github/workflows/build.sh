@@ -12,10 +12,11 @@ on:
 # runs when new events fire — particularly noisy with stacked PRs, where
 # pushing to one branch cascades synchronize events into the dependent
 # PRs. Including the SHA gives each unique commit its own queue: same SHA
-# retriggered still dedups, different SHAs run independently.
+# retriggered cancels the older run (we want the latest result), different
+# SHAs run independently.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
