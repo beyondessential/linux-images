@@ -92,7 +92,7 @@ jobs:
       - name: Upload raw image (needed by ISO build)
         uses: actions/upload-artifact@v7
         with:
-          path: output/${{ matrix.arch }}/cloud/*.raw.zst
+          path: output/${{ matrix.arch }}/cloud/*.img.zst
           if-no-files-found: error
           retention-days: 1
           archive: false
@@ -160,7 +160,7 @@ jobs:
       - name: Upload raw image (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          path: output/${{ matrix.arch }}/metal/*.raw.zst
+          path: output/${{ matrix.arch }}/metal/*.img.zst
           if-no-files-found: error
           retention-days: 1
           archive: false
@@ -226,7 +226,7 @@ jobs:
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.raw.zst
+          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
           path: output/${{ matrix.arch }}/cloud/
 
       - name: List inputs
@@ -330,8 +330,8 @@ jobs:
         run: |
           mkdir -p release
 
-          # Image artifacts: ubuntu-{version}-bes-{variant}-{arch}-{date}.{raw.zst,vmdk,qcow2}
-          cp artifacts/ubuntu-*.raw.zst release/ 2>/dev/null || true
+          # Image artifacts: ubuntu-{version}-bes-{variant}-{arch}-{date}.{img.zst,vmdk,qcow2}
+          cp artifacts/ubuntu-*.img.zst release/ 2>/dev/null || true
           cp artifacts/ubuntu-*.vmdk    release/ 2>/dev/null || true
           cp artifacts/ubuntu-*.qcow2   release/ 2>/dev/null || true
 
@@ -368,11 +368,11 @@ jobs:
             format="$f"
 
             case "$f" in
-              ubuntu-*-bes-*-*-*.raw.zst)
+              ubuntu-*-bes-*-*-*.img.zst)
                 version=$(echo "$f" | sed -E 's/ubuntu-([^-]+)-bes-.*$/\1/')
                 variant=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-([^-]+)-.*$/\1/')
                 arch=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-[^-]+-([^-]+)-.*$/\1/')
-                format="raw.zst"
+                format="img.zst"
                 ;;
               ubuntu-*-bes-*-*-*.vmdk)
                 version=$(echo "$f" | sed -E 's/ubuntu-([^-]+)-bes-.*$/\1/')
@@ -570,7 +570,7 @@ jobs:
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.raw.zst
+          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
           path: output/${{ matrix.arch }}/cloud/
 
       - name: Configure AWS Credentials

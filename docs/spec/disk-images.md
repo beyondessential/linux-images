@@ -342,7 +342,7 @@ r[image.luks.crypttab]
 ## Output
 
 r[image.output.raw]
-A raw disk image file (`.raw`) must be produced, and compressed with zstd.
+A raw disk image file (`.img`) must be produced, and compressed with zstd.
 
 r[image.output.vmdk]
 A VMDK image must be produced.

@@ -12,7 +12,7 @@ Please verify images before writing them to disks.
 All images are signed by [GitHub Attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations#verifying-an-artifact-attestation-for-binaries) to establish provenance:
 
 ```console
-$ gh attestation verify --owner beyondessential ubuntu-24.04-bes-cloud-amd64-20260312.raw.zst
+$ gh attestation verify --owner beyondessential ubuntu-24.04-bes-cloud-amd64-20260312.img.zst
 ```
 
 ## Version

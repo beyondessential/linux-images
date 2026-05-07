@@ -61,7 +61,7 @@ filestem := "ubuntu-" + ubuntu_version + "-bes-" + variant + "-" + arch + "-" + 
 work_dir := "working" / arch
 output_arch_dir := "output" / arch
 output_dir := output_arch_dir / variant
-output_raw := output_dir / filestem + ".raw"
+output_raw := output_dir / filestem + ".img"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
 output_iso := output_arch_dir / "bes-installer-" + ubuntu_version + "-" + arch + ".iso"
@@ -152,13 +152,13 @@ iso: _validate-arch iso-rootfs
     #!/usr/bin/env bash
     set -euo pipefail
 
-    SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw.zst' | head -1)"
+    SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.img.zst' | head -1)"
     if [ -z "$SOURCE_IMAGE" ]; then
-      SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw' | head -1)"
+      SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.img' | head -1)"
     fi
 
     if [ -z "$SOURCE_IMAGE" ]; then
-      echo "ERROR: need a cloud .raw or .raw.zst image under {{ output_arch_dir }}"
+      echo "ERROR: need a cloud .img or .img.zst image under {{ output_arch_dir }}"
       echo "Run 'just arch={{ arch }} variant=cloud raw' first."
       exit 1
     fi
@@ -717,7 +717,7 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     set -euo pipefail
 
     # Make a copy so we don't modify the original
-    TEST_IMAGE="{{ work_dir }}/test-boot.raw"
+    TEST_IMAGE="{{ work_dir }}/test-boot.img"
     cp "{{ output_raw }}" "$TEST_IMAGE"
 
     # Grow the test image so grow-root-filesystem has something to do

@@ -432,7 +432,7 @@ a disk, without using the ISO installer.
 1. Write the cloud image to a spare disk or VM virtual disk:
 
    ```
-   zstd -d output/amd64/cloud/*.raw.zst --stdout | sudo dd of=/dev/sdX bs=4M status=progress
+   zstd -d output/amd64/cloud/*.img.zst --stdout | sudo dd of=/dev/sdX bs=4M status=progress
    sync
    ```
 

@@ -2,14 +2,14 @@
 # Loopback-mount a built image and verify its structure without booting.
 # This runs in CI without KVM.
 #
-# Usage: test-image-structure.sh <image.raw> <variant> <arch>
+# Usage: test-image-structure.sh <image.img> <variant> <arch>
 #   variant: metal | cloud
 #   arch:    amd64 | arm64
 set -euo pipefail
 
-IMAGE="${1:?Usage: $0 <image.raw> <variant> <arch>}"
-VARIANT="${2:?Usage: $0 <image.raw> <variant> <arch>}"
-ARCH="${3:?Usage: $0 <image.raw> <variant> <arch>}"
+IMAGE="${1:?Usage: $0 <image.img> <variant> <arch>}"
+VARIANT="${2:?Usage: $0 <image.img> <variant> <arch>}"
+ARCH="${3:?Usage: $0 <image.img> <variant> <arch>}"
 
 PASS=0
 FAIL=0

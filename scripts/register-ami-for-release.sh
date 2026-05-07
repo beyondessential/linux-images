@@ -15,7 +15,7 @@ set -euo pipefail
 #   region     AWS region (default: ap-southeast-2)
 #   s3-bucket  S3 bucket for import staging (default: bes-ops-tools)
 #
-# The raw.zst image is expected under output/<arch>/cloud/*.raw.zst
+# The raw.zst image is expected under output/<arch>/cloud/*.img.zst
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -60,9 +60,9 @@ fi
 
 # --- Find and decompress the image ---
 
-ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.raw.zst' | head -1)
+ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.img.zst' | head -1)
 if [ -z "$ZST_FILE" ]; then
-    echo "ERROR: No .raw.zst file found in $OUTPUT_DIR"
+    echo "ERROR: No .img.zst file found in $OUTPUT_DIR"
     exit 1
 fi
 
@@ -74,7 +74,7 @@ echo ""
 
 # --- Upload to S3 ---
 
-S3_KEY="linux-images/${VERSION}/${AMI_NAME}.raw"
+S3_KEY="linux-images/${VERSION}/${AMI_NAME}.img"
 echo "Uploading to s3://${BUCKET}/${S3_KEY} ..."
 aws s3 cp "$RAW_FILE" "s3://${BUCKET}/${S3_KEY}" \
     --region "$REGION" \

@@ -6,7 +6,7 @@
 # Inputs:
 #   - ROOTFS_DIR: staging directory with live/vmlinuz, live/initrd.img,
 #     live/filesystem.squashfs (with verity), live/verity-roothash
-#   - SOURCE_IMAGE: disk image (.raw or .raw.zst) to extract partition images from
+#   - SOURCE_IMAGE: disk image (.img or .img.zst) to extract partition images from
 #
 # Output: a hybrid ISO9660 + GPT image with:
 #   - ISO9660 filesystem (bootable in VMs as optical media)
@@ -21,7 +21,7 @@
 #     ARCH            - amd64 or arm64 (default: amd64)
 #     OUTPUT          - output file path (default: output/<arch>/bes-installer-<arch>.iso)
 #     ROOTFS_DIR      - path to the rootfs staging directory (required)
-#     SOURCE_IMAGE    - path to the source disk image (.raw or .raw.zst) (required)
+#     SOURCE_IMAGE    - path to the source disk image (.img or .img.zst) (required)
 #     BESCONF_SIZE_MB - BESCONF partition size in MiB (default: 4)
 set -euo pipefail
 
@@ -41,7 +41,7 @@ ARCH="${ARCH:-amd64}"
 BESCONF_SIZE_MB="${BESCONF_SIZE_MB:-4}"
 BUILD_DATE="$(date -u +%Y-%m-%d)"
 ROOTFS_DIR="${ROOTFS_DIR:?ROOTFS_DIR must point to the rootfs staging directory}"
-SOURCE_IMAGE="${SOURCE_IMAGE:?SOURCE_IMAGE must point to the source disk image (.raw or .raw.zst)}"
+SOURCE_IMAGE="${SOURCE_IMAGE:?SOURCE_IMAGE must point to the source disk image (.img or .img.zst)}"
 OUTPUT="${OUTPUT:-output/${ARCH}/bes-installer-${ARCH}.iso}"
 
 # r[impl iso.per-arch]
@@ -152,7 +152,7 @@ echo "==> Phase 1: Extracting partition images from source image..."
 IMAGES_STAGING="$WORK_DIR/images-staging"
 mkdir -p "$IMAGES_STAGING"
 
-SOURCE_RAW="$WORK_DIR/source.raw"
+SOURCE_RAW="$WORK_DIR/source.img"
 if [[ "$SOURCE_IMAGE" == *.zst ]]; then
     echo "    Decompressing $SOURCE_IMAGE ..."
     zstd -d "$SOURCE_IMAGE" -o "$SOURCE_RAW"

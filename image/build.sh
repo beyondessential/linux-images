@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # --- Arguments (overridable via environment) ---
 ARCH="${ARCH:-amd64}"
 VARIANT="${VARIANT:-metal}"
-OUTPUT="${OUTPUT:-output.raw}"
+OUTPUT="${OUTPUT:-output.img}"
 IMAGE_SIZE="${IMAGE_SIZE:-5G}"
 UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
 
