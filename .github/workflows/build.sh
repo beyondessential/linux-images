@@ -204,10 +204,14 @@ jobs:
       # r[impl ci.rust-cache] r[verify ci.rust-cache]
       - uses: Swatinem/rust-cache@v2
 
+      # archive: false names the artifact after the file's basename
+      # (ubuntu-{version}-bes-cloud-{arch}-{date}.raw.zst). Match by
+      # pattern since the date suffix isn't known at consumer time.
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: image-raw-cloud-${{ matrix.suite }}-${{ matrix.arch }}
+          pattern: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-*.raw.zst
+          merge-multiple: true
           path: output/${{ matrix.arch }}/cloud/
 
       - name: List inputs
@@ -258,10 +262,12 @@ jobs:
           sudo modprobe btrfs
           sudo modprobe dm-crypt
 
+      # ISO basenames are deterministic — bes-installer-{version}-{arch}.iso —
+      # so an exact name lookup works.
       - name: Download ISO
         uses: actions/download-artifact@v8
         with:
-          name: iso-${{ matrix.suite }}-${{ matrix.arch }}
+          name: bes-installer-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-${{ matrix.arch }}.iso
           path: output/${{ matrix.arch }}/
 
       - name: List ISO
@@ -294,9 +300,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # archive: false artifacts are named after their file basename.
+      # merge-multiple flattens every artifact into one directory, so we
+      # can just glob by extension below.
       - uses: actions/download-artifact@v8
         with:
+          pattern: '*'
           path: artifacts/
+          merge-multiple: true
 
       - name: Derive version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
@@ -305,30 +316,13 @@ jobs:
         run: |
           mkdir -p release
 
-          # Copy image artifacts (raw.zst, vmdk, qcow2). Each format lives
-          # in its own artifact dir.
-          for variant in metal cloud; do
-            for suite in noble resolute; do
-              for arch in amd64 arm64; do
-                raw_dir="artifacts/image-raw-${variant}-${suite}-${arch}"
-                vmdk_dir="artifacts/image-vmdk-${variant}-${suite}-${arch}"
-                qcow_dir="artifacts/image-qcow2-${variant}-${suite}-${arch}"
-                [ -d "$raw_dir" ]  && cp "$raw_dir"/*.raw.zst release/ 2>/dev/null || true
-                [ -d "$vmdk_dir" ] && cp "$vmdk_dir"/*.vmdk release/ 2>/dev/null || true
-                [ -d "$qcow_dir" ] && cp "$qcow_dir"/*.qcow2 release/ 2>/dev/null || true
-              done
-            done
-          done
+          # Image artifacts: ubuntu-{version}-bes-{variant}-{arch}-{date}.{raw.zst,vmdk,qcow2}
+          cp artifacts/ubuntu-*.raw.zst release/ 2>/dev/null || true
+          cp artifacts/ubuntu-*.vmdk    release/ 2>/dev/null || true
+          cp artifacts/ubuntu-*.qcow2   release/ 2>/dev/null || true
 
-          # Copy ISOs
-          for suite in noble resolute; do
-            for arch in amd64 arm64; do
-              dir="artifacts/iso-${suite}-${arch}"
-              if [ -d "$dir" ]; then
-                cp "$dir"/*.iso release/ 2>/dev/null || true
-              fi
-            done
-          done
+          # ISOs: bes-installer-{version}-{arch}.iso
+          cp artifacts/bes-installer-*.iso release/ 2>/dev/null || true
 
           # r[image.output.checksum]
           cd release
@@ -562,7 +556,8 @@ jobs:
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: image-raw-cloud-${{ matrix.suite }}-${{ matrix.arch }}
+          pattern: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-*.raw.zst
+          merge-multiple: true
           path: output/${{ matrix.arch }}/cloud/
 
       - name: Configure AWS Credentials
