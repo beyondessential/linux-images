@@ -20,13 +20,7 @@ specs (
                     // manual testing procedure generator (tracey can't parse .md)
                     scripts/gen-manual-testing.sh
 
-                    // tracey doesn't yet support YAML, but there's a hack!
-                    // Run `just tracey-setup` to create .sh copies of the .yml files
-                    // tracey reads those just fine. Run again when yml files change.
-                    .github/workflows/*.sh
-                    .github/*.sh
-
-                    // files not includes because tracey doesn't support them yet
+                    // files not included because tracey doesn't support them yet
                     //justfile
                     //.github/workflows/*.yml
                     //.github/*.yml

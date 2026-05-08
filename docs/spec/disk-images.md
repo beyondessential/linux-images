@@ -352,3 +352,23 @@ A qcow2 image must be produced.
 
 r[image.output.checksum]
 SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
+
+> r[image.output.aws-ami]
+> On a tagged release, the cloud variant image for every (suite, architecture)
+> combination that is published must be registered as an AWS AMI in the
+> `ap-southeast-2` region. The set of currently-published suites
+> (`noble` for 24.04 LTS, `resolute` for 26.04) and architectures (`amd64`,
+> `arm64`) is captured by the build matrix in `.github/workflows/build.yml`.
+>
+> Each registered AMI must be named
+> `ubuntu-<ubuntu-version>-bes-cloud-<arch>-<version>`, where
+> `<ubuntu-version>` is the numeric Ubuntu release (e.g. `24.04` or `26.04`)
+> corresponding to the suite, `<arch>` is the image architecture, and
+> `<version>` is the release version without the leading `v`. AMIs from
+> different suites must therefore not collide on a name even when registered
+> from the same release tag.
+>
+> Each registered AMI must carry the following AWS resource tags: `Name`,
+> `Os`, `OsVersion`, `Variant`, `Architecture`, `Version`, `Features`, and
+> `Builder`. `OsVersion` must hold the numeric Ubuntu release
+> (`<ubuntu-version>` above).

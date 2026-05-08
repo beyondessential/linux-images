@@ -45,7 +45,7 @@ case "$SUITE" in
     *) echo "ERROR: unknown suite '$SUITE' (add a mapping here and in the justfile)"; exit 1 ;;
 esac
 
-# r[impl ci.release.aws-ami]
+# r[impl image.output.aws-ami]
 AMI_NAME="ubuntu-${UBUNTU_VERSION}-bes-cloud-${ARCH}-${VERSION}"
 OUTPUT_DIR="$REPO_ROOT/output/${ARCH}/cloud"
 
@@ -166,7 +166,7 @@ echo ""
 
 # --- Register AMI ---
 
-# r[impl ci.release.aws-ami]
+# r[impl image.output.aws-ami]
 AWS_ARCH="${ARCH/amd64/x86_64}"
 echo "Registering AMI: $AMI_NAME ..."
 AMI_ID=$(aws ec2 register-image \
@@ -192,7 +192,7 @@ echo ""
 
 # --- Tag AMI and snapshot ---
 
-# r[verify ci.release.aws-ami]
+# r[verify image.output.aws-ami]
 aws ec2 create-tags \
     --region "$REGION" \
     --resources "$AMI_ID" "$SNAPSHOT_ID" \

@@ -19,3 +19,11 @@
 - `use` statements always go before `mod` statements.
 - To silence a warning, use `#[expect(..., reason = "...")]` instead of `#[allow(...)]`.
 <!-- end rules -->
+
+## CI conventions
+These are project preferences, not spec requirements. Treat them as advice when touching the workflow files.
+- Use `rustup` (with the latest stable Rust) to install the toolchain. Do not use the `dtolnay/rust-toolchain` action.
+- Use `Swatinem/rust-cache` for Rust caching.
+- Build the installer for `*-unknown-linux-gnu` (not musl). The CI runner's glibc must be ≤ the glibc in the live ISO rootfs, since glibc is forward- but not backward-compatible. When bumping the runner image, double-check this against the lowest target suite.
+- Shell scripts under the repo must pass `shellcheck`; CI runs `just test-shellcheck` once per build.
+- Keep `uses:` actions current via the dependabot config.
