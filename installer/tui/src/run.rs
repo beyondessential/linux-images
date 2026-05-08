@@ -651,6 +651,7 @@ fn emit_plan(plan: &plan::InstallPlan, cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+// r[impl installer.build-info]
 fn read_build_info() -> String {
     let commit = option_env!("VERGEN_GIT_SHA").unwrap_or("");
     let vergen_date = option_env!("VERGEN_BUILD_DATE").unwrap_or("");
@@ -673,12 +674,61 @@ fn read_build_info() -> String {
 
     let date = date.unwrap_or_else(|| vergen_date.to_string());
     let arch = arch.unwrap_or_else(detect_arch);
+    let release = read_ubuntu_release();
+
+    let arch_part = match release {
+        Some((version_id, codename)) => format!("{arch}, Ubuntu {version_id} {codename}"),
+        None => arch,
+    };
 
     if commit.is_empty() {
-        format!("Built {date} ({arch})")
+        format!("Built {date} ({arch_part})")
     } else {
-        format!("Built {date} ({arch}) {commit}")
+        format!("Built {date} ({arch_part}) {commit}")
     }
+}
+
+// r[impl installer.build-info]
+/// Read `(VERSION_ID, VERSION_CODENAME)` from `/etc/os-release`. Returns
+/// `None` when the file is missing or either field is absent.
+fn read_ubuntu_release() -> Option<(String, String)> {
+    let contents = fs::read_to_string("/etc/os-release").ok()?;
+    parse_os_release(&contents)
+}
+
+// r[impl installer.build-info]
+/// Parse a subset of os-release(5): match `VERSION_ID` and `VERSION_CODENAME`,
+/// stripping a single layer of double or single quotes.
+fn parse_os_release(contents: &str) -> Option<(String, String)> {
+    let mut version_id = None;
+    let mut codename = None;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = strip_os_release_quotes(value);
+        match key {
+            "VERSION_ID" => version_id = Some(value.to_string()),
+            "VERSION_CODENAME" => codename = Some(value.to_string()),
+            _ => {}
+        }
+    }
+    Some((version_id?, codename?))
+}
+
+fn strip_os_release_quotes(value: &str) -> &str {
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2 {
+        let first = bytes[0];
+        if (first == b'"' || first == b'\'') && bytes[bytes.len() - 1] == first {
+            return &value[1..value.len() - 1];
+        }
+    }
+    value
 }
 
 /// Build a human-readable network summary from an `InstallConfig` (for auto
@@ -764,5 +814,66 @@ mod test {
         let path = dir.path().join("bes-install.toml");
         std::fs::write(&path, "this is not valid toml {{{{").unwrap();
         assert!(super::load_config(&make_cli(Some(path))).is_err());
+    }
+
+    // r[verify installer.build-info]
+    #[test]
+    fn parse_os_release_ubuntu_noble() {
+        let contents = r#"PRETTY_NAME="Ubuntu 24.04.1 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04.1 LTS (Noble Numbat)"
+VERSION_CODENAME=noble
+ID=ubuntu
+ID_LIKE=debian
+UBUNTU_CODENAME=noble
+"#;
+        let (version_id, codename) = super::parse_os_release(contents).unwrap();
+        assert_eq!(version_id, "24.04");
+        assert_eq!(codename, "noble");
+    }
+
+    // r[verify installer.build-info]
+    #[test]
+    fn parse_os_release_ubuntu_resolute() {
+        let contents = r#"PRETTY_NAME="Ubuntu 26.04 LTS"
+NAME="Ubuntu"
+VERSION_ID="26.04"
+VERSION="26.04 LTS (Resolute Raccoon)"
+VERSION_CODENAME=resolute
+ID=ubuntu
+"#;
+        let (version_id, codename) = super::parse_os_release(contents).unwrap();
+        assert_eq!(version_id, "26.04");
+        assert_eq!(codename, "resolute");
+    }
+
+    // r[verify installer.build-info]
+    #[test]
+    fn parse_os_release_handles_single_quotes_and_blanks() {
+        let contents = "\n# top-level comment\n\nVERSION_ID='24.04'\nVERSION_CODENAME=noble\n";
+        let (version_id, codename) = super::parse_os_release(contents).unwrap();
+        assert_eq!(version_id, "24.04");
+        assert_eq!(codename, "noble");
+    }
+
+    // r[verify installer.build-info]
+    #[test]
+    fn parse_os_release_missing_codename_returns_none() {
+        let contents = "VERSION_ID=\"24.04\"\n";
+        assert!(super::parse_os_release(contents).is_none());
+    }
+
+    // r[verify installer.build-info]
+    #[test]
+    fn parse_os_release_missing_version_id_returns_none() {
+        let contents = "VERSION_CODENAME=noble\n";
+        assert!(super::parse_os_release(contents).is_none());
+    }
+
+    // r[verify installer.build-info]
+    #[test]
+    fn parse_os_release_empty_returns_none() {
+        assert!(super::parse_os_release("").is_none());
     }
 }
