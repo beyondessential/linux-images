@@ -344,6 +344,7 @@ pub fn open_and_mount_images() -> Result<Option<ImagesVerity>> {
 
 // r[impl iso.verity.check+6]
 // r[impl installer.write.stream-copy+2]
+// r[impl installer.write.bounded-cache]
 /// Splice data from `src_fd` through a pipe to `dst_fd` using `splice(2)`.
 ///
 /// Returns the total number of bytes transferred. Calls `on_progress` after
@@ -351,6 +352,16 @@ pub fn open_and_mount_images() -> Result<Option<ImagesVerity>> {
 /// transferred`.
 ///
 /// The pipe buffer is resized to 1 MiB via `fcntl(F_SETPIPE_SZ)`.
+///
+/// Every `FLUSH_INTERVAL` bytes the helper synchronously starts writeback on
+/// the destination range, waits for it to complete, and advises the kernel
+/// to drop both the destination and the just-consumed source pages. This
+/// caps both dirty-page accumulation on the target and clean-page
+/// accumulation from the (zstd-compressed, decompressed-on-read) source
+/// squashfs, so the install does not OOM the rest of the live system on
+/// low-RAM hosts. `posix_fadvise` and `sync_file_range` return EINVAL on
+/// non-regular targets such as `/dev/null` (used by `integrity_check`); the
+/// errors are ignored because the calls are advisory in those paths.
 pub fn splice_fd_to_fd(
     src_fd: i32,
     dst_fd: i32,
@@ -361,6 +372,7 @@ pub fn splice_fd_to_fd(
     on_progress: &mut dyn FnMut(&WriteProgress),
 ) -> Result<u64> {
     const PIPE_SIZE: i32 = 1024 * 1024; // 1 MiB
+    const FLUSH_INTERVAL: u64 = 64 * 1024 * 1024; // 64 MiB
 
     let mut pipe_fds = [0i32; 2];
     if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } != 0 {
@@ -375,6 +387,7 @@ pub fn splice_fd_to_fd(
     }
 
     let mut transferred: u64 = 0;
+    let mut last_flushed: u64 = 0;
     let chunk_size = PIPE_SIZE as usize;
 
     let result = (|| -> Result<u64> {
@@ -432,6 +445,14 @@ pub fn splice_fd_to_fd(
                 total_bytes,
                 elapsed: start.elapsed(),
             });
+
+            if transferred - last_flushed >= FLUSH_INTERVAL {
+                flush_and_drop(src_fd, dst_fd, last_flushed, transferred - last_flushed);
+                last_flushed = transferred;
+            }
+        }
+        if transferred > last_flushed {
+            flush_and_drop(src_fd, dst_fd, last_flushed, transferred - last_flushed);
         }
         Ok(transferred)
     })();
@@ -442,6 +463,28 @@ pub fn splice_fd_to_fd(
     }
 
     result
+}
+
+// r[impl installer.write.bounded-cache]
+/// Synchronously write back dirty destination pages in `[offset, offset+len)`
+/// and advise the kernel to drop both destination and source pages from the
+/// page cache. Errors are ignored: the calls are advisory and may legitimately
+/// return EINVAL on non-regular fds (e.g. `/dev/null`, character devices).
+fn flush_and_drop(src_fd: i32, dst_fd: i32, offset: u64, len: u64) {
+    let off = offset as libc::off_t;
+    let len_i = len as libc::off_t;
+    unsafe {
+        libc::sync_file_range(
+            dst_fd,
+            off,
+            len_i,
+            libc::SYNC_FILE_RANGE_WAIT_BEFORE
+                | libc::SYNC_FILE_RANGE_WRITE
+                | libc::SYNC_FILE_RANGE_WAIT_AFTER,
+        );
+        libc::posix_fadvise(dst_fd, off, len_i, libc::POSIX_FADV_DONTNEED);
+        libc::posix_fadvise(src_fd, off, len_i, libc::POSIX_FADV_DONTNEED);
+    }
 }
 
 // r[impl iso.verity.check+6]
@@ -671,5 +714,70 @@ mod tests {
         // We can't easily test /proc/cmdline in unit tests,
         // but we can verify the function doesn't panic on a real system.
         let _ = cmdline_param("nonexistent_param_xyz");
+    }
+
+    // r[verify installer.write.bounded-cache]
+    /// The flush helper is called by `splice_fd_to_fd` against `/dev/null`
+    /// during `integrity_check`. `posix_fadvise` and `sync_file_range` return
+    /// EINVAL on non-regular fds; the helper must swallow those errors so it
+    /// stays usable in that path.
+    #[test]
+    fn flush_and_drop_tolerates_dev_null() {
+        use std::os::unix::io::AsRawFd;
+
+        let dir = tempfile::tempdir().unwrap();
+        let src_path = dir.path().join("src");
+        std::fs::write(&src_path, vec![7u8; 4096]).unwrap();
+
+        let src = File::open(&src_path).unwrap();
+        let dst = File::options().write(true).open("/dev/null").unwrap();
+
+        // Must not panic and must not propagate EINVAL from /dev/null.
+        flush_and_drop(src.as_raw_fd(), dst.as_raw_fd(), 0, 4096);
+    }
+
+    // r[verify installer.write.bounded-cache]
+    /// Crossing the flush threshold inside the splice loop must not corrupt
+    /// the transfer. Uses a payload larger than `FLUSH_INTERVAL` so the
+    /// in-loop branch is exercised in addition to the tail flush.
+    #[test]
+    fn splice_fd_to_fd_flushes_across_threshold() {
+        use std::os::unix::io::AsRawFd;
+
+        // 65 MiB — one byte over a single FLUSH_INTERVAL plus a tail.
+        let size: usize = 65 * 1024 * 1024;
+
+        let dir = tempfile::tempdir().unwrap();
+        let src_path = dir.path().join("src");
+        let dst_path = dir.path().join("dst");
+
+        // Deterministic, non-zero pattern so a regression that drops bytes
+        // would surface as a hash mismatch.
+        let mut payload = vec![0u8; size];
+        for (i, b) in payload.iter_mut().enumerate() {
+            *b = (i % 251) as u8;
+        }
+        std::fs::write(&src_path, &payload).unwrap();
+
+        let src = File::open(&src_path).unwrap();
+        let dst = File::create(&dst_path).unwrap();
+        let start = std::time::Instant::now();
+
+        let transferred = splice_fd_to_fd(
+            src.as_raw_fd(),
+            dst.as_raw_fd(),
+            Some(size as u64),
+            0,
+            Some(size as u64),
+            start,
+            &mut |_| {},
+        )
+        .unwrap();
+
+        assert_eq!(transferred, size as u64);
+
+        let result = std::fs::read(&dst_path).unwrap();
+        assert_eq!(result.len(), payload.len());
+        assert_eq!(result, payload);
     }
 }

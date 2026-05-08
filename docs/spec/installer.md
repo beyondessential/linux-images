@@ -743,6 +743,17 @@ the images are stored in a squashfs with transparent compression, the kernel
 handles decompression on read; dm-verity verification also happens
 transparently on each block read.
 
+r[installer.write.bounded-cache]
+While stream-copying partition images — both during the upfront integrity
+check and during the actual partition write — the installer must keep the
+amount of memory consumed for in-flight image data bounded, independently of
+the partition size. The install must complete without triggering the kernel
+OOM killer on a system with limited RAM (the documented minimum for manual
+testing is 2 GiB). In particular, source pages that have already been
+consumed and destination pages that have already been written must not be
+allowed to accumulate in the page cache for the duration of a multi-GiB
+partition.
+
 r[installer.write.luks-before-write+2]
 When disk encryption is not `"none"`, the installer must format the root
 partition with LUKS2 using the recovery passphrase as the initial key and
