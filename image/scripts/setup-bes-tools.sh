@@ -16,10 +16,10 @@ echo "deb [signed-by=/etc/apt/keyrings/bes-tools.gpg] https://tools.ops.tamanu.i
 
 # r[image.packages.bes-tools]: Pin bes-tools so the right packages come from
 # the right place. `bestool` is always preferred from bes-tools (only
-# published there). On noble, the Ubuntu archive ships outdated caddy/podman,
+# published there). On noble, the Ubuntu archive ships an outdated podman,
 # so bes-tools wins for everything via a wildcard pin. On 26.04+, the Ubuntu
-# archive ships a sufficiently recent podman, and we no longer ship caddy
-# at all — so we deprioritise non-bestool packages.
+# archive ships a sufficiently recent podman — narrow the pin so only
+# bestool is forced from bes-tools.
 UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
 if [ "$UBUNTU_SUITE" = "noble" ]; then
     cat > /etc/apt/preferences.d/99-bes-tools << 'EOF'
@@ -40,13 +40,6 @@ EOF
 fi
 
 apt-get update -q
-if [ "$UBUNTU_SUITE" = "noble" ]; then
-    # r[image.packages.caddy]
-    # r[image.packages.podman]
-    # r[image.packages.bestool+2]
-    apt-get install -y caddy podman bestool
-else
-    # r[image.packages.podman]
-    # r[image.packages.bestool+2]
-    apt-get install -y podman bestool
-fi
+# r[image.packages.podman]
+# r[image.packages.bestool+2]
+apt-get install -y podman bestool
