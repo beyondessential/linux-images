@@ -28,15 +28,23 @@ r[ci.output-arch]
 CI must produce at least `amd64` and `arm64` outputs.
 
 r[ci.output-suite]
-CI must produce images based on Ubuntu Server 24.04 LTS.
+CI must produce images for each supported Ubuntu Server suite. The currently
+supported suites are `noble` (24.04 LTS) and `resolute` (26.04). Every suite
+must be built for every supported architecture (`r[ci.output-arch]`).
 
 > r[ci.release.aws-ami]
-> On a tagged release, the cloud variant image for each supported architecture
-> must be registered as an AWS AMI in the `ap-southeast-2` region.
+> On a tagged release, the cloud variant image for each supported (suite,
+> architecture) combination must be registered as an AWS AMI in the
+> `ap-southeast-2` region.
 >
-> Each registered AMI must be named `ubuntu-24.04-bes-cloud-<arch>-<version>`,
-> where `<arch>` is the image architecture and `<version>` is the release version
-> without the leading `v`.
+> Each registered AMI must be named
+> `ubuntu-<ubuntu-version>-bes-cloud-<arch>-<version>`, where
+> `<ubuntu-version>` is the numeric Ubuntu release (e.g. `24.04` or `26.04`)
+> corresponding to the suite, `<arch>` is the image architecture, and
+> `<version>` is the release version without the leading `v`. AMIs from
+> different suites must therefore not collide on a name even when registered
+> from the same release tag.
 >
 > Each registered AMI must carry the following AWS resource tags: `Name`, `Os`,
 > `OsVersion`, `Variant`, `Architecture`, `Version`, `Features`, and `Builder`.
+> `OsVersion` must hold the numeric Ubuntu release (`<ubuntu-version>` above).

@@ -6,17 +6,20 @@ set -euo pipefail
 # This is the second step after import-to-aws.sh completes. The import
 # produces an EBS snapshot; this script registers it as a bootable AMI.
 #
-# Usage: ./register-ami.sh <import-task-id> [region] [arch]
+# Usage: ./register-ami.sh <import-task-id> <suite> [region] [arch]
 
 IMPORT_TASK_ID="${1:-}"
-REGION="${2:-ap-southeast-2}"
-ARCH="${3:-amd64}"
+SUITE="${2:-}"
+REGION="${3:-ap-southeast-2}"
+ARCH="${4:-amd64}"
 
-if [ -z "$IMPORT_TASK_ID" ]; then
-    echo "Usage: $0 <import-task-id> [region] [arch]"
+if [ -z "$IMPORT_TASK_ID" ] || [ -z "$SUITE" ]; then
+    echo "Usage: $0 <import-task-id> <suite> [region] [arch]"
+    echo ""
+    echo "  suite: noble or resolute"
     echo ""
     echo "Example:"
-    echo "  $0 import-snap-1234567890abcdef0 ap-southeast-2 amd64"
+    echo "  $0 import-snap-1234567890abcdef0 noble ap-southeast-2 amd64"
     exit 1
 fi
 
@@ -25,10 +28,19 @@ if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "arm64" ]; then
     exit 1
 fi
 
+# Map suite codename → numeric Ubuntu version. Keep in lockstep with the
+# ubuntu_version mapping in the justfile.
+case "$SUITE" in
+    noble)    UBUNTU_VERSION="24.04" ;;
+    resolute) UBUNTU_VERSION="26.04" ;;
+    *) echo "ERROR: unknown suite '$SUITE' (add a mapping here and in the justfile)"; exit 1 ;;
+esac
+
 echo "=== Registering imported snapshot as AMI ==="
 echo "Import Task ID: $IMPORT_TASK_ID"
-echo "Region: $REGION"
-echo "Architecture: $ARCH"
+echo "Suite:          $SUITE ($UBUNTU_VERSION)"
+echo "Region:         $REGION"
+echo "Architecture:   $ARCH"
 echo ""
 
 # Check import task status
@@ -65,7 +77,7 @@ echo "Snapshot ID: $SNAPSHOT_ID"
 
 # Generate AMI name with timestamp
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-AMI_NAME="ubuntu-24.04-bes-cloud-${ARCH}-${TIMESTAMP}"
+AMI_NAME="ubuntu-${UBUNTU_VERSION}-bes-cloud-${ARCH}-${TIMESTAMP}"
 
 # Set architecture for AWS API
 AWS_ARCH="${ARCH/amd64/x86_64}"
@@ -77,7 +89,7 @@ echo "Name: $AMI_NAME"
 AMI_ID=$(aws ec2 register-image \
     --region "$REGION" \
     --name "$AMI_NAME" \
-    --description "BES Ubuntu 24.04 cloud ${ARCH} with BTRFS" \
+    --description "BES Ubuntu ${UBUNTU_VERSION} cloud ${ARCH} with BTRFS" \
     --architecture "$AWS_ARCH" \
     --root-device-name /dev/sda1 \
     --block-device-mappings "DeviceName=/dev/sda1,Ebs={SnapshotId=${SNAPSHOT_ID},VolumeType=gp3,DeleteOnTermination=true}" \
@@ -108,7 +120,8 @@ aws ec2 create-tags \
     --tags \
         "Key=Name,Value=${AMI_NAME}" \
         "Key=Os,Value=Ubuntu" \
-        "Key=Version,Value=24.04" \
+        "Key=OsVersion,Value=${UBUNTU_VERSION}" \
+        "Key=OsCodename,Value=${SUITE}" \
         "Key=Variant,Value=cloud" \
         "Key=Architecture,Value=${ARCH}" \
         "Key=BuildTime,Value=${TIMESTAMP}" \

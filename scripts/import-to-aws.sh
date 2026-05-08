@@ -6,24 +6,41 @@ set -euo pipefail
 # The cloud image (no LUKS) is the correct variant for AWS — encryption at
 # rest is provided by EBS.
 #
-# Usage: ./import-to-aws.sh [amd64|arm64] [region] [s3-bucket]
+# Usage: ./import-to-aws.sh <arch> <suite> [region] [s3-bucket]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-ARCH="${1:-amd64}"
-REGION="${2:-ap-southeast-2}"
-BUCKET_NAME="${3:-bes-image-imports}"
+ARCH="${1:-}"
+SUITE="${2:-}"
+REGION="${3:-ap-southeast-2}"
+BUCKET_NAME="${4:-bes-image-imports}"
 
-if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "arm64" ]; then
-    echo "Usage: $0 [amd64|arm64] [region] [s3-bucket]"
+if [ -z "$ARCH" ] || [ -z "$SUITE" ]; then
+    echo "Usage: $0 <arch> <suite> [region] [s3-bucket]"
+    echo "  arch:  amd64 or arm64"
+    echo "  suite: noble or resolute"
     exit 1
 fi
 
+if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "arm64" ]; then
+    echo "ERROR: arch must be amd64 or arm64, got: $ARCH"
+    exit 1
+fi
+
+# Map suite codename → numeric Ubuntu version. Keep in lockstep with the
+# ubuntu_version mapping in the justfile.
+case "$SUITE" in
+    noble)    UBUNTU_VERSION="24.04" ;;
+    resolute) UBUNTU_VERSION="26.04" ;;
+    *) echo "ERROR: unknown suite '$SUITE' (add a mapping here and in the justfile)"; exit 1 ;;
+esac
+
 echo "=== Importing cloud image to AWS ==="
 echo "Architecture: $ARCH"
-echo "Region: $REGION"
-echo "S3 Bucket: $BUCKET_NAME"
+echo "Suite:        $SUITE ($UBUNTU_VERSION)"
+echo "Region:       $REGION"
+echo "S3 Bucket:    $BUCKET_NAME"
 
 # Find the cloud image under output/<arch>/cloud/
 OUTPUT_DIR="$REPO_ROOT/output/${ARCH}/cloud"
@@ -33,11 +50,12 @@ if [ ! -d "$OUTPUT_DIR" ]; then
     exit 1
 fi
 
-IMAGE_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.img' -not -name '*.img.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+IMG_PATTERN="ubuntu-${UBUNTU_VERSION}-bes-cloud-${ARCH}-*.img"
+IMAGE_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name "$IMG_PATTERN" -not -name '*.img.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 if [ -z "$IMAGE_FILE" ]; then
-    ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.img.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name "${IMG_PATTERN}.zst" -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
     if [ -z "$ZST_FILE" ]; then
-        echo "ERROR: No raw image files found in $OUTPUT_DIR"
+        echo "ERROR: No raw image files matching ${IMG_PATTERN}[.zst] found in $OUTPUT_DIR"
         exit 1
     fi
     echo "Found compressed image: $ZST_FILE"
@@ -50,7 +68,7 @@ fi
 
 IMAGE_BASENAME=$(basename "$IMAGE_FILE")
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-AMI_NAME="ubuntu-24.04-bes-cloud-${ARCH}-${TIMESTAMP}"
+AMI_NAME="ubuntu-${UBUNTU_VERSION}-bes-cloud-${ARCH}-${TIMESTAMP}"
 
 # Create S3 bucket if it doesn't exist
 echo "=== Ensuring S3 bucket exists ==="
@@ -80,10 +98,10 @@ IMPORT_TASK_FILE="/tmp/import-task-${TIMESTAMP}.json"
 
 cat > "$IMPORT_TASK_FILE" <<EOF
 {
-  "Description": "BES Ubuntu 24.04 cloud ${ARCH} with BTRFS",
+  "Description": "BES Ubuntu ${UBUNTU_VERSION} cloud ${ARCH} with BTRFS",
   "DiskContainers": [
     {
-      "Description": "BES Ubuntu 24.04 cloud ${ARCH}",
+      "Description": "BES Ubuntu ${UBUNTU_VERSION} cloud ${ARCH}",
       "Format": "raw",
       "UserBucket": {
         "S3Bucket": "${BUCKET_NAME}",
@@ -147,7 +165,7 @@ fi
 echo "=== Starting import ==="
 IMPORT_TASK_ID=$(aws ec2 import-snapshot \
     --region "$REGION" \
-    --description "BES Ubuntu 24.04 cloud ${ARCH}" \
+    --description "BES Ubuntu ${UBUNTU_VERSION} cloud ${ARCH}" \
     --disk-container "file://${IMPORT_TASK_FILE}" \
     --query 'ImportTaskId' \
     --output text)
@@ -167,6 +185,7 @@ cat > "$IMPORT_INFO_FILE" <<EOFINFO
 Import Task ID: $IMPORT_TASK_ID
 Region: $REGION
 Architecture: $ARCH
+Suite: $SUITE ($UBUNTU_VERSION)
 S3 Bucket: $BUCKET_NAME
 S3 Key: $S3_KEY
 Started: $(date)
@@ -181,7 +200,7 @@ echo "Or watch status:"
 echo "  watch -n 30 'aws ec2 describe-import-snapshot-tasks --region $REGION --import-task-ids $IMPORT_TASK_ID --query \"ImportSnapshotTasks[0].SnapshotTaskDetail.[Status,Progress,StatusMessage]\" --output table'"
 echo ""
 echo "Once import is complete (status: completed), register as AMI with:"
-echo "  scripts/register-ami.sh $IMPORT_TASK_ID $REGION $ARCH"
+echo "  scripts/register-ami.sh $IMPORT_TASK_ID $SUITE $REGION $ARCH"
 echo ""
 echo "Then optionally clean up S3:"
 echo "  aws s3 rm s3://${BUCKET_NAME}/${S3_KEY} --region $REGION"

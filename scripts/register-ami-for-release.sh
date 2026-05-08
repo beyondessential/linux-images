@@ -7,10 +7,11 @@ set -euo pipefail
 # The cloud image (no LUKS) is the correct variant for AWS — EBS provides
 # encryption at rest.
 #
-# Usage: ./register-ami-for-release.sh <arch> <version> [region] [s3-bucket]
+# Usage: ./register-ami-for-release.sh <arch> <suite> <version> [region] [s3-bucket]
 #
 # Arguments:
 #   arch       Architecture: amd64 or arm64
+#   suite      Ubuntu suite codename: noble or resolute
 #   version    Release version string (e.g. "1.2.3", without leading "v")
 #   region     AWS region (default: ap-southeast-2)
 #   s3-bucket  S3 bucket for import staging (default: bes-ops-tools)
@@ -21,12 +22,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 ARCH="${1:-}"
-VERSION="${2:-}"
-REGION="${3:-ap-southeast-2}"
-BUCKET="${4:-bes-ops-tools}"
+SUITE="${2:-}"
+VERSION="${3:-}"
+REGION="${4:-ap-southeast-2}"
+BUCKET="${5:-bes-ops-tools}"
 
-if [ -z "$ARCH" ] || [ -z "$VERSION" ]; then
-    echo "Usage: $0 <arch> <version> [region] [s3-bucket]"
+if [ -z "$ARCH" ] || [ -z "$SUITE" ] || [ -z "$VERSION" ]; then
+    echo "Usage: $0 <arch> <suite> <version> [region] [s3-bucket]"
     exit 1
 fi
 
@@ -35,11 +37,20 @@ case "$ARCH" in
     *) echo "ERROR: arch must be amd64 or arm64, got: $ARCH"; exit 1 ;;
 esac
 
+# Map suite codename → numeric Ubuntu version. Keep in lockstep with the
+# ubuntu_version mapping in the justfile.
+case "$SUITE" in
+    noble)    UBUNTU_VERSION="24.04" ;;
+    resolute) UBUNTU_VERSION="26.04" ;;
+    *) echo "ERROR: unknown suite '$SUITE' (add a mapping here and in the justfile)"; exit 1 ;;
+esac
+
 # r[impl ci.release.aws-ami]
-AMI_NAME="ubuntu-24.04-bes-cloud-${ARCH}-${VERSION}"
+AMI_NAME="ubuntu-${UBUNTU_VERSION}-bes-cloud-${ARCH}-${VERSION}"
 OUTPUT_DIR="$REPO_ROOT/output/${ARCH}/cloud"
 
 echo "Architecture : $ARCH"
+echo "Suite        : $SUITE ($UBUNTU_VERSION)"
 echo "Version      : $VERSION"
 echo "Region       : $REGION"
 echo "S3 bucket    : $BUCKET"
@@ -60,9 +71,13 @@ fi
 
 # --- Find and decompress the image ---
 
-ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.img.zst' | head -1)
+# Match the suite's image specifically. Build artifacts use the
+# `ubuntu-<ubuntu_version>-bes-cloud-<arch>-...` pattern (see justfile filestem),
+# so anchoring on the version prevents picking up a sibling suite's image if
+# both happen to be present.
+ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name "ubuntu-${UBUNTU_VERSION}-bes-cloud-${ARCH}-*.img.zst" | head -1)
 if [ -z "$ZST_FILE" ]; then
-    echo "ERROR: No .img.zst file found in $OUTPUT_DIR"
+    echo "ERROR: No ubuntu-${UBUNTU_VERSION}-bes-cloud-${ARCH}-*.img.zst found in $OUTPUT_DIR"
     exit 1
 fi
 
@@ -157,7 +172,7 @@ echo "Registering AMI: $AMI_NAME ..."
 AMI_ID=$(aws ec2 register-image \
     --region "$REGION" \
     --name "$AMI_NAME" \
-    --description "BES Ubuntu 24.04 cloud ${ARCH} ${VERSION} with BTRFS" \
+    --description "BES Ubuntu ${UBUNTU_VERSION} cloud ${ARCH} ${VERSION} with BTRFS" \
     --architecture "$AWS_ARCH" \
     --root-device-name /dev/sda1 \
     --block-device-mappings "DeviceName=/dev/sda1,Ebs={SnapshotId=${SNAPSHOT_ID},VolumeType=gp3,DeleteOnTermination=true}" \
@@ -184,7 +199,8 @@ aws ec2 create-tags \
     --tags \
         "Key=Name,Value=${AMI_NAME}" \
         "Key=Os,Value=Ubuntu" \
-        "Key=OsVersion,Value=24.04" \
+        "Key=OsVersion,Value=${UBUNTU_VERSION}" \
+        "Key=OsCodename,Value=${SUITE}" \
         "Key=Variant,Value=cloud" \
         "Key=Architecture,Value=${ARCH}" \
         "Key=Version,Value=${VERSION}" \
