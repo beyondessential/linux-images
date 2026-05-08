@@ -800,17 +800,22 @@ non-fatal.
 > dracut configuration that must be baked into the initramfs. Before running
 > dracut, the installer must:
 >
->   1. Delete all existing initramfs files from `/boot`. The image-build
+>   1. Remove any image-supplied dracut configuration that disables hostonly
+>      mode, so that dracut's default (`hostonly="yes"`) applies for the
+>      target machine. The shipped image is built portable (see
+>      `image.boot.dracut`); the installer specialises the initramfs to the
+>      target hardware.
+>   2. Delete all existing initramfs files from `/boot`. The image-build
 >      initramfs contains UUIDs from the build environment that no longer
 >      exist after UUID randomization; if dracut's `hostonly` mode finds it,
 >      the new initramfs inherits stale device references that hang at boot.
->   2. Temporarily replace `/etc/fstab` in the target with a version that
+>   3. Temporarily replace `/etc/fstab` in the target with a version that
 >      uses `UUID=` device references instead of symlink-based paths. Dracut
 >      `hostonly` mode resolves symlinks and looks up UUIDs; if udev has not
 >      refreshed symlinks after UUID randomization (e.g. in a container),
 >      dracut discovers stale UUIDs. After dracut completes, the original
 >      fstab must be restored.
->   3. When encryption is enabled, open the LUKS volume using the production
+>   4. When encryption is enabled, open the LUKS volume using the production
 >      mapper name `root` (not the installer's internal name) so that
 >      dracut's `hostonly` mode discovers `/dev/mapper/root`. A mismatched
 >      name causes boot failure because the initramfs expects one name while

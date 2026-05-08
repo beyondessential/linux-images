@@ -406,7 +406,7 @@ fn attempt_tailscale_auth(root: &Path, authkey: &str) -> Result<()> {
 
     tracing::info!("attempting tailscale auth via chroot into {mount_str}");
 
-    let output = Command::new(paths::CHROOT)
+    let output = Command::new(paths::chroot())
         .args([mount_str, "tailscale", "up", "--auth-key", authkey, "--ssh"])
         .output()
         .context("spawning chroot tailscale up")?;

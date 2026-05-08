@@ -33,9 +33,9 @@ if [ ! -d "$OUTPUT_DIR" ]; then
     exit 1
 fi
 
-IMAGE_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.raw' -not -name '*.raw.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+IMAGE_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.img' -not -name '*.img.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 if [ -z "$IMAGE_FILE" ]; then
-    ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.raw.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    ZST_FILE=$(find "$OUTPUT_DIR" -maxdepth 1 -name '*.img.zst' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
     if [ -z "$ZST_FILE" ]; then
         echo "ERROR: No raw image files found in $OUTPUT_DIR"
         exit 1

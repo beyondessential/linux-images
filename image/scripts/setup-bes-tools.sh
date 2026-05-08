@@ -14,18 +14,39 @@ curl -fsSL https://tools.ops.tamanu.io/apt/bes-tools.gpg.key \
 echo "deb [signed-by=/etc/apt/keyrings/bes-tools.gpg] https://tools.ops.tamanu.io/apt stable main" \
     > /etc/apt/sources.list.d/bes-tools.list
 
-# r[image.packages.bes-tools]: Pin the bes-tools repo at priority 999
-cat > /etc/apt/preferences.d/99-bes-tools << 'EOF'
+# r[image.packages.bes-tools]: Pin bes-tools so the right packages come from
+# the right place. `bestool` is always preferred from bes-tools (only
+# published there). On noble, the Ubuntu archive ships outdated caddy/podman,
+# so bes-tools wins for everything via a wildcard pin. On 26.04+, the Ubuntu
+# archive ships a sufficiently recent podman, and we no longer ship caddy
+# at all — so we deprioritise non-bestool packages.
+UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
+if [ "$UBUNTU_SUITE" = "noble" ]; then
+    cat > /etc/apt/preferences.d/99-bes-tools << 'EOF'
 Package: *
 Pin: origin tools.ops.tamanu.io
 Pin-Priority: 999
 EOF
+else
+    cat > /etc/apt/preferences.d/99-bes-tools << 'EOF'
+Package: bestool
+Pin: origin tools.ops.tamanu.io
+Pin-Priority: 999
+
+Package: *
+Pin: origin tools.ops.tamanu.io
+Pin-Priority: 100
+EOF
+fi
 
 apt-get update -q
-# r[image.packages.caddy]
-# r[image.packages.podman]
-# r[image.packages.bestool+2]
-apt-get install -y \
-    caddy \
-    podman \
-    bestool
+if [ "$UBUNTU_SUITE" = "noble" ]; then
+    # r[image.packages.caddy]
+    # r[image.packages.podman]
+    # r[image.packages.bestool+2]
+    apt-get install -y caddy podman bestool
+else
+    # r[image.packages.podman]
+    # r[image.packages.bestool+2]
+    apt-get install -y podman bestool
+fi

@@ -524,12 +524,29 @@ impl<'a> DiskWriter<'a> {
             None
         };
 
+        // r[impl installer.write.rebuild-boot-config+9]
+        // On 26.04+ images the build supplies a dracut.conf.d/01-portable-image.conf
+        // with hostonly="no" so the shipped initramfs is portable across
+        // hardware. For the target machine we want dracut's default
+        // (hostonly=yes) so the rebuilt initramfs is specialised to this
+        // host. Strip the override before running dracut.
+        let portable_conf = mount_path.join("etc/dracut.conf.d/01-portable-image.conf");
+        if portable_conf.exists() {
+            tracing::info!(
+                "removing image-supplied hostonly=no dracut config: {}",
+                portable_conf.display()
+            );
+            if let Err(e) = fs::remove_file(&portable_conf) {
+                tracing::warn!("could not remove {}: {e}", portable_conf.display());
+            }
+        }
+
         // Delete the old initramfs before running dracut. The image-build
-        // initramfs was created with hostonly=yes against the build host's
-        // loop devices. dracut's hostonly logic reads the *existing* initramfs
-        // to discover host devices, so if we leave the stale one in place the
-        // new initramfs inherits pre-randomization UUIDs that no longer exist
-        // on the target disk, causing the boot to hang forever waiting for a
+        // initramfs was created against the build host's loop devices.
+        // dracut's hostonly logic reads the *existing* initramfs to discover
+        // host devices, so if we leave the stale one in place the new
+        // initramfs inherits pre-randomization UUIDs that no longer exist on
+        // the target disk, causing the boot to hang forever waiting for a
         // device that will never appear.
         let boot_dir = mount_path.join("boot");
         if let Ok(entries) = fs::read_dir(&boot_dir) {
@@ -574,13 +591,13 @@ impl<'a> DiskWriter<'a> {
         let dracut_result = if let Some(ref kver) = kernel_version {
             tracing::info!("rebuilding initramfs for kernel {kver}");
             run_command(
-                paths::CHROOT,
+                paths::chroot(),
                 &[mount_str, paths::DRACUT, "--force", "--kver", kver],
             )
         } else {
             tracing::warn!("no kernel version found in target, running dracut without --kver");
             run_command(
-                paths::CHROOT,
+                paths::chroot(),
                 &[mount_str, paths::DRACUT, "--force", "--regenerate-all"],
             )
         };
@@ -607,7 +624,7 @@ impl<'a> DiskWriter<'a> {
         )
         .context("installing grub-probe wrapper")?;
 
-        let grub_result = run_command(paths::CHROOT, &[mount_str, "update-grub"]);
+        let grub_result = run_command(paths::chroot(), &[mount_str, "update-grub"]);
 
         remove_grub_probe_wrapper(&mount_path, grub_probe_backup);
 

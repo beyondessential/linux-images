@@ -12,7 +12,7 @@ Please verify images before writing them to disks.
 All images are signed by [GitHub Attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations#verifying-an-artifact-attestation-for-binaries) to establish provenance:
 
 ```console
-$ gh attestation verify --owner beyondessential ubuntu-24.04-bes-cloud-amd64-20260312.raw.zst
+$ gh attestation verify --owner beyondessential ubuntu-24.04-bes-cloud-amd64-20260312.img.zst
 ```
 
 ## Version
@@ -70,6 +70,13 @@ The system timezone is set to `UTC`.
 **cloud-init** may be used to configure this on first boot.
 
 Otherwise, set the timezone using `timedatectl set-timezone Australia/Melbourne`.
+
+### Time sync
+
+NTP is configured using [Chrony](https://chrony-project.org/), which is the default since 26.04 but we also configure it for our 24.04 images for consistency.
+Both the Canonical and ntp.org pools are used, and the AWS pool may also be used in EC2.
+
+You can check on the sync status using `chronyc tracking`.
 
 ## Login
 

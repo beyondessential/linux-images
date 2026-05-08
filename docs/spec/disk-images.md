@@ -95,10 +95,16 @@ readable font at boot. `/etc/default/console-setup` must be present with
 ## Packages
 
 r[image.packages.bes-tools]
-The bes-tools APT repo must be configured and preferred.
+The bes-tools APT repo must be configured. The `bestool` package must be
+installed from this repo, where it is exclusively published. On Ubuntu 24.04
+(noble), `caddy` and `podman` must also be installed from this repo because
+the noble archive ships insufficiently recent versions. On Ubuntu 26.04 and
+later, `caddy` is not installed and `podman` is installed from the Ubuntu
+archive.
 
 r[image.packages.caddy]
-Caddy version >=2.10.0 must be pre-installed.
+On Ubuntu 24.04 (noble), Caddy version >=2.10.0 must be pre-installed. On
+Ubuntu 26.04 and later, Caddy is not pre-installed.
 
 r[image.packages.podman]
 Podman version >=5.0.0 must be pre-installed.
@@ -122,13 +128,27 @@ systemd-timesyncd) may be active on the running image.
 ## Bootloader
 
 r[image.boot.dracut]
-The initramfs must be generated using dracut, not initramfs-tools. Dracut must
-be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
+The initramfs must be generated using dracut, not initramfs-tools. The
+shipped image's initramfs must be portable across hardware — it is not yet
+bound to a specific machine. The mechanism is suite-dependent:
+
+- On Ubuntu 24.04 (noble), dracut must be configured with `hostonly="yes"`
+  and `hostonly_mode="sloppy"` as a workaround for a dracut bug in that
+  release where `hostonly="no"` produces a non-functional initramfs. The
+  required hardware modules are then force-included via the
+  `add_drivers+=` mechanism (see `image.boot.hardware-drivers`).
+- On Ubuntu 26.04 and later, dracut must be configured with `hostonly="no"`,
+  which automatically includes all kernel modules.
+
+The installer specialises the initramfs to the target machine after install
+(see `installer.write.rebuild-boot-config`).
 
 > r[image.boot.hardware-drivers+3]
-> Both variants must force-include kernel modules into the initramfs for
-> hardware not present at image-build time. The following module categories
-> must be included:
+> Both variants' initramfs must contain kernel modules for hardware not
+> present at image-build time. Under the Ubuntu 24.04 hostonly workaround,
+> these modules must be explicitly force-included; on Ubuntu 26.04 and later,
+> they are included automatically by `hostonly="no"`. The following module
+> categories must be present:
 >
 > - **NVMe:** `nvme`, `nvme_core`
 > - **SATA/AHCI:** `ahci`
@@ -142,8 +162,10 @@ be configured with `hostonly="yes"` and `hostonly_mode="sloppy"`.
 > - **Hyper-V:** `hv_storvsc`, `hv_netvsc`, `hv_vmbus`
 
 > r[image.boot.cloud-drivers+5]
-> The cloud variant must additionally force-include cloud-specific kernel
-> modules into the initramfs:
+> The cloud variant's initramfs must additionally contain cloud-specific
+> kernel modules. Force-inclusion applies only under the Ubuntu 24.04
+> hostonly workaround; on Ubuntu 26.04 and later, they are included
+> automatically by `hostonly="no"`. The required modules:
 >
 > - **AWS:** `ena`, `xen_blkfront`
 > - **GCP:** `gve`
@@ -320,7 +342,7 @@ r[image.luks.crypttab]
 ## Output
 
 r[image.output.raw]
-A raw disk image file (`.raw`) must be produced, and compressed with zstd.
+A raw disk image file (`.img`) must be produced, and compressed with zstd.
 
 r[image.output.vmdk]
 A VMDK image must be produced.

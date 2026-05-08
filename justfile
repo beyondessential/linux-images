@@ -1,8 +1,18 @@
 linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
-ubuntu_version := "24.04"
 ubuntu_suite := "noble"
+# Derived from ubuntu_suite — mapping is 1:1, so callers only need to pass
+# `ubuntu_suite=...` when building. Override `ubuntu_version=...` on the
+# command line if you need to force a different value (e.g. testing pre-release).
+ubuntu_version := if ubuntu_suite == "noble" { "24.04" } else if ubuntu_suite == "resolute" { "26.04" } else { error("unknown ubuntu_suite (add a mapping to ubuntu_version): " + ubuntu_suite) }
+# Tailscale's apt repo can lag new Ubuntu releases during their RC window;
+# override `tailscale_suite=<earlier-suite>` when that's the case.
+tailscale_suite := ubuntu_suite
 arch := "amd64"
 variant := "metal"
+# Build-time partition size. Metal needs more headroom than cloud because it
+# also installs linux-firmware, which is large; resolute's package set in
+# particular does not fit in 5G with metal extras. Both grow at first boot.
+image_size := if variant == "metal" { "8G" } else { "5G" }
 qemu_memory := "4096"
 qemu_cores := "2"
 container_test_filter := ""
@@ -21,6 +31,7 @@ _default:
     @echo "Variable: variant={{ variant }} (metal, cloud)"
     @echo "Variable: ubuntu_version={{ ubuntu_version }}"
     @echo "Variable: ubuntu_suite={{ ubuntu_suite }}"
+    @echo "Variable: tailscale_suite={{ tailscale_suite }}"
     @echo "Variable: ubuntu_mirror={{ ubuntu_mirror }}"
     @echo "Variable: qemu_memory={{ qemu_memory }}"
     @echo "Variable: qemu_cores={{ qemu_cores }}"
@@ -40,15 +51,21 @@ _validate-arch:
       *) echo "ERROR: arch must be one of: amd64, arm64 (got: {{ arch }})"; exit 1 ;;
     esac
 
-filestem := "ubuntu-" + ubuntu_version + "-bes-" + variant + "-" + arch + "-" + datetime_utc("%Y%m%d")
+# Build date is parameterised so a CI run with parallel matrix entries gets
+# the same timestamp across all jobs (otherwise a build crossing midnight
+# would produce different filenames between matrix legs and break artifact
+# lookups). CI sets BUILD_DATE in a top-level prep job; locally it defaults
+# to today's UTC date.
+build_date := env("BUILD_DATE", datetime_utc("%Y%m%d"))
+filestem := "ubuntu-" + ubuntu_version + "-bes-" + variant + "-" + arch + "-" + build_date
 work_dir := "working" / arch
 output_arch_dir := "output" / arch
 output_dir := output_arch_dir / variant
-output_raw := output_dir / filestem + ".raw"
+output_raw := output_dir / filestem + ".img"
 output_vmdk := output_dir / filestem + ".vmdk"
 output_qcow := output_dir / filestem + ".qcow2"
-output_iso := output_arch_dir / "bes-installer-" + arch + ".iso"
-output_iso_vdi := output_arch_dir / "bes-installer-" + arch + ".vdi"
+output_iso := output_arch_dir / "bes-installer-" + ubuntu_version + "-" + arch + ".iso"
+output_iso_vdi := output_arch_dir / "bes-installer-" + ubuntu_version + "-" + arch + ".vdi"
 iso_base_tarball := work_dir / "iso-base.tar"
 iso_rootfs_dir := work_dir / "iso-rootfs"
 
@@ -110,6 +127,7 @@ iso-base: _validate-arch _ensure-dirs
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         TAILSCALE_SUITE="{{ tailscale_suite }}" \
          iso/build-iso-base.sh
 
 # Build the live rootfs (unpack base + inject installer + squashfs + verity).
@@ -134,13 +152,13 @@ iso: _validate-arch iso-rootfs
     #!/usr/bin/env bash
     set -euo pipefail
 
-    SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw.zst' | head -1)"
+    SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.img.zst' | head -1)"
     if [ -z "$SOURCE_IMAGE" ]; then
-      SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.raw' | head -1)"
+      SOURCE_IMAGE="$(find "{{ output_arch_dir }}" -path '*/cloud/*' -name '*.img' | head -1)"
     fi
 
     if [ -z "$SOURCE_IMAGE" ]; then
-      echo "ERROR: need a cloud .raw or .raw.zst image under {{ output_arch_dir }}"
+      echo "ERROR: need a cloud .img or .img.zst image under {{ output_arch_dir }}"
       echo "Run 'just arch={{ arch }} variant=cloud raw' first."
       exit 1
     fi
@@ -253,6 +271,7 @@ iso-base-rebuild: _validate-arch _ensure-dirs
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         TAILSCALE_SUITE="{{ tailscale_suite }}" \
          iso/build-iso-base.sh
 
 # Force-rebuild the ISO rootfs (removes cached rootfs, keeps base tarball)
@@ -474,9 +493,10 @@ raw: _validate-variant _validate-arch _ensure-dirs
     sudo ARCH="{{ arch }}" \
          VARIANT="{{ variant }}" \
          OUTPUT="{{ output_raw }}" \
-         IMAGE_SIZE=5G \
+         IMAGE_SIZE="{{ image_size }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
+         TAILSCALE_SUITE="{{ tailscale_suite }}" \
          image/build.sh
 
 # Convert raw image to VMDK (streamOptimized)
@@ -697,7 +717,7 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     set -euo pipefail
 
     # Make a copy so we don't modify the original
-    TEST_IMAGE="{{ work_dir }}/test-boot.raw"
+    TEST_IMAGE="{{ work_dir }}/test-boot.img"
     cp "{{ output_raw }}" "$TEST_IMAGE"
 
     # Grow the test image so grow-root-filesystem has something to do

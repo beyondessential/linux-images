@@ -6,8 +6,9 @@ on:
   push:
     branches: [main]
 
+# Per-commit concurrency group — see build.yml for rationale.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 permissions:
@@ -182,7 +183,7 @@ jobs:
         run: scripts/gen-manual-testing.sh --check
 
   all-green:
-    name: All green
+    name: All checks green
     if: always()
     needs: [rust-test, rust-lint, tracey, manual-docs]
     runs-on: ubuntu-latest

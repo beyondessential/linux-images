@@ -7,17 +7,22 @@ set -euxo pipefail
 
 echo "Installing Tailscale..."
 
+# Tailscale's apt repo is keyed by Ubuntu codename. It may lag new Ubuntu
+# releases (e.g. during RC), so allow an override via TAILSCALE_SUITE — the
+# packages themselves are compatible across recent Ubuntu versions.
+TAILSCALE_SUITE="${TAILSCALE_SUITE:-${UBUNTU_SUITE:-noble}}"
+
 # r[image.packages.tailscale]: Install signing key
 if [ -f /tmp/files/tailscale-apt.gpg ]; then
     cp /tmp/files/tailscale-apt.gpg /usr/share/keyrings/tailscale-archive-keyring.gpg
 else
     echo "WARNING: /tmp/files/tailscale-apt.gpg not found, downloading from web"
-    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+    curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/${TAILSCALE_SUITE}.noarmor.gpg" \
         | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
 fi
 
 # Add Tailscale apt repository
-echo "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu noble main" \
+echo "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu ${TAILSCALE_SUITE} main" \
     | tee /etc/apt/sources.list.d/tailscale.list
 
 # r[image.packages.tailscale]: Pin the Tailscale repo at priority 900

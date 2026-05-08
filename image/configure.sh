@@ -26,7 +26,9 @@ echo "--- configure.sh: arch=$ARCH variant=$VARIANT grub_target=$GRUB_TARGET ---
 # ============================================================
 # Apt sources
 # ============================================================
-# Ubuntu 24.04 uses DEB822 format
+# Modern Ubuntu (>=24.04) uses DEB822 format.
+UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
+
 if [ "$ARCH" = "arm64" ]; then
     MIRROR="http://ports.ubuntu.com/ubuntu-ports"
 else
@@ -36,13 +38,13 @@ fi
 cat > /etc/apt/sources.list.d/ubuntu.sources << EOF
 Types: deb
 URIs: $MIRROR
-Suites: noble noble-updates noble-backports
+Suites: $UBUNTU_SUITE $UBUNTU_SUITE-updates $UBUNTU_SUITE-backports
 Components: main restricted universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
 Types: deb
 URIs: $MIRROR
-Suites: noble-security
+Suites: $UBUNTU_SUITE-security
 Components: main restricted universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF
@@ -106,17 +108,35 @@ bash /tmp/scripts/setup-kopia.sh
 # r[image.boot.dracut]
 apt-get install -y -q dracut  # this removes initramfs-tools
 
-install -m 644 /tmp/files/dracut/01-fix-hostonly-noble.conf \
-    /etc/dracut.conf.d/01-fix-hostonly-noble.conf
+# Dracut's default is hostonly=yes (per the dracut.conf manpage on every
+# supported suite), which produces an initramfs bound to the build host.
+# The shipped image needs to be portable across hardware, so we override:
+#
+# - On noble, hostonly=no is broken — we keep hostonly=yes + sloppy mode and
+#   force-include the hardware/cloud module lists.
+# - On 26.04+, hostonly=no works correctly and pulls in all kernel modules,
+#   so a single drop-in is enough.
+#
+# The installer strips the 26.04+ override post-install so the target
+# machine's initramfs is hostonly=yes (the default), specialised to its
+# actual hardware (see r[installer.write.rebuild-boot-config+9]).
+if [ "$UBUNTU_SUITE" = "noble" ]; then
+    install -m 644 /tmp/files/dracut/01-fix-hostonly.conf \
+        /etc/dracut.conf.d/01-fix-hostonly.conf
 
-# r[impl image.boot.hardware-drivers+3]
-install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
-    /etc/dracut.conf.d/03-hardware-drivers.conf
+    # r[impl image.boot.hardware-drivers+3]
+    install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
+        /etc/dracut.conf.d/03-hardware-drivers.conf
 
-# r[impl image.boot.cloud-drivers+5]
-if [ "$VARIANT" = "cloud" ]; then
-    install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
-        /etc/dracut.conf.d/04-cloud-drivers.conf
+    # r[impl image.boot.cloud-drivers+5]
+    if [ "$VARIANT" = "cloud" ]; then
+        install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
+            /etc/dracut.conf.d/04-cloud-drivers.conf
+    fi
+else
+    # r[impl image.boot.hardware-drivers+3] r[impl image.boot.cloud-drivers+5]
+    install -m 644 /tmp/files/dracut/01-portable-image.conf \
+        /etc/dracut.conf.d/01-portable-image.conf
 fi
 
 if [ "$VARIANT" = "metal" ]; then

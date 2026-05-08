@@ -47,14 +47,14 @@ echo ""
 
 # --- Expected files ---
 
-RAW_ZST="$OUTPUT_DIR/${FILESTEM}.raw.zst"
+RAW_ZST="$OUTPUT_DIR/${FILESTEM}.img.zst"
 VMDK="$OUTPUT_DIR/${FILESTEM}.vmdk"
 QCOW2="$OUTPUT_DIR/${FILESTEM}.qcow2"
 SHA256SUMS="$OUTPUT_DIR/SHA256SUMS"
 
 # r[verify image.output.raw]
 echo "--- Compressed raw image ---"
-check "compressed raw image exists (${FILESTEM}.raw.zst)" test -f "$RAW_ZST"
+check "compressed raw image exists (${FILESTEM}.img.zst)" test -f "$RAW_ZST"
 if [ -f "$RAW_ZST" ]; then
     SIZE=$(stat -c%s "$RAW_ZST")
     check "compressed raw image is non-empty" test "$SIZE" -gt 0
@@ -90,7 +90,7 @@ if [ -f "$SHA256SUMS" ]; then
     check "SHA256SUMS is non-empty" test -s "$SHA256SUMS"
 
     # Verify that each expected output has an entry in SHA256SUMS
-    for artifact in "${FILESTEM}.raw.zst" "${FILESTEM}.vmdk" "${FILESTEM}.qcow2"; do
+    for artifact in "${FILESTEM}.img.zst" "${FILESTEM}.vmdk" "${FILESTEM}.qcow2"; do
         if grep -q "$artifact" "$SHA256SUMS"; then
             pass "SHA256SUMS contains entry for $artifact"
         else
@@ -108,7 +108,7 @@ if [ -f "$SHA256SUMS" ]; then
 fi
 
 # --- Ensure no uncompressed raw image is left behind ---
-RAW="$OUTPUT_DIR/${FILESTEM}.raw"
+RAW="$OUTPUT_DIR/${FILESTEM}.img"
 if [ -f "$RAW" ]; then
     fail "uncompressed raw image should not be present after build"
 else

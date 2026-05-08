@@ -7,8 +7,15 @@ on:
     branches: [main]
     tags: ["v*"]
 
+# Per-commit concurrency group: GitHub keeps at most ONE pending run per
+# group, so a group keyed only on the ref evicts (cancels) older queued
+# runs when new events fire — particularly noisy with stacked PRs, where
+# pushing to one branch cascades synchronize events into the dependent
+# PRs. Including the SHA gives each unique commit its own queue: same SHA
+# retriggered cancels the older run (we want the latest result), different
+# SHAs run independently.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 permissions:
@@ -17,22 +24,35 @@ permissions:
   attestations: write
 
 env:
-  UBUNTU_SUITE: noble # r[impl ci.output-suite] r[verify ci.output-suite]
   UBUNTU_MIRROR: http://us.archive.ubuntu.com/ubuntu
   UBUNTU_PORTS_MIRROR: http://ports.ubuntu.com/ubuntu-ports
 
 jobs:
+  # Single source of truth for the build datestamp. Every matrix leg picks
+  # this up via $BUILD_DATE and writes filenames containing it; downstream
+  # jobs that look up artifacts by basename use the same value. Without
+  # this, a long build crossing midnight UTC would produce inconsistent
+  # filenames between parallel matrix entries.
+  prep:
+    runs-on: ubuntu-24.04
+    outputs:
+      build_date: ${{ steps.d.outputs.value }}
+    steps:
+      - id: d
+        run: echo "value=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
   images-cloud:
+    needs: [prep]
+    env:
+      BUILD_DATE: ${{ needs.prep.outputs.build_date }}
+    # The (arch × suite) matrix produces all four combinations.
+    # r[impl ci.output-arch] r[verify ci.output-arch] r[impl ci.output-suite] r[verify ci.output-suite]
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64] # r[impl ci.output-arch] r[verify ci.output-arch]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+        arch: [amd64, arm64]
+        suite: [noble, resolute]
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -49,21 +69,22 @@ jobs:
             qemu-utils genisoimage zstd squashfs-tools jq
 
       - name: Run shellcheck # r[impl ci.shellcheck] r[verify ci.shellcheck]
+        if: matrix.suite == 'noble'
         run: just test-shellcheck
 
       - name: Build raw image
-        run: just arch=${{ matrix.arch }} variant=cloud raw
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=cloud raw
         timeout-minutes: 60
 
       - name: Test image structure
-        run: just arch=${{ matrix.arch }} variant=cloud test-structure
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=cloud test-structure
 
       - name: Produce final artifacts
-        run: just arch=${{ matrix.arch }} variant=cloud build
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=cloud build
         timeout-minutes: 30
 
       - name: Verify outputs # r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
-        run: just arch=${{ matrix.arch }} variant=cloud verify-outputs
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=cloud verify-outputs
 
       - name: List outputs
         run: ls -lh output/${{ matrix.arch }}/cloud/
@@ -71,36 +92,39 @@ jobs:
       - name: Upload raw image (needed by ISO build)
         uses: actions/upload-artifact@v7
         with:
-          name: image-raw-cloud-${{ matrix.arch }}
-          path: |
-            output/${{ matrix.arch }}/cloud/*.raw.zst
-            output/${{ matrix.arch }}/cloud/*.raw.size
+          path: output/${{ matrix.arch }}/cloud/*.img.zst
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
-      - name: Upload converted formats (needed by release)
+      # Per-format uploads: each artifact is a single file, so archive: false
+      # works (it requires exactly one file).
+      - name: Upload VMDK (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-formats-cloud-${{ matrix.arch }}
-          path: |
-            output/${{ matrix.arch }}/cloud/*.vmdk
-            output/${{ matrix.arch }}/cloud/*.qcow2
+          path: output/${{ matrix.arch }}/cloud/*.vmdk
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
+
+      - name: Upload qcow2 (needed by release)
+        uses: actions/upload-artifact@v7
+        with:
+          path: output/${{ matrix.arch }}/cloud/*.qcow2
+          if-no-files-found: error
+          retention-days: 1
+          archive: false
 
   images-metal:
+    needs: [prep]
+    env:
+      BUILD_DATE: ${{ needs.prep.outputs.build_date }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+        suite: [noble, resolute]
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -117,18 +141,18 @@ jobs:
             qemu-utils genisoimage zstd squashfs-tools jq
 
       - name: Build raw image
-        run: just arch=${{ matrix.arch }} variant=metal raw
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal raw
         timeout-minutes: 60
 
       - name: Test image structure
-        run: just arch=${{ matrix.arch }} variant=metal test-structure
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal test-structure
 
       - name: Produce final artifacts
-        run: just arch=${{ matrix.arch }} variant=metal build
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal build
         timeout-minutes: 30
 
       - name: Verify outputs # r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
-        run: just arch=${{ matrix.arch }} variant=metal verify-outputs
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal verify-outputs
 
       - name: List outputs
         run: ls -lh output/${{ matrix.arch }}/metal/
@@ -136,46 +160,43 @@ jobs:
       - name: Upload raw image (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-raw-metal-${{ matrix.arch }}
-          path: |
-            output/${{ matrix.arch }}/metal/*.raw.zst
-            output/${{ matrix.arch }}/metal/*.raw.size
+          path: output/${{ matrix.arch }}/metal/*.img.zst
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
-      - name: Upload converted formats (needed by release)
+      - name: Upload VMDK (needed by release)
         uses: actions/upload-artifact@v7
         with:
-          name: image-formats-metal-${{ matrix.arch }}
-          path: |
-            output/${{ matrix.arch }}/metal/*.vmdk
-            output/${{ matrix.arch }}/metal/*.qcow2
+          path: output/${{ matrix.arch }}/metal/*.vmdk
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
+
+      - name: Upload qcow2 (needed by release)
+        uses: actions/upload-artifact@v7
+        with:
+          path: output/${{ matrix.arch }}/metal/*.qcow2
+          if-no-files-found: error
+          retention-days: 1
+          archive: false
 
   iso:
-    needs: [images-cloud]
+    needs: [prep, images-cloud]
+    env:
+      BUILD_DATE: ${{ needs.prep.outputs.build_date }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        include:
-          # r[impl ci.installer-target] r[verify ci.installer-target]
-          # The installer links against the runner's glibc, which must be <=
-          # the glibc in the live ISO rootfs (currently noble / 24.04, glibc 2.39).
-          # When upgrading UBUNTU_SUITE, verify the runner's glibc does not
-          # exceed the new suite's glibc before merging.
-          - arch: amd64
-            runner: ubuntu-24.04
-            grub_pkg: grub-efi-amd64-bin
-            cargo_target: x86_64-unknown-linux-gnu
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            grub_pkg: grub-efi-arm64-bin
-            cargo_target: aarch64-unknown-linux-gnu
-    runs-on: ${{ matrix.runner }}
+        suite: [noble, resolute]
+    # r[impl ci.installer-target] r[verify ci.installer-target]
+    # The installer links against the runner's glibc, which must be <= the
+    # glibc in the live ISO rootfs. ubuntu-24.04 (glibc 2.39) targets both
+    # noble (2.39) and resolute (≥2.41) cleanly. When bumping the runner
+    # image, verify its glibc does not exceed the lowest target suite's
+    # glibc before merging.
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v6
       - uses: taiki-e/install-action@v2
@@ -187,7 +208,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             debootstrap gdisk dosfstools e2fsprogs squashfs-tools \
-            ${{ matrix.grub_pkg }} grub-common \
+            grub-efi-${{ matrix.arch }}-bin grub-common \
             parted util-linux zstd cryptsetup xorriso jq
 
       # r[impl ci.rust-stable] r[verify ci.rust-stable]
@@ -195,15 +216,17 @@ jobs:
         run: |
           rustup update stable
           rustup default stable
-          rustup target add ${{ matrix.cargo_target }}
+          rustup target add ${{ matrix.arch == 'amd64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}
 
       # r[impl ci.rust-cache] r[verify ci.rust-cache]
       - uses: Swatinem/rust-cache@v2
 
+      # archive: false names the artifact after the file's basename. The
+      # date suffix comes from prep, so we can match by exact name.
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: image-raw-cloud-${{ matrix.arch }}
+          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
           path: output/${{ matrix.arch }}/cloud/
 
       - name: List inputs
@@ -212,32 +235,28 @@ jobs:
           ls -lhR output/${{ matrix.arch }}/cloud/ || true
 
       - name: Build ISO
-        run: just arch=${{ matrix.arch }} iso
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} iso
         timeout-minutes: 30
 
       - name: Test ISO structure
-        run: just arch=${{ matrix.arch }} iso-test-structure
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} iso-test-structure
 
       - name: Upload ISO
         uses: actions/upload-artifact@v7
         with:
-          name: iso-${{ matrix.arch }}
           path: output/${{ matrix.arch }}/bes-installer-*.iso
           if-no-files-found: error
           retention-days: 1
-          compression-level: 0
+          archive: false
 
   container-test:
     needs: [iso]
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+        arch: [amd64, arm64]
+        suite: [noble, resolute]
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v6
       - uses: taiki-e/install-action@v2
@@ -257,25 +276,27 @@ jobs:
           sudo modprobe btrfs
           sudo modprobe dm-crypt
 
+      # ISO basenames are deterministic — bes-installer-{version}-{arch}.iso —
+      # so an exact name lookup works.
       - name: Download ISO
         uses: actions/download-artifact@v8
         with:
-          name: iso-${{ matrix.arch }}
+          name: bes-installer-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-${{ matrix.arch }}.iso
           path: output/${{ matrix.arch }}/
 
       - name: List ISO
         run: ls -lh output/${{ matrix.arch }}/
 
       - name: Run container isolation test # r[verify installer.container.isolation]
-        run: just arch=${{ matrix.arch }} variant=metal test-container-isolation
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal test-container-isolation
         timeout-minutes: 5
 
       - name: Run container install test (all scenarios, fake-LUKS auto-detected)
-        run: just arch=${{ matrix.arch }} test-container-install
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} test-container-install
         timeout-minutes: 30
 
   all-green:
-    name: All green
+    name: All builds green
     if: always()
     needs: [images-cloud, images-metal, iso, container-test]
     runs-on: ubuntu-latest
@@ -293,9 +314,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # archive: false artifacts are named after their file basename.
+      # merge-multiple flattens every artifact into one directory, so we
+      # can just glob by extension below.
       - uses: actions/download-artifact@v8
         with:
+          pattern: '*'
           path: artifacts/
+          merge-multiple: true
 
       - name: Derive version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
@@ -304,28 +330,13 @@ jobs:
         run: |
           mkdir -p release
 
-          # Copy image artifacts (raw.zst, vmdk, qcow2)
-          for variant in metal cloud; do
-            for arch in amd64 arm64; do
-              raw_dir="artifacts/image-raw-${variant}-${arch}"
-              fmt_dir="artifacts/image-formats-${variant}-${arch}"
-              if [ -d "$raw_dir" ]; then
-                cp "$raw_dir"/*.raw.zst release/ 2>/dev/null || true
-              fi
-              if [ -d "$fmt_dir" ]; then
-                cp "$fmt_dir"/*.vmdk release/ 2>/dev/null || true
-                cp "$fmt_dir"/*.qcow2 release/ 2>/dev/null || true
-              fi
-            done
-          done
+          # Image artifacts: ubuntu-{version}-bes-{variant}-{arch}-{date}.{img.zst,vmdk,qcow2}
+          cp artifacts/ubuntu-*.img.zst release/ 2>/dev/null || true
+          cp artifacts/ubuntu-*.vmdk    release/ 2>/dev/null || true
+          cp artifacts/ubuntu-*.qcow2   release/ 2>/dev/null || true
 
-          # Copy ISOs
-          for arch in amd64 arm64; do
-            dir="artifacts/iso-${arch}"
-            if [ -d "$dir" ]; then
-              cp "$dir"/*.iso release/ 2>/dev/null || true
-            fi
-          done
+          # ISOs: bes-installer-{version}-{arch}.iso
+          cp artifacts/bes-installer-*.iso release/ 2>/dev/null || true
 
           # r[image.output.checksum]
           cd release
@@ -352,32 +363,45 @@ jobs:
 
             variant=""
             arch=""
+            version=""
+            suite=""
             format="$f"
 
             case "$f" in
-              ubuntu-*-bes-*-*-*.raw.zst)
+              ubuntu-*-bes-*-*-*.img.zst)
+                version=$(echo "$f" | sed -E 's/ubuntu-([^-]+)-bes-.*$/\1/')
                 variant=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-([^-]+)-.*$/\1/')
                 arch=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-[^-]+-([^-]+)-.*$/\1/')
-                format="raw.zst"
+                format="img.zst"
                 ;;
               ubuntu-*-bes-*-*-*.vmdk)
+                version=$(echo "$f" | sed -E 's/ubuntu-([^-]+)-bes-.*$/\1/')
                 variant=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-([^-]+)-.*$/\1/')
                 arch=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-[^-]+-([^-]+)-.*$/\1/')
                 format="vmdk"
                 ;;
               ubuntu-*-bes-*-*-*.qcow2)
+                version=$(echo "$f" | sed -E 's/ubuntu-([^-]+)-bes-.*$/\1/')
                 variant=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-([^-]+)-.*$/\1/')
                 arch=$(echo "$f" | sed -E 's/ubuntu-[^-]+-bes-[^-]+-([^-]+)-.*$/\1/')
                 format="qcow2"
                 ;;
-              bes-installer-*.iso)
+              bes-installer-*-*.iso)
+                version=$(echo "$f" | sed -E 's/bes-installer-([^-]+)-.*\.iso/\1/')
                 variant="installer"
-                arch=$(echo "$f" | sed -E 's/bes-installer-([^.]+)\.iso/\1/')
+                arch=$(echo "$f" | sed -E 's/bes-installer-[^-]+-([^.]+)\.iso/\1/')
                 format="iso"
                 ;;
               SHA256SUMS)
                 format="checksums"
                 ;;
+            esac
+
+            # Map ubuntu_version → suite codename. Keep this in lockstep
+            # with the justfile mapping.
+            case "$version" in
+              24.04) suite="noble" ;;
+              26.04) suite="resolute" ;;
             esac
 
             manifest_entry=$(jq -n \
@@ -386,8 +410,9 @@ jobs:
               --arg sha256 "$sha256" \
               --arg variant "$variant" \
               --arg arch "$arch" \
+              --arg suite "$suite" \
               --arg format "$format" \
-              '{ name: $name, size: $size, sha256: $sha256, variant: $variant, arch: $arch, format: $format }
+              '{ name: $name, size: $size, sha256: $sha256, variant: $variant, arch: $arch, suite: $suite, format: $format }
                | del(.[] | select(. == ""))')
 
             jq --argjson entry "$manifest_entry" '.files += [$entry]' manifest.json > manifest.tmp
@@ -424,7 +449,7 @@ jobs:
             &middot; <a href="manifest.json">manifest.json</a>
           </p>
           <table>
-          <thead><tr><th>File</th><th>Variant</th><th>Arch</th><th>Format</th><th class="size">Size</th></tr></thead>
+          <thead><tr><th>File</th><th>Variant</th><th>Suite</th><th>Arch</th><th>Format</th><th class="size">Size</th></tr></thead>
           <tbody>
           TABLE_ROWS_PLACEHOLDER
           </tbody>
@@ -452,10 +477,11 @@ jobs:
             name=$(echo "$entry" | jq -r '.name')
             size=$(echo "$entry" | jq -r '.size')
             variant=$(echo "$entry" | jq -r '.variant // ""')
+            suite=$(echo "$entry" | jq -r '.suite // ""')
             arch=$(echo "$entry" | jq -r '.arch // ""')
             format=$(echo "$entry" | jq -r '.format')
             hsize=$(human_size "$size")
-            echo "<tr><td><a href=\"${name}\">${name}</a></td><td>${variant}</td><td>${arch}</td><td>${format}</td><td class=\"size\">${hsize}</td></tr>"
+            echo "<tr><td><a href=\"${name}\">${name}</a></td><td>${variant}</td><td>${suite}</td><td>${arch}</td><td>${format}</td><td class=\"size\">${hsize}</td></tr>"
           done > table_rows.tmp
 
           sed -i "s|VERSION_PLACEHOLDER|${VERSION}|g" index.html
@@ -523,19 +549,15 @@ jobs:
           fail_on_unmatched_files: true
           make_latest: true
 
-  register-amis:
-    needs: [images-cloud]
+  register-ami:
+    needs: [prep, images-cloud]
     if: startsWith(github.ref, 'refs/tags/')
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+        suite: [noble, resolute]
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v6
 
@@ -548,7 +570,7 @@ jobs:
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: image-raw-cloud-${{ matrix.arch }}
+          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
           path: output/${{ matrix.arch }}/cloud/
 
       - name: Configure AWS Credentials
@@ -556,7 +578,7 @@ jobs:
         with:
           aws-region: ap-southeast-2
           role-to-assume: arn:aws:iam::143295493206:role/gha-linux-images-upload
-          role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.arch }}
+          role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.suite }}-${{ matrix.arch }}
 
       - name: Register AMI
         run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ env.VERSION }}"
