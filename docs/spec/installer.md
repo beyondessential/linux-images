@@ -318,6 +318,17 @@ for terminal events.
 
 ## TUI
 
+r[installer.build-info]
+The installer must display identifying information about the image it was
+built from, both in its TUI title bar and on stderr at startup: the build
+date, the target architecture, the Ubuntu release (version and codename)
+that the live ISO and disk image are based on, and — when available — a
+short Git commit identifier. The Ubuntu release must be sourced from the
+live system's `/etc/os-release` (`VERSION_ID` and `VERSION_CODENAME` fields)
+so it stays in sync with the OS the installer is actually running on. When
+either of those fields is absent the release portion must be omitted rather
+than shown as an empty placeholder.
+
 > r[installer.tui.welcome+8]
 > The TUI must open with a welcome screen that displays a description of what
 > the image is for, contact information, and instructions on how to proceed.
