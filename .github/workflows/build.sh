@@ -581,5 +581,5 @@ jobs:
           role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.suite }}-${{ matrix.arch }}
 
       - name: Register AMI
-        run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ env.VERSION }}"
+        run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}"
         timeout-minutes: 60
