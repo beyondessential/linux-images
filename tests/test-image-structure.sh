@@ -772,16 +772,13 @@ if [ -x "$MNT/usr/bin/dpkg-query" ]; then
         fi
     done
 
-    # r[verify image.packages.caddy]
-    if [ "$SUITE" = "noble" ]; then
-        check_pkg_version caddy    2.10.0 "image.packages.caddy"
+    # caddy is never pre-installed: consumers install it themselves from the
+    # OS archive when they need it.
+    # shellcheck disable=SC2016 # ${Status} is a dpkg format string, not a bash variable
+    if chroot "$MNT" dpkg-query -W -f='${Status}\n' caddy 2>/dev/null | grep -q "install ok installed"; then
+        fail "caddy must not be pre-installed"
     else
-        # shellcheck disable=SC2016 # ${Status} is a dpkg format string, not a bash variable
-        if chroot "$MNT" dpkg-query -W -f='${Status}\n' caddy 2>/dev/null | grep -q "install ok installed"; then
-            fail "caddy is not pre-installed on non-noble"
-        else
-            pass "caddy is not pre-installed on non-noble"
-        fi
+        pass "caddy is not pre-installed"
     fi
     # r[verify image.packages.podman]
     check_pkg_version podman   5.0.0  "image.packages.podman"

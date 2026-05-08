@@ -96,15 +96,10 @@ readable font at boot. `/etc/default/console-setup` must be present with
 
 r[image.packages.bes-tools]
 The bes-tools APT repo must be configured. The `bestool` package must be
-installed from this repo, where it is exclusively published. On Ubuntu 24.04
-(noble), `caddy` and `podman` must also be installed from this repo because
-the noble archive ships insufficiently recent versions. On Ubuntu 26.04 and
-later, `caddy` is not installed and `podman` is installed from the Ubuntu
-archive.
-
-r[image.packages.caddy]
-On Ubuntu 24.04 (noble), Caddy version >=2.10.0 must be pre-installed. On
-Ubuntu 26.04 and later, Caddy is not pre-installed.
+installed from this repo (it is exclusively published there). When the OS
+archive of a given suite ships an outdated version of any other required
+package, the bes-tools repo must be the source for that package; otherwise
+the OS archive is preferred.
 
 r[image.packages.podman]
 Podman version >=5.0.0 must be pre-installed.
@@ -128,27 +123,16 @@ systemd-timesyncd) may be active on the running image.
 ## Bootloader
 
 r[image.boot.dracut]
-The initramfs must be generated using dracut, not initramfs-tools. The
-shipped image's initramfs must be portable across hardware — it is not yet
-bound to a specific machine. The mechanism is suite-dependent:
-
-- On Ubuntu 24.04 (noble), dracut must be configured with `hostonly="yes"`
-  and `hostonly_mode="sloppy"` as a workaround for a dracut bug in that
-  release where `hostonly="no"` produces a non-functional initramfs. The
-  required hardware modules are then force-included via the
-  `add_drivers+=` mechanism (see `image.boot.hardware-drivers`).
-- On Ubuntu 26.04 and later, dracut must be configured with `hostonly="no"`,
-  which automatically includes all kernel modules.
-
-The installer specialises the initramfs to the target machine after install
-(see `installer.write.rebuild-boot-config`).
+The shipped image's initramfs must be portable across hardware — it is not
+yet bound to a specific machine, so it must contain the kernel modules for
+the hardware classes the image is intended to run on (see
+`image.boot.hardware-drivers` and `image.boot.cloud-drivers`). The installer
+specialises the initramfs to the target machine after install (see
+`installer.write.rebuild-boot-config`).
 
 > r[image.boot.hardware-drivers+3]
-> Both variants' initramfs must contain kernel modules for hardware not
-> present at image-build time. Under the Ubuntu 24.04 hostonly workaround,
-> these modules must be explicitly force-included; on Ubuntu 26.04 and later,
-> they are included automatically by `hostonly="no"`. The following module
-> categories must be present:
+> The initramfs must contain kernel modules for hardware not present at
+> image-build time. The following module categories must be present:
 >
 > - **NVMe:** `nvme`, `nvme_core`
 > - **SATA/AHCI:** `ahci`
@@ -163,9 +147,7 @@ The installer specialises the initramfs to the target machine after install
 
 > r[image.boot.cloud-drivers+5]
 > The cloud variant's initramfs must additionally contain cloud-specific
-> kernel modules. Force-inclusion applies only under the Ubuntu 24.04
-> hostonly workaround; on Ubuntu 26.04 and later, they are included
-> automatically by `hostonly="no"`. The required modules:
+> kernel modules:
 >
 > - **AWS:** `ena`, `xen_blkfront`
 > - **GCP:** `gve`
@@ -352,3 +334,22 @@ A qcow2 image must be produced.
 
 r[image.output.checksum]
 SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
+
+> r[image.output.aws-ami]
+> On a tagged release, the cloud variant image for every (suite, architecture)
+> combination that is published must be registered as an AWS AMI in the
+> `ap-southeast-2` region. The set of currently-published suites and
+> architectures is captured by the build matrix in
+> `.github/workflows/build.yml`.
+>
+> Each registered AMI must be named
+> `ubuntu-<ubuntu-version>-bes-cloud-<arch>-<version>`, where
+> `<ubuntu-version>` is the numeric Ubuntu release corresponding to the
+> suite, `<arch>` is the image architecture, and `<version>` is the release
+> version without the leading `v`. AMIs from different suites must therefore
+> not collide on a name even when registered from the same release tag.
+>
+> Each registered AMI must carry the following AWS resource tags: `Name`,
+> `Os`, `OsVersion`, `Variant`, `Architecture`, `Version`, `Features`, and
+> `Builder`. `OsVersion` must hold the numeric Ubuntu release
+> (`<ubuntu-version>` above).
