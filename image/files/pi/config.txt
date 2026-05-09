@@ -5,8 +5,11 @@
 
 # r[image.boot.pi-firmware] r[image.boot.pi-uart] r[image.boot.pi-peripherals]
 # r[image.boot.pi-tpm-overlay] r[image.boot.pi-pcie-gen3]
-# enable_uart=1 routes the primary PL011 UART to GPIO 14/15 so a USB-TTL
-# adapter is the supported headless console; HDMI may not be attached.
+# enable_uart=1 tells the firmware to initialise the primary UART so the
+# kernel can inherit it as a console. On Pi 5 this is the dedicated 3-pin
+# debug UART connector (not GPIO 14/15 on the 40-pin header — that is a
+# different UART), and `console=serial0,115200` in cmdline.txt resolves
+# to it via the device-tree alias. HDMI may not be attached.
 # I2C and SPI are enabled for sensor / peripheral attach, paired with the
 # i2c-tools userspace package.
 # The tpm-slb9670 overlay enables the Infineon SLB9670 SPI TPM 2.0 module
@@ -30,4 +33,3 @@ dtoverlay=tpm-slb9670
 kernel=vmlinuz
 cmdline=cmdline.txt
 initramfs initrd.img followkernel
-device_tree_address=0x03000000
