@@ -213,10 +213,10 @@ root device (`root=/dev/mapper/root`) and the BTRFS subvolume
 > kernel after `apt upgrade`.
 
 r[image.boot.pi-uart]
-For the `pi` variant, the primary PL011 UART (GPIO 14/15) must be enabled
-via `enable_uart=1` in `config.txt`, and `console=serial0,115200` must be
-present in `cmdline.txt` so that a USB-TTL adapter is the supported headless
-console. Pi 5 deployments are unlikely to have HDMI attached.
+For the `pi` variant, the kernel console must be available on the Pi 5
+dedicated debug UART connector at 115200 baud, so a USB-TTL adapter on
+that connector is the supported headless console. Pi 5 deployments are
+unlikely to have HDMI attached.
 
 r[image.boot.pi-peripherals]
 For the `pi` variant, I2C and SPI must be enabled at the device-tree level
