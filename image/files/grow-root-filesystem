@@ -37,13 +37,22 @@ partprobe "$DISK" || true
 
 # Step 3: Resize LUKS (if active)
 if [ -e /dev/mapper/root ]; then
-    # `cryptsetup resize` re-derives the master key from a passphrase
-    # rather than reusing the already-open mapping's key, so we have to
-    # supply one. Build-time images ship with an empty placeholder
-    # passphrase in LUKS slot 0 (per r[image.variant.types]); on
-    # platforms with an installer that rotates the slot, growth has
-    # already happened by then and growpart above exits 1 (no change).
-    printf '' | cryptsetup resize --key-file=- root
+    LUKS_DEV=/dev/disk/by-partlabel/root
+    # cryptsetup resize re-derives the master key from a passphrase
+    # rather than reusing the open mapping's key. Build-time images ship
+    # with the placeholder empty passphrase in slot 0 (per
+    # r[image.variant.types]); once that's rotated, we can't proceed
+    # without the user's key. Probe first so we exit cleanly instead of
+    # leaving a failed unit on every subsequent boot.
+    if printf '' | cryptsetup open --test-passphrase --key-file=- "$LUKS_DEV"; then
+        printf '' | cryptsetup resize --key-file=- root
+    else
+        echo "LUKS slot 0 placeholder passphrase has been rotated;"
+        echo "skipping resize. To finish manually, run:"
+        echo "  cryptsetup resize root   # with your key"
+        echo "  btrfs filesystem resize max /"
+        exit 0
+    fi
 fi
 
 # Step 4: Resize BTRFS
