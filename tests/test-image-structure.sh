@@ -344,6 +344,13 @@ if [ -f "$MNT/etc/default/console-setup" ]; then
     check "console-setup FONTSIZE is 8x16" grep -q 'FONTSIZE="8x16"' "$MNT/etc/default/console-setup"
 fi
 
+# r[verify image.base.login-banner]
+check "/etc/issue exists" test -f "$MNT/etc/issue"
+if [ -f "$MNT/etc/issue" ]; then
+    check "/etc/issue includes IPv4 escape" grep -qF '\4' "$MNT/etc/issue"
+    check "/etc/issue includes IPv6 escape" grep -qF '\6' "$MNT/etc/issue"
+fi
+
 # r[verify image.base.network+2]
 check "netplan config exists" test -f "$MNT/etc/netplan/01-all-en-dhcp.yaml"
 NETPLAN_MODE="$(stat -c%a "$MNT/etc/netplan/01-all-en-dhcp.yaml" 2>/dev/null || true)"

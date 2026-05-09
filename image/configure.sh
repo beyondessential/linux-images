@@ -169,6 +169,22 @@ VIDEOMODE=
 EOF
 
 # ============================================================
+# Login banner
+# ============================================================
+# r[image.base.login-banner]
+# agetty resolves \4 / \6 against the live network stack each time the
+# login prompt is rendered, so this needs no script or systemd unit to
+# stay current — the banner reflects whatever addresses are configured
+# at the moment of display.
+cat > /etc/issue << 'EOF'
+\S \n \l
+
+IPv4: \4
+IPv6: \6
+
+EOF
+
+# ============================================================
 # Variant identification
 # ============================================================
 # r[image.variant.types+3]
