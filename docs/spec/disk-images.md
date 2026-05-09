@@ -107,6 +107,13 @@ The `console-setup` and `kbd` packages must be installed so that
 readable font at boot. `/etc/default/console-setup` must be present with
 `FONTFACE="Fixed"` and `FONTSIZE="8x16"`.
 
+r[image.base.login-banner]
+The pre-login banner displayed on every TTY, including the serial
+console, must include the host's current IPv4 and IPv6 network
+addresses. An operator with serial-only access (no HDMI, no prior
+network knowledge) must be able to read the addresses straight off the
+banner without logging in first.
+
 ## Packages
 
 r[image.packages.bes-tools]
