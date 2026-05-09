@@ -29,8 +29,14 @@ esac
 # r[image.variant.types+3]
 case "$VARIANT" in
     metal|cloud) ;;
+    pi)
+        if [ "$ARCH" != "arm64" ]; then
+            echo "ERROR: variant=pi requires arch=arm64 (got: $ARCH)"
+            exit 1
+        fi
+        ;;
     *)
-        echo "ERROR: variant must be metal or cloud (got: $VARIANT)"
+        echo "ERROR: variant must be metal, cloud, or pi (got: $VARIANT)"
         exit 1
         ;;
 esac
@@ -45,7 +51,7 @@ MISSING=()
 for cmd in debootstrap sgdisk mkfs.vfat mkfs.ext4 mkfs.btrfs losetup btrfs chroot rsync; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
-if [ "$VARIANT" = "metal" ]; then
+if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     command -v cryptsetup &>/dev/null || MISSING+=("cryptsetup")
 fi
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -115,13 +121,14 @@ cleanup() {
     fi
 
     # Unmount filesystems in reverse order
+    umount "$MNT/boot/firmware"     2>/dev/null
     umount "$MNT/boot/efi"          2>/dev/null
     umount "$MNT/boot"              2>/dev/null
     umount "$MNT/var/lib/postgresql" 2>/dev/null
     umount "$MNT"                   2>/dev/null
 
     # Close LUKS
-    if [ "$VARIANT" = "metal" ]; then
+    if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
         cryptsetup close "$LUKS_NAME" 2>/dev/null
     fi
 
@@ -154,10 +161,21 @@ echo "    Loop device: $LOOP_DEVICE"
 echo "==> Partitioning (GPT)..."
 sgdisk --zap-all "$LOOP_DEVICE" >/dev/null
 
-# r[image.partition.efi]
-sgdisk -n 1:0:+512M \
+# r[image.partition.efi] r[image.partition.pi-firmware]
+# pi: a larger FAT partition holds Pi firmware blobs, kernel, initramfs, DTBs
+# and overlays — flash-kernel populates it. Type stays ESP (Pi firmware
+# accepts ESP-typed FAT partitions on GPT and the larger size doesn't hurt
+# UEFI either, but only the pi variant needs the headroom).
+if [ "$VARIANT" = "pi" ]; then
+    BOOT1_SIZE="+1G"
+    BOOT1_LABEL="firmware"
+else
+    BOOT1_SIZE="+512M"
+    BOOT1_LABEL="efi"
+fi
+sgdisk -n 1:0:"$BOOT1_SIZE" \
     -t 1:C12A7328-F81F-11D2-BA4B-00A0C93EC93B \
-    -c 1:efi \
+    -c 1:"$BOOT1_LABEL" \
     "$LOOP_DEVICE" >/dev/null
 
 # r[image.partition.xboot]
@@ -192,19 +210,24 @@ if [ "$PART_COUNT" -ne 3 ]; then
     exit 1
 fi
 
-echo "    Partitions: efi=${EFI_PART} xboot=${BOOT_PART} root=${ROOT_PART}"
+echo "    Partitions: ${BOOT1_LABEL}=${EFI_PART} xboot=${BOOT_PART} root=${ROOT_PART}"
 
 # ============================================================
 # Phase 2: Format filesystems
 # ============================================================
-echo "==> Formatting EFI partition (FAT32)..."
-mkfs.vfat -F 32 -n EFI "$EFI_PART" >/dev/null
+if [ "$VARIANT" = "pi" ]; then
+    BOOT1_FSLABEL="FIRMWARE"
+else
+    BOOT1_FSLABEL="EFI"
+fi
+echo "==> Formatting boot1 partition (FAT32, label=$BOOT1_FSLABEL)..."
+mkfs.vfat -F 32 -n "$BOOT1_FSLABEL" "$EFI_PART" >/dev/null
 
 echo "==> Formatting boot partition (ext4)..."
 mkfs.ext4 -q -L xboot "$BOOT_PART"
 
-# r[image.luks.format]: Metal variant gets LUKS2 with empty passphrase.
-if [ "$VARIANT" = "metal" ]; then
+# r[image.luks.format]: metal and pi variants get LUKS2 with empty passphrase.
+if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     echo "==> Setting up LUKS2 on root partition..."
     KEYFILE="$(mktemp)"
     truncate -s 0 "$KEYFILE"
@@ -250,8 +273,13 @@ mount "$BTRFS_DEV" "$MNT/var/lib/postgresql" -o subvol=@postgres,compress=zstd:6
 mkdir -p "$MNT/boot"
 mount "$BOOT_PART" "$MNT/boot"
 
-mkdir -p "$MNT/boot/efi"
-mount "$EFI_PART" "$MNT/boot/efi"
+if [ "$VARIANT" = "pi" ]; then
+    mkdir -p "$MNT/boot/firmware"
+    mount "$EFI_PART" "$MNT/boot/firmware"
+else
+    mkdir -p "$MNT/boot/efi"
+    mount "$EFI_PART" "$MNT/boot/efi"
+fi
 
 # ============================================================
 # Phase 4: Debootstrap
@@ -356,12 +384,16 @@ umount "$MNT/tmp"
 CHROOT_MOUNTS_ACTIVE=0
 
 echo "==> Unmounting image filesystems..."
-umount "$MNT/boot/efi"
+if [ "$VARIANT" = "pi" ]; then
+    umount "$MNT/boot/firmware"
+else
+    umount "$MNT/boot/efi"
+fi
 umount "$MNT/boot"
 umount "$MNT/var/lib/postgresql"
 umount "$MNT"
 
-if [ "$VARIANT" = "metal" ]; then
+if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     echo "==> Closing LUKS volume..."
     cryptsetup close "$LUKS_NAME"
 fi

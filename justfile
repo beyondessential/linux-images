@@ -11,8 +11,10 @@ arch := "amd64"
 variant := "metal"
 # Build-time partition size. Metal needs more headroom than cloud because it
 # also installs linux-firmware, which is large; resolute's package set in
-# particular does not fit in 5G with metal extras. Both grow at first boot.
-image_size := if variant == "metal" { "8G" } else { "5G" }
+# particular does not fit in 5G with metal extras. Pi follows metal-style
+# headroom (linux-firmware-raspi + Pi firmware blobs in /boot/firmware).
+# Both grow at first boot.
+image_size := if variant == "cloud" { "5G" } else { "8G" }
 qemu_memory := "4096"
 qemu_cores := "2"
 container_test_filter := ""
@@ -28,7 +30,7 @@ _default:
     @just --list
     @echo ""
     @echo "Variable: arch={{ arch }} (amd64, arm64)"
-    @echo "Variable: variant={{ variant }} (metal, cloud)"
+    @echo "Variable: variant={{ variant }} (metal, cloud, pi)"
     @echo "Variable: ubuntu_version={{ ubuntu_version }}"
     @echo "Variable: ubuntu_suite={{ ubuntu_suite }}"
     @echo "Variable: tailscale_suite={{ tailscale_suite }}"
@@ -41,7 +43,12 @@ _validate-variant:
     #!/usr/bin/env bash
     case "{{ variant }}" in
       metal|cloud) ;;
-      *) echo "ERROR: variant must be one of: metal, cloud (got: {{ variant }})"; exit 1 ;;
+      pi)
+        if [ "{{ arch }}" != "arm64" ]; then
+          echo "ERROR: variant=pi requires arch=arm64 (got: {{ arch }})"; exit 1
+        fi
+        ;;
+      *) echo "ERROR: variant must be one of: metal, cloud, pi (got: {{ variant }})"; exit 1 ;;
     esac
 
 _validate-arch:
@@ -517,10 +524,20 @@ checksum:
 # Build everything: raw + vmdk + qcow2 + compress + checksum
 build: vmdk qcow && compress checksum
 
-# Build all variants for the current architecture
+# Pi images are flashed to SD/USB/NVMe, so the vmdk/qcow2 conversions don't apply.
+
+# Build pi-only artifacts: raw + compress + checksum
+pi-build: raw && compress checksum
+
+# Build all variants for the current architecture (pi only on arm64)
 build-all-variants:
+    #!/usr/bin/env bash
+    set -euo pipefail
     just arch={{ arch }} variant=metal build
     just arch={{ arch }} variant=cloud build
+    if [ "{{ arch }}" = "arm64" ]; then
+        just arch=arm64 variant=pi pi-build
+    fi
 
 # Build all variants for all architectures
 build-all:
@@ -528,12 +545,13 @@ build-all:
     just arch=amd64 variant=cloud build
     just arch=arm64 variant=metal build
     just arch=arm64 variant=cloud build
+    just arch=arm64 variant=pi pi-build
 
 # Verify output formats and checksums
 
 # r[verify image.output.raw] r[verify image.output.vmdk] r[verify image.output.qcow2] r[verify image.output.checksum]
 verify-outputs: _validate-variant _validate-arch
-    scripts/verify-outputs.sh "{{ output_dir }}" "{{ filestem }}"
+    scripts/verify-outputs.sh "{{ output_dir }}" "{{ filestem }}" "{{ variant }}"
 
 # ============================================================
 # Testing
@@ -662,7 +680,7 @@ _make-test-cloud-init: _ensure-dirs
         VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "unknown")
         echo "Variant: $VARIANT"
 
-        if [ "$VARIANT" = "metal" ]; then
+        if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
           # r[verify image.luks.format]
           check "LUKS volume is active" test -e /dev/mapper/root
         fi
@@ -674,8 +692,12 @@ _make-test-cloud-init: _ensure-dirs
 
         # r[verify image.partition.xboot]
         check "/boot is mounted" mountpoint -q /boot
-        # r[verify image.partition.efi]
-        check "/boot/efi is mounted" mountpoint -q /boot/efi
+        # r[verify image.partition.efi] r[verify image.partition.pi-firmware]
+        if [ "$VARIANT" = "pi" ]; then
+          check "/boot/firmware is mounted" mountpoint -q /boot/firmware
+        else
+          check "/boot/efi is mounted" mountpoint -q /boot/efi
+        fi
 
         echo ""
         echo "RESULTS: $PASS passed, $FAIL failed"

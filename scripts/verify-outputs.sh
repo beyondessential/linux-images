@@ -7,8 +7,17 @@ set -euo pipefail
 # but the actual impls are directly in the justfile
 # r[impl image.output.raw] r[impl image.output.vmdk] r[impl image.output.qcow2] r[impl image.output.checksum]
 
-OUTPUT_DIR="${1:?Usage: $0 <output_dir> <filestem>}"
-FILESTEM="${2:?Usage: $0 <output_dir> <filestem>}"
+OUTPUT_DIR="${1:?Usage: $0 <output_dir> <filestem> [variant]}"
+FILESTEM="${2:?Usage: $0 <output_dir> <filestem> [variant]}"
+VARIANT="${3:-}"
+
+# Pi images don't ship vmdk/qcow2 (no VMware/KVM use case for a flash-to-card
+# image). Suppress those checks when verifying the pi variant.
+if [ "$VARIANT" = "pi" ]; then
+    EXPECT_VMDK=0
+else
+    EXPECT_VMDK=1
+fi
 
 PASS=0
 FAIL=0
@@ -61,26 +70,28 @@ if [ -f "$RAW_ZST" ]; then
     check "compressed raw image is valid zstd" zstd -t "$RAW_ZST"
 fi
 
-# r[verify image.output.vmdk]
-echo "--- VMDK image ---"
-check "VMDK image exists (${FILESTEM}.vmdk)" test -f "$VMDK"
-if [ -f "$VMDK" ]; then
-    SIZE=$(stat -c%s "$VMDK")
-    check "VMDK image is non-empty" test "$SIZE" -gt 0
-    check "VMDK image is recognized by qemu-img" qemu-img info "$VMDK"
-    FORMAT=$(qemu-img info --output=json "$VMDK" 2>/dev/null | jq -r '.format' || true)
-    check "VMDK format is vmdk" test "$FORMAT" = "vmdk"
-fi
+if [ "$EXPECT_VMDK" = "1" ]; then
+    # r[verify image.output.vmdk]
+    echo "--- VMDK image ---"
+    check "VMDK image exists (${FILESTEM}.vmdk)" test -f "$VMDK"
+    if [ -f "$VMDK" ]; then
+        SIZE=$(stat -c%s "$VMDK")
+        check "VMDK image is non-empty" test "$SIZE" -gt 0
+        check "VMDK image is recognized by qemu-img" qemu-img info "$VMDK"
+        FORMAT=$(qemu-img info --output=json "$VMDK" 2>/dev/null | jq -r '.format' || true)
+        check "VMDK format is vmdk" test "$FORMAT" = "vmdk"
+    fi
 
-# r[verify image.output.qcow2]
-echo "--- qcow2 image ---"
-check "qcow2 image exists (${FILESTEM}.qcow2)" test -f "$QCOW2"
-if [ -f "$QCOW2" ]; then
-    SIZE=$(stat -c%s "$QCOW2")
-    check "qcow2 image is non-empty" test "$SIZE" -gt 0
-    check "qcow2 image is recognized by qemu-img" qemu-img info "$QCOW2"
-    FORMAT=$(qemu-img info --output=json "$QCOW2" 2>/dev/null | jq -r '.format' || true)
-    check "qcow2 format is qcow2" test "$FORMAT" = "qcow2"
+    # r[verify image.output.qcow2]
+    echo "--- qcow2 image ---"
+    check "qcow2 image exists (${FILESTEM}.qcow2)" test -f "$QCOW2"
+    if [ -f "$QCOW2" ]; then
+        SIZE=$(stat -c%s "$QCOW2")
+        check "qcow2 image is non-empty" test "$SIZE" -gt 0
+        check "qcow2 image is recognized by qemu-img" qemu-img info "$QCOW2"
+        FORMAT=$(qemu-img info --output=json "$QCOW2" 2>/dev/null | jq -r '.format' || true)
+        check "qcow2 format is qcow2" test "$FORMAT" = "qcow2"
+    fi
 fi
 
 # r[verify image.output.checksum]
@@ -90,7 +101,11 @@ if [ -f "$SHA256SUMS" ]; then
     check "SHA256SUMS is non-empty" test -s "$SHA256SUMS"
 
     # Verify that each expected output has an entry in SHA256SUMS
-    for artifact in "${FILESTEM}.img.zst" "${FILESTEM}.vmdk" "${FILESTEM}.qcow2"; do
+    EXPECTED_ARTIFACTS=("${FILESTEM}.img.zst")
+    if [ "$EXPECT_VMDK" = "1" ]; then
+        EXPECTED_ARTIFACTS+=("${FILESTEM}.vmdk" "${FILESTEM}.qcow2")
+    fi
+    for artifact in "${EXPECTED_ARTIFACTS[@]}"; do
         if grep -q "$artifact" "$SHA256SUMS"; then
             pass "SHA256SUMS contains entry for $artifact"
         else

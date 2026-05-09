@@ -14,6 +14,7 @@ AKA "Tamanu Linux"
 | cloud image | Other clouds or on-premise virtualisation |
 | metal image | Bare metal, direct-to-disk |
 | ISO | Bare metal, from USB |
+| pi image | Raspberry Pi 5, flash to SD/USB/NVMe |
 
 (Prefer to use USB3 drives if you can, USB2 will be very slow.)
 

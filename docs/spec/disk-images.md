@@ -10,9 +10,16 @@ The disk image must contain exactly three partitions: EFI, extended boot, and
 root. There is no swap partition.
 
 r[image.partition.efi]
-The first partition must be an EFI System Partition (type UUID
-`C12A7328-F81F-11D2-BA4B-00A0C93EC93B`), formatted as FAT32, labeled `efi`,
-and sized 512 MiB.
+For the `metal` and `cloud` variants, the first partition must be an EFI
+System Partition (type UUID `C12A7328-F81F-11D2-BA4B-00A0C93EC93B`),
+formatted as FAT32, labeled `efi`, and sized 512 MiB.
+
+r[image.partition.pi-firmware]
+For the `pi` variant, the first partition occupies the same role as the EFI
+partition above but holds the Raspberry Pi firmware files, kernel, initramfs,
+DTBs and overlays read by the Pi 5 EEPROM bootloader. It must be a FAT32
+partition (type UUID `C12A7328-F81F-11D2-BA4B-00A0C93EC93B`), labeled
+`firmware`, and sized at least 1 GiB. It is mounted at `/boot/firmware`.
 
 r[image.partition.xboot]
 The second partition must be a Linux extended boot partition (type UUID
@@ -47,7 +54,8 @@ BTRFS simple quotas must be enabled on the filesystem.
 ## Variants
 
 > r[image.variant.types+3]
-> Two build-time image variants must be supported: `metal` and `cloud`.
+> Three build-time image variants must be supported: `metal`, `cloud`, and
+> `pi`.
 >
 > The `metal` variant encrypts the root partition with LUKS2. It is intended
 > for bare-metal and on-premise virtualisation. The image ships with a
@@ -59,12 +67,19 @@ BTRFS simple quotas must be enabled on the filesystem.
 > cloud environments where encryption at rest is provided by the
 > infrastructure. The ISO installer is built from the cloud image.
 >
+> The `pi` variant targets Raspberry Pi 5 and is always arm64. It encrypts
+> the root partition with LUKS2 (same scheme as `metal`, with an empty
+> placeholder passphrase) but boots via the Pi firmware path rather than
+> UEFI/GRUB — see r[image.boot.pi-firmware]. There is no installer for the
+> `pi` variant; deployment is image-flash to SD/USB/NVMe.
+>
 > The file `/etc/bes/image-variant` records the disk-encryption mode of the
-> running system. Build-time images write the build variant (`metal` or
-> `cloud`). The installer overwrites this with the user's chosen encryption
-> mode: `luks-tpm`, `luks-keyfile`, or `plain`. Runtime scripts must not
-> assume the file contains only `metal` or `cloud`; they should detect the
-> actual situation (e.g. whether LUKS is active) instead.
+> running system. Build-time images write the build variant (`metal`,
+> `cloud`, or `pi`). For non-Pi images the installer overwrites this with
+> the user's chosen encryption mode: `luks-tpm`, `luks-keyfile`, or `plain`.
+> Runtime scripts must not assume the file contains only one of those
+> values; they should detect the actual situation (e.g. whether LUKS is
+> active) instead.
 
 ## Base System
 
@@ -91,6 +106,13 @@ The `console-setup` and `kbd` packages must be installed so that
 `systemd-vconsole-setup.service` configures the Linux console with a
 readable font at boot. `/etc/default/console-setup` must be present with
 `FONTFACE="Fixed"` and `FONTSIZE="8x16"`.
+
+r[image.base.login-banner]
+The pre-login banner displayed on every TTY, including the serial
+console, must include the host's current IPv4 and IPv6 network
+addresses. An operator with serial-only access (no HDMI, no prior
+network knowledge) must be able to read the addresses straight off the
+banner without logging in first.
 
 ## Packages
 
@@ -153,7 +175,8 @@ specialises the initramfs to the target machine after install (see
 > - **GCP:** `gve`
 
 r[image.boot.grub-install]
-GRUB must be installed as the EFI bootloader with `--bootloader-id=ubuntu`.
+For the `metal` and `cloud` variants, GRUB must be installed as the EFI
+bootloader with `--bootloader-id=ubuntu`.
 
 r[image.boot.grub-timeout]
 GRUB must be configured with `GRUB_TIMEOUT=5`,
@@ -173,6 +196,62 @@ actual on-disk filesystems. Specifically, every `search --no-floppy --fs-uuid
 --set=root` directive and every `root=UUID=` kernel parameter in `grub.cfg`
 must correspond to a UUID present on one of the image's partitions or
 volumes. A mismatch means the system will fail to boot.
+
+> r[image.boot.pi-firmware]
+> For the `pi` variant, the bootloader is the Raspberry Pi 5 EEPROM
+> firmware. No GRUB is installed. The firmware partition (mounted at
+> `/boot/firmware`) must contain `config.txt` selecting `vmlinuz` as the
+> kernel and `initrd.img` as the initramfs (`followkernel` mode), and the
+> Pi-specific DTB (`bcm2712-rpi-5-b.dtb`) plus its overlays directory.
+
+r[image.boot.pi-cmdline]
+For the `pi` variant, kernel command-line arguments are read from
+`/boot/firmware/cmdline.txt`. The cmdline must reference the LUKS-mapped
+root device (`root=/dev/mapper/root`) and the BTRFS subvolume
+(`subvol=@,compress=zstd:6`).
+
+> r[image.boot.pi-firmware-update]
+> The `pi` variant must ship a script that copies the kernel image,
+> initramfs and Pi 5 DTB (plus overlays) from their installed locations
+> into `/boot/firmware`. This script must run at image build time after
+> dracut, and on every kernel package upgrade via a hook in
+> `/etc/kernel/postinst.d/`. Without it, kernel updates would leave the
+> firmware partition stale and the system would keep booting the old
+> kernel after `apt upgrade`.
+
+r[image.boot.pi-uart]
+For the `pi` variant, the kernel console must be available on the Pi 5
+dedicated debug UART connector at 115200 baud, so a USB-TTL adapter on
+that connector is the supported headless console. Pi 5 deployments are
+unlikely to have HDMI attached.
+
+r[image.boot.pi-peripherals]
+For the `pi` variant, I2C and SPI must be enabled at the device-tree level
+(`dtparam=i2c_arm=on` and `dtparam=spi=on` in `config.txt`), and the
+`i2c-tools` package must be installed for userspace access.
+
+r[image.boot.pi-tpm-overlay]
+For the `pi` variant, the `tpm-slb9670` device-tree overlay must be enabled
+in `config.txt` so that an Infineon SLB9670 SPI TPM 2.0 module on a HAT is
+picked up automatically when present. With no TPM attached, the kernel
+probes SPI, sees no response, and skips, leaving boot unaffected.
+
+r[image.boot.pi-pcie-gen3]
+For the `pi` variant, the Pi 5's onboard PCIe x1 lane must be set to gen 3
+(`dtparam=pciex1_gen=3` in `config.txt`) for full NVMe HAT throughput, and
+the boot splash must be disabled (`disable_splash=1`) so the console stays
+clean for headless deployments.
+
+> r[image.boot.pi-power-key]
+> For the `pi` variant, a systemd-logind drop-in must be installed at
+> `/etc/systemd/logind.conf.d/50-bes-power.conf` setting
+> `HandlePowerKey=poweroff` — a short press on the Pi 5 power button
+> performs a graceful shutdown.
+>
+> Operators may re-task the button by editing the drop-in (e.g. `reboot`,
+> `suspend`, or `ignore` to release the event to a userspace listener on
+> `/dev/input/event*`). Holding the button for more than five seconds
+> triggers a firmware-level hard cut that the OS cannot intercept.
 
 ## Firewall
 

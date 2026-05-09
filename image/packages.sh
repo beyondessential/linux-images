@@ -1,10 +1,9 @@
 #!/bin/bash
-PACKAGES=(
-    # Kernel and boot
-    linux-generic
-    grub-efi
-    dracut-core
+# Package lists are sourced into configure.sh, which decides which to apply
+# based on $VARIANT. Common packages always go in; the variant-specific list
+# layers on top.
 
+PACKAGES=(
     # Filesystem and storage
     btrfs-progs
     cryptsetup
@@ -41,7 +40,13 @@ PACKAGES=(
     # APT key management
     gnupg
 
-    # for dracut modules
+    # Initramfs (variant adds the bootloader/kernel; dracut is common)
+    dracut-core
+
+    # for dracut modules. tpm2-tools is in common because, while x86 server
+    # hardware and Pi 5 add-ons (SLB9670 / similar) differ wildly, both
+    # benefit from the userspace tooling when a TPM is present, and on
+    # systems without one the package is small and inert.
     tpm2-tools
     nvme-cli
     busybox
@@ -59,6 +64,34 @@ PACKAGES=(
     htop
     iputils-ping
 )
+
+# r[image.variant.types+3]
+case "${VARIANT:-}" in
+    metal|cloud)
+        PACKAGES+=(
+            linux-generic
+            grub-efi
+        )
+        ;;
+    pi)
+        # r[image.boot.pi-peripherals]
+        # i2c-tools pairs with dtparam=i2c_arm=on in config.txt for sensor /
+        # peripheral work over the GPIO header. tpm2-tools comes from the
+        # common list above; Pi 5 has no native TPM but we ship-with-overlay
+        # for an optional SPI TPM HAT (see r[image.boot.pi-tpm-overlay]).
+        # Note: no flash-kernel — its noble package lacks a Pi 5 db entry, so
+        # we manage /boot/firmware ourselves via bes-pi-firmware-update.
+        PACKAGES+=(
+            linux-raspi
+            linux-firmware-raspi
+            i2c-tools
+        )
+        ;;
+    *)
+        echo "ERROR: packages.sh: unknown VARIANT=${VARIANT:-<unset>}" >&2
+        return 1
+        ;;
+esac
 
 # On Ubuntu 25.10+ (resolute and later), /usr/lib/systemd/systemd-cryptsetup
 # moved out of the systemd package into its own. It is only a Recommends of

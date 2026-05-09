@@ -1,0 +1,17 @@
+#!/bin/bash
+# Kernel-postinst hook: keep /boot/firmware in sync with newly-installed
+# kernels on the pi variant. Receives the kernel version as $1; the package
+# manager runs every script in /etc/kernel/postinst.d/ after a kernel install
+# or upgrade.
+#
+# `zz-` prefix orders this after dracut's own /etc/kernel/postinst.d/dracut
+# so the initramfs we copy is the freshly-generated one.
+set -e
+
+KVER="${1:-}"
+[ -n "$KVER" ] || exit 0
+
+# Only run on the pi variant. Other variants don't have /boot/firmware.
+[ -d /boot/firmware ] || exit 0
+
+exec /usr/local/sbin/bes-pi-firmware-update "$KVER"

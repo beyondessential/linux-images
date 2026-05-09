@@ -24,18 +24,23 @@ Non-LTS versions e.g. 25.10 will not be supported.
 
 ## Boot
 
-UEFI is required.
+For `metal` and `cloud` images, UEFI is required.
 We will not add "BIOS" / non-UEFI support.
+
+`pi` images target Raspberry Pi 5 hardware specifically and boot via the Pi's
+EEPROM bootloader; they are not UEFI images.
+Flash a `pi` image to an SD card, USB drive, or NVMe (with HAT) using
+`rpi-imager` or `dd`; the Pi 5 boots it directly with no other configuration.
 
 ### Encryption
 
 Cloud images have a plaintext system partition.
 
-Metal images have an encrypted system partition.
+Metal and Pi images have an encrypted system partition.
 They will rotate their volume master key on first boot, which will add a few minutes to the boot process.
 
 The encrypted partition is configured with an empty password.
-This provides little security immediately, but can be trivially bound to a TPM or other hardware key later.
+This provides little security immediately, but can be trivially bound to a TPM or other hardware key later (note: Raspberry Pi 5 has no native TPM).
 It also means that wiping a disk securely is cheap (erase the first megabyte of the partition, "destroying" the data by losing the volume master key).
 
 ### Firmware
@@ -43,6 +48,8 @@ It also means that wiping a disk securely is cheap (erase the first megabyte of 
 Cloud images only have generic Linux modules, supporting basic x86/ARM64 hardware and paravirtualisation (virtio, KVM, etc).
 
 Metal images ship with the full set of Linux firmware and driver modules, supporting more exotic storage and networking configurations.
+
+Pi images ship the Raspberry-Pi-specific kernel (`linux-raspi`) and firmware (`linux-firmware-raspi`), which together cover the Pi 5's onboard hardware.
 
 ## Networking
 
