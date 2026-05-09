@@ -21,9 +21,6 @@
 # disable_splash=1 skips the rainbow splash on boot — cosmetic, but keeps
 # the console clean for headless servers.
 [all]
-arm_64bit=1
-auto_initramfs=1
-disable_overscan=1
 disable_splash=1
 enable_uart=1
 dtparam=i2c_arm=on
@@ -31,5 +28,4 @@ dtparam=spi=on
 dtparam=pciex1_gen=3
 dtoverlay=tpm-slb9670
 kernel=vmlinuz
-cmdline=cmdline.txt
 initramfs initrd.img followkernel

@@ -360,7 +360,6 @@ if [ "$VARIANT" = "pi" ]; then
     check "Pi config.txt exists" test -f "$MNT/boot/firmware/config.txt"
     check "Pi cmdline.txt exists" test -f "$MNT/boot/firmware/cmdline.txt"
     if [ -f "$MNT/boot/firmware/config.txt" ]; then
-        check "config.txt enables arm_64bit" grep -q '^arm_64bit=1' "$MNT/boot/firmware/config.txt"
         check "config.txt selects vmlinuz kernel" grep -q '^kernel=vmlinuz' "$MNT/boot/firmware/config.txt"
         # r[verify image.boot.pi-uart]
         check "config.txt enables UART" grep -q '^enable_uart=1' "$MNT/boot/firmware/config.txt"
