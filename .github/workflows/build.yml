@@ -232,10 +232,7 @@ jobs:
           retention-days: 1
           archive: false
 
-  # Standalone Pi 5 EEPROM-config SD artifact. Architecture-independent —
-  # the .img boots on any Pi 5 regardless of where it was built. Runs on
-  # arm64 for consistency with the other Pi job; the underlying script
-  # works on amd64 too.
+  # Standalone Pi 5 EEPROM-config SD artifact
   pi-eeprom:
     runs-on: ubuntu-24.04-arm
 
@@ -637,17 +634,16 @@ jobs:
             |---------|----------|
             | metal     | Install directly on hardware |
             | cloud     | For cloud/VM deployments (including on-prem virtualisation) |
-            | pi        | Raspberry Pi 5 (arm64 only); flash to SD/USB/NVMe |
-            | pi-eeprom | Pi 5 EEPROM-config SD: flashes a known bootloader config and reboots |
+            | pi        | For Raspberry Pi 5 only |
+            | pi-eeprom | On Raspberry Pi 5: configure the firmware |
 
             ### Formats
-            | Format  | Use case |
-            |---------|----------|
-            |  iso    | Boot from USB for interactive or automated install |
-            |  raw    | Write directly to server disk |
-            |  vmdk   | VMware / vSphere |
-            |  qcow2  | KVM / libvirt / Proxmox |
-            |  img    | Pi EEPROM SD recovery image — flash with rpi-imager / dd / etc |
+            | Format | Use case |
+            |--------|----------|
+            |  iso   | Boot from USB for interactive or automated install |
+            |  raw   | Write directly to server disk |
+            |  vmdk  | VMware / vSphere |
+            |  qcow2 | KVM / libvirt / Proxmox |
           files: release/SHA256SUMS
           fail_on_unmatched_files: true
           make_latest: true

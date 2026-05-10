@@ -552,7 +552,6 @@ pi-eeprom:
     @mkdir -p "{{ pi_eeprom_dir }}"
     OUTPUT_DIR="{{ pi_eeprom_dir }}" image/build-pi-eeprom-sd.sh
 
-# r[impl image.pi-eeprom-sd.flashable]
 # Build loose files + flashable .img + zstd-compressed copy.
 pi-eeprom-img:
     #!/usr/bin/env bash
@@ -565,7 +564,7 @@ pi-eeprom-img:
     ( cd "{{ pi_eeprom_dir }}" && sha256sum recovery.bin pieeprom.upd pieeprom.sig $(basename "{{ pi_eeprom_img }}") $(basename "{{ pi_eeprom_img }}").zst > SHA256SUMS )
     ls -lh "{{ pi_eeprom_dir }}"
 
-# r[verify image.pi-eeprom-sd.artifact] r[verify image.pi-eeprom-sd.signature] r[verify image.pi-eeprom-sd.flashable]
+# r[verify image.pi-eeprom-sd.artifact]
 test-pi-eeprom:
     tests/test-pi-eeprom-sd.sh "{{ pi_eeprom_dir }}" "{{ pi_eeprom_img }}"
 

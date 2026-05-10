@@ -87,14 +87,13 @@ echo "Source EEPROM: pieeprom-$EEPROM_DATE.bin"
 STAGE="$WORK/stage"
 mkdir -p "$STAGE"
 
-# r[image.pi-eeprom-sd.bootconf+8]
+# r[image.pi-eeprom-sd.bootconf]
 echo "Injecting bootconf into pieeprom.upd ..."
 "$RPI_EEPROM_DIR/rpi-eeprom-config" \
     --config "$BOOTCONF" \
     --out "$STAGE/pieeprom.upd" \
     "$SOURCE_PIEEPROM"
 
-# r[image.pi-eeprom-sd.signature+2]
 echo "Generating pieeprom.sig ..."
 EEPROM_SHA="$(sha256sum "$STAGE/pieeprom.upd" | awk '{print $1}')"
 if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
@@ -121,7 +120,6 @@ if [ -z "$IMAGE_OUTPUT" ]; then
     exit 0
 fi
 
-# r[image.pi-eeprom-sd.flashable+3]
 echo "Building flashable image: $IMAGE_OUTPUT"
 
 IMG_TMP="$WORK/sd.img"

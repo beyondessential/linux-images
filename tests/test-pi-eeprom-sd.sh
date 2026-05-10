@@ -35,7 +35,6 @@ check "pieeprom.sig exists" test -f "$OUTPUT_DIR/pieeprom.sig"
 PIEEPROM_SIZE=$(stat -c %s "$OUTPUT_DIR/pieeprom.upd" 2>/dev/null || echo 0)
 check "pieeprom.upd is 2 MiB" test "$PIEEPROM_SIZE" -eq 2097152
 
-# r[verify image.pi-eeprom-sd.signature+2]
 SIG_SHA="$(sed -n 1p "$OUTPUT_DIR/pieeprom.sig" 2>/dev/null || true)"
 SIG_TS="$(sed -n 2p "$OUTPUT_DIR/pieeprom.sig" 2>/dev/null || true)"
 ACTUAL_SHA="$(sha256sum "$OUTPUT_DIR/pieeprom.upd" | awk '{print $1}')"
@@ -43,7 +42,7 @@ check "pieeprom.sig line 1 is sha256(pieeprom.upd)" test "$SIG_SHA" = "$ACTUAL_S
 check "pieeprom.sig line 2 starts with 'ts: <digits>'" \
     bash -c '[[ "'"$SIG_TS"'" =~ ^ts:\ [0-9]+$ ]]'
 
-# r[verify image.pi-eeprom-sd.bootconf+8]
+# r[verify image.pi-eeprom-sd.bootconf]
 # Settings are stored as plain text inside the EEPROM blob, so we can grep
 # strings(1)-style via plain bytes search. Each setting must appear as
 # `KEY=VALUE`.
@@ -59,7 +58,6 @@ check "HDMI_DELAY=0 baked in"           expect_setting HDMI_DELAY=0
 check "PSU_MAX_CURRENT=5000 baked in"   expect_setting PSU_MAX_CURRENT=5000
 
 if [ -n "$IMAGE_PATH" ] && [ -f "$IMAGE_PATH" ]; then
-    # r[verify image.pi-eeprom-sd.flashable+3]
     IMG_SIZE=$(stat -c %s "$IMAGE_PATH")
     check ".img is at most 64 MiB" test "$IMG_SIZE" -le $((64 * 1024 * 1024))
 

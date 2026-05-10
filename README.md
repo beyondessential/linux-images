@@ -14,8 +14,8 @@ AKA "Tamanu Linux"
 | cloud image | Other clouds or on-premise virtualisation |
 | metal image | Bare metal, direct-to-disk |
 | ISO | Bare metal, from USB |
-| pi image | Raspberry Pi 5, flash to SD/USB/NVMe |
-| pi-eeprom-config | Pi 5 SD card that flashes our standard bootloader config and reboots |
+| pi image | Raspberry Pi 5 |
+| pi eeprom | Configures Pi 5 firmware |
 
 (Prefer to use USB3 drives if you can, USB2 will be very slow.)
 
