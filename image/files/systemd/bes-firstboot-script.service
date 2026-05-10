@@ -1,0 +1,16 @@
+# r[image.firstboot.script]
+[Unit]
+Description=Fetch and run a pre-staged first-boot script
+After=bes-tailscale-firstboot-auth.service
+After=tailscaled.service network-online.target local-fs.target
+Wants=network-online.target
+ConditionPathExists=|/etc/bes/firstboot-script
+ConditionPathExists=|/boot/firmware/firstboot-script
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bes-firstboot-script
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

@@ -331,6 +331,11 @@ install -m 755 /tmp/files/bes-tailscale-firstboot-auth /usr/local/bin/bes-tailsc
 install -m 644 /tmp/files/systemd/bes-tailscale-firstboot-auth.service /etc/systemd/system/bes-tailscale-firstboot-auth.service
 systemctl enable bes-tailscale-firstboot-auth.service
 
+# r[image.firstboot.script]
+install -m 755 /tmp/files/bes-firstboot-script /usr/local/bin/bes-firstboot-script
+install -m 644 /tmp/files/systemd/bes-firstboot-script.service /etc/systemd/system/bes-firstboot-script.service
+systemctl enable bes-firstboot-script.service
+
 # ============================================================
 # Network
 # ============================================================
