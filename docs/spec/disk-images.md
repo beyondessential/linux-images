@@ -316,28 +316,41 @@ A weekly cron job must be present to run `apt install -y tailscale`.
 ## First-boot script
 
 > r[image.firstboot.script]
-> A systemd service must be installed and enabled with run conditions that
-> trigger when either of the following non-empty manifest files exists:
+> A systemd service must be installed and enabled that runs at boot when the
+> following two conditions both hold:
 >
-> - `/etc/bes/firstboot-script` — written by the installer onto the root
->   filesystem.
-> - `/boot/firmware/firstboot-script` — operator drop-in on the `pi` variant's
->   firmware FAT partition.
+> 1. The marker file `/etc/bes/firstboot-script.done` does not exist.
+> 2. At least one of the manifest paths exists:
+>    - `/etc/bes/firstboot-script` — installer-staged, on the root filesystem.
+>    - `/boot/firmware/firstboot-script` — operator drop-in on the `pi`
+>      variant's firmware FAT partition.
 >
-> Each manifest file must contain (ignoring blank lines and lines whose first
-> non-whitespace character is `#`) exactly two meaningful lines, in order:
+> The shipped image must include an empty manifest file at
+> `/etc/bes/firstboot-script` (every variant) and at
+> `/boot/firmware/firstboot-script` (`pi` variant only).
+>
+> Manifest format (blank lines and lines whose first non-whitespace character
+> is `#` are ignored): exactly two meaningful lines, in order:
 >
 > 1. A URL using either the `http` or `https` scheme.
 > 2. A checksum in the form `sha256:<64-hex>`.
 >
-> When triggered, the service must download the URL, verify that the sha256
-> digest of the downloaded bytes matches the manifest, then execute the
-> downloaded file as root.
+> A manifest with no meaningful lines (empty or comments-only) must be
+> treated as "no script to run": the service writes the marker and returns
+> success without fetching anything.
 >
-> On a successful download and checksum verification, the manifest the service
-> consumed must be deleted regardless of the executed file's exit status. If
-> the download fails or the checksum does not match, the manifest must be left
-> in place so a subsequent boot retries.
+> When a manifest with meaningful content exists, the service must download
+> the URL, verify that the sha256 digest of the downloaded bytes matches
+> the manifest, then execute the downloaded file as root.
+>
+> The marker `/etc/bes/firstboot-script.done` and the deletion of all
+> manifest files must happen after a successful download+checksum (or after
+> determining that no manifest has content), and before the downloaded
+> file is executed. The marker therefore reflects "this image has had its
+> first-boot opportunity consumed", independent of whether the operator's
+> script itself succeeded. If the download fails or the checksum does not
+> match, neither the marker nor any manifest file may be touched, so a
+> subsequent boot retries.
 >
 > On failure (anywhere in the pipeline) the service must log the error but
 > must not prevent boot. The service must be ordered after the tailscale

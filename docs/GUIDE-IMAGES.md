@@ -116,14 +116,16 @@ You can run `ts-up` once logged in to connect Tailscale.
 This will ask for an "authkey", which you can paste in if you have one.
 Otherwise, it will print a URL and a QR code (useful when you can't copy text from the console) to do interactive authentication; send it to BES (or use it directly if you're connecting to your own Tailscale account).
 
-For `pi` images, you can also pre-stage an auth key without booting first: write the key into a file named `tailscale-authkey` on the FAT `firmware` partition (the one mounted at `/boot/firmware` once running). On first boot, with network reachable and tailscale not yet authenticated, the system will use the key to join the tailnet, delete the file, and tighten the SSH firewall — all unattended. If tailscale is already authenticated when the system boots, the file is left in place untouched.
+For `pi` images, you can also pre-stage an auth key without booting first: write the key into a file named `tailscale-authkey` on the FAT `FIRMWARE` partition (the first partition on the disk).
+On first boot, with network reachable and tailscale not yet authenticated, the system will use the key to join the tailnet and delete the file.
+If tailscale is already authenticated when the system boots, the file is left in place untouched.
 
 Once Tailscale is successfully connected, SSH access will be forbidden outside of LAN and link-local IP ranges.
 The only access available remotely will be via Tailscale.
 
 ## First-boot script
 
-You can have the system fetch and run an arbitrary script on first boot by dropping a manifest file at `/boot/firmware/firstboot-script` (pi images, pre-flash) or `/etc/bes/firstboot-script` (any image, installer-staged).
+You can have the system fetch and run an arbitrary script on first boot by dropping a manifest file at `/boot/firmware/firstboot-script` (pi images) or `/etc/bes/firstboot-script` (other images).
 
 The manifest is two lines (blank lines and `#` comments are ignored):
 
@@ -132,9 +134,11 @@ https://example.com/path/to/script.sh
 sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-On boot — after the network is up and after the tailscale first-boot-auth has had a chance to run — the system downloads the URL, verifies the sha256 against the bytes received, then executes the file as root. The script can be a shell script, a binary, or anything with a working shebang; it is `chmod +x`'d before execution.
+On boot, after the network is up, and after the tailscale first-boot-auth has had a chance to run, the system downloads the URL, verifies the sha256 against the bytes received, then executes the file as root.
+The script can be a shell script, a binary, or anything with a working shebang; it is `chmod +x`'d before execution.
 
-The manifest is deleted once the download and checksum verify successfully, regardless of the script's exit status, so the script runs at most once. If the download fails or the checksum does not match, the manifest is left in place and the next boot retries.
+The manifest is deleted once the download and checksum verify successfully, regardless of the script's exit status, so the script runs at most once.
+If the download fails or the checksum does not match, the manifest is left in place and the next boot retries.
 
 ## Disk layout
 
