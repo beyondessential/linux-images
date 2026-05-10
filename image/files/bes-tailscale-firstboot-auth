@@ -1,17 +1,48 @@
 #!/bin/bash
 # r[image.tailscale.firstboot-auth]
 #
-# Authenticate to Tailscale using an auth key left by the installer at
-# /etc/bes/tailscale-authkey. On success, delete the key file and
-# restrict the SSH UFW rule to LAN ranges and the tailscale0 interface
-# (the same firewall tightening that ts-up performs).
+# Authenticate to Tailscale using a pre-staged auth key. Two locations are
+# checked, in priority order:
 #
-# This script is invoked by bes-tailscale-firstboot-auth.service, which
-# has ConditionPathExists=/etc/bes/tailscale-authkey so it only runs
-# when the key file is present.
+#   /etc/bes/tailscale-authkey       — written by the installer onto the
+#                                      root filesystem.
+#   /boot/firmware/tailscale-authkey — operator drop-in on the pi variant's
+#                                      firmware FAT partition; lets an
+#                                      operator pre-stage the key from a
+#                                      workstation before the device's first
+#                                      boot, so it joins the tailnet without
+#                                      console or LAN access.
+#
+# This script is invoked by bes-tailscale-firstboot-auth.service, which has
+# triggering ConditionPathExists= entries for both paths. If tailscale is
+# already authenticated, the script exits cleanly and does not consume or
+# modify any key file. On success the consumed key file is deleted and the
+# SSH UFW rule is restricted to LAN ranges and the tailscale0 interface
+# (the same firewall tightening that ts-up performs).
 set -euo pipefail
 
-KEY_FILE="/etc/bes/tailscale-authkey"
+KEY_PATHS=(
+    /etc/bes/tailscale-authkey
+    /boot/firmware/tailscale-authkey
+)
+
+if tailscale status > /dev/null 2>&1; then
+    echo "Tailscale is already authenticated; nothing to do."
+    exit 0
+fi
+
+KEY_FILE=""
+for candidate in "${KEY_PATHS[@]}"; do
+    if [ -s "$candidate" ]; then
+        KEY_FILE="$candidate"
+        break
+    fi
+done
+
+if [ -z "$KEY_FILE" ]; then
+    echo "ERROR: no non-empty auth-key file found at any of: ${KEY_PATHS[*]}" >&2
+    exit 1
+fi
 
 AUTH_KEY="$(head -n1 "$KEY_FILE" | tr -d '[:space:]')"
 if [ -z "$AUTH_KEY" ]; then
@@ -19,7 +50,7 @@ if [ -z "$AUTH_KEY" ]; then
     exit 1
 fi
 
-echo "Authenticating to Tailscale..."
+echo "Authenticating to Tailscale (key from $KEY_FILE)..."
 if ! tailscale up --auth-key="$AUTH_KEY" --ssh; then
     echo "ERROR: tailscale up failed" >&2
     exit 1
@@ -27,10 +58,8 @@ fi
 
 echo "Tailscale authenticated successfully."
 
-# Delete the key file now that it has been consumed.
 rm -f "$KEY_FILE"
 
-# Restrict SSH to LAN and Tailscale (same logic as ts-up).
 echo "Restricting SSH access to LAN and Tailscale..."
 
 ufw delete allow 22/tcp 2>/dev/null || true
