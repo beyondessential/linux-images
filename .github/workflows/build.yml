@@ -544,12 +544,12 @@ jobs:
       - run: ls -lh release/
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: release/*
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ap-southeast-2
           role-to-assume: arn:aws:iam::143295493206:role/gha-linux-images-upload
@@ -575,7 +575,7 @@ jobs:
       - name: Invalidate CloudFront cache
         run: aws cloudfront create-invalidation --distribution-id=EDAG0UBS1MN74 --paths '/linux-images/*'
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           body: |
             **Downloads: <https://tools.ops.tamanu.io/linux-images/${{ env.VERSION }}/>**
@@ -623,7 +623,7 @@ jobs:
           path: output/${{ matrix.arch }}/cloud/
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ap-southeast-2
           role-to-assume: arn:aws:iam::143295493206:role/gha-linux-images-upload
