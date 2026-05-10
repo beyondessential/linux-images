@@ -313,6 +313,38 @@ success restricts the SSH UFW rule to LAN ranges (RFC 1918, ULA) and the
 r[image.tailscale.auto-update]
 A weekly cron job must be present to run `apt install -y tailscale`.
 
+## First-boot script
+
+> r[image.firstboot.script]
+> A systemd service must be installed and enabled with run conditions that
+> trigger when either of the following non-empty manifest files exists:
+>
+> - `/etc/bes/firstboot-script` — written by the installer onto the root
+>   filesystem.
+> - `/boot/firmware/firstboot-script` — operator drop-in on the `pi` variant's
+>   firmware FAT partition.
+>
+> Each manifest file must contain (ignoring blank lines and lines whose first
+> non-whitespace character is `#`) exactly two meaningful lines, in order:
+>
+> 1. A URL using either the `http` or `https` scheme.
+> 2. A checksum in the form `sha256:<64-hex>`.
+>
+> When triggered, the service must download the URL, verify that the sha256
+> digest of the downloaded bytes matches the manifest, then execute the
+> downloaded file as root.
+>
+> On a successful download and checksum verification, the manifest the service
+> consumed must be deleted regardless of the executed file's exit status. If
+> the download fails or the checksum does not match, the manifest must be left
+> in place so a subsequent boot retries.
+>
+> On failure (anywhere in the pipeline) the service must log the error but
+> must not prevent boot. The service must be ordered after the tailscale
+> first-boot auth service from `r[image.tailscale.firstboot-auth]`, but must
+> not require that service to succeed. The service must additionally be
+> ordered after `network-online.target` and `local-fs.target`.
+
 ## Snapper
 
 r[image.snapper.root]
