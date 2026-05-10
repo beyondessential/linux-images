@@ -116,6 +116,8 @@ You can run `ts-up` once logged in to connect Tailscale.
 This will ask for an "authkey", which you can paste in if you have one.
 Otherwise, it will print a URL and a QR code (useful when you can't copy text from the console) to do interactive authentication; send it to BES (or use it directly if you're connecting to your own Tailscale account).
 
+For `pi` images, you can also pre-stage an auth key without booting first: write the key into a file named `tailscale-authkey` on the FAT `firmware` partition (the one mounted at `/boot/firmware` once running). On first boot, with network reachable and tailscale not yet authenticated, the system will use the key to join the tailnet, delete the file, and tighten the SSH firewall — all unattended. If tailscale is already authenticated when the system boots, the file is left in place untouched.
+
 Once Tailscale is successfully connected, SSH access will be forbidden outside of LAN and link-local IP ranges.
 The only access available remotely will be via Tailscale.
 
