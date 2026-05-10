@@ -76,6 +76,10 @@ output_iso_vdi := output_arch_dir / "bes-installer-" + ubuntu_version + "-" + ar
 iso_base_tarball := work_dir / "iso-base.tar"
 iso_rootfs_dir := work_dir / "iso-rootfs"
 
+# Pi 5 EEPROM-config SD artifact (arch-independent)
+pi_eeprom_dir := "output" / "pi-eeprom"
+pi_eeprom_img := pi_eeprom_dir / "bes-pi-eeprom-config.img"
+
 # --- Rust installer settings ---
 
 cargo_target := if arch == "amd64" { "x86_64-unknown-linux-gnu" } else if arch == "arm64" { "aarch64-unknown-linux-gnu" } else { error("Unsupported architecture") }
@@ -338,6 +342,13 @@ check-deps:
     req blkid          "Arch: pacman -S util-linux / Debian: apt install util-linux"
     echo ""
 
+    echo "=== Optional: Pi EEPROM SD artifact (just pi-eeprom-img) ==="
+    opt git            "Arch: pacman -S git / Debian: apt install git"
+    opt python3        "Arch: pacman -S python / Debian: apt install python3"
+    opt mcopy          "Arch: pacman -S mtools / Debian: apt install mtools"
+    opt sfdisk         "Arch: pacman -S util-linux / Debian: apt install util-linux"
+    echo ""
+
     echo "=== Optional: boot smoke tests (just test-boot) ==="
     opt qemu-system-x86_64  "Arch: pacman -S qemu-system-x86 / Debian: apt install qemu-system-x86"
     opt qemu-system-aarch64 "Arch: pacman -S qemu-system-aarch64 / Debian: apt install qemu-system-arm"
@@ -529,6 +540,34 @@ build: vmdk qcow && compress checksum
 # Build pi-only artifacts: raw + compress + checksum
 pi-build: raw && compress checksum
 
+# ============================================================
+# Pi 5 EEPROM-config SD artifact
+# ============================================================
+# A standalone SD-card artifact that flashes the Pi 5 EEPROM with a known
+# bootloader config and reboots. Independent of the OS image variants.
+
+# r[impl image.pi-eeprom-sd.artifact]
+# Build the loose files (recovery.bin, pieeprom.upd, pieeprom.sig).
+pi-eeprom:
+    @mkdir -p "{{ pi_eeprom_dir }}"
+    OUTPUT_DIR="{{ pi_eeprom_dir }}" image/build-pi-eeprom-sd.sh
+
+# Build loose files + flashable .img + zstd-compressed copy.
+pi-eeprom-img:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{ pi_eeprom_dir }}"
+    OUTPUT_DIR="{{ pi_eeprom_dir }}" \
+        IMAGE_OUTPUT="{{ pi_eeprom_img }}" \
+        image/build-pi-eeprom-sd.sh
+    zstd -6 -f -o "{{ pi_eeprom_img }}.zst" "{{ pi_eeprom_img }}"
+    ( cd "{{ pi_eeprom_dir }}" && sha256sum recovery.bin pieeprom.upd pieeprom.sig $(basename "{{ pi_eeprom_img }}") $(basename "{{ pi_eeprom_img }}").zst > SHA256SUMS )
+    ls -lh "{{ pi_eeprom_dir }}"
+
+# r[verify image.pi-eeprom-sd.artifact]
+test-pi-eeprom:
+    tests/test-pi-eeprom-sd.sh "{{ pi_eeprom_dir }}" "{{ pi_eeprom_img }}"
+
 # Build all variants for the current architecture (pi only on arm64)
 build-all-variants:
     #!/usr/bin/env bash
@@ -546,6 +585,7 @@ build-all:
     just arch=arm64 variant=metal build
     just arch=arm64 variant=cloud build
     just arch=arm64 variant=pi pi-build
+    just pi-eeprom-img
 
 # Verify output formats and checksums
 
