@@ -284,13 +284,31 @@ success restricts the SSH UFW rule to LAN ranges (RFC 1918, ULA) and the
 `tailscale0` interface.
 
 > r[image.tailscale.firstboot-auth]
-> A systemd service must be installed and enabled with a run condition for the file `/etc/bes/tailscale-authkey` existing.
-> It must authenticate the server to tailscale using the authkey in the file, and enable `--ssh`.
+> A systemd service must be installed and enabled with run conditions that
+> trigger when either of the following non-empty files exists:
 >
-> On success the service must delete the key file and restrict the SSH UFW rule to LAN ranges and the `tailscale0` interface (the same firewall tightening that `ts-up` performs).
-> The service must remain enabled: the key file not existing will effectively disable it, and it leaves open the possibility to re-enable by adding the file.
+> - `/etc/bes/tailscale-authkey` — written by the installer onto the root
+>   filesystem.
+> - `/boot/firmware/tailscale-authkey` — operator drop-in on the `pi` variant's
+>   firmware FAT partition. An operator can write this file from a workstation
+>   (mounting the SD card or USB drive before first boot) so the Pi joins the
+>   tailnet on first boot without needing console or LAN access.
 >
-> On failure the service must log the error but not prevent boot. The service must be ordered after `tailscaled.service` and `network-online.target`.
+> When triggered, the service must authenticate to tailscale using the auth key
+> read from the first of those files that exists, and enable `--ssh`.
+>
+> If tailscale is already authenticated when the service runs, it must exit
+> cleanly without consuming or modifying any auth-key file.
+>
+> On success the service must delete the key file it consumed and restrict the
+> SSH UFW rule to LAN ranges and the `tailscale0` interface (the same firewall
+> tightening that `ts-up` performs).
+> The service must remain enabled: with neither key file present the service
+> is effectively a no-op, and it leaves open the possibility to re-enable
+> first-boot auth by adding either file.
+>
+> On failure the service must log the error but not prevent boot. The service
+> must be ordered after `tailscaled.service` and `network-online.target`.
 
 r[image.tailscale.auto-update]
 A weekly cron job must be present to run `apt install -y tailscale`.
