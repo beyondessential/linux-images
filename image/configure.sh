@@ -336,6 +336,15 @@ install -m 755 /tmp/files/bes-firstboot-script /usr/local/bin/bes-firstboot-scri
 install -m 644 /tmp/files/systemd/bes-firstboot-script.service /etc/systemd/system/bes-firstboot-script.service
 systemctl enable bes-firstboot-script.service
 
+# Ship empty default manifests at both supported locations. With the marker-
+# file gate on the service, this prevents anyone with post-boot write access
+# to the unencrypted firmware partition from introducing a first-boot script
+# on an image that didn't ship with one.
+install -m 600 /dev/null /etc/bes/firstboot-script
+if [ "$VARIANT" = "pi" ]; then
+    install -m 600 /dev/null /boot/firmware/firstboot-script
+fi
+
 # ============================================================
 # Network
 # ============================================================

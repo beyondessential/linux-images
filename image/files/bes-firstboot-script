@@ -1,99 +1,101 @@
 #!/bin/bash
 # r[image.firstboot.script]
-#
-# Fetch and execute a pre-staged first-boot script. The manifest file is read
-# from the first of these locations that exists and is non-empty:
-#
-#   /etc/bes/firstboot-script       — installer-staged, on the root filesystem.
-#   /boot/firmware/firstboot-script — operator drop-in on the pi firmware FAT
-#                                     partition (pre-flash setup).
-#
-# Manifest format: two meaningful lines (blank lines and `#` comments are
-# ignored), in order:
-#
-#   <url>
-#   sha256:<64-hex>
-#
-# The script downloads the URL, verifies the sha256, then executes the file as
-# root. The manifest is deleted on a successful download+verify regardless of
-# the executed file's exit status; download or checksum failures leave the
-# manifest in place for a retry on the next boot.
 set -euo pipefail
 
 MANIFEST_PATHS=(
     /etc/bes/firstboot-script
     /boot/firmware/firstboot-script
 )
+MARKER=/etc/bes/firstboot-script.done
 
 MANIFEST=""
+LINES=()
 for candidate in "${MANIFEST_PATHS[@]}"; do
-    if [ -s "$candidate" ]; then
+    [ -e "$candidate" ] || continue
+    mapfile -t candidate_lines < <(
+        grep -vE '^[[:space:]]*(#|$)' "$candidate" \
+            | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+    )
+    if [ "${#candidate_lines[@]}" -gt 0 ]; then
         MANIFEST="$candidate"
+        LINES=("${candidate_lines[@]}")
         break
     fi
 done
 
-if [ -z "$MANIFEST" ]; then
-    echo "ERROR: no non-empty firstboot manifest found at any of: ${MANIFEST_PATHS[*]}" >&2
-    exit 1
-fi
+WORKDIR=""
+DOWNLOAD=""
+cleanup() { [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"; }
+trap cleanup EXIT
 
-mapfile -t LINES < <(
-    grep -vE '^[[:space:]]*(#|$)' "$MANIFEST" \
-        | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
-)
-if [ "${#LINES[@]}" -lt 2 ]; then
-    echo "ERROR: $MANIFEST must contain a URL line and a sha256 line" >&2
-    exit 1
-fi
-
-URL="${LINES[0]}"
-SHA_LINE="${LINES[1]}"
-
-case "$URL" in
-    http://*|https://*) ;;
-    *)
-        echo "ERROR: URL must use http or https scheme; got '$URL'" >&2
+if [ -n "$MANIFEST" ]; then
+    if [ "${#LINES[@]}" -lt 2 ]; then
+        echo "ERROR: $MANIFEST must contain a URL line and a sha256 line" >&2
         exit 1
-        ;;
-esac
+    fi
 
-case "$SHA_LINE" in
-    sha256:*)
-        EXPECTED_SHA="${SHA_LINE#sha256:}"
-        EXPECTED_SHA="${EXPECTED_SHA,,}"
-        ;;
-    *)
-        echo "ERROR: checksum must be 'sha256:<hex>'; got '$SHA_LINE'" >&2
+    URL="${LINES[0]}"
+    SHA_LINE="${LINES[1]}"
+
+    case "$URL" in
+        http://*|https://*) ;;
+        *)
+            echo "ERROR: URL must use http or https scheme; got '$URL'" >&2
+            exit 1
+            ;;
+    esac
+
+    case "$SHA_LINE" in
+        sha256:*)
+            EXPECTED_SHA="${SHA_LINE#sha256:}"
+            EXPECTED_SHA="${EXPECTED_SHA,,}"
+            ;;
+        *)
+            echo "ERROR: checksum must be 'sha256:<hex>'; got '$SHA_LINE'" >&2
+            exit 1
+            ;;
+    esac
+
+    if ! [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{64}$ ]]; then
+        echo "ERROR: sha256 must be 64 hex characters; got '$EXPECTED_SHA'" >&2
         exit 1
-        ;;
-esac
+    fi
 
-if ! [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{64}$ ]]; then
-    echo "ERROR: sha256 must be 64 hex characters; got '$EXPECTED_SHA'" >&2
-    exit 1
+    WORKDIR="$(mktemp -d --tmpdir=/run bes-firstboot-script.XXXXXX)"
+    DOWNLOAD="$WORKDIR/script"
+
+    echo "Fetching $URL..."
+    if ! curl -fSL --max-time 300 --retry 3 --retry-delay 5 -o "$DOWNLOAD" "$URL"; then
+        echo "ERROR: failed to download $URL" >&2
+        exit 1
+    fi
+
+    ACTUAL_SHA="$(sha256sum "$DOWNLOAD" | awk '{print $1}')"
+    if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+        echo "ERROR: sha256 mismatch: expected $EXPECTED_SHA, got $ACTUAL_SHA" >&2
+        exit 1
+    fi
+
+    echo "Checksum verified."
+else
+    echo "No manifest with content; marking firstboot-script consumed."
 fi
 
-WORKDIR="$(mktemp -d --tmpdir=/run bes-firstboot-script.XXXXXX)"
-trap 'rm -rf "$WORKDIR"' EXIT
-DOWNLOAD="$WORKDIR/script"
+mkdir -p "$(dirname "$MARKER")"
+: > "$MARKER"
+for candidate in "${MANIFEST_PATHS[@]}"; do
+    rm -f "$candidate"
+done
 
-echo "Fetching $URL..."
-if ! curl -fSL --max-time 300 --retry 3 --retry-delay 5 -o "$DOWNLOAD" "$URL"; then
-    echo "ERROR: failed to download $URL" >&2
-    exit 1
+if [ -n "$DOWNLOAD" ]; then
+    chmod +x "$DOWNLOAD"
+    echo "Executing $URL..."
+    set +e
+    "$DOWNLOAD"
+    rc=$?
+    set -e
+    if [ "$rc" -ne 0 ]; then
+        echo "WARNING: firstboot script exited with status $rc" >&2
+        exit "$rc"
+    fi
 fi
-
-ACTUAL_SHA="$(sha256sum "$DOWNLOAD" | awk '{print $1}')"
-if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-    echo "ERROR: sha256 mismatch: expected $EXPECTED_SHA, got $ACTUAL_SHA" >&2
-    exit 1
-fi
-
-echo "Checksum verified; consuming manifest $MANIFEST."
-rm -f "$MANIFEST"
-
-chmod +x "$DOWNLOAD"
-
-echo "Executing $URL..."
-"$DOWNLOAD"

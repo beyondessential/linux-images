@@ -125,7 +125,7 @@ The only access available remotely will be via Tailscale.
 
 ## First-boot script
 
-You can have the system fetch and run an arbitrary script on first boot by dropping a manifest file at `/boot/firmware/firstboot-script` (pi images) or `/etc/bes/firstboot-script` (other images).
+You can have the system fetch and run an arbitrary script *once*, on first boot, by editing the manifest file the image ships with: `/boot/firmware/firstboot-script` on pi images (mount the FAT partition on a workstation before first boot), or `/etc/bes/firstboot-script` on any image (e.g. via the installer).
 
 The manifest is two lines (blank lines and `#` comments are ignored):
 
@@ -137,8 +137,7 @@ sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 On boot, after the network is up, and after the tailscale first-boot-auth has had a chance to run, the system downloads the URL, verifies the sha256 against the bytes received, then executes the file as root.
 The script can be a shell script, a binary, or anything with a working shebang; it is `chmod +x`'d before execution.
 
-The manifest is deleted once the download and checksum verify successfully, regardless of the script's exit status, so the script runs at most once.
-If the download fails or the checksum does not match, the manifest is left in place and the next boot retries.
+This runs at most once per image. If the download fails or the checksum does not match, the next boot retries.
 
 ## Disk layout
 

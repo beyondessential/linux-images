@@ -4,6 +4,7 @@ Description=Fetch and run a pre-staged first-boot script
 After=bes-tailscale-firstboot-auth.service
 After=tailscaled.service network-online.target local-fs.target
 Wants=network-online.target
+ConditionPathExists=!/etc/bes/firstboot-script.done
 ConditionPathExists=|/etc/bes/firstboot-script
 ConditionPathExists=|/boot/firmware/firstboot-script
 
