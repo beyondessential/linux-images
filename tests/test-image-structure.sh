@@ -308,6 +308,18 @@ check "/usr/local/bin/ts-up exists" test -x "$MNT/usr/local/bin/ts-up"
 # r[verify image.tailscale.firstboot-auth]
 check "/usr/local/bin/bes-tailscale-firstboot-auth exists" test -x "$MNT/usr/local/bin/bes-tailscale-firstboot-auth"
 
+# r[verify image.firstboot.script]
+check "/usr/local/bin/bes-firstboot-script exists" test -x "$MNT/usr/local/bin/bes-firstboot-script"
+check "/etc/systemd/system/bes-firstboot-script.service exists" test -f "$MNT/etc/systemd/system/bes-firstboot-script.service"
+check "/etc/bes/firstboot-script default manifest is empty" test -f "$MNT/etc/bes/firstboot-script" -a ! -s "$MNT/etc/bes/firstboot-script"
+check "/etc/bes/firstboot-script.done marker absent in pristine image" test ! -e "$MNT/etc/bes/firstboot-script.done"
+check "bes-firstboot-script.service is gated on marker absence" \
+    grep -qx 'ConditionPathExists=!/etc/bes/firstboot-script.done' "$MNT/etc/systemd/system/bes-firstboot-script.service"
+if [ "$VARIANT" = "pi" ]; then
+    check "/boot/firmware/firstboot-script default manifest is empty (pi)" \
+        test -f "$MNT/boot/firmware/firstboot-script" -a ! -s "$MNT/boot/firmware/firstboot-script"
+fi
+
 # r[verify image.growth.service+3]
 check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/grow-root-filesystem"
 
@@ -698,6 +710,9 @@ check_service_enabled "ufw.service"                   "ufw is enabled"
 check_service_enabled "tailscaled.service"            "tailscaled is enabled"
 # r[verify image.tailscale.firstboot-auth]
 check_service_enabled "bes-tailscale-firstboot-auth.service" "bes-tailscale-firstboot-auth is enabled"
+
+# r[verify image.firstboot.script]
+check_service_enabled "bes-firstboot-script.service"  "bes-firstboot-script is enabled"
 
 # r[verify image.snapper.timers]
 check_service_enabled "snapper-timeline.timer"        "snapper-timeline.timer is enabled"

@@ -284,16 +284,79 @@ success restricts the SSH UFW rule to LAN ranges (RFC 1918, ULA) and the
 `tailscale0` interface.
 
 > r[image.tailscale.firstboot-auth]
-> A systemd service must be installed and enabled with a run condition for the file `/etc/bes/tailscale-authkey` existing.
-> It must authenticate the server to tailscale using the authkey in the file, and enable `--ssh`.
+> A systemd service must be installed and enabled with run conditions that
+> trigger when either of the following non-empty files exists:
 >
-> On success the service must delete the key file and restrict the SSH UFW rule to LAN ranges and the `tailscale0` interface (the same firewall tightening that `ts-up` performs).
-> The service must remain enabled: the key file not existing will effectively disable it, and it leaves open the possibility to re-enable by adding the file.
+> - `/etc/bes/tailscale-authkey` — written by the installer onto the root
+>   filesystem.
+> - `/boot/firmware/tailscale-authkey` — operator drop-in on the `pi` variant's
+>   firmware FAT partition. An operator can write this file from a workstation
+>   (mounting the SD card or USB drive before first boot) so the Pi joins the
+>   tailnet on first boot without needing console or LAN access.
 >
-> On failure the service must log the error but not prevent boot. The service must be ordered after `tailscaled.service` and `network-online.target`.
+> When triggered, the service must authenticate to tailscale using the auth key
+> read from the first of those files that exists, and enable `--ssh`.
+>
+> If tailscale is already authenticated when the service runs, it must exit
+> cleanly without consuming or modifying any auth-key file.
+>
+> On success the service must delete the key file it consumed and restrict the
+> SSH UFW rule to LAN ranges and the `tailscale0` interface (the same firewall
+> tightening that `ts-up` performs).
+> The service must remain enabled: with neither key file present the service
+> is effectively a no-op, and it leaves open the possibility to re-enable
+> first-boot auth by adding either file.
+>
+> On failure the service must log the error but not prevent boot. The service
+> must be ordered after `tailscaled.service` and `network-online.target`.
 
 r[image.tailscale.auto-update]
 A weekly cron job must be present to run `apt install -y tailscale`.
+
+## First-boot script
+
+> r[image.firstboot.script]
+> A systemd service must be installed and enabled that runs at boot when the
+> following two conditions both hold:
+>
+> 1. The marker file `/etc/bes/firstboot-script.done` does not exist.
+> 2. At least one of the manifest paths exists:
+>    - `/etc/bes/firstboot-script` — installer-staged, on the root filesystem.
+>    - `/boot/firmware/firstboot-script` — operator drop-in on the `pi`
+>      variant's firmware FAT partition.
+>
+> The shipped image must include an empty manifest file at
+> `/etc/bes/firstboot-script` (every variant) and at
+> `/boot/firmware/firstboot-script` (`pi` variant only).
+>
+> Manifest format (blank lines and lines whose first non-whitespace character
+> is `#` are ignored): exactly two meaningful lines, in order:
+>
+> 1. A URL using either the `http` or `https` scheme.
+> 2. A checksum in the form `sha256:<64-hex>`.
+>
+> A manifest with no meaningful lines (empty or comments-only) must be
+> treated as "no script to run": the service writes the marker and returns
+> success without fetching anything.
+>
+> When a manifest with meaningful content exists, the service must download
+> the URL, verify that the sha256 digest of the downloaded bytes matches
+> the manifest, then execute the downloaded file as root.
+>
+> The marker `/etc/bes/firstboot-script.done` and the deletion of all
+> manifest files must happen after a successful download+checksum (or after
+> determining that no manifest has content), and before the downloaded
+> file is executed. The marker therefore reflects "this image has had its
+> first-boot opportunity consumed", independent of whether the operator's
+> script itself succeeded. If the download fails or the checksum does not
+> match, neither the marker nor any manifest file may be touched, so a
+> subsequent boot retries.
+>
+> On failure (anywhere in the pipeline) the service must log the error but
+> must not prevent boot. The service must be ordered after the tailscale
+> first-boot auth service from `r[image.tailscale.firstboot-auth]`, but must
+> not require that service to succeed. The service must additionally be
+> ordered after `network-online.target` and `local-fs.target`.
 
 ## Snapper
 
