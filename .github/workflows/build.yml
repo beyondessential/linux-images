@@ -344,6 +344,7 @@ jobs:
       matrix:
         arch: [amd64, arm64]
         suite: [noble, resolute]
+        shard: [1, 2, 3]
     runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v6
@@ -376,12 +377,13 @@ jobs:
         run: ls -lh output/${{ matrix.arch }}/
 
       - name: Run container isolation test # r[verify installer.container.isolation]
+        if: matrix.shard == 1
         run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal test-container-isolation
         timeout-minutes: 5
 
-      - name: Run container install test (all scenarios, fake-LUKS auto-detected)
-        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} test-container-install
-        timeout-minutes: 30
+      - name: Run container install test (shard ${{ matrix.shard }}/3, fake-LUKS auto-detected)
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} container_test_filter=shard:${{ matrix.shard }}/3 test-container-install
+        timeout-minutes: 15
 
   all-green:
     name: All builds green

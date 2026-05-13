@@ -8,6 +8,8 @@
 #   filter: one of the following (omit to run all scenarios):
 #     "encrypted"          — run only encrypted scenarios (tpm/keyfile)
 #     "plain"              — run only plain (unencrypted) scenarios
+#     "shard:I/N"          — run shard I of N (1-indexed, round-robin over
+#                            scenarios sorted by name)
 #     "<scenario-name>"    — run a single scenario by exact name
 #     "<substring>"        — run all scenarios whose name contains the string
 #
@@ -120,24 +122,48 @@ if [ ! -f "$SCENARIOS_JSON" ]; then
     exit 1
 fi
 
+# Sort by name so the run order — and any shard partitioning — is stable
+# regardless of how scenarios are arranged in the source JSON.
+SCENARIOS_SORTED=$(jq -c 'sort_by(.name)' "$SCENARIOS_JSON")
+
 # Helper: read a string field from a scenario JSON object, defaulting to "".
 jq_str() { echo "$1" | jq -r "$2 // empty"; }
 
 # Apply filter if specified. Accepts category names ("encrypted"/"plain"),
-# an exact scenario name, or a substring match.
+# a shard spec ("shard:I/N"), an exact scenario name, or a substring match.
 if [ -n "$FILTER" ]; then
     case "$FILTER" in
         encrypted|metal)
-            SCENARIOS_FILTERED=$(jq -c '[.[] | select(."disk-encryption" == "tpm" or ."disk-encryption" == "keyfile")]' "$SCENARIOS_JSON")
+            SCENARIOS_FILTERED=$(echo "$SCENARIOS_SORTED" | jq -c '[.[] | select(."disk-encryption" == "tpm" or ."disk-encryption" == "keyfile")]')
             ;;
         plain|cloud)
-            SCENARIOS_FILTERED=$(jq -c '[.[] | select(."disk-encryption" == "none")]' "$SCENARIOS_JSON")
+            SCENARIOS_FILTERED=$(echo "$SCENARIOS_SORTED" | jq -c '[.[] | select(."disk-encryption" == "none")]')
+            ;;
+        shard:*)
+            SPEC="${FILTER#shard:}"
+            SHARD_INDEX="${SPEC%/*}"
+            SHARD_COUNT="${SPEC#*/}"
+            if ! [[ "$SHARD_INDEX" =~ ^[0-9]+$ ]] || ! [[ "$SHARD_COUNT" =~ ^[0-9]+$ ]]; then
+                echo "ERROR: shard filter must be 'shard:I/N' with integers (got: $FILTER)"
+                exit 1
+            fi
+            if [ "$SHARD_COUNT" -lt 1 ] || [ "$SHARD_INDEX" -lt 1 ] || [ "$SHARD_INDEX" -gt "$SHARD_COUNT" ]; then
+                echo "ERROR: shard index $SHARD_INDEX out of range for $SHARD_COUNT shards"
+                exit 1
+            fi
+            # Round-robin: scenario at sorted index k goes to shard (k mod N) + 1.
+            # This spreads slow scenarios (e.g. luks-tpm-swtpm) across shards
+            # rather than concentrating them in one.
+            SCENARIOS_FILTERED=$(echo "$SCENARIOS_SORTED" | jq -c \
+                --argjson i "$((SHARD_INDEX - 1))" \
+                --argjson n "$SHARD_COUNT" \
+                '[to_entries[] | select(.key % $n == $i) | .value]')
             ;;
         *)
             # Try exact name match first, then substring match.
-            SCENARIOS_FILTERED=$(jq -c --arg f "$FILTER" '[.[] | select(.name == $f)]' "$SCENARIOS_JSON")
+            SCENARIOS_FILTERED=$(echo "$SCENARIOS_SORTED" | jq -c --arg f "$FILTER" '[.[] | select(.name == $f)]')
             if [ "$(echo "$SCENARIOS_FILTERED" | jq 'length')" -eq 0 ]; then
-                SCENARIOS_FILTERED=$(jq -c --arg f "$FILTER" '[.[] | select(.name | contains($f))]' "$SCENARIOS_JSON")
+                SCENARIOS_FILTERED=$(echo "$SCENARIOS_SORTED" | jq -c --arg f "$FILTER" '[.[] | select(.name | contains($f))]')
             fi
             if [ "$(echo "$SCENARIOS_FILTERED" | jq 'length')" -eq 0 ]; then
                 echo "ERROR: no scenarios match filter '$FILTER'"
@@ -146,7 +172,7 @@ if [ -n "$FILTER" ]; then
             ;;
     esac
 else
-    SCENARIOS_FILTERED=$(jq -c '.' "$SCENARIOS_JSON")
+    SCENARIOS_FILTERED="$SCENARIOS_SORTED"
 fi
 
 # ============================================================
