@@ -25,6 +25,11 @@ permissions:
 env:
   UBUNTU_MIRROR: http://us.archive.ubuntu.com/ubuntu
   UBUNTU_PORTS_MIRROR: http://ports.ubuntu.com/ubuntu-ports
+  AWS_REGION: ap-southeast-2
+  AWS_ROLE: arn:aws:iam::143295493206:role/gha-linux-images-upload
+  S3_BUCKET: bes-ops-tools
+  S3_PREFIX: linux-images
+  CLOUDFRONT_ID: EDAG0UBS1MN74
 
 jobs:
   # Single source of truth for the build datestamp. Every matrix leg picks
@@ -112,6 +117,38 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           archive: false
+
+      # Tag-gated tail: publish blobs straight from the producer to S3.
+      # Skips the multi-GB round-trip through a separate release job.
+      - name: Configure AWS credentials
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE }}
+          role-session-name: GHA@linux-images=Publish-cloud-${{ matrix.suite }}-${{ matrix.arch }}
+
+      - name: Attest provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            output/${{ matrix.arch }}/cloud/*.img.zst
+            output/${{ matrix.arch }}/cloud/*.vmdk
+            output/${{ matrix.arch }}/cloud/*.qcow2
+
+      - name: Publish to S3 and emit manifest fragment # r[image.output.checksum]
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/publish-release-shard.sh cloud ${{ matrix.arch }} ${{ matrix.suite }} output/${{ matrix.arch }}/cloud
+
+      - name: Upload manifest fragment
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-fragment-cloud-${{ matrix.suite }}-${{ matrix.arch }}
+          path: manifest-fragment.json
+          if-no-files-found: error
+          retention-days: 1
 
   images-metal:
     needs: [prep]
