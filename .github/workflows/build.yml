@@ -216,6 +216,36 @@ jobs:
           retention-days: 1
           archive: false
 
+      - name: Configure AWS credentials
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE }}
+          role-session-name: GHA@linux-images=Publish-metal-${{ matrix.suite }}-${{ matrix.arch }}
+
+      - name: Attest provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            output/${{ matrix.arch }}/metal/*.img.zst
+            output/${{ matrix.arch }}/metal/*.vmdk
+            output/${{ matrix.arch }}/metal/*.qcow2
+
+      - name: Publish to S3 and emit manifest fragment # r[image.output.checksum]
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/publish-release-shard.sh metal ${{ matrix.arch }} ${{ matrix.suite }} output/${{ matrix.arch }}/metal
+
+      - name: Upload manifest fragment
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-fragment-metal-${{ matrix.suite }}-${{ matrix.arch }}
+          path: manifest-fragment.json
+          if-no-files-found: error
+          retention-days: 1
+
   # Pi images are arm64-only and currently only built on resolute (26.04).
   # The matrix is parameterised on suite for future-proofing — adding a
   # `noble` value (when/if Pi 5 needs an LTS-on-24.04 image) is a one-line
@@ -269,6 +299,33 @@ jobs:
           retention-days: 1
           archive: false
 
+      - name: Configure AWS credentials
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE }}
+          role-session-name: GHA@linux-images=Publish-pi-${{ matrix.suite }}
+
+      - name: Attest provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: output/arm64/pi/*.img.zst
+
+      - name: Publish to S3 and emit manifest fragment # r[image.output.checksum]
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/publish-release-shard.sh pi arm64 ${{ matrix.suite }} output/arm64/pi
+
+      - name: Upload manifest fragment
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-fragment-pi-${{ matrix.suite }}
+          path: manifest-fragment.json
+          if-no-files-found: error
+          retention-days: 1
+
   # Standalone Pi 5 EEPROM-config SD artifact
   pi-eeprom:
     runs-on: ubuntu-24.04-arm
@@ -308,6 +365,33 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+
+      - name: Configure AWS credentials
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE }}
+          role-session-name: GHA@linux-images=Publish-pi-eeprom
+
+      - name: Attest provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: output/pi-eeprom/bes-pi-eeprom-config.img.zst
+
+      - name: Publish to S3 and emit manifest fragment # r[image.output.checksum]
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/publish-release-shard.sh pi-eeprom "" "" output/pi-eeprom
+
+      - name: Upload manifest fragment
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-fragment-pi-eeprom
+          path: manifest-fragment.json
+          if-no-files-found: error
+          retention-days: 1
 
   iso:
     needs: [prep, images-cloud]
@@ -373,6 +457,33 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           archive: false
+
+      - name: Configure AWS credentials
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE }}
+          role-session-name: GHA@linux-images=Publish-iso-${{ matrix.suite }}-${{ matrix.arch }}
+
+      - name: Attest provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: output/${{ matrix.arch }}/bes-installer-*.iso
+
+      - name: Publish to S3 and emit manifest fragment # r[image.output.checksum]
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/publish-release-shard.sh installer ${{ matrix.arch }} ${{ matrix.suite }} output/${{ matrix.arch }}
+
+      - name: Upload manifest fragment
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-fragment-iso-${{ matrix.suite }}-${{ matrix.arch }}
+          path: manifest-fragment.json
+          if-no-files-found: error
+          retention-days: 1
 
   container-test:
     needs: [iso]
