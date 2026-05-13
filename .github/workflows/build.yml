@@ -92,10 +92,8 @@ jobs:
       - name: List outputs
         run: ls -lh output/${{ matrix.arch }}/cloud/
 
-      # Raw image is consumed downstream by iso and register-ami.
-      # VMDK / qcow2 are no longer consumed by any in-workflow job (the
-      # release flow publishes from the producer directly to S3); they
-      # are retained as GH artifacts for ad-hoc inspection.
+      # Raw image is consumed downstream by iso and register-ami — always
+      # uploaded as a GH artifact.
       - name: Upload raw image
         uses: actions/upload-artifact@v7
         with:
@@ -104,7 +102,12 @@ jobs:
           retention-days: 1
           archive: false
 
+      # VMDK / qcow2 aren't consumed in-workflow. On tagged builds the
+      # publish-shard tail puts them in S3, so the GH artifact upload would
+      # be redundant. On non-tagged builds (PRs / main) we keep them so
+      # developers can fetch via `gh run download`.
       - name: Upload VMDK
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           path: output/${{ matrix.arch }}/cloud/*.vmdk
@@ -113,6 +116,7 @@ jobs:
           archive: false
 
       - name: Upload qcow2
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           path: output/${{ matrix.arch }}/cloud/*.qcow2
@@ -194,10 +198,11 @@ jobs:
       - name: List outputs
         run: ls -lh output/${{ matrix.arch }}/metal/
 
-      # No in-workflow job consumes these (the release flow publishes from
-      # the producer directly to S3). Retained as GH artifacts for ad-hoc
-      # inspection.
+      # No in-workflow job consumes these. On tagged builds the publish
+      # tail puts them in S3, so the GH artifact upload is skipped. On
+      # non-tagged builds (PRs / main) we keep them for `gh run download`.
       - name: Upload raw image
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           path: output/${{ matrix.arch }}/metal/*.img.zst
@@ -206,6 +211,7 @@ jobs:
           archive: false
 
       - name: Upload VMDK
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           path: output/${{ matrix.arch }}/metal/*.vmdk
@@ -214,6 +220,7 @@ jobs:
           archive: false
 
       - name: Upload qcow2
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           path: output/${{ matrix.arch }}/metal/*.qcow2
@@ -296,9 +303,10 @@ jobs:
       - name: List outputs
         run: ls -lh output/arm64/pi/
 
-      # No in-workflow job consumes this (the release flow publishes
-      # directly to S3). Retained for ad-hoc inspection.
+      # No in-workflow job consumes this. Tagged builds publish to S3;
+      # non-tagged builds upload as a GH artifact for inspection.
       - name: Upload raw image
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           path: output/arm64/pi/*.img.zst
@@ -359,7 +367,11 @@ jobs:
       - name: List outputs
         run: ls -lh output/pi-eeprom/
 
+      # Only the .img.zst is user-facing; the loose firmware files and
+      # SHA256SUMS are kept as a GH artifact on non-tagged builds for
+      # debugging. Tagged builds publish the .img.zst to S3 instead.
       - name: Upload artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           name: pi-eeprom-config
