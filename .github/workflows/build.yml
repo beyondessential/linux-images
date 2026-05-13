@@ -418,20 +418,25 @@ jobs:
 
       - name: Prepare release assets
         run: |
+          shopt -s nullglob
           mkdir -p release
 
+          # mv (rename) instead of cp: the artifact set is ~80GB+ and the
+          # runner doesn't have enough free disk to keep two copies. cp
+          # silently produced empty/truncated files when disk filled up.
+
           # Image artifacts: ubuntu-{version}-bes-{variant}-{arch}-{date}.{img.zst,vmdk,qcow2}
-          cp artifacts/ubuntu-*.img.zst release/ 2>/dev/null || true
-          cp artifacts/ubuntu-*.vmdk    release/ 2>/dev/null || true
-          cp artifacts/ubuntu-*.qcow2   release/ 2>/dev/null || true
+          mv artifacts/ubuntu-*.img.zst release/
+          mv artifacts/ubuntu-*.vmdk    release/
+          mv artifacts/ubuntu-*.qcow2   release/
 
           # ISOs: bes-installer-{version}-{arch}.iso
-          cp artifacts/bes-installer-*.iso release/ 2>/dev/null || true
+          mv artifacts/bes-installer-*.iso release/
 
           # Pi 5 EEPROM-config SD artifact. Only the flashable .img.zst is
           # shipped — the loose files are present in the CI artifact for
           # debugging but are not user-facing.
-          cp artifacts/bes-pi-eeprom-config.img.zst release/ 2>/dev/null || true
+          mv artifacts/bes-pi-eeprom-config.img.zst release/
 
           # r[image.output.checksum]
           cd release
