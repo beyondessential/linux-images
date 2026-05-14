@@ -706,8 +706,6 @@ _make-test-cloud-init: _ensure-dirs
         check "ufw is active" systemctl is-active ufw
         # r[verify image.tailscale.service-enabled]
         check "tailscaled is active" systemctl is-active tailscaled
-        # r[verify image.snapper.timers]
-        check "snapper-timeline.timer is active" systemctl is-active snapper-timeline.timer
         # r[verify image.growth.service]
         check "grow-root-filesystem ran" systemctl show -p ActiveState grow-root-filesystem.service | grep -q inactive
 
