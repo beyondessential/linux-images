@@ -471,6 +471,17 @@ if [ -z "$KVER" ]; then
 fi
 echo "Kernel version: $KVER"
 
+# r[image.base.machine-id]
+# dracut's 10systemd module copies /etc/machine-id verbatim into the
+# initramfs. Truncating it earlier in this script is not enough: something
+# between that truncate and this dracut invocation has been observed to
+# repopulate the file (so every flashed install inherited the same UUID via
+# systemd-machine-id-commit at switch-root). Force systemd's all-zeros
+# "uninitialized" marker right here so the value baked into the initramfs is
+# one systemd will regenerate per install at first boot. The post-chroot
+# cleanup in build.sh truncates the rootfs copy back to zero bytes.
+printf '%s\n' '00000000000000000000000000000000' > /etc/machine-id
+
 # r[image.boot.dracut]
 echo "Generating initramfs with dracut..."
 dracut --force --kver "$KVER"
