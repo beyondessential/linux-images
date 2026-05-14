@@ -196,26 +196,36 @@ echo "$VARIANT" > /etc/bes/image-variant
 # ============================================================
 if [ "$VARIANT" = "pi" ]; then
     # r[image.boot.pi-firmware] r[image.boot.pi-cmdline] r[image.boot.pi-uart] r[image.boot.pi-pcie-gen3]
-    # The Pi 5 EEPROM reads config.txt from /boot/firmware; the kernel,
-    # initramfs and DTB are copied alongside it by bes-pi-firmware-update,
-    # both at build time (below) and on every kernel apt upgrade (via the
-    # /etc/kernel/postinst.d hook installed further down).
+    # The Pi 5 EEPROM reads config.txt from /boot/firmware; kernel/initrd/DTB
+    # are copied alongside it by flash-kernel (pulled in by flash-kernel-piboot
+    # from packages.sh), both at build time (final dracut + flash-kernel run
+    # below) and on every kernel apt upgrade via /etc/kernel/postinst.d/zz-flash-kernel.
     # serial0,115200 is the Pi 5 PL011 UART (mapped via enable_uart=1 in
     # config.txt). It comes last so systemd's serial-getty starts there for
     # login, while kernel boot messages still mirror to tty1 (HDMI) for the
     # rare case a screen is attached.
+    #
+    # config.txt is written before flash-kernel-piboot's postinst runs (the
+    # package's flash-kernel invocation rewrites this file in-place to add
+    # os_prefix= keys for the A/B layout — the file must exist for the
+    # awk-based migrator to succeed).
     mkdir -p /boot/firmware
     install -m 644 /tmp/files/pi/config.txt /boot/firmware/config.txt
     cat > /boot/firmware/cmdline.txt << 'EOF'
 console=tty1 console=serial0,115200 root=/dev/mapper/root rootflags=subvol=@,compress=zstd:6 rootfstype=btrfs ro noresume rootwait
 EOF
 
-    # r[image.boot.pi-firmware-update]
-    # Install the firmware-partition updater plus its kernel-postinst hook.
-    # The updater is invoked in two places: explicitly after dracut (below),
-    # and on every kernel apt upgrade via the postinst hook.
-    install -m 755 /tmp/files/pi/bes-pi-firmware-update /usr/local/sbin/bes-pi-firmware-update
-    install -m 755 /tmp/files/pi/zz-bes-pi-firmware /etc/kernel/postinst.d/zz-bes-pi-firmware
+    # r[image.boot.pi-firmware-update] r[image.boot.pi-tryboot-rollback]
+    # flash-kernel-piboot pulls in piboot-try, which provides flash-kernel
+    # (Method: pi-try for the Pi 5B) and the piboot-try-reboot /
+    # piboot-try-validate services that switch the bootloader between
+    # current/ and new/ on success / failure of a trial boot. Its postinst
+    # runs flash-kernel, which rewrites the config.txt installed just above
+    # to inject `os_prefix=current/` (and `os_prefix=new/` under [tryboot]).
+    # Boot assets land in /boot/firmware/new/; the explicit flash-kernel run
+    # at the end of this script (after `dracut --force`) refreshes them with
+    # the final initramfs.
+    apt-get install -y -q --no-install-recommends flash-kernel-piboot
 
     # r[image.boot.pi-power-key]
     # Pin the power-button behaviour to a clean shutdown. Default systemd
@@ -477,11 +487,13 @@ dracut --force --kver "$KVER"
 
 if [ "$VARIANT" = "pi" ]; then
     # r[image.boot.pi-firmware-update]
-    # Populate /boot/firmware with the kernel, initramfs and DTB freshly
-    # produced by dracut. Future kernel apt upgrades trigger the same script
-    # via /etc/kernel/postinst.d/zz-bes-pi-firmware.
-    echo "Populating /boot/firmware for Pi 5..."
-    /usr/local/sbin/bes-pi-firmware-update "$KVER"
+    # Refresh /boot/firmware/new/ with the freshly-dracut'd initramfs.
+    # flash-kernel-piboot's postinst ran flash-kernel earlier (when only
+    # the initramfs-tools-generated initramfs existed); this final run
+    # supersedes that with the dracut output. Future kernel apt upgrades
+    # re-trigger flash-kernel via /etc/kernel/postinst.d/zz-flash-kernel.
+    echo "Refreshing /boot/firmware/new with dracut initramfs..."
+    flash-kernel
 else
     # r[image.boot.grub-install] r[image.boot.grub-uuids]
     echo "Installing GRUB (target=$GRUB_TARGET)..."

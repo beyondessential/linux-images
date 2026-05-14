@@ -1,7 +1,12 @@
 # BES Linux — Raspberry Pi 5 boot config.
-# Read by the Pi 5 firmware (in EEPROM) at boot. flash-kernel populates the
-# kernel image, initramfs, DTB and overlays into this same FAT partition
-# (/boot/firmware) on every kernel update.
+# Read by the Pi 5 firmware (in EEPROM) at boot. flash-kernel populates
+# the kernel image, initramfs, DTB and overlays into /boot/firmware on
+# every kernel update.
+#
+# flash-kernel's first run rewrites this file to inject `os_prefix=current/`
+# under `[all]` and `os_prefix=new/` under `[tryboot]` (for the A/B
+# rollback layout — see r[image.boot.pi-tryboot-rollback]). It preserves
+# everything below, so add new settings here.
 
 # r[image.boot.pi-firmware] r[image.boot.pi-uart] r[image.boot.pi-peripherals]
 # r[image.boot.pi-tpm-overlay] r[image.boot.pi-pcie-gen3]
@@ -27,5 +32,3 @@ dtparam=i2c_arm=on
 dtparam=spi=on
 dtparam=pciex1_gen=3
 dtoverlay=tpm-slb9670
-kernel=vmlinuz
-initramfs initrd.img followkernel
