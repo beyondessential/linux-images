@@ -67,9 +67,13 @@ if ! command -v vcgencmd >/dev/null 2>&1; then
     exit 1
 fi
 
-# `vcgencmd bootloader_version` first line is "YYYY-MM-DD HH:MM:SS".
+# `vcgencmd bootloader_version` first line is the date — either
+# "YYYY-MM-DD HH:MM:SS" or "YYYY/MM/DD HH:MM:SS" depending on the EEPROM
+# release. Normalise to dash form so the string comparison below works
+# byte-for-byte against EEPROM_FLOOR.
 EEPROM_LINE="$(vcgencmd bootloader_version | head -n1 | tr -d '\r')"
 EEPROM_DATE="${EEPROM_LINE%% *}"
+EEPROM_DATE="${EEPROM_DATE//\//-}"
 if [ -z "$EEPROM_DATE" ] || ! [[ "$EEPROM_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     echo "ERROR: could not parse EEPROM date from vcgencmd output: $EEPROM_LINE" >&2
     exit 1
