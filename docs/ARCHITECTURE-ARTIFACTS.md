@@ -93,7 +93,6 @@ filling the rest of the disk. The differences are:
 
 The BTRFS filesystem always carries two subvolumes: `@` mounted at `/`,
 and `@postgres` mounted at `/var/lib/postgresql`. Both are quota'd via
-BTRFS simple quotas and snapshotted by snapper (6 hourly + 10 numbered).
-The runtime mode (`plain`, `luks-keyfile`, or `luks-tpm`) is recorded in
-`/etc/bes/image-variant`, which the installer overwrites for non-Pi
-variants.
+BTRFS simple quotas. The runtime mode (`plain`, `luks-keyfile`, or
+`luks-tpm`) is recorded in `/etc/bes/image-variant`, which the installer
+overwrites for non-Pi variants.

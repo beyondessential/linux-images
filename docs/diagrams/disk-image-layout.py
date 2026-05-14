@@ -79,6 +79,5 @@ with Diagram(
     with Cluster("Annotations"):
         notes = Document(
             "compress=zstd:6,\nxxhash, simple\nquotas, block-group-tree.\n"
-            "Snapper: 6 hourly +\n10 numbered\non / and /var/lib/postgresql.\n"
             "/etc/bes/image-variant\nrecords runtime mode:\nplain | luks-keyfile |\nluks-tpm."
         )
