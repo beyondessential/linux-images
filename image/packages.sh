@@ -7,7 +7,6 @@ PACKAGES=(
     # Filesystem and storage
     btrfs-progs
     cryptsetup
-    snapper
     gdisk
     mtools
 
