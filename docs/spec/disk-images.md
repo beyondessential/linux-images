@@ -200,9 +200,9 @@ volumes. A mismatch means the system will fail to boot.
 > r[image.boot.pi-firmware]
 > For the `pi` variant, the bootloader is the Raspberry Pi 5 EEPROM
 > firmware. No GRUB is installed. The firmware partition (mounted at
-> `/boot/firmware`) must contain `config.txt` selecting `vmlinuz` as the
-> kernel and `initrd.img` as the initramfs (`followkernel` mode), and the
-> Pi-specific DTB (`bcm2712-rpi-5-b.dtb`) plus its overlays directory.
+> `/boot/firmware`) must contain `config.txt`, the Pi-specific DTB
+> (`bcm2712-rpi-5-b.dtb`) and its overlays, and a kernel + initramfs
+> pair selected by `config.txt`.
 
 r[image.boot.pi-cmdline]
 For the `pi` variant, kernel command-line arguments are read from
@@ -210,14 +210,23 @@ For the `pi` variant, kernel command-line arguments are read from
 root device (`root=/dev/mapper/root`) and the BTRFS subvolume
 (`subvol=@,compress=zstd:6`).
 
-> r[image.boot.pi-firmware-update]
-> The `pi` variant must ship a script that copies the kernel image,
-> initramfs and Pi 5 DTB (plus overlays) from their installed locations
-> into `/boot/firmware`. This script must run at image build time after
-> dracut, and on every kernel package upgrade via a hook in
-> `/etc/kernel/postinst.d/`. Without it, kernel updates would leave the
-> firmware partition stale and the system would keep booting the old
-> kernel after `apt upgrade`.
+r[image.boot.pi-firmware-update]
+For the `pi` variant, kernel, initramfs, DTB and overlay updates must be
+propagated to the firmware partition on every kernel package upgrade,
+without operator action. The propagation must not overwrite the running
+known-good boot assets — see r[image.boot.pi-tryboot-rollback].
+
+> r[image.boot.pi-tryboot-rollback]
+> For the `pi` variant, the firmware partition must implement an A/B
+> boot layout: new kernel/initramfs/DTB assets are staged separately
+> from the running known-good set, and a single failed boot of the new
+> assets must automatically roll back to the previous known-good set on
+> the next boot, with no operator intervention. A subsequent successful
+> boot of the new assets must promote them to known-good.
+>
+> The EEPROM firmware must be recent enough to support the trial-boot
+> mechanism. On Pi 5 / 500 / CM5 the floor is firmware dated
+> `2025-02-11` or later.
 
 r[image.boot.pi-uart]
 For the `pi` variant, the kernel console must be available on the Pi 5
