@@ -770,5 +770,6 @@ jobs:
       - name: Register AMI
         env:
           AWS_AMI_KMS_KEY_ID: ${{ vars.AWS_AMI_KMS_KEY_ID }}
+          AWS_AMI_SHARE_ORG_ARN: ${{ vars.AWS_AMI_SHARE_ORG_ARN }}
         run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}"
         timeout-minutes: 60

@@ -497,7 +497,12 @@ SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
 > (`<ubuntu-version>` above).
 
 r[image.output.aws-ami-shareable]
-The AMI's backing EBS snapshot must be encrypted with a customer-managed KMS
-key whose policy permits the BES AWS Organization to use it. AWS-managed CMKs
-(the default `aws/ebs` key) cannot be shared cross-account, so they would
-make the AMI unusable from the org's other accounts.
+The registered AMI must be usable from any account in the BES AWS
+Organization. Concretely:
+- The backing EBS snapshot must be encrypted with a customer-managed KMS key
+  whose policy permits the organization to use it. AWS-managed CMKs (the
+  default `aws/ebs` key) cannot be shared cross-account.
+- The AMI must grant the organization launch permission, and the snapshot
+  must grant the organization create-volume permission, so consumers can
+  both launch instances from the AMI and create volumes directly from the
+  snapshot.

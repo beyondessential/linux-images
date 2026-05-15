@@ -17,12 +17,17 @@ set -euo pipefail
 #   s3-bucket  S3 bucket for import staging (default: bes-ops-tools)
 #
 # Required environment:
-#   AWS_AMI_KMS_KEY_ID  ARN (or alias) of a customer-managed KMS key whose
-#                       key policy grants the BES AWS Organization permission
-#                       to launch from snapshots it encrypts. AWS-managed CMKs
-#                       (the default aws/ebs key) cannot be shared
-#                       cross-account, so without a customer-managed key the
-#                       resulting AMI cannot be shared org-wide.
+#   AWS_AMI_KMS_KEY_ID    ARN (or alias) of a customer-managed KMS key whose
+#                         key policy grants the BES AWS Organization
+#                         permission to launch from snapshots it encrypts.
+#                         AWS-managed CMKs (the default aws/ebs key) cannot
+#                         be shared cross-account, so without a customer-
+#                         managed key the resulting AMI cannot be shared
+#                         org-wide.
+#   AWS_AMI_SHARE_ORG_ARN ARN of the AWS Organization to grant launch
+#                         permission on the AMI and create-volume permission
+#                         on its backing snapshot. Format:
+#                           arn:aws:organizations::<mgmt-account>:organization/o-XXXXXXXXXX
 #
 # The raw.zst image is expected under output/<arch>/cloud/*.img.zst
 
@@ -49,6 +54,17 @@ if [ -z "$KMS_KEY_ID" ]; then
     echo "       launch from snapshots it encrypts. Without one the snapshot"
     echo "       defaults to the aws/ebs managed key, which cannot be shared"
     echo "       cross-account."
+    exit 1
+fi
+
+# r[image.output.aws-ami-shareable]
+SHARE_ORG_ARN="${AWS_AMI_SHARE_ORG_ARN:-}"
+if [ -z "$SHARE_ORG_ARN" ]; then
+    echo "ERROR: AWS_AMI_SHARE_ORG_ARN env var is required."
+    echo "       It must be the ARN of the AWS Organization that should be"
+    echo "       granted launch permission on the registered AMI (and its"
+    echo "       backing snapshot). Format:"
+    echo "         arn:aws:organizations::<management-account-id>:organization/o-XXXXXXXXXX"
     exit 1
 fi
 
@@ -252,5 +268,36 @@ aws ec2 create-tags \
 echo "Tagged AMI and snapshot"
 echo ""
 
+# --- Grant org-wide launch permission ---
+
+# r[image.output.aws-ami-shareable]
+# Grant the org launch permission on the AMI and create-volume permission
+# on the snapshot, so other accounts in the org can both run instances from
+# the AMI and (if they want to) create volumes directly from the snapshot.
+# The customer-managed KMS key set earlier already permits org-wide use.
+echo "Granting org launch permission to $SHARE_ORG_ARN ..."
+aws ec2 modify-image-attribute \
+    --region "$REGION" \
+    --image-id "$AMI_ID" \
+    --launch-permission "Add=[{OrganizationArn=${SHARE_ORG_ARN}}]"
+aws ec2 modify-snapshot-attribute \
+    --region "$REGION" \
+    --snapshot-id "$SNAPSHOT_ID" \
+    --create-volume-permission "Add=[{OrganizationArn=${SHARE_ORG_ARN}}]"
+
+# r[verify image.output.aws-ami-shareable]
+LAUNCH_GRANT=$(aws ec2 describe-image-attribute \
+    --region "$REGION" \
+    --image-id "$AMI_ID" \
+    --attribute launchPermission \
+    --query "LaunchPermissions[?OrganizationArn=='${SHARE_ORG_ARN}'] | [0].OrganizationArn" \
+    --output text)
+if [ "$LAUNCH_GRANT" != "$SHARE_ORG_ARN" ]; then
+    echo "ERROR: launch permission for $SHARE_ORG_ARN did not stick on $AMI_ID"
+    exit 1
+fi
+echo "Granted and verified"
+echo ""
+
 echo "Done."
-echo "AMI $AMI_ID ($AMI_NAME) is registered and ready."
+echo "AMI $AMI_ID ($AMI_NAME) is registered and shared with $SHARE_ORG_ARN."
