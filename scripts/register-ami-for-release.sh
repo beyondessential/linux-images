@@ -45,7 +45,6 @@ if [ -z "$ARCH" ] || [ -z "$SUITE" ] || [ -z "$VERSION" ]; then
     exit 1
 fi
 
-# r[image.output.aws-ami-shareable]
 KMS_KEY_ID="${AWS_AMI_KMS_KEY_ID:-}"
 if [ -z "$KMS_KEY_ID" ]; then
     echo "ERROR: AWS_AMI_KMS_KEY_ID env var is required."
@@ -57,7 +56,6 @@ if [ -z "$KMS_KEY_ID" ]; then
     exit 1
 fi
 
-# r[image.output.aws-ami-shareable]
 SHARE_ORG_ARN="${AWS_AMI_SHARE_ORG_ARN:-}"
 if [ -z "$SHARE_ORG_ARN" ]; then
     echo "ERROR: AWS_AMI_SHARE_ORG_ARN env var is required."
@@ -138,7 +136,6 @@ echo ""
 # --- Start snapshot import ---
 
 echo "Starting snapshot import ..."
-# r[image.output.aws-ami-shareable]
 # --encrypted + --kms-key-id force the import to use our customer-managed
 # CMK instead of the account's default (aws/ebs), so the resulting snapshot
 # and AMI can be shared across the BES AWS Organization.
@@ -205,7 +202,6 @@ fi
 
 echo "Snapshot ID: $SNAPSHOT_ID"
 
-# r[verify image.output.aws-ami-shareable]
 # Fail fast if the import landed under a different key (e.g. account-level
 # default-encryption pinned to aws/ebs would override an unrecognised alias).
 SNAPSHOT_KEY=$(aws ec2 describe-snapshots \
@@ -270,7 +266,6 @@ echo ""
 
 # --- Grant org-wide launch permission ---
 
-# r[image.output.aws-ami-shareable]
 # Grant the org launch permission on the AMI and create-volume permission
 # on the snapshot, so other accounts in the org can both run instances from
 # the AMI and (if they want to) create volumes directly from the snapshot.
@@ -285,7 +280,6 @@ aws ec2 modify-snapshot-attribute \
     --snapshot-id "$SNAPSHOT_ID" \
     --create-volume-permission "Add=[{OrganizationArn=${SHARE_ORG_ARN}}]"
 
-# r[verify image.output.aws-ami-shareable]
 LAUNCH_GRANT=$(aws ec2 describe-image-attribute \
     --region "$REGION" \
     --image-id "$AMI_ID" \
