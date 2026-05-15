@@ -5,7 +5,7 @@ set -euo pipefail
 # Designed for use in CI (GitHub Actions) after a tagged release.
 #
 # The cloud image (no LUKS) is the correct variant for AWS — EBS provides
-# encryption at rest.
+# encryption at rest via the snapshot import below.
 #
 # Usage: ./register-ami-for-release.sh <arch> <suite> <version> [region] [s3-bucket]
 #
@@ -15,6 +15,14 @@ set -euo pipefail
 #   version    Release version string (e.g. "1.2.3", without leading "v")
 #   region     AWS region (default: ap-southeast-2)
 #   s3-bucket  S3 bucket for import staging (default: bes-ops-tools)
+#
+# Required environment:
+#   AWS_AMI_KMS_KEY_ID  ARN (or alias) of a customer-managed KMS key whose
+#                       key policy grants the BES AWS Organization permission
+#                       to launch from snapshots it encrypts. AWS-managed CMKs
+#                       (the default aws/ebs key) cannot be shared
+#                       cross-account, so without a customer-managed key the
+#                       resulting AMI cannot be shared org-wide.
 #
 # The raw.zst image is expected under output/<arch>/cloud/*.img.zst
 
@@ -29,6 +37,18 @@ BUCKET="${5:-bes-ops-tools}"
 
 if [ -z "$ARCH" ] || [ -z "$SUITE" ] || [ -z "$VERSION" ]; then
     echo "Usage: $0 <arch> <suite> <version> [region] [s3-bucket]"
+    exit 1
+fi
+
+# r[image.output.aws-ami-shareable]
+KMS_KEY_ID="${AWS_AMI_KMS_KEY_ID:-}"
+if [ -z "$KMS_KEY_ID" ]; then
+    echo "ERROR: AWS_AMI_KMS_KEY_ID env var is required."
+    echo "       It must be the ARN (or alias) of a customer-managed KMS key"
+    echo "       whose policy grants the BES AWS Organization permission to"
+    echo "       launch from snapshots it encrypts. Without one the snapshot"
+    echo "       defaults to the aws/ebs managed key, which cannot be shared"
+    echo "       cross-account."
     exit 1
 fi
 
@@ -102,9 +122,15 @@ echo ""
 # --- Start snapshot import ---
 
 echo "Starting snapshot import ..."
+# r[image.output.aws-ami-shareable]
+# --encrypted + --kms-key-id force the import to use our customer-managed
+# CMK instead of the account's default (aws/ebs), so the resulting snapshot
+# and AMI can be shared across the BES AWS Organization.
 TASK_ID=$(aws ec2 import-snapshot \
     --region "$REGION" \
     --description "$AMI_NAME" \
+    --encrypted \
+    --kms-key-id "$KMS_KEY_ID" \
     --disk-container "Description=${AMI_NAME},Format=raw,UserBucket={S3Bucket=${BUCKET},S3Key=${S3_KEY}}" \
     --query 'ImportTaskId' \
     --output text)
@@ -162,6 +188,23 @@ if [ -z "$SNAPSHOT_ID" ] || [ "$SNAPSHOT_ID" = "None" ]; then
 fi
 
 echo "Snapshot ID: $SNAPSHOT_ID"
+
+# r[verify image.output.aws-ami-shareable]
+# Fail fast if the import landed under a different key (e.g. account-level
+# default-encryption pinned to aws/ebs would override an unrecognised alias).
+SNAPSHOT_KEY=$(aws ec2 describe-snapshots \
+    --region "$REGION" \
+    --snapshot-ids "$SNAPSHOT_ID" \
+    --query 'Snapshots[0].KmsKeyId' \
+    --output text)
+case "$SNAPSHOT_KEY" in
+    *":alias/aws/ebs"|"")
+        echo "ERROR: snapshot $SNAPSHOT_ID is encrypted with $SNAPSHOT_KEY,"
+        echo "       not the customer-managed key requested."
+        exit 1
+        ;;
+esac
+echo "Snapshot key: $SNAPSHOT_KEY"
 echo ""
 
 # --- Register AMI ---

@@ -768,5 +768,7 @@ jobs:
           role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.suite }}-${{ matrix.arch }}
 
       - name: Register AMI
+        env:
+          AWS_AMI_KMS_KEY_ID: ${{ vars.AWS_AMI_KMS_KEY_ID }}
         run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}"
         timeout-minutes: 60

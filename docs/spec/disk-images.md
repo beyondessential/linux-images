@@ -495,3 +495,9 @@ SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
 > `Os`, `OsVersion`, `Variant`, `Architecture`, `Version`, `Features`, and
 > `Builder`. `OsVersion` must hold the numeric Ubuntu release
 > (`<ubuntu-version>` above).
+
+r[image.output.aws-ami-shareable]
+The AMI's backing EBS snapshot must be encrypted with a customer-managed KMS
+key whose policy permits the BES AWS Organization to use it. AWS-managed CMKs
+(the default `aws/ebs` key) cannot be shared cross-account, so they would
+make the AMI unusable from the org's other accounts.
