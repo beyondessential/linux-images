@@ -51,6 +51,14 @@ Metal images ship with the full set of Linux firmware and driver modules, suppor
 
 Pi images ship the Raspberry-Pi-specific kernel (`linux-raspi`) and firmware (`linux-firmware-raspi`), which together cover the Pi 5's onboard hardware.
 
+### Tryboot rollback (pi)
+
+Pi images use the Raspberry Pi bootloader's A/B "tryboot" mechanism via `flash-kernel-piboot`. Each kernel `apt upgrade` stages the new kernel/initramfs/DTB into `/boot/firmware/new/`; the first reboot trials those assets, and a single failed boot rolls back to the previous known-good set in `/boot/firmware/current/`. A second successful boot promotes the new assets.
+
+This requires Pi 5 EEPROM firmware dated `2025-02-11` or later. New images ship a compatible EEPROM via `just pi-eeprom-img`.
+
+Pi images flashed before this layout was introduced can be migrated in place by SSHing in and running `sudo scripts/migrate-pi-to-piboot.sh` from a checkout of this repo (or copy the script over and run it directly).
+
 ## Networking
 
 **cloud-init user-data** is enabled, allowing e.g. cloud images to be configured by cloud providers for networking purposes at first boot.
