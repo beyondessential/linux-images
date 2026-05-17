@@ -38,14 +38,20 @@ partprobe "$DISK" || true
 # Step 3: Resize LUKS (if active)
 if [ -e /dev/mapper/root ]; then
     LUKS_DEV=/dev/disk/by-partlabel/root
-    # cryptsetup resize re-derives the master key from a passphrase
-    # rather than reusing the open mapping's key. Build-time images ship
-    # with the placeholder empty passphrase in slot 0 (per
-    # r[image.variant.types]); once that's rotated, we can't proceed
-    # without the user's key. Probe first so we exit cleanly instead of
+    # cryptsetup resize re-derives the master key from a passphrase rather
+    # than reusing the open mapping's key. Build-time images ship with an
+    # empty placeholder passphrase in slot 0 (per r[image.variant.types]),
+    # unlocked at boot via the 0-byte /etc/luks/empty-keyfile. Once the
+    # slot is rotated, we can't proceed without the user's key — probe
+    # with the same keyfile so we exit cleanly in that case instead of
     # leaving a failed unit on every subsequent boot.
-    if printf '' | cryptsetup open --test-passphrase --key-file=- "$LUKS_DEV"; then
-        printf '' | cryptsetup resize --key-file=- root
+    #
+    # The keyfile must be passed as a path, not via stdin: cryptsetup
+    # rejects 0 bytes from stdin ("Nothing to read on input.") but accepts
+    # a 0-byte regular file as an empty key.
+    KEYFILE=/etc/luks/empty-keyfile
+    if cryptsetup open --test-passphrase --key-file="$KEYFILE" "$LUKS_DEV"; then
+        cryptsetup resize --key-file="$KEYFILE" root
     else
         echo "LUKS slot 0 placeholder passphrase has been rotated;"
         echo "skipping resize. To finish manually, run:"
