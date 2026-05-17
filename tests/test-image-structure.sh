@@ -334,6 +334,20 @@ check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing")"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
 
+# A populated machine-id in the initramfs gets committed to the empty rootfs
+# /etc/machine-id at switch-root, producing duplicate IDs across every flashed
+# install. Empty bytes or systemd's all-zeros UUID both register as
+# uninitialized and trigger regeneration on first boot.
+INITRD_MID="$(chroot "$MNT" bash -c 'lsinitrd -f etc/machine-id /boot/initrd.img-* 2>/dev/null' | tr -d '[:space:]' || true)"
+case "$INITRD_MID" in
+    "" | "00000000000000000000000000000000")
+        pass "initramfs /etc/machine-id is uninitialized"
+        ;;
+    *)
+        fail "initramfs /etc/machine-id is uninitialized (got '$INITRD_MID')"
+        ;;
+esac
+
 # r[verify image.hostname.metal-dhcp+2] r[verify image.hostname.cloud-default+2]
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     HOSTNAME_SIZE="$(stat -c%s "$MNT/etc/hostname" 2>/dev/null || echo "missing")"
