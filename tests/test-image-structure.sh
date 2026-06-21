@@ -516,42 +516,6 @@ check_not "installer network config absent" test -f "$MNT/etc/cloud/cloud.cfg.d/
 check_not "unminimize prompt absent" test -f "$MNT/etc/update-motd.d/60-unminimize"
 
 # ============================================================
-# Snapper configuration
-# ============================================================
-echo ""
-echo "--- Snapper ---"
-
-# r[verify image.snapper.root]
-SNAPPER_ROOT_CFG="$MNT/etc/snapper/configs/root"
-check "snapper root config exists" test -f "$SNAPPER_ROOT_CFG"
-if [ -f "$SNAPPER_ROOT_CFG" ]; then
-    check "snapper root: TIMELINE_CREATE=yes" grep -q '^TIMELINE_CREATE="yes"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_CLEANUP=yes" grep -q '^TIMELINE_CLEANUP="yes"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: NUMBER_CLEANUP=yes" grep -q '^NUMBER_CLEANUP="yes"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: NUMBER_LIMIT=10" grep -q '^NUMBER_LIMIT="10"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_HOURLY=6" grep -q '^TIMELINE_LIMIT_HOURLY="6"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_DAILY=0" grep -q '^TIMELINE_LIMIT_DAILY="0"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_WEEKLY=0" grep -q '^TIMELINE_LIMIT_WEEKLY="0"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_MONTHLY=0" grep -q '^TIMELINE_LIMIT_MONTHLY="0"' "$SNAPPER_ROOT_CFG"
-    check "snapper root: TIMELINE_LIMIT_YEARLY=0" grep -q '^TIMELINE_LIMIT_YEARLY="0"' "$SNAPPER_ROOT_CFG"
-fi
-
-# r[verify image.snapper.postgres]
-SNAPPER_PG_CFG="$MNT/etc/snapper/configs/postgres"
-check "snapper postgres config exists" test -f "$SNAPPER_PG_CFG"
-if [ -f "$SNAPPER_PG_CFG" ]; then
-    check "snapper postgres: TIMELINE_CREATE=yes" grep -q '^TIMELINE_CREATE="yes"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_CLEANUP=yes" grep -q '^TIMELINE_CLEANUP="yes"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: NUMBER_CLEANUP=yes" grep -q '^NUMBER_CLEANUP="yes"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: NUMBER_LIMIT=10" grep -q '^NUMBER_LIMIT="10"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_HOURLY=6" grep -q '^TIMELINE_LIMIT_HOURLY="6"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_DAILY=0" grep -q '^TIMELINE_LIMIT_DAILY="0"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_WEEKLY=0" grep -q '^TIMELINE_LIMIT_WEEKLY="0"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_MONTHLY=0" grep -q '^TIMELINE_LIMIT_MONTHLY="0"' "$SNAPPER_PG_CFG"
-    check "snapper postgres: TIMELINE_LIMIT_YEARLY=0" grep -q '^TIMELINE_LIMIT_YEARLY="0"' "$SNAPPER_PG_CFG"
-fi
-
-# ============================================================
 # UFW firewall rules
 # ============================================================
 echo ""
@@ -734,10 +698,6 @@ check_service_enabled "bes-tailscale-firstboot-auth.service" "bes-tailscale-firs
 
 # r[verify image.firstboot.script]
 check_service_enabled "bes-firstboot-script.service"  "bes-firstboot-script is enabled"
-
-# r[verify image.snapper.timers]
-check_service_enabled "snapper-timeline.timer"        "snapper-timeline.timer is enabled"
-check_service_enabled "snapper-cleanup.timer"         "snapper-cleanup.timer is enabled"
 
 # r[verify image.growth.service+3]
 check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is enabled"

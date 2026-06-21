@@ -266,7 +266,6 @@ runcmd:
     check "sshd is active" systemctl is-active ssh
     check "ufw is active" systemctl is-active ufw
     check "tailscaled is active" systemctl is-active tailscaled
-    check "snapper-timeline.timer is active" systemctl is-active snapper-timeline.timer
 
     check "root is btrfs" test "$(stat -f -c%T /)" = "btrfs"
     check "compression active in /proc/mounts" grep -q 'compress=' /proc/mounts

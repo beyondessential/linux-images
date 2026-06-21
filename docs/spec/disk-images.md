@@ -371,22 +371,6 @@ A weekly cron job must be present to run `apt install -y tailscale`.
 > not require that service to succeed. The service must additionally be
 > ordered after `network-online.target` and `local-fs.target`.
 
-## Snapper
-
-r[image.snapper.root]
-Snapper must be configured for the root subvolume (`/`) with timeline
-snapshots enabled and retention of 6 hourly snapshots, plus 10 numbered
-(non-timeline) snapshots. Daily, weekly, monthly, and yearly timeline
-retention must be disabled.
-
-r[image.snapper.postgres]
-Snapper must be configured for the PostgreSQL subvolume
-(`/var/lib/postgresql`) with the same retention settings as the root config.
-
-r[image.snapper.timers]
-The `snapper-timeline.timer` and `snapper-cleanup.timer` systemd timers must
-be enabled.
-
 ## Disk Growth
 
 > r[image.growth.service+3]

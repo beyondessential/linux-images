@@ -4,7 +4,7 @@
 #
 # It expects the following to be available under /tmp/:
 #   /tmp/packages.sh        — package list (sourced as bash)
-#   /tmp/scripts/           — setup scripts (firewall, tailscale, snapper, etc.)
+#   /tmp/scripts/           — setup scripts (firewall, tailscale, etc.)
 #   /tmp/files/             — static files to install
 set -euo pipefail
 
@@ -384,12 +384,6 @@ systemctl enable ssh
 # r[impl image.credentials.host-key-regen]
 install -m 644 /tmp/files/systemd/bes-ssh-keygen.service /etc/systemd/system/bes-ssh-keygen.service
 systemctl enable bes-ssh-keygen.service
-
-# ============================================================
-# Snapper
-# ============================================================
-# r[image.snapper.root] r[image.snapper.postgres] r[image.snapper.timers]
-bash /tmp/scripts/setup-snapper.sh
 
 # ============================================================
 # Disk growth service
