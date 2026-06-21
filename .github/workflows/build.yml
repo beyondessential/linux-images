@@ -771,5 +771,9 @@ jobs:
           role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.suite }}-${{ matrix.arch }}
 
       - name: Register AMI
-        run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}"
+        # Region positional matches the configure-aws-credentials region
+        # above. Bucket comes from vars.* because the actual name carries a
+        # terraform unique suffix that would otherwise need a code change
+        # every time the bucket is recreated.
+        run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}" "ap-southeast-2" "${{ vars.AWS_AMI_STAGING_BUCKET }}"
         timeout-minutes: 60
