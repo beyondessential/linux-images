@@ -1,11 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-# Register the cloud variant image as an AWS AMI.
+# Register the cloud variant image as an AWS AMI and publish it publicly.
 # Designed for use in CI (GitHub Actions) after a tagged release.
 #
-# The cloud image (no LUKS) is the correct variant for AWS — EBS provides
-# encryption at rest.
+# The cloud image (no LUKS) is the correct variant for AWS. The AMI is made
+# public (launch-permission Group=all) so any AWS account can launch from it
+# directly — this is an open-source distribution, so there's nothing to gain
+# from gating access. Public AMIs require unencrypted snapshots, so the
+# publishing account must not have EBS encryption-by-default enabled in the
+# target region.
 #
 # Usage: ./register-ami-for-release.sh <arch> <suite> <version> [region] [s3-bucket]
 #
@@ -209,5 +213,34 @@ aws ec2 create-tags \
 echo "Tagged AMI and snapshot"
 echo ""
 
+# --- Make AMI and snapshot public ---
+
+# Public launch on the AMI lets any AWS account run instances from it; public
+# create-volume on the snapshot lets them attach it as a raw volume too. Both
+# only work when the snapshot is unencrypted (enforced upstream by the
+# absence of --encrypted on import-snapshot and by EBS encryption-by-default
+# being off in this account/region).
+echo "Publishing AMI and snapshot ..."
+aws ec2 modify-image-attribute \
+    --region "$REGION" \
+    --image-id "$AMI_ID" \
+    --launch-permission 'Add=[{Group=all}]'
+aws ec2 modify-snapshot-attribute \
+    --region "$REGION" \
+    --snapshot-id "$SNAPSHOT_ID" \
+    --create-volume-permission 'Add=[{Group=all}]'
+
+PUBLIC=$(aws ec2 describe-images \
+    --region "$REGION" \
+    --image-ids "$AMI_ID" \
+    --query 'Images[0].Public' \
+    --output text)
+if [ "$PUBLIC" != "True" ]; then
+    echo "ERROR: AMI $AMI_ID did not become public (Public=$PUBLIC)"
+    exit 1
+fi
+echo "Published and verified"
+echo ""
+
 echo "Done."
-echo "AMI $AMI_ID ($AMI_NAME) is registered and ready."
+echo "AMI $AMI_ID ($AMI_NAME) is registered and public."
