@@ -197,18 +197,15 @@ echo "$VARIANT" > /etc/bes/image-variant
 if [ "$VARIANT" = "pi" ]; then
     # r[image.boot.pi-firmware] r[image.boot.pi-cmdline] r[image.boot.pi-uart] r[image.boot.pi-pcie-gen3]
     # The Pi 5 EEPROM reads config.txt from /boot/firmware; kernel/initrd/DTB
-    # are copied alongside it by flash-kernel (pulled in by flash-kernel-piboot
-    # from packages.sh), both at build time (final dracut + flash-kernel run
-    # below) and on every kernel apt upgrade via /etc/kernel/postinst.d/zz-flash-kernel.
+    # for the active slot live under /boot/firmware/current/ (per the A/B
+    # tryboot layout — see r[image.boot.pi-tryboot-rollback]). The shipped
+    # config.txt is already in its post-migration form (os_prefix=current/
+    # under [all], os_prefix=new/ under [tryboot]); we populate current/
+    # ourselves below, after dracut has produced the final initramfs.
     # serial0,115200 is the Pi 5 PL011 UART (mapped via enable_uart=1 in
     # config.txt). It comes last so systemd's serial-getty starts there for
     # login, while kernel boot messages still mirror to tty1 (HDMI) for the
     # rare case a screen is attached.
-    #
-    # config.txt is written before flash-kernel-piboot's postinst runs (the
-    # package's flash-kernel invocation rewrites this file in-place to add
-    # os_prefix= keys for the A/B layout — the file must exist for the
-    # awk-based migrator to succeed).
     mkdir -p /boot/firmware
     install -m 644 /tmp/files/pi/config.txt /boot/firmware/config.txt
     cat > /boot/firmware/cmdline.txt << 'EOF'
@@ -216,15 +213,16 @@ console=tty1 console=serial0,115200 root=/dev/mapper/root rootflags=subvol=@,com
 EOF
 
     # r[image.boot.pi-firmware-update] r[image.boot.pi-tryboot-rollback]
-    # flash-kernel-piboot pulls in piboot-try, which provides flash-kernel
-    # (Method: pi-try for the Pi 5B) and the piboot-try-reboot /
-    # piboot-try-validate services that switch the bootloader between
-    # current/ and new/ on success / failure of a trial boot. Its postinst
-    # runs flash-kernel, which rewrites the config.txt installed just above
-    # to inject `os_prefix=current/` (and `os_prefix=new/` under [tryboot]).
-    # Boot assets land in /boot/firmware/new/; the explicit flash-kernel run
-    # at the end of this script (after `dracut --force`) refreshes them with
-    # the final initramfs.
+    # flash-kernel-piboot (transitional) pulls in piboot-try, which provides
+    # /usr/sbin/flash-kernel with Method: pi-try for the Pi 5B, the
+    # piboot-try-reboot / piboot-try-validate services, and the kernel
+    # postinst hook /etc/kernel/postinst.d/zz-flash-kernel that stages
+    # future kernel upgrades into /boot/firmware/new/ on the running device.
+    # We do NOT invoke flash-kernel during the build: its main() bails out
+    # inside a chroot (systemd-detect-virt --chroot), and its migrate() copies
+    # whatever sits at /boot/firmware/ root into current/ — useless for a
+    # fresh image. Instead we lay out the A/B directories ourselves further
+    # down, after dracut has produced the final initramfs.
     apt-get install -y -q --no-install-recommends flash-kernel-piboot
 
     # r[image.boot.pi-power-key]
@@ -486,14 +484,60 @@ echo "Generating initramfs with dracut..."
 dracut --force --kver "$KVER"
 
 if [ "$VARIANT" = "pi" ]; then
-    # r[image.boot.pi-firmware-update]
-    # Refresh /boot/firmware/new/ with the freshly-dracut'd initramfs.
-    # flash-kernel-piboot's postinst ran flash-kernel earlier (when only
-    # the initramfs-tools-generated initramfs existed); this final run
-    # supersedes that with the dracut output. Future kernel apt upgrades
-    # re-trigger flash-kernel via /etc/kernel/postinst.d/zz-flash-kernel.
-    echo "Refreshing /boot/firmware/new with dracut initramfs..."
-    flash-kernel
+    # r[image.boot.pi-firmware-update] r[image.boot.pi-tryboot-rollback]
+    # Lay out /boot/firmware/current/ with the dracut-generated initramfs,
+    # the kernel, the Pi 5 DTB, overlays, and the GPU firmware blobs.
+    # current/state=good tells piboot-try-reboot.service at next boot that
+    # no tryboot is pending. autoboot.txt enables the tryboot A/B chain
+    # for future kernel upgrades, which flash-kernel will then stage into
+    # /boot/firmware/new/ via the zz-flash-kernel kernel postinst hook.
+    echo "Laying out /boot/firmware/current/ for A/B tryboot..."
+
+    mkdir -p /boot/firmware/current/overlays
+
+    install -m 644 "/boot/vmlinuz-$KVER" /boot/firmware/current/vmlinuz
+    install -m 644 "/boot/initrd.img-$KVER" /boot/firmware/current/initrd.img
+    install -m 644 /boot/firmware/cmdline.txt /boot/firmware/current/cmdline.txt
+
+    DTB_NAME="bcm2712-rpi-5-b.dtb"
+    DTB_DIR=""
+    for candidate in \
+        "/usr/lib/firmware/${KVER}/device-tree/broadcom" \
+        "/lib/firmware/${KVER}/device-tree/broadcom"; do
+        if [ -f "${candidate}/${DTB_NAME}" ]; then
+            DTB_DIR="$candidate"
+            break
+        fi
+    done
+    if [ -z "$DTB_DIR" ]; then
+        echo "ERROR: could not locate ${DTB_NAME} for kernel ${KVER}" >&2
+        exit 1
+    fi
+    install -m 644 "${DTB_DIR}/${DTB_NAME}" /boot/firmware/current/
+
+    OVERLAYS_SRC="$(dirname "$DTB_DIR")/overlays"
+    if [ -d "$OVERLAYS_SRC" ]; then
+        # Pi 5 kernels ship overlays as a flat directory of .dtbo files.
+        cp "$OVERLAYS_SRC"/*.dtbo /boot/firmware/current/overlays/
+    fi
+
+    # GPU firmware blobs (bootcode.bin, start*.elf, fixup*.dat) live in
+    # linux-firmware-raspi. They are needed both at /boot/firmware/ root
+    # (read before os_prefix takes effect) and inside current/ so the slot
+    # is self-contained — flash-kernel does the same at apt-upgrade time.
+    BLOB_SRC=/usr/lib/linux-firmware-raspi
+    for blob in "$BLOB_SRC"/bootcode.bin "$BLOB_SRC"/start*.elf "$BLOB_SRC"/fixup*.dat; do
+        [ -f "$blob" ] || continue
+        install -m 644 "$blob" /boot/firmware/
+        install -m 644 "$blob" /boot/firmware/current/
+    done
+
+    echo good > /boot/firmware/current/state
+
+    cat > /boot/firmware/autoboot.txt << 'EOF'
+[all]
+tryboot_a_b=1
+EOF
 else
     # r[image.boot.grub-install] r[image.boot.grub-uuids]
     echo "Installing GRUB (target=$GRUB_TARGET)..."
