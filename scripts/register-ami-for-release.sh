@@ -61,6 +61,16 @@ echo "S3 bucket    : $BUCKET"
 echo "AMI name     : $AMI_NAME"
 echo ""
 
+# Emit a JSON fragment describing this AMI so the release-aggregate job can
+# surface it on the download page. Called both on the early-exit
+# (already-registered) path and at the end of a fresh registration.
+emit_fragment() {
+    local ami_id="$1"
+    cat > ami-fragment.json <<EOF
+{"region":"$REGION","arch":"$ARCH","suite":"$SUITE","ubuntu_version":"$UBUNTU_VERSION","version":"$VERSION","ami_id":"$ami_id","name":"$AMI_NAME"}
+EOF
+}
+
 # Check whether an AMI with this name already exists (idempotency guard).
 EXISTING=$(aws ec2 describe-images \
     --region "$REGION" \
@@ -70,6 +80,7 @@ EXISTING=$(aws ec2 describe-images \
     --output text)
 if [ "$EXISTING" != "None" ] && [ -n "$EXISTING" ]; then
     echo "AMI already exists: $EXISTING — skipping registration."
+    emit_fragment "$EXISTING"
     exit 0
 fi
 
@@ -241,6 +252,8 @@ if [ "$PUBLIC" != "True" ]; then
 fi
 echo "Published and verified"
 echo ""
+
+emit_fragment "$AMI_ID"
 
 echo "Done."
 echo "AMI $AMI_ID ($AMI_NAME) is registered and public."

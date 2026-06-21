@@ -573,8 +573,21 @@ jobs:
   # tag; failed tests on a tagged build are an operator-side abort, same
   # as register-ami already presumes.
   release-aggregate:
-    needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso, register-ami, copy-amis]
+    # copy-amis is in needs to force a wait, but the AMI section is built from
+    # whatever fragments actually upload — a partial satellite-region failure
+    # shouldn't block the release. always() lets us run despite a failed
+    # copy-amis job, while explicit result checks gate on the truly required
+    # jobs.
+    if: |
+      always() &&
+      startsWith(github.ref, 'refs/tags/') &&
+      needs.images-cloud.result == 'success' &&
+      needs.images-metal.result == 'success' &&
+      needs.images-pi.result == 'success' &&
+      needs.pi-eeprom.result == 'success' &&
+      needs.iso.result == 'success' &&
+      needs.register-ami.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -588,6 +601,15 @@ jobs:
           pattern: 'manifest-fragment-*'
           path: fragments/
 
+      - name: Download AMI fragments
+        # Zero or more — copy-amis matrix entries are best-effort, so some
+        # regions may have failed to upload.
+        uses: actions/download-artifact@v8
+        with:
+          pattern: 'ami-fragment-*'
+          path: amis/
+        continue-on-error: true
+
       - name: Assemble manifest.json + SHA256SUMS # r[image.output.checksum]
         run: |
           mkdir -p release
@@ -596,13 +618,24 @@ jobs:
           # sort by name for deterministic output.
           jq -s 'add | sort_by(.name)' fragments/*/manifest-fragment.json > files.json
 
+          # AMI fragments are single JSON objects (one per registered/copied
+          # AMI). Some may be missing if a copy-amis matrix entry failed.
+          shopt -s nullglob
+          AMI_FILES=(amis/*/ami-fragment.json)
+          if [ "${#AMI_FILES[@]}" -gt 0 ]; then
+            jq -s 'sort_by(.ubuntu_version, .arch, .region)' "${AMI_FILES[@]}" > amis.json
+          else
+            echo '[]' > amis.json
+          fi
+
           jq -n \
             --arg version "$VERSION" \
             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg repo "https://github.com/${{ github.repository }}" \
             --arg tag "${{ github.ref_name }}" \
             --slurpfile files files.json \
-            '{ version: $version, date: $date, repo: $repo, tag: $tag, files: $files[0] }' \
+            --slurpfile amis amis.json \
+            '{ version: $version, date: $date, repo: $repo, tag: $tag, files: $files[0], amis: $amis[0] }' \
             > release/manifest.json
 
           jq -r '.files[] | "\(.sha256)  \(.name)"' release/manifest.json > release/SHA256SUMS
@@ -642,6 +675,7 @@ jobs:
           TABLE_ROWS_PLACEHOLDER
           </tbody>
           </table>
+          AMI_SECTION_PLACEHOLDER
           </body>
           </html>
           HTMLEOF
@@ -671,6 +705,24 @@ jobs:
             echo "<tr><td><a href=\"${name}\">${name}</a></td><td>${variant}</td><td>${suite}</td><td>${arch}</td><td>${format}</td><td class=\"size\">${hsize}</td></tr>"
           done > table_rows.tmp
 
+          # AMI section: only render if there are any AMIs. The console
+          # quick-launch URL takes the AMI ID; the AMIs are public so any
+          # AWS account can hit it.
+          if [ "$(jq -r '.amis | length' manifest.json)" -gt 0 ]; then
+            {
+              echo '<h2 style="margin-top:2rem;">Launch on AWS</h2>'
+              echo '<p>These AMIs are public &mdash; use the Launch link below or run <code>aws ec2 run-instances --image-id &lt;ami-id&gt; --region &lt;region&gt; ...</code>.</p>'
+              echo '<table>'
+              echo '<thead><tr><th>Region</th><th>Ubuntu</th><th>Arch</th><th>AMI ID</th><th></th></tr></thead>'
+              echo '<tbody>'
+              jq -r '.amis[] | "<tr><td>\(.region)</td><td>\(.ubuntu_version)</td><td>\(.arch)</td><td><code>\(.ami_id)</code></td><td><a href=\"https://\(.region).console.aws.amazon.com/ec2/home?region=\(.region)#LaunchInstances:ami=\(.ami_id)\">Launch</a></td></tr>"' manifest.json
+              echo '</tbody>'
+              echo '</table>'
+            } > ami_section.tmp
+          else
+            : > ami_section.tmp
+          fi
+
           sed -i "s|VERSION_PLACEHOLDER|${VERSION}|g" index.html
           sed -i "s|REPO_PLACEHOLDER|${repo}|g" index.html
           sed -i "s|TAG_PLACEHOLDER|${tag}|g" index.html
@@ -678,7 +730,11 @@ jobs:
             r table_rows.tmp
             d
           }" index.html
-          rm -f table_rows.tmp
+          sed -i "/AMI_SECTION_PLACEHOLDER/{
+            r ami_section.tmp
+            d
+          }" index.html
+          rm -f table_rows.tmp ami_section.tmp
 
       - run: ls -lh release/
 
@@ -777,3 +833,54 @@ jobs:
         # every time the bucket is recreated.
         run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}" "ap-southeast-2" "${{ vars.AWS_AMI_STAGING_BUCKET }}"
         timeout-minutes: 60
+
+      - name: Upload AMI fragment
+        uses: actions/upload-artifact@v7
+        with:
+          name: ami-fragment-ap-southeast-2-${{ matrix.suite }}-${{ matrix.arch }}
+          path: ami-fragment.json
+          if-no-files-found: error
+          retention-days: 1
+
+  # Mirror the AMI registered above into the regions we have presence in
+  # (plus us-east-1 as the default consumer region). AMIs are region-scoped
+  # so without this consumers in other regions would have to copy-image
+  # themselves before launching.
+  copy-amis:
+    needs: [register-ami]
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        suite: [noble, resolute]
+        region: [ap-southeast-6, eu-central-2, ap-south-1, us-east-1]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Derive version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      # copy-image is called with both --source-region and --region, but
+      # configure-aws-credentials still needs a region for the session. Use
+      # the target region so describe-images / modify-image-attribute calls
+      # against the copy don't need an explicit --region argument.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ matrix.region }}
+          role-to-assume: arn:aws:iam::658427548944:role/gha-linux-images-upload
+          role-session-name: GHA@linux-images=CopyAMI-${{ matrix.suite }}-${{ matrix.arch }}-${{ matrix.region }}
+
+      - name: Copy AMI to ${{ matrix.region }}
+        run: scripts/copy-ami-to-region.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}" "ap-southeast-2" "${{ matrix.region }}"
+        timeout-minutes: 60
+
+      - name: Upload AMI fragment
+        uses: actions/upload-artifact@v7
+        with:
+          name: ami-fragment-${{ matrix.region }}-${{ matrix.suite }}-${{ matrix.arch }}
+          path: ami-fragment.json
+          if-no-files-found: error
+          retention-days: 1
