@@ -760,13 +760,20 @@ jobs:
           name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
           path: output/${{ matrix.arch }}/cloud/
 
+      # The AMI publishing account is dedicated: the only AWS account
+      # without EBS encryption-by-default enabled, so the imported snapshot
+      # lands unencrypted and the resulting AMI can be made public.
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ap-southeast-2
-          role-to-assume: arn:aws:iam::143295493206:role/gha-linux-images-upload
+          role-to-assume: arn:aws:iam::658427548944:role/gha-linux-images-upload
           role-session-name: GHA@linux-images=RegisterAMI-${{ matrix.suite }}-${{ matrix.arch }}
 
       - name: Register AMI
-        run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}"
+        # Region positional matches the configure-aws-credentials region
+        # above. Bucket comes from vars.* because the actual name carries a
+        # terraform unique suffix that would otherwise need a code change
+        # every time the bucket is recreated.
+        run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}" "ap-southeast-2" "${{ vars.AWS_AMI_STAGING_BUCKET }}"
         timeout-minutes: 60
