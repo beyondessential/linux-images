@@ -777,3 +777,38 @@ jobs:
         # every time the bucket is recreated.
         run: scripts/register-ami-for-release.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}" "ap-southeast-2" "${{ vars.AWS_AMI_STAGING_BUCKET }}"
         timeout-minutes: 60
+
+  # Mirror the AMI registered above into the regions we have presence in
+  # (plus us-east-1 as the default consumer region). AMIs are region-scoped
+  # so without this consumers in other regions would have to copy-image
+  # themselves before launching.
+  copy-amis:
+    needs: [register-ami]
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        suite: [noble, resolute]
+        region: [ap-southeast-6, eu-central-5, ap-south-1, us-east-1]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Derive version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      # copy-image is called with both --source-region and --region, but
+      # configure-aws-credentials still needs a region for the session. Use
+      # the target region so describe-images / modify-image-attribute calls
+      # against the copy don't need an explicit --region argument.
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ matrix.region }}
+          role-to-assume: arn:aws:iam::658427548944:role/gha-linux-images-upload
+          role-session-name: GHA@linux-images=CopyAMI-${{ matrix.suite }}-${{ matrix.arch }}-${{ matrix.region }}
+
+      - name: Copy AMI to ${{ matrix.region }}
+        run: scripts/copy-ami-to-region.sh "${{ matrix.arch }}" "${{ matrix.suite }}" "${{ env.VERSION }}" "ap-southeast-2" "${{ matrix.region }}"
+        timeout-minutes: 60
