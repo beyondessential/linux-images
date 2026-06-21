@@ -58,6 +58,16 @@ echo "Target region : $TARGET_REGION"
 echo "AMI name      : $AMI_NAME"
 echo ""
 
+# Emit a JSON fragment describing this AMI so the release-aggregate job can
+# surface it on the download page. Called both on the early-exit (copy
+# already exists) path and at the end of a fresh copy.
+emit_fragment() {
+    local ami_id="$1"
+    cat > ami-fragment.json <<EOF
+{"region":"$TARGET_REGION","arch":"$ARCH","suite":"$SUITE","ubuntu_version":"$UBUNTU_VERSION","version":"$VERSION","ami_id":"$ami_id","name":"$AMI_NAME"}
+EOF
+}
+
 # --- Idempotency guard ---
 
 EXISTING=$(aws ec2 describe-images \
@@ -68,6 +78,7 @@ EXISTING=$(aws ec2 describe-images \
     --output text)
 if [ "$EXISTING" != "None" ] && [ -n "$EXISTING" ]; then
     echo "Copy already exists in $TARGET_REGION: $EXISTING — skipping."
+    emit_fragment "$EXISTING"
     exit 0
 fi
 
@@ -177,6 +188,8 @@ if [ "$PUBLIC" != "True" ]; then
 fi
 echo "Published and verified"
 echo ""
+
+emit_fragment "$COPY_AMI"
 
 echo "Done."
 echo "AMI $COPY_AMI ($AMI_NAME) is registered and public in $TARGET_REGION."
