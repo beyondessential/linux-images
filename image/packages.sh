@@ -79,8 +79,10 @@ case "${VARIANT:-}" in
         # peripheral work over the GPIO header. tpm2-tools comes from the
         # common list above; Pi 5 has no native TPM but we ship-with-overlay
         # for an optional SPI TPM HAT (see r[image.boot.pi-tpm-overlay]).
-        # Note: no flash-kernel — its noble package lacks a Pi 5 db entry, so
-        # we manage /boot/firmware ourselves via bes-pi-firmware-update.
+        # flash-kernel-piboot is installed separately in configure.sh so
+        # configure.sh can lay out /boot/firmware/current/ before the package
+        # is dropped in — the chroot build doesn't run flash-kernel itself
+        # (see configure.sh for the A/B layout, r[image.boot.pi-tryboot-rollback]).
         PACKAGES+=(
             linux-raspi
             linux-firmware-raspi

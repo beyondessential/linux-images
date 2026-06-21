@@ -1,7 +1,20 @@
 # BES Linux — Raspberry Pi 5 boot config.
-# Read by the Pi 5 firmware (in EEPROM) at boot. flash-kernel populates the
-# kernel image, initramfs, DTB and overlays into this same FAT partition
-# (/boot/firmware) on every kernel update.
+# Read by the Pi 5 firmware (in EEPROM) at boot. The active boot slot is
+# selected by the os_prefix= lines below — see r[image.boot.pi-tryboot-rollback]
+# in docs/spec/disk-images.md. flash-kernel populates the kernel image,
+# initramfs, DTB and overlays under current/ (build-time) and new/ (on
+# every kernel apt upgrade via /etc/kernel/postinst.d/zz-flash-kernel).
+#
+# The watchdog (`dtparam=watchdog=on`) is required by piboot-try's tryboot
+# fallback: if a trial boot from new/ hangs, the BCM2712's hardware
+# watchdog resets the board and the EEPROM falls back to current/.
+
+# r[image.boot.pi-tryboot-rollback]
+[all]
+os_prefix=current/
+
+[tryboot]
+os_prefix=new/
 
 # r[image.boot.pi-firmware] r[image.boot.pi-uart] r[image.boot.pi-peripherals]
 # r[image.boot.pi-tpm-overlay] r[image.boot.pi-pcie-gen3]
@@ -27,5 +40,4 @@ dtparam=i2c_arm=on
 dtparam=spi=on
 dtparam=pciex1_gen=3
 dtoverlay=tpm-slb9670
-kernel=vmlinuz
-initramfs initrd.img followkernel
+dtparam=watchdog=on

@@ -393,7 +393,9 @@ if [ "$VARIANT" = "pi" ]; then
     check "Pi config.txt exists" test -f "$MNT/boot/firmware/config.txt"
     check "Pi cmdline.txt exists" test -f "$MNT/boot/firmware/cmdline.txt"
     if [ -f "$MNT/boot/firmware/config.txt" ]; then
-        check "config.txt selects vmlinuz kernel" grep -q '^kernel=vmlinuz' "$MNT/boot/firmware/config.txt"
+        # r[verify image.boot.pi-tryboot-rollback]
+        check "config.txt sets os_prefix=current/" grep -q '^os_prefix=current/' "$MNT/boot/firmware/config.txt"
+        check "config.txt sets os_prefix=new/ under [tryboot]" grep -q '^os_prefix=new/' "$MNT/boot/firmware/config.txt"
         # r[verify image.boot.pi-uart]
         check "config.txt enables UART" grep -q '^enable_uart=1' "$MNT/boot/firmware/config.txt"
         # r[verify image.boot.pi-peripherals]
@@ -411,12 +413,17 @@ if [ "$VARIANT" = "pi" ]; then
         # r[verify image.boot.pi-uart]
         check "cmdline.txt sets serial0 console" grep -q 'console=serial0,115200' "$MNT/boot/firmware/cmdline.txt"
     fi
+    # r[verify image.boot.pi-tryboot-rollback]
+    check "autoboot.txt enables tryboot_a_b" grep -q '^tryboot_a_b=1' "$MNT/boot/firmware/autoboot.txt"
+    check "current/state is good" sh -c "test \"\$(cat '$MNT/boot/firmware/current/state' 2>/dev/null)\" = good"
     # r[verify image.boot.pi-firmware-update]
-    check "firmware-update script installed" test -x "$MNT/usr/local/sbin/bes-pi-firmware-update"
-    check "kernel postinst hook installed" test -x "$MNT/etc/kernel/postinst.d/zz-bes-pi-firmware"
-    check "/boot/firmware has kernel" test -f "$MNT/boot/firmware/vmlinuz"
-    check "/boot/firmware has initramfs" test -f "$MNT/boot/firmware/initrd.img"
-    check "/boot/firmware has Pi 5 DTB" test -f "$MNT/boot/firmware/bcm2712-rpi-5-b.dtb"
+    check "/boot/firmware/current/ has kernel" test -f "$MNT/boot/firmware/current/vmlinuz"
+    check "/boot/firmware/current/ has initramfs" test -f "$MNT/boot/firmware/current/initrd.img"
+    check "/boot/firmware/current/ has Pi 5 DTB" test -f "$MNT/boot/firmware/current/bcm2712-rpi-5-b.dtb"
+    check "kernel postinst hook installed (zz-flash-kernel)" test -x "$MNT/etc/kernel/postinst.d/zz-flash-kernel"
+    # Legacy hand-rolled hook + helper must not be present (replaced by flash-kernel).
+    check_not "no legacy bes-pi-firmware-update helper" test -e "$MNT/usr/local/sbin/bes-pi-firmware-update"
+    check_not "no legacy zz-bes-pi-firmware hook" test -e "$MNT/etc/kernel/postinst.d/zz-bes-pi-firmware"
     # No GRUB on pi.
     check_not "no /boot/grub on pi" test -d "$MNT/boot/grub"
     check_not "no GRUB EFI binary on pi (BOOTAA64.EFI)" test -f "$MNT/boot/firmware/EFI/BOOT/BOOTAA64.EFI"

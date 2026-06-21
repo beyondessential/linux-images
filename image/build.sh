@@ -163,9 +163,10 @@ sgdisk --zap-all "$LOOP_DEVICE" >/dev/null
 
 # r[image.partition.efi] r[image.partition.pi-firmware]
 # pi: a larger FAT partition holds Pi firmware blobs, kernel, initramfs, DTBs
-# and overlays — flash-kernel populates it. Type stays ESP (Pi firmware
-# accepts ESP-typed FAT partitions on GPT and the larger size doesn't hurt
-# UEFI either, but only the pi variant needs the headroom).
+# and overlays — laid out by configure.sh as an A/B tryboot directory tree
+# (current/, new/, old/). Type stays ESP (Pi firmware accepts ESP-typed FAT
+# partitions on GPT and the larger size doesn't hurt UEFI either, but only
+# the pi variant needs the headroom).
 if [ "$VARIANT" = "pi" ]; then
     BOOT1_SIZE="+1G"
     BOOT1_LABEL="firmware"
