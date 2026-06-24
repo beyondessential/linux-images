@@ -725,6 +725,13 @@ else
     pass "systemd-timesyncd is not enabled"
 fi
 
+# r[verify image.packages.service-restart+2]
+check "needrestart binary exists" test -x "$MNT/usr/sbin/needrestart"
+check "needrestart auto-restart drop-in installed" \
+    test -f "$MNT/etc/needrestart/conf.d/50-bes-autorestart.conf"
+check "needrestart set to auto-restart" \
+    grep -q "restart} = 'a'" "$MNT/etc/needrestart/conf.d/50-bes-autorestart.conf"
+
 case "$VARIANT" in
     metal|pi)
         # r[verify image.luks.keyfile]
