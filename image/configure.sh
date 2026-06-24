@@ -101,6 +101,13 @@ if [ -x /usr/lib/systemd/systemd-timesyncd ] || [ -f /usr/lib/systemd/system/sys
     systemctl mask systemd-timesyncd.service
 fi
 
+# r[impl image.packages.service-restart+2]
+# needrestart prompts by default; force non-interactive auto-restart so apt
+# operations on the running image bounce affected services unattended.
+mkdir -p /etc/needrestart/conf.d
+install -m 644 /tmp/files/needrestart/50-bes-autorestart.conf \
+    /etc/needrestart/conf.d/50-bes-autorestart.conf
+
 # ============================================================
 # Third-party APT repositories
 # ============================================================

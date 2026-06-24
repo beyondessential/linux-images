@@ -36,6 +36,13 @@ PACKAGES=(
     cron
     sudo
 
+    # r[image.packages.service-restart+2]
+    # Restart services after upgrades. Pulled in by the server task on a stock
+    # install, but this is a --no-install-recommends minbase build, so it must
+    # be listed explicitly. Configured for non-interactive auto-restart in
+    # configure.sh.
+    needrestart
+
     # APT key management
     gnupg
 

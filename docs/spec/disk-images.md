@@ -146,6 +146,12 @@ Chrony must be installed and enabled as the system time synchronization
 daemon. No other time synchronization daemon (in particular,
 systemd-timesyncd) may be active on the running image.
 
+r[image.packages.service-restart+2]
+After an APT operation on the running system, any service whose executable or
+a shared library it had mapped was replaced by that operation must be
+restarted automatically so it runs the upgraded code. This must happen without
+interactive prompting.
+
 ## Bootloader
 
 r[image.boot.dracut]
