@@ -25,6 +25,8 @@ set -euo pipefail
 #   source-region  AWS region where the AMI was originally registered
 #   target-region  AWS region to copy the AMI into
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 ARCH="${1:-}"
 SUITE="${2:-}"
 VERSION="${3:-}"
@@ -163,6 +165,12 @@ aws ec2 create-tags \
     --resources "$SNAPSHOT_ID" \
     --tags $TAGS
 echo "Tagged backing snapshot $SNAPSHOT_ID"
+echo ""
+
+# --- Demote prior releases' public AMIs to stay under the per-region cap ---
+
+# r[impl image.output.aws-ami-public+4]
+"$SCRIPT_DIR/demote-public-amis.sh" "$TARGET_REGION" "$VERSION"
 echo ""
 
 # --- Make AMI and snapshot public ---

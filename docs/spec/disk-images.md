@@ -498,3 +498,15 @@ SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
 > `Os`, `OsVersion`, `Variant`, `Architecture`, `Version`, `Features`, and
 > `Builder`. `OsVersion` must hold the numeric Ubuntu release
 > (`<ubuntu-version>` above).
+
+> r[image.output.aws-ami-public+4]
+> Each released AMI must be made publicly launchable, and a public copy must be
+> registered in every mirror region listed in the build matrix, so consumers
+> can launch directly in their own region without first copying the AMI across
+> regions.
+>
+> AWS caps the number of public images allowed per region. To stay within that
+> cap, publishing a release's AMIs in a region must first make any public AMIs
+> from earlier releases in that region private. After a region has been
+> published, the only AMIs left public in it must be those belonging to the
+> release being published.
