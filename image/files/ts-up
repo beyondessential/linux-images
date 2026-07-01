@@ -20,7 +20,7 @@ echo "=========================================="
 echo "Tailscale Configuration"
 echo "=========================================="
 echo ""
-echo "Enter the auth key provided by BES (or press Enter to skip):"
+echo "Enter the auth key provided by BES International (or press Enter to skip):"
 read -r TS_AUTH_KEY
 
 TAILSCALE_CONNECTED=0

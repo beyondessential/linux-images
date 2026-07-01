@@ -1,4 +1,4 @@
-# Guide for BES Linux ISO/USB installer
+# Guide for BES International Linux ISO/USB installer
 
 [![Animated GIF demoing the entire process](./images/demo.gif)](https://asciinema.org/a/ZlN92tFyAEpc7cun)
 

@@ -1,4 +1,4 @@
-# BES Linux Images & ISO installer
+# BES International Linux Images & ISO installer
 
 AKA "Tamanu Linux"
 

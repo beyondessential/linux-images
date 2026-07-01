@@ -1,4 +1,4 @@
-# Guide for BES Linux direct-to-disk images
+# Guide for BES International Linux direct-to-disk images
 
 The disk images are pre-prepared volumes containing a working Ubuntu Server Linux system
 configured as per BES's preferences for disk and system layout.
