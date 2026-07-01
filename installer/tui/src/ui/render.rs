@@ -714,7 +714,7 @@ fn render_welcome(frame: &mut Frame, area: Rect, state: &AppState) {
                 + " using our disk images, which may be more suitable for bulk installs.",
         ),
         Line::from(""),
-        Span::styled("For support, contact BES International at: ", Style::default())
+        Span::styled("For support, contact BES at: ", Style::default())
             + Span::styled(
                 "https://bes.au",
                 Style::default()
