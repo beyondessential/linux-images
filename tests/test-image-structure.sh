@@ -662,6 +662,31 @@ else
     fail "ubuntu user has /bin/bash shell"
 fi
 
+UBUNTU_SHADOW="$(grep '^ubuntu:' "$MNT/etc/shadow" || true)"
+UBUNTU_PWHASH="$(printf '%s' "$UBUNTU_SHADOW" | cut -d: -f2)"
+UBUNTU_LASTCHG="$(printf '%s' "$UBUNTU_SHADOW" | cut -d: -f3)"
+if [ "$VARIANT" = "cloud" ]; then
+    case "$UBUNTU_PWHASH" in
+        '!'* | '*'*) pass "ubuntu password is unusable for cloud" ;;
+        *) fail "ubuntu password is unusable for cloud (shadow password field: '$UBUNTU_PWHASH')" ;;
+    esac
+    if [ "$UBUNTU_LASTCHG" != "0" ]; then
+        pass "ubuntu password is not marked expired for cloud"
+    else
+        fail "ubuntu password is not marked expired for cloud"
+    fi
+else
+    case "$UBUNTU_PWHASH" in
+        '$'*) pass "ubuntu has a password hash for $VARIANT" ;;
+        *) fail "ubuntu has a password hash for $VARIANT (shadow password field: '$UBUNTU_PWHASH')" ;;
+    esac
+    if [ "$UBUNTU_LASTCHG" = "0" ]; then
+        pass "ubuntu password is marked expired for $VARIANT"
+    else
+        fail "ubuntu password is marked expired for $VARIANT (last-change field: '$UBUNTU_LASTCHG')"
+    fi
+fi
+
 # r[verify image.credentials.root-disabled]
 if grep '^root:' "$MNT/etc/passwd" | grep -q '/sbin/nologin$'; then
     pass "root user has /sbin/nologin shell"

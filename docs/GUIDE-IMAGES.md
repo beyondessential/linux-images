@@ -100,10 +100,11 @@ It has passwordless `sudo` access.
 
 ### cloud image
 
-SSH password authentication is disabled.
+SSH password authentication is disabled, and the `ubuntu` account has no password at all, so console and serial-console logins are not possible either.
+Access is by SSH key or Tailscale SSH only.
 
-If you're installing the cloud image on hardware, you need to either log in directly at the console, or add SSH keys to `/home/ubuntu/.ssh/authorized_keys` before booting.
-Otherwise, configure your cloud-init user-data to write SSH keys.
+Normally your cloud-init user-data (or the cloud's key injection, as on EC2) provides the keys.
+If you're installing the cloud image on hardware, add SSH keys to `/home/ubuntu/.ssh/authorized_keys` before booting, or set a password there too if you want console access.
 
 ### metal image
 
