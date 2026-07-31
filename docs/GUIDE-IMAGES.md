@@ -117,6 +117,49 @@ You will be prompted to change it at first login.
 
 The `root` user has no password and its shell is set to `/sbin/nologin`, so direct root login is not possible.
 
+### Break-glass access
+
+If you are locked out entirely — no usable key, no password — you can still get a root shell, provided you have console or serial-console access.
+
+1. Reboot and interrupt the GRUB menu within its 5-second timeout.
+2. Press `e` on the default entry, append `rd.break` to the `linux` line, and press `Ctrl+X` to boot.
+3. dracut drops to an unauthenticated shell just before switching root, with the root filesystem at `/sysroot`.
+
+On metal and Pi this happens after the initramfs has unlocked the root volume, so you may be asked for the recovery passphrase first.
+
+That shell is the initramfs, not the installed system: it has `sh`, `mount`, `sed`, `grep`, `cat` and `systemctl`, but no `chroot`, `passwd`, `chage` or `date`.
+So edit `/sysroot/etc/shadow` directly, then `exit` to resume booting.
+
+Start by making it writable:
+
+```
+mount -o remount,rw /sysroot
+```
+
+If a login is stuck demanding a password change, clear the expiry — the `ubuntu` account is the only one whose last-change and minimum-age fields are both zero, so this one substitution hits it and nothing else:
+
+```
+sed -i 's/:0:0:/:1:0:/' /sysroot/etc/shadow
+```
+
+If the account has no password at all (the cloud image), empty its password field instead:
+
+```
+sed -i 's/^ubuntu:[^:]*:/ubuntu::/' /sysroot/etc/shadow
+```
+
+Check that either edit landed, since `sed` says nothing when its pattern does not match:
+
+```
+grep ^ubuntu: /sysroot/etc/shadow
+```
+
+You can then log in at the console by pressing Enter at the password prompt, because PAM is configured with `nullok`.
+Set a real password with `passwd` as soon as you are in.
+Remote password logins stay impossible throughout, since the cloud image's SSH daemon has password authentication disabled.
+
+`systemd.unit=emergency.target` is not an alternative: the emergency shell runs `sulogin`, and root has no password and `/sbin/nologin` as its shell, so it refuses to open a session.
+
 ## Tailscale
 
 Tailscale is pre-installed.
