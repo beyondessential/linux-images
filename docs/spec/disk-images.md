@@ -392,8 +392,13 @@ A weekly cron job must be present to run `apt install -y tailscale`.
 ## Credentials
 
 r[image.credentials.ubuntu-user]
-A `ubuntu` user must exist with the pre-set password `bes`. The password must
-be marked expired so that console login forces an immediate password change.
+A `ubuntu` user must exist. On the metal and Pi images it must have the
+pre-set password `bes`, marked expired so that console login forces an
+immediate password change. On the cloud image the account must have no usable
+password and must not be marked expired: cloud instances authenticate with
+keys provisioned by cloud-init, and an expired password makes every login
+session demand a password change, including sessions that authenticated by
+key or through Tailscale SSH.
 
 r[image.credentials.root-disabled]
 The `root` user must have its shell set to `/sbin/nologin`.

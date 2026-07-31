@@ -287,7 +287,7 @@ fn apply_password(root: &Path, config: &InstallConfig) -> Result<()> {
                         fields[8],
                     )
                 } else {
-                    format!("ubuntu:{hash}:{}", &fields[2..].join(":"))
+                    format!("ubuntu:{hash}:{}", fields[2..].join(":"))
                 }
             } else {
                 line.to_string()
