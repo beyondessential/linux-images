@@ -24,6 +24,13 @@ PACKAGES=(
     # Cloud
     cloud-init
 
+    # r[impl image.cloud-init.apt-codename]
+    # cloud-init resolves the suite codename by executing lsb_release rather
+    # than reading /etc/os-release. Without this package the lookup fails and
+    # it writes "UNAVAILABLE" into the APT suites it generates on first boot,
+    # leaving apt unable to fetch anything on every deployed instance.
+    lsb-release
+
     # Time synchronization. systemd-timesyncd is only a Recommends of
     # systemd-sysv, so --no-install-recommends leaves the image without any
     # time-sync daemon by default. Ship chrony explicitly so first boot has

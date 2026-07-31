@@ -510,6 +510,17 @@ check "bes-ssh-keygen.service is enabled" test -L "$MNT/etc/systemd/system/multi
 check "cloud-init BES config exists" test -f "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"
 check "cloud-init has no hostname_file setting" grep -q "create_hostname_file: false" "$MNT/etc/cloud/cloud.cfg.d/99-bes.cfg"
 
+# r[verify image.cloud-init.apt-codename]
+check "lsb_release is executable (cloud-init codename lookup)" test -x "$MNT/usr/bin/lsb_release"
+if [ -x "$MNT/usr/bin/lsb_release" ]; then
+    CODENAME="$(chroot "$MNT" lsb_release -cs 2>/dev/null || true)"
+    if [ -n "$CODENAME" ] && [ "$CODENAME" = "$SUITE" ]; then
+        pass "lsb_release reports the suite codename ($CODENAME)"
+    else
+        fail "lsb_release reports the suite codename (got '$CODENAME', expected '$SUITE')"
+    fi
+fi
+
 # r[verify image.cloud-init.no-network]
 check_not "installer network config absent" test -f "$MNT/etc/cloud/cloud.cfg.d/90-installer-network.cfg"
 
