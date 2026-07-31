@@ -432,6 +432,13 @@ r[image.cloud-init.enabled]
 cloud-init must be installed and enabled, allowing cloud providers and NoCloud
 data sources to inject configuration (networking, SSH keys) at first boot.
 
+r[image.cloud-init.apt-codename]
+A booted instance's APT sources must reference the suite the system is
+actually running. cloud-init rewrites those sources on first boot and
+resolves the codename by executing `lsb_release`, substituting the literal
+string `UNAVAILABLE` for every field when that fails; the image must make
+that lookup succeed, since otherwise APT cannot fetch anything at all.
+
 r[image.cloud-init.no-hostname-file]
 cloud-init must be configured with `create_hostname_file: false` so that the
 hostname is provided by DHCP rather than a static file.
