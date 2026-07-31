@@ -392,8 +392,13 @@ A weekly cron job must be present to run `apt install -y tailscale`.
 ## Credentials
 
 r[image.credentials.ubuntu-user]
-A `ubuntu` user must exist with the pre-set password `bes`. The password must
-be marked expired so that console login forces an immediate password change.
+A `ubuntu` user must exist. On the metal and Pi images it must have the
+pre-set password `bes`, marked expired so that console login forces an
+immediate password change. On the cloud image the account must have no usable
+password and must not be marked expired: cloud instances authenticate with
+keys provisioned by cloud-init, and an expired password makes every login
+session demand a password change, including sessions that authenticated by
+key or through Tailscale SSH.
 
 r[image.credentials.root-disabled]
 The `root` user must have its shell set to `/sbin/nologin`.
@@ -498,3 +503,15 @@ SHA256 checksums of all output files must be written to a `SHA256SUMS` file.
 > `Os`, `OsVersion`, `Variant`, `Architecture`, `Version`, `Features`, and
 > `Builder`. `OsVersion` must hold the numeric Ubuntu release
 > (`<ubuntu-version>` above).
+
+> r[image.output.aws-ami-public+4]
+> Each released AMI must be made publicly launchable, and a public copy must be
+> registered in every mirror region listed in the build matrix, so consumers
+> can launch directly in their own region without first copying the AMI across
+> regions.
+>
+> AWS caps the number of public images allowed per region. To stay within that
+> cap, publishing a release's AMIs in a region must first make any public AMIs
+> from earlier releases in that region private. After a region has been
+> published, the only AMIs left public in it must be those belonging to the
+> release being published.

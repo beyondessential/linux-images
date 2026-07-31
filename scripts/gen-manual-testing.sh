@@ -436,20 +436,27 @@ a disk, without using the ISO installer.
    sync
    ```
 
-2. Boot from the disk (or attach it to a VM with at least 10 GB total
+2. The cloud image has no password on the `ubuntu` account, so arrange
+   access before booting: mount the image's root subvolume and add your
+   public key to `/home/ubuntu/.ssh/authorized_keys`, or attach a cloud-init
+   seed whose user-data provides the key.
+
+3. Boot from the disk (or attach it to a VM with at least 10 GB total
    disk size so the growth service has room to expand).
 
-3. Verify:
+4. Verify:
    - GRUB menu appears with a 5-second timeout.
    - The system boots to a login prompt.
-   - Log in as `ubuntu` with password `bes` (will be forced to change it).
+   - SSH in as `ubuntu` with the key you provisioned; the session opens
+     straight to a shell with no password prompt.
    - `cat /etc/bes/image-variant` shows `cloud` (this is the build-time
      cloud image, not an installer-produced system).
    - `df -h /` shows the root filesystem has been expanded beyond the
      base image size.
    - `btrfs subvolume list /` shows `@` and `@postgres`.
 
-4. Repeat with the metal image.
+5. Repeat with the metal image, logging in at the console as `ubuntu` with
+   password `bes` (which you are forced to change at first login).
 
 **Acceptance criteria**: both cloud and metal images boot from a raw disk
 write. The growth service expands the root filesystem. The metal image

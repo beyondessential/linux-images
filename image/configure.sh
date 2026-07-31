@@ -407,8 +407,16 @@ systemctl enable grow-root-filesystem.service
 if ! id -u ubuntu &>/dev/null; then
     useradd -m -s /bin/bash -G sudo ubuntu
 fi
-echo "ubuntu:bes" | chpasswd
-passwd --expire ubuntu
+if [ "$VARIANT" = "cloud" ]; then
+    # An expired password makes PAM demand a change on every session, even ones
+    # that never used a password (key-based SSH, Tailscale SSH), which locks the
+    # instance out if the change cannot complete. Cloud instances get their
+    # credentials from cloud-init, so ship no password at all.
+    usermod --password '!' ubuntu
+else
+    echo "ubuntu:bes" | chpasswd
+    passwd --expire ubuntu
+fi
 
 # r[image.credentials.root-disabled]
 usermod -s /sbin/nologin root

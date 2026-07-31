@@ -224,6 +224,12 @@ aws ec2 create-tags \
 echo "Tagged AMI and snapshot"
 echo ""
 
+# --- Demote prior releases' public AMIs to stay under the per-region cap ---
+
+# r[impl image.output.aws-ami-public+4]
+"$SCRIPT_DIR/demote-public-amis.sh" "$REGION" "$VERSION"
+echo ""
+
 # --- Make AMI and snapshot public ---
 
 # Public launch on the AMI lets any AWS account run instances from it; public
