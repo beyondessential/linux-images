@@ -17,9 +17,9 @@ $ gh attestation verify --owner beyondessential ubuntu-24.04-bes-cloud-amd64-202
 
 ## Version
 
-The images are based on **Ubuntu Server 24.04 LTS**.
+The images are based on **Ubuntu Server 26.04 LTS**.
 
-Ubuntu Server 26.04 LTS support is planned for mid-2026.
+Ubuntu Server 24.04 LTS images remain available for a short while but shouldn't be used outside of specific circumstances.
 Non-LTS versions e.g. 25.10 will not be supported.
 
 ## Boot
