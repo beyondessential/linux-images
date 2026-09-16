@@ -92,8 +92,8 @@ fi
 
 # r[impl image.packages.chrony]
 # chrony enables itself via its postinst; defensively disable
-# systemd-timesyncd in case it was pulled in as a dependency (noble's
-# systemd-sysv depends on it). chrony.service has a runtime Conflicts=
+# systemd-timesyncd in case it was pulled in as a dependency. chrony.service
+# has a runtime Conflicts=
 # directive against systemd-timesyncd, but leaving both enabled means one
 # fails to start at boot — better to disable it deterministically here.
 if [ -x /usr/lib/systemd/systemd-timesyncd ] || [ -f /usr/lib/systemd/system/systemd-timesyncd.service ]; then
@@ -120,43 +120,20 @@ bash /tmp/scripts/setup-kopia.sh
 # r[image.boot.dracut]
 apt-get install -y -q dracut  # this removes initramfs-tools
 
-# Dracut's default is hostonly=yes (per the dracut.conf manpage on every
-# supported suite), which produces an initramfs bound to the build host.
-# The shipped image needs to be portable across hardware, so we override:
+# Dracut's default is hostonly=yes (per the dracut.conf manpage), which
+# produces an initramfs bound to the build host. The shipped image needs to be
+# portable across hardware, so hostonly=no is set instead: dracut then bundles
+# every module the kernel package ships, which covers the hardware and cloud
+# driver classes without enumerating them. On the pi variant that is whatever
+# linux-raspi ships.
 #
-# - On noble, hostonly=no is broken — we keep hostonly=yes + sloppy mode and
-#   force-include the hardware/cloud module lists.
-# - On 26.04+, hostonly=no works correctly and pulls in all kernel modules,
-#   so a single drop-in is enough.
+# The installer strips this override post-install so the target machine's
+# initramfs is hostonly=yes (the default), specialised to its actual hardware
+# (see r[installer.write.rebuild-boot-config+9]).
 #
-# The installer strips the 26.04+ override post-install so the target
-# machine's initramfs is hostonly=yes (the default), specialised to its
-# actual hardware (see r[installer.write.rebuild-boot-config+9]).
-if [ "$VARIANT" = "pi" ]; then
-    # The hardware/cloud driver lists are x86-server-leaning (e1000e, ixgbe,
-    # etc.) and many of those modules don't exist in linux-raspi. Pi always
-    # uses the portable-image config (hostonly=no) regardless of suite, so
-    # dracut just bundles whatever linux-raspi ships.
-    install -m 644 /tmp/files/dracut/01-portable-image.conf \
-        /etc/dracut.conf.d/01-portable-image.conf
-elif [ "$UBUNTU_SUITE" = "noble" ]; then
-    install -m 644 /tmp/files/dracut/01-fix-hostonly.conf \
-        /etc/dracut.conf.d/01-fix-hostonly.conf
-
-    # r[impl image.boot.hardware-drivers+3]
-    install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
-        /etc/dracut.conf.d/03-hardware-drivers.conf
-
-    # r[impl image.boot.cloud-drivers+5]
-    if [ "$VARIANT" = "cloud" ]; then
-        install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
-            /etc/dracut.conf.d/04-cloud-drivers.conf
-    fi
-else
-    # r[impl image.boot.hardware-drivers+3] r[impl image.boot.cloud-drivers+5]
-    install -m 644 /tmp/files/dracut/01-portable-image.conf \
-        /etc/dracut.conf.d/01-portable-image.conf
-fi
+# r[impl image.boot.hardware-drivers+3] r[impl image.boot.cloud-drivers+5]
+install -m 644 /tmp/files/dracut/01-portable-image.conf \
+    /etc/dracut.conf.d/01-portable-image.conf
 
 if [ "$VARIANT" = "metal" ]; then
     apt-get install -y -q --no-install-recommends linux-firmware
