@@ -103,20 +103,30 @@ case "${VARIANT:-}" in
         # its UART, so the kernel binds it with no attach helper — the
         # pi-bluetooth package and its btuart/bthelper serve the older
         # pre-serdev path and are not needed here. What is missing is purely
-        # userspace: bluez for the host stack, and wpasupplicant because
-        # netplan.io does not depend on, recommend, or even suggest it, so
-        # nothing else in the graph would pull it in. wireless-regdb lets the
-        # kernel apply channel and transmit-power limits once an operator sets
-        # a regulatory domain; without it there is no database to apply.
-        # iw and rfkill are diagnostics, in the same spirit as i2c-tools: on a
-        # headless board they are the only way to see why a radio did not come
-        # up, and a soft block is the usual answer.
+        # userspace. The bluetooth metapackage names the host stack; bluez is
+        # its only dependency, and the companions it lists (bluez-cups,
+        # bluez-meshd, bluez-obexd) are Suggests, which apt does not act on,
+        # so nothing arrives that is not asked for here. wpasupplicant has to
+        # be named because netplan.io does not depend on, recommend, or even
+        # suggest it, so nothing else in the graph would pull it in, and
+        # without it only an open network can be joined. wireless-regdb gives
+        # the kernel channel and transmit-power limits to apply once a
+        # regulatory domain is set; without it there is no database to apply.
+        #
+        # iw and rfkill are diagnostics, in the same spirit as i2c-tools. The
+        # expected workload drives Bluetooth Low Energy through bluetoothd's
+        # D-Bus API from a purpose-built tool, which needs neither; they are
+        # here for the times that tool misbehaves. Bluetooth wants nothing
+        # extra of its own: bluez already carries btmon, which traces the HCI
+        # transport and so reports what the controller was actually told,
+        # whatever the tool believes it sent. On a headless board rfkill is
+        # also the only way to tell a dead radio from a soft-blocked one.
         PACKAGES+=(
             linux-raspi
             linux-firmware-raspi
             i2c-tools
 
-            bluez
+            bluetooth
             wpasupplicant
             wireless-regdb
             iw
