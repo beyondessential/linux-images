@@ -422,6 +422,11 @@ if [ "$VARIANT" = "pi" ]; then
         check "config.txt enables SPI" grep -q '^dtparam=spi=on' "$MNT/boot/firmware/config.txt"
         # r[verify image.boot.pi-tpm-overlay]
         check "config.txt enables tpm-slb9670 overlay" grep -q '^dtoverlay=tpm-slb9670' "$MNT/boot/firmware/config.txt"
+        # r[verify image.wireless.pi-bluetooth]
+        # disable-bt frees the UART by taking the controller out of the device
+        # tree entirely. Nothing here asks for it, but it is the one line that
+        # would silently undo the whole feature, so assert its absence.
+        check_not "config.txt does not disable Bluetooth" grep -q 'disable-bt' "$MNT/boot/firmware/config.txt"
         # r[verify image.boot.pi-pcie-gen3]
         check "config.txt sets PCIe gen 3" grep -q '^dtparam=pciex1_gen=3' "$MNT/boot/firmware/config.txt"
         check "config.txt disables splash" grep -q '^disable_splash=1' "$MNT/boot/firmware/config.txt"
@@ -473,6 +478,29 @@ if [ "$VARIANT" = "pi" ]; then
     check_not "no GRUB EFI binary on pi (BOOTAA64.EFI)" test -f "$MNT/boot/firmware/EFI/BOOT/BOOTAA64.EFI"
     # r[verify image.boot.pi-peripherals]
     check "i2c-tools installed (i2cdetect)" test -x "$MNT/usr/sbin/i2cdetect"
+    # r[verify image.wireless.pi-bluetooth]
+    check "Bluetooth host stack installed (bluetoothd)" test -x "$MNT/usr/libexec/bluetooth/bluetoothd"
+    check "bluetoothctl installed" test -x "$MNT/usr/bin/bluetoothctl"
+    check "bluetooth.service enabled" test -L "$MNT/etc/systemd/system/bluetooth.target.wants/bluetooth.service"
+    # Ubuntu ships firmware zstd-compressed, so match the stem and let the
+    # glob cover both the plain and .zst spellings.
+    check "Pi 5 Bluetooth controller firmware present" \
+        ls "$MNT"/usr/lib/firmware/brcm/BCM4345C0.raspberrypi,5-model-b.hcd*
+
+    # r[verify image.wireless.pi-wifi]
+    check "WPA supplicant installed" test -x "$MNT/usr/sbin/wpa_supplicant"
+    check "wireless regulatory database present" \
+        ls "$MNT"/usr/lib/firmware/regulatory.db*
+    check "Pi 5 Wi-Fi controller firmware present" \
+        ls "$MNT"/usr/lib/firmware/brcm/brcmfmac43455-sdio.raspberrypi,5-model-b.bin*
+    check "wireless diagnostics installed (iw)" test -x "$MNT/usr/sbin/iw"
+    check "wireless diagnostics installed (rfkill)" test -x "$MNT/usr/sbin/rfkill"
+    # The image must not carry credentials or join a network on its own; the
+    # shipped netplan config is Ethernet-only and declaring any wifis: stanza
+    # here would be the first step away from that.
+    check_not "no wireless network configured in netplan" \
+        grep -qE '^[[:space:]]*wifis:' "$MNT/etc/netplan/01-all-en-dhcp.yaml"
+
     # r[verify image.boot.pi-power-key]
     check "logind power-key drop-in installed" test -f "$MNT/etc/systemd/logind.conf.d/50-bes-power.conf"
     if [ -f "$MNT/etc/systemd/logind.conf.d/50-bes-power.conf" ]; then
