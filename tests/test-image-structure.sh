@@ -455,11 +455,14 @@ if [ "$VARIANT" = "pi" ]; then
     check "/boot/firmware/current/ has initramfs" test -f "$MNT/boot/firmware/current/initrd.img"
     check "/boot/firmware/current/ has Pi 5 DTB" test -f "$MNT/boot/firmware/current/bcm2712-rpi-5-b.dtb"
     # r[verify image.boot.pi-firmware]
-    # The overlay index and the D0 fixup overlay are never named in
-    # config.txt -- the firmware reaches for them on its own -- so a build
-    # that stages only the overlays config.txt asks for drops them
-    # silently and boots the wrong device tree on Rev 1.1 boards.
-    check "current/overlays/ has the overlay index" test -f "$MNT/boot/firmware/current/overlays/overlay_map.dtb"
+    # README is the marker that makes the firmware read overlays from this
+    # slot at all; without it os_prefix is ignored for overlays and none
+    # are applied, silently. The D0 fixup overlay is never named in
+    # config.txt -- the firmware reaches for it on its own on Rev 1.1
+    # boards -- so neither file is covered by checking what config.txt
+    # asks for.
+    check "current/overlays/ has the per-slot marker" test -f "$MNT/boot/firmware/current/overlays/README"
+    check "current/overlays/ has the overlay name map" test -f "$MNT/boot/firmware/current/overlays/overlay_map.dtb"
     check "current/overlays/ has the D0 fixup overlay" test -f "$MNT/boot/firmware/current/overlays/bcm2712d0.dtbo"
     check "kernel postinst hook installed (zz-flash-kernel)" test -x "$MNT/etc/kernel/postinst.d/zz-flash-kernel"
     # Legacy hand-rolled hook + helper must not be present (replaced by flash-kernel).

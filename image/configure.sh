@@ -528,13 +528,16 @@ if [ "$VARIANT" = "pi" ]; then
 
     OVERLAYS_SRC="$(dirname "$DTB_DIR")/overlays"
     if [ -d "$OVERLAYS_SRC" ]; then
-        # Copy the directory wholesale, not just *.dtbo: alongside the
-        # overlays themselves it holds overlay_map.dtb, the index the
-        # firmware reads to resolve overlay names. On D0-stepping boards
-        # (Pi 5 Rev 1.1) the firmware uses it to auto-apply bcm2712d0.dtbo,
-        # which corrects a pinctrl register layout that moved between
-        # steppings; without the index the kernel gets a device tree
-        # describing the wrong silicon.
+        # Copy the directory wholesale, not just *.dtbo. It also holds
+        # README, which the firmware uses as a sentinel: overlays are read
+        # from the slot's own overlays/ only when that file is there,
+        # otherwise os_prefix is ignored for overlays and they are looked
+        # for in a shared directory at the partition root (which this
+        # layout does not have). Without it no overlay is applied at all,
+        # silently. That is fatal on D0-stepping boards (Pi 5 Rev 1.1),
+        # where the firmware's automatic bcm2712d0.dtbo is what rewrites
+        # the pinctrl nodes to the register layout D0 actually has.
+        # overlay_map.dtb and hat_map.dtb are dropped by the same glob.
         cp -a "$OVERLAYS_SRC"/. /boot/firmware/current/overlays/
     fi
 
