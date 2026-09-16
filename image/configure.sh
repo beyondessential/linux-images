@@ -528,8 +528,14 @@ if [ "$VARIANT" = "pi" ]; then
 
     OVERLAYS_SRC="$(dirname "$DTB_DIR")/overlays"
     if [ -d "$OVERLAYS_SRC" ]; then
-        # Pi 5 kernels ship overlays as a flat directory of .dtbo files.
-        cp "$OVERLAYS_SRC"/*.dtbo /boot/firmware/current/overlays/
+        # Copy the directory wholesale, not just *.dtbo: alongside the
+        # overlays themselves it holds overlay_map.dtb, the index the
+        # firmware reads to resolve overlay names. On D0-stepping boards
+        # (Pi 5 Rev 1.1) the firmware uses it to auto-apply bcm2712d0.dtbo,
+        # which corrects a pinctrl register layout that moved between
+        # steppings; without the index the kernel gets a device tree
+        # describing the wrong silicon.
+        cp -a "$OVERLAYS_SRC"/. /boot/firmware/current/overlays/
     fi
 
     # GPU firmware blobs (bootcode.bin, start*.elf, fixup*.dat) live in
