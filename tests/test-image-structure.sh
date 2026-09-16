@@ -425,6 +425,21 @@ if [ "$VARIANT" = "pi" ]; then
         # r[verify image.boot.pi-pcie-gen3]
         check "config.txt sets PCIe gen 3" grep -q '^dtparam=pciex1_gen=3' "$MNT/boot/firmware/config.txt"
         check "config.txt disables splash" grep -q '^disable_splash=1' "$MNT/boot/firmware/config.txt"
+        # r[verify image.boot.pi-firmware]
+        # The EEPROM loads the kernel and initramfs config.txt names, not
+        # whatever happens to sit in the slot directory. Resolve the names
+        # against the os_prefix in effect for a normal (non-tryboot) boot
+        # and confirm they land on real files: a populated current/ and a
+        # config.txt that never mentions it is exactly the combination
+        # that boots to "No compatible kernel found".
+        PI_FW="$MNT/boot/firmware"
+        PI_PREFIX="$(awk -F= '/^\[tryboot\]/ { exit } /^os_prefix=/ { p = $2 } END { print p }' "$PI_FW/config.txt")"
+        PI_KERNEL="$(sed -n 's/^kernel=//p' "$PI_FW/config.txt" | tail -n1)"
+        PI_INITRD="$(sed -n 's/^initramfs[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' "$PI_FW/config.txt" | tail -n1)"
+        check "config.txt names a kernel" test -n "$PI_KERNEL"
+        check "config.txt names an initramfs" test -n "$PI_INITRD"
+        check "config.txt kernel resolves in the active slot" test -f "$PI_FW/$PI_PREFIX$PI_KERNEL"
+        check "config.txt initramfs resolves in the active slot" test -f "$PI_FW/$PI_PREFIX$PI_INITRD"
     fi
     if [ -f "$MNT/boot/firmware/cmdline.txt" ]; then
         check "cmdline.txt references LUKS-mapped root" grep -q 'root=/dev/mapper/root' "$MNT/boot/firmware/cmdline.txt"
