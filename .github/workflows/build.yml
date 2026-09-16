@@ -771,11 +771,7 @@ jobs:
         with:
           body: |
             > [!WARNING]
-            > **Not yet tested on Tamanu Iti hardware.** CI has no Iti to test
-            > on, so that test is run by hand after the release is published,
-            > and this notice is edited out of the release once it passes. If
-            > you can still see this, the test has not been done for this
-            > release.
+            > Not yet tested on Tamanu Iti hardware.
 
             **Downloads: <https://tools.ops.tamanu.io/linux-images/${{ env.VERSION }}/>**
 
