@@ -221,6 +221,14 @@ volumes. A mismatch means the system will fail to boot.
 > and initramfs by scanning the partition: `config.txt` must name both
 > explicitly, and the names it gives must resolve to files present in
 > the boot slot it selects — see r[image.boot.pi-tryboot-rollback].
+>
+> The overlay set must be complete as the kernel packages it, including
+> the overlay index (`overlays/overlay_map.dtb`). The firmware reads that
+> index to resolve overlay names, and on some board revisions uses it to
+> apply a silicon-revision fixup overlay that `config.txt` never asks
+> for; shipping only the overlays `config.txt` names leaves the kernel
+> with a device tree that does not describe the hardware it is running
+> on.
 
 r[image.boot.pi-cmdline]
 For the `pi` variant, kernel command-line arguments are read from
