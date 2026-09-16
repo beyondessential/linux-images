@@ -217,7 +217,10 @@ volumes. A mismatch means the system will fail to boot.
 > firmware. No GRUB is installed. The firmware partition (mounted at
 > `/boot/firmware`) must contain `config.txt`, the Pi-specific DTB
 > (`bcm2712-rpi-5-b.dtb`) and its overlays, and a kernel + initramfs
-> pair selected by `config.txt`.
+> pair selected by `config.txt`. The EEPROM does not discover the kernel
+> and initramfs by scanning the partition: `config.txt` must name both
+> explicitly, and the names it gives must resolve to files present in
+> the boot slot it selects — see r[image.boot.pi-tryboot-rollback].
 
 r[image.boot.pi-cmdline]
 For the `pi` variant, kernel command-line arguments are read from
