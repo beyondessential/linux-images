@@ -131,7 +131,7 @@ apt-get install -y -q dracut  # this removes initramfs-tools
 # initramfs is hostonly=yes (the default), specialised to its actual hardware
 # (see r[installer.write.rebuild-boot-config+9]).
 #
-# r[impl image.boot.hardware-drivers+3] r[impl image.boot.cloud-drivers+5]
+# r[impl image.boot.hardware-drivers+4] r[impl image.boot.cloud-drivers+5]
 install -m 644 /tmp/files/dracut/01-portable-image.conf \
     /etc/dracut.conf.d/01-portable-image.conf
 
