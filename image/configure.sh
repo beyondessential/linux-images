@@ -122,18 +122,32 @@ apt-get install -y -q dracut  # this removes initramfs-tools
 
 # Dracut's default is hostonly=yes (per the dracut.conf manpage), which
 # produces an initramfs bound to the build host. The shipped image needs to be
-# portable across hardware, so hostonly=no is set instead: dracut then bundles
-# every module the kernel package ships, which covers the hardware and cloud
-# driver classes without enumerating them. On the pi variant that is whatever
-# linux-raspi ships.
+# portable across hardware, so the portable-image drop-in turns hostonly off.
 #
-# The installer strips this override post-install so the target machine's
-# initramfs is hostonly=yes (the default), specialised to its actual hardware
-# (see r[installer.write.rebuild-boot-config+9]).
+# Generic mode is necessary but not sufficient: dracut still installs only the
+# modules it decides the image needs, which leaves out the NICs and RAID
+# controllers the image may boot on later. Those have to be force-included on
+# top of generic mode.
 #
-# r[impl image.boot.hardware-drivers+4] r[impl image.boot.cloud-drivers+5]
+# The installer strips the portable-image override post-install so the target
+# machine's initramfs is hostonly=yes (the default), specialised to its actual
+# hardware (see r[installer.write.rebuild-boot-config+9]).
 install -m 644 /tmp/files/dracut/01-portable-image.conf \
     /etc/dracut.conf.d/01-portable-image.conf
+
+# The driver list is x86-server-leaning and many of those modules do not exist
+# in linux-raspi, which is why the requirement exempts the pi variant.
+if [ "$VARIANT" != "pi" ]; then
+    # r[impl image.boot.hardware-drivers+4]
+    install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
+        /etc/dracut.conf.d/03-hardware-drivers.conf
+fi
+
+if [ "$VARIANT" = "cloud" ]; then
+    # r[impl image.boot.cloud-drivers+5]
+    install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
+        /etc/dracut.conf.d/04-cloud-drivers.conf
+fi
 
 if [ "$VARIANT" = "metal" ]; then
     apt-get install -y -q --no-install-recommends linux-firmware

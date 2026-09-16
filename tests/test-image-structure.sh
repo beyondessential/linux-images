@@ -611,6 +611,10 @@ INITRD_MODULES="$(chroot "$MNT" bash -c 'lsinitrd /boot/initrd.img-* 2>/dev/null
     | tr '-' '_' \
     | sort -u || true)"
 check "initramfs module list is readable" test -n "$INITRD_MODULES"
+# Print the count: a generic initramfs carrying only what dracut picked looks
+# very different from one with the driver lists force-included, and that
+# distinction is what a failure below usually comes down to.
+echo "  initramfs carries $(printf '%s\n' "$INITRD_MODULES" | grep -c .) modules"
 
 # r[verify image.boot.hardware-drivers+4]
 # The requirement exempts the pi variant: linux-raspi does not ship these
