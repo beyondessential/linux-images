@@ -293,6 +293,38 @@ clean for headless deployments.
 > `/dev/input/event*`). Holding the button for more than five seconds
 > triggers a firmware-level hard cut that the OS cannot intercept.
 
+## Wireless
+
+> r[image.wireless.pi-bluetooth]
+> For the `pi` variant, the onboard Bluetooth controller must be usable
+> from userspace: its firmware must be present in the image, a Bluetooth
+> host stack must be installed, and the controller must be brought up
+> automatically once the system has booted, with no operator action.
+> Bluetooth must not be disabled at the device-tree level.
+>
+> The adapter must not be discoverable and must not accept unsolicited
+> pairing by default; pairing a device is a deliberate operator action.
+> These images are deployed as headless appliances on networks we do not
+> control, and an adapter that advertises itself is an inbound surface
+> that r[image.firewall.policy] does not cover.
+
+> r[image.wireless.pi-wifi]
+> For the `pi` variant, the onboard Wi-Fi controller must be usable from
+> userspace: its firmware must be present in the image, and a supplicant
+> capable of WPA2 and WPA3 authentication must be installed, so that an
+> operator can attach the system to a wireless network after boot. The
+> wireless regulatory database must be installed so the kernel can apply
+> per-country channel and transmit-power limits when a domain is set.
+>
+> No wireless network is configured in the image, and the system must not
+> attempt to join one unprompted — r[image.base.network] covers Ethernet
+> only. The regulatory domain is left at the conservative world-roaming
+> default rather than pinned to a country: deployments span
+> jurisdictions, so no single country code is correct, and world-roaming
+> is the one setting permitted everywhere. An operator who needs the full
+> channel set for their location sets the domain when they configure the
+> network.
+
 ## Firewall
 
 r[image.firewall.policy]
