@@ -8,7 +8,7 @@ ARCH="${ARCH:-amd64}"
 VARIANT="${VARIANT:-metal}"
 OUTPUT="${OUTPUT:-output.img}"
 IMAGE_SIZE="${IMAGE_SIZE:-5G}"
-UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
+UBUNTU_SUITE="${UBUNTU_SUITE:-resolute}"
 
 # --- Derived values ---
 case "$ARCH" in

@@ -13,7 +13,7 @@
 #   Environment variables:
 #     ARCH          - amd64 or arm64 (default: amd64)
 #     OUTPUT        - output tarball path (required)
-#     UBUNTU_SUITE  - Ubuntu suite name (default: noble)
+#     UBUNTU_SUITE  - Ubuntu suite name (default: resolute)
 #     UBUNTU_MIRROR - mirror URL (auto-selected per arch if unset)
 set -euo pipefail
 
@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOTFS_FILES="$SCRIPT_DIR/rootfs-files"
 
 ARCH="${ARCH:-amd64}"
-UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
+UBUNTU_SUITE="${UBUNTU_SUITE:-resolute}"
 # Tailscale's apt repo is keyed by Ubuntu codename. It may lag new Ubuntu
 # releases (e.g. during RC), so allow an override via TAILSCALE_SUITE — the
 # packages themselves are compatible across recent Ubuntu versions.

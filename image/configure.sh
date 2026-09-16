@@ -27,7 +27,7 @@ echo "--- configure.sh: arch=$ARCH variant=$VARIANT grub_target=$GRUB_TARGET ---
 # Apt sources
 # ============================================================
 # Modern Ubuntu (>=24.04) uses DEB822 format.
-UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
+UBUNTU_SUITE="${UBUNTU_SUITE:-resolute}"
 
 if [ "$ARCH" = "arm64" ]; then
     MIRROR="http://ports.ubuntu.com/ubuntu-ports"
@@ -92,8 +92,8 @@ fi
 
 # r[impl image.packages.chrony]
 # chrony enables itself via its postinst; defensively disable
-# systemd-timesyncd in case it was pulled in as a dependency (noble's
-# systemd-sysv depends on it). chrony.service has a runtime Conflicts=
+# systemd-timesyncd in case it was pulled in as a dependency. chrony.service
+# has a runtime Conflicts=
 # directive against systemd-timesyncd, but leaving both enabled means one
 # fails to start at boot — better to disable it deterministically here.
 if [ -x /usr/lib/systemd/systemd-timesyncd ] || [ -f /usr/lib/systemd/system/systemd-timesyncd.service ]; then
@@ -120,42 +120,33 @@ bash /tmp/scripts/setup-kopia.sh
 # r[image.boot.dracut]
 apt-get install -y -q dracut  # this removes initramfs-tools
 
-# Dracut's default is hostonly=yes (per the dracut.conf manpage on every
-# supported suite), which produces an initramfs bound to the build host.
-# The shipped image needs to be portable across hardware, so we override:
+# Dracut's default is hostonly=yes (per the dracut.conf manpage), which
+# produces an initramfs bound to the build host. The shipped image needs to be
+# portable across hardware, so the portable-image drop-in turns hostonly off.
 #
-# - On noble, hostonly=no is broken — we keep hostonly=yes + sloppy mode and
-#   force-include the hardware/cloud module lists.
-# - On 26.04+, hostonly=no works correctly and pulls in all kernel modules,
-#   so a single drop-in is enough.
+# Generic mode is necessary but not sufficient: dracut still installs only the
+# modules it decides the image needs, which leaves out the NICs and RAID
+# controllers the image may boot on later. Those have to be force-included on
+# top of generic mode.
 #
-# The installer strips the 26.04+ override post-install so the target
-# machine's initramfs is hostonly=yes (the default), specialised to its
-# actual hardware (see r[installer.write.rebuild-boot-config+9]).
-if [ "$VARIANT" = "pi" ]; then
-    # The hardware/cloud driver lists are x86-server-leaning (e1000e, ixgbe,
-    # etc.) and many of those modules don't exist in linux-raspi. Pi always
-    # uses the portable-image config (hostonly=no) regardless of suite, so
-    # dracut just bundles whatever linux-raspi ships.
-    install -m 644 /tmp/files/dracut/01-portable-image.conf \
-        /etc/dracut.conf.d/01-portable-image.conf
-elif [ "$UBUNTU_SUITE" = "noble" ]; then
-    install -m 644 /tmp/files/dracut/01-fix-hostonly.conf \
-        /etc/dracut.conf.d/01-fix-hostonly.conf
+# The installer strips the portable-image override post-install so the target
+# machine's initramfs is hostonly=yes (the default), specialised to its actual
+# hardware (see r[installer.write.rebuild-boot-config+9]).
+install -m 644 /tmp/files/dracut/01-portable-image.conf \
+    /etc/dracut.conf.d/01-portable-image.conf
 
-    # r[impl image.boot.hardware-drivers+3]
+# The driver list is x86-server-leaning and many of those modules do not exist
+# in linux-raspi, which is why the requirement exempts the pi variant.
+if [ "$VARIANT" != "pi" ]; then
+    # r[impl image.boot.hardware-drivers+5]
     install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
         /etc/dracut.conf.d/03-hardware-drivers.conf
+fi
 
-    # r[impl image.boot.cloud-drivers+5]
-    if [ "$VARIANT" = "cloud" ]; then
-        install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
-            /etc/dracut.conf.d/04-cloud-drivers.conf
-    fi
-else
-    # r[impl image.boot.hardware-drivers+3] r[impl image.boot.cloud-drivers+5]
-    install -m 644 /tmp/files/dracut/01-portable-image.conf \
-        /etc/dracut.conf.d/01-portable-image.conf
+if [ "$VARIANT" = "cloud" ]; then
+    # r[impl image.boot.cloud-drivers+6]
+    install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
+        /etc/dracut.conf.d/04-cloud-drivers.conf
 fi
 
 if [ "$VARIANT" = "metal" ]; then
@@ -537,8 +528,17 @@ if [ "$VARIANT" = "pi" ]; then
 
     OVERLAYS_SRC="$(dirname "$DTB_DIR")/overlays"
     if [ -d "$OVERLAYS_SRC" ]; then
-        # Pi 5 kernels ship overlays as a flat directory of .dtbo files.
-        cp "$OVERLAYS_SRC"/*.dtbo /boot/firmware/current/overlays/
+        # Copy the directory wholesale, not just *.dtbo. It also holds
+        # README, which the firmware uses as a sentinel: overlays are read
+        # from the slot's own overlays/ only when that file is there,
+        # otherwise os_prefix is ignored for overlays and they are looked
+        # for in a shared directory at the partition root (which this
+        # layout does not have). Without it no overlay is applied at all,
+        # silently. That is fatal on D0-stepping boards (Pi 5 Rev 1.1),
+        # where the firmware's automatic bcm2712d0.dtbo is what rewrites
+        # the pinctrl nodes to the register layout D0 actually has.
+        # overlay_map.dtb and hat_map.dtb are dropped by the same glob.
+        cp -a "$OVERLAYS_SRC"/. /boot/firmware/current/overlays/
     fi
 
     # GPU firmware blobs (bootcode.bin, start*.elf, fixup*.dat) live in

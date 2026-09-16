@@ -1,9 +1,9 @@
 linux_only := if os() == "linux" { "" } else { error("Can only run on Linux") }
-ubuntu_suite := "noble"
+ubuntu_suite := "resolute"
 # Derived from ubuntu_suite — mapping is 1:1, so callers only need to pass
 # `ubuntu_suite=...` when building. Override `ubuntu_version=...` on the
 # command line if you need to force a different value (e.g. testing pre-release).
-ubuntu_version := if ubuntu_suite == "noble" { "24.04" } else if ubuntu_suite == "resolute" { "26.04" } else { error("unknown ubuntu_suite (add a mapping to ubuntu_version): " + ubuntu_suite) }
+ubuntu_version := if ubuntu_suite == "resolute" { "26.04" } else { error("unknown ubuntu_suite (add a mapping to ubuntu_version): " + ubuntu_suite) }
 # Tailscale's apt repo can lag new Ubuntu releases during their RC window;
 # override `tailscale_suite=<earlier-suite>` when that's the case.
 tailscale_suite := ubuntu_suite

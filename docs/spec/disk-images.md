@@ -162,9 +162,11 @@ the hardware classes the image is intended to run on (see
 specialises the initramfs to the target machine after install (see
 `installer.write.rebuild-boot-config`).
 
-> r[image.boot.hardware-drivers+3]
-> The initramfs must contain kernel modules for hardware not present at
-> image-build time. The following module categories must be present:
+> r[image.boot.hardware-drivers+5]
+> The image must be able to boot on hardware not present at image-build time.
+> For the `metal` and `cloud` variants, drivers for the following categories
+> must be available at boot, either built into the kernel or included in the
+> initramfs:
 >
 > - **NVMe:** `nvme`, `nvme_core`
 > - **SATA/AHCI:** `ahci`
@@ -176,10 +178,13 @@ specialises the initramfs to the target machine after install (see
 > - **Mellanox/NVIDIA Ethernet:** `mlx5_core`
 > - **USB storage:** `usb_storage`, `uas`
 > - **Hyper-V:** `hv_storvsc`, `hv_netvsc`, `hv_vmbus`
+>
+> This does not apply to the `pi` variant, whose target hardware is fixed and
+> whose kernel does not provide these modules.
 
-> r[image.boot.cloud-drivers+5]
-> The cloud variant's initramfs must additionally contain cloud-specific
-> kernel modules:
+> r[image.boot.cloud-drivers+6]
+> The cloud variant must additionally have drivers for cloud-specific hardware
+> available at boot, on the same terms:
 >
 > - **AWS:** `ena`, `xen_blkfront`
 > - **GCP:** `gve`
@@ -212,7 +217,23 @@ volumes. A mismatch means the system will fail to boot.
 > firmware. No GRUB is installed. The firmware partition (mounted at
 > `/boot/firmware`) must contain `config.txt`, the Pi-specific DTB
 > (`bcm2712-rpi-5-b.dtb`) and its overlays, and a kernel + initramfs
-> pair selected by `config.txt`.
+> pair selected by `config.txt`. The EEPROM does not discover the kernel
+> and initramfs by scanning the partition: `config.txt` must name both
+> explicitly, and the names it gives must resolve to files present in
+> the boot slot it selects — see r[image.boot.pi-tryboot-rollback].
+>
+> The overlay set must be complete as the kernel packages it, including
+> the files in it that are not themselves overlays. The firmware reads
+> overlays from the active boot slot only when the slot's overlay
+> directory carries the marker file (`overlays/README`) that says it is
+> a real overlay directory; without it the firmware disregards the slot
+> and looks for a shared overlay directory at the root of the partition
+> instead, which this layout does not have, and applies no overlays at
+> all without reporting an error. Overlays are not only the ones
+> `config.txt` names: the firmware applies a fixup overlay of its own on
+> board revisions that need one, so a slot missing the marker can leave
+> the kernel with a device tree that does not describe the silicon it is
+> running on.
 
 r[image.boot.pi-cmdline]
 For the `pi` variant, kernel command-line arguments are read from

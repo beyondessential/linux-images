@@ -16,10 +16,10 @@ ARCH="${4:-amd64}"
 if [ -z "$IMPORT_TASK_ID" ] || [ -z "$SUITE" ]; then
     echo "Usage: $0 <import-task-id> <suite> [region] [arch]"
     echo ""
-    echo "  suite: noble or resolute"
+    echo "  suite: resolute"
     echo ""
     echo "Example:"
-    echo "  $0 import-snap-1234567890abcdef0 noble ap-southeast-2 amd64"
+    echo "  $0 import-snap-1234567890abcdef0 resolute ap-southeast-2 amd64"
     exit 1
 fi
 
@@ -31,7 +31,6 @@ fi
 # Map suite codename → numeric Ubuntu version. Keep in lockstep with the
 # ubuntu_version mapping in the justfile.
 case "$SUITE" in
-    noble)    UBUNTU_VERSION="24.04" ;;
     resolute) UBUNTU_VERSION="26.04" ;;
     *) echo "ERROR: unknown suite '$SUITE' (add a mapping here and in the justfile)"; exit 1 ;;
 esac

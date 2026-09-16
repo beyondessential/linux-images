@@ -10,7 +10,7 @@ echo "Installing Tailscale..."
 # Tailscale's apt repo is keyed by Ubuntu codename. It may lag new Ubuntu
 # releases (e.g. during RC), so allow an override via TAILSCALE_SUITE — the
 # packages themselves are compatible across recent Ubuntu versions.
-TAILSCALE_SUITE="${TAILSCALE_SUITE:-${UBUNTU_SUITE:-noble}}"
+TAILSCALE_SUITE="${TAILSCALE_SUITE:-${UBUNTU_SUITE:-resolute}}"
 
 # r[image.packages.tailscale]: Install signing key
 if [ -f /tmp/files/tailscale-apt.gpg ]; then

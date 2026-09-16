@@ -48,6 +48,25 @@ check_not() {
     fi
 }
 
+# Assert a driver is available at boot. A driver compiled into the kernel needs
+# no initramfs entry and is always loaded, so it satisfies the requirement just
+# as an included module does — Ubuntu builds the virtio family that way, and a
+# .ko search can never find those. Both failure branches name the cause: either
+# dracut left out a module the kernel has, or this kernel has no such driver at
+# all (typically an arch that does not build it).
+check_initrd_module() {
+    local mod="$1"
+    if printf '%s\n' "$INITRD_MODULES" | grep -qxF "$mod"; then
+        pass "initramfs provides $mod"
+    elif printf '%s\n' "$KERNEL_BUILTIN" | grep -qxF "$mod"; then
+        pass "initramfs provides $mod (built into the kernel)"
+    elif printf '%s\n' "$KERNEL_MODULE_TREE" | grep -qxF "$mod"; then
+        fail "initramfs provides $mod (module exists for this kernel but dracut did not include it)"
+    else
+        fail "initramfs provides $mod (this kernel has no such module or builtin)"
+    fi
+}
+
 # Compare two dotted version strings: returns 0 (true) if $1 >= $2
 version_ge() {
     printf '%s\n%s\n' "$2" "$1" | sort -V -C
@@ -293,7 +312,7 @@ fi
 EFI_MOUNTED=1
 
 # Detect the Ubuntu suite of the built image so suite-specific checks can
-# be gated appropriately (e.g. the noble dracut hostonly workaround).
+# be gated appropriately (e.g. checks that compare against the running suite).
 SUITE="$(. "$MNT/etc/os-release" 2>/dev/null; echo "${VERSION_CODENAME:-}")"
 echo "Detected suite: ${SUITE:-<unknown>}"
 
@@ -406,6 +425,21 @@ if [ "$VARIANT" = "pi" ]; then
         # r[verify image.boot.pi-pcie-gen3]
         check "config.txt sets PCIe gen 3" grep -q '^dtparam=pciex1_gen=3' "$MNT/boot/firmware/config.txt"
         check "config.txt disables splash" grep -q '^disable_splash=1' "$MNT/boot/firmware/config.txt"
+        # r[verify image.boot.pi-firmware]
+        # The EEPROM loads the kernel and initramfs config.txt names, not
+        # whatever happens to sit in the slot directory. Resolve the names
+        # against the os_prefix in effect for a normal (non-tryboot) boot
+        # and confirm they land on real files: a populated current/ and a
+        # config.txt that never mentions it is exactly the combination
+        # that boots to "No compatible kernel found".
+        PI_FW="$MNT/boot/firmware"
+        PI_PREFIX="$(awk -F= '/^\[tryboot\]/ { exit } /^os_prefix=/ { p = $2 } END { print p }' "$PI_FW/config.txt")"
+        PI_KERNEL="$(sed -n 's/^kernel=//p' "$PI_FW/config.txt" | tail -n1)"
+        PI_INITRD="$(sed -n 's/^initramfs[[:space:]]\{1,\}\([^[:space:]]\{1,\}\).*/\1/p' "$PI_FW/config.txt" | tail -n1)"
+        check "config.txt names a kernel" test -n "$PI_KERNEL"
+        check "config.txt names an initramfs" test -n "$PI_INITRD"
+        check "config.txt kernel resolves in the active slot" test -f "$PI_FW/$PI_PREFIX$PI_KERNEL"
+        check "config.txt initramfs resolves in the active slot" test -f "$PI_FW/$PI_PREFIX$PI_INITRD"
     fi
     if [ -f "$MNT/boot/firmware/cmdline.txt" ]; then
         check "cmdline.txt references LUKS-mapped root" grep -q 'root=/dev/mapper/root' "$MNT/boot/firmware/cmdline.txt"
@@ -420,6 +454,16 @@ if [ "$VARIANT" = "pi" ]; then
     check "/boot/firmware/current/ has kernel" test -f "$MNT/boot/firmware/current/vmlinuz"
     check "/boot/firmware/current/ has initramfs" test -f "$MNT/boot/firmware/current/initrd.img"
     check "/boot/firmware/current/ has Pi 5 DTB" test -f "$MNT/boot/firmware/current/bcm2712-rpi-5-b.dtb"
+    # r[verify image.boot.pi-firmware]
+    # README is the marker that makes the firmware read overlays from this
+    # slot at all; without it os_prefix is ignored for overlays and none
+    # are applied, silently. The D0 fixup overlay is never named in
+    # config.txt -- the firmware reaches for it on its own on Rev 1.1
+    # boards -- so neither file is covered by checking what config.txt
+    # asks for.
+    check "current/overlays/ has the per-slot marker" test -f "$MNT/boot/firmware/current/overlays/README"
+    check "current/overlays/ has the overlay name map" test -f "$MNT/boot/firmware/current/overlays/overlay_map.dtb"
+    check "current/overlays/ has the D0 fixup overlay" test -f "$MNT/boot/firmware/current/overlays/bcm2712d0.dtbo"
     check "kernel postinst hook installed (zz-flash-kernel)" test -x "$MNT/etc/kernel/postinst.d/zz-flash-kernel"
     # Legacy hand-rolled hook + helper must not be present (replaced by flash-kernel).
     check_not "no legacy bes-pi-firmware-update helper" test -e "$MNT/usr/local/sbin/bes-pi-firmware-update"
@@ -582,69 +626,56 @@ check "Tailscale apt prefer configured" test -f "$MNT/etc/apt/preferences.d/99-t
 # r[verify image.tailscale.auto-update]
 check "Tailscale weekly cron exists" test -x "$MNT/etc/cron.weekly/apt-upgrade-tailscale"
 
-# The hostonly workaround and its force-include driver lists only apply on
-# noble. On 26.04+, dracut's default mode includes hardware modules without
-# explicit dracut.conf.d overrides.
-if [ "$VARIANT" = "pi" ]; then
-    # Pi always uses the portable-image config (hostonly=no), independent of
-    # suite — the hardware-drivers list is x86-server-leaning and many of
-    # those modules don't exist in linux-raspi.
-    check "dracut portable-image config exists on pi" test -f "$MNT/etc/dracut.conf.d/01-portable-image.conf"
-    check "dracut portable-image config sets hostonly=no on pi" grep -q 'hostonly="no"' "$MNT/etc/dracut.conf.d/01-portable-image.conf"
-    check_not "no dracut hostonly fix config on pi" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
-    check_not "no dracut hardware-drivers config on pi" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
-    check_not "no dracut cloud-drivers config on pi" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
-elif [ "$SUITE" = "noble" ]; then
-    # r[verify image.boot.dracut]
-    check "dracut hostonly config exists" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
-    check "dracut hostonly=yes" grep -q 'hostonly="yes"' "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
+# r[verify image.boot.dracut]
+# The shipped image's initramfs must be portable across hardware, which the
+# portable-image drop-in achieves by turning hostonly off.
+check "dracut portable-image config exists" test -f "$MNT/etc/dracut.conf.d/01-portable-image.conf"
+check "dracut portable-image config sets hostonly=no" grep -q 'hostonly="no"' "$MNT/etc/dracut.conf.d/01-portable-image.conf"
 
-    # r[verify image.boot.hardware-drivers+3]
-    check "dracut hardware-drivers config exists" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
-    HWDRV="$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
-    check "dracut hardware-drivers has nvme" grep -wq 'nvme' "$HWDRV"
-    check "dracut hardware-drivers has nvme_core" grep -wq 'nvme_core' "$HWDRV"
-    check "dracut hardware-drivers has ahci" grep -wq 'ahci' "$HWDRV"
-    check "dracut hardware-drivers has megaraid_sas" grep -wq 'megaraid_sas' "$HWDRV"
-    check "dracut hardware-drivers has mpt3sas" grep -wq 'mpt3sas' "$HWDRV"
-    check "dracut hardware-drivers has virtio_blk" grep -wq 'virtio_blk' "$HWDRV"
-    check "dracut hardware-drivers has virtio_scsi" grep -wq 'virtio_scsi' "$HWDRV"
-    check "dracut hardware-drivers has virtio_net" grep -wq 'virtio_net' "$HWDRV"
-    check "dracut hardware-drivers has virtio_pci" grep -wq 'virtio_pci' "$HWDRV"
-    check "dracut hardware-drivers has e1000e" grep -wq 'e1000e' "$HWDRV"
-    check "dracut hardware-drivers has igb" grep -wq 'igb' "$HWDRV"
-    check "dracut hardware-drivers has ixgbe" grep -wq 'ixgbe' "$HWDRV"
-    check "dracut hardware-drivers has i40e" grep -wq 'i40e' "$HWDRV"
-    check "dracut hardware-drivers has ice" grep -wq 'ice' "$HWDRV"
-    check "dracut hardware-drivers has bnxt_en" grep -wq 'bnxt_en' "$HWDRV"
-    check "dracut hardware-drivers has tg3" grep -wq 'tg3' "$HWDRV"
-    check "dracut hardware-drivers has mlx5_core" grep -wq 'mlx5_core' "$HWDRV"
-    check "dracut hardware-drivers has usb_storage" grep -wq 'usb_storage' "$HWDRV"
-    check "dracut hardware-drivers has uas" grep -wq 'uas' "$HWDRV"
-    check "dracut hardware-drivers has hv_storvsc" grep -wq 'hv_storvsc' "$HWDRV"
-    check "dracut hardware-drivers has hv_netvsc" grep -wq 'hv_netvsc' "$HWDRV"
-    check "dracut hardware-drivers has hv_vmbus" grep -wq 'hv_vmbus' "$HWDRV"
+# hostonly=no is only the means; what the spec requires is that the modules are
+# actually there. Read the module list out of the built initramfs rather than
+# inferring it from the dracut config. Module file names use dashes where the
+# module name uses underscores (nvme_core ships as nvme-core.ko), and the
+# extension varies with the compression dracut used, so normalise both away.
+INITRD_MODULES="$(chroot "$MNT" bash -c 'lsinitrd /boot/initrd.img-* 2>/dev/null' \
+    | awk '{print $NF}' \
+    | grep -oE '[^/]+\.ko(\.[a-z]+)?$' \
+    | sed 's/\.ko.*$//' \
+    | tr '-' '_' \
+    | sort -u || true)"
+check "initramfs module list is readable" test -n "$INITRD_MODULES"
 
-    # r[verify image.boot.cloud-drivers+5]
-    if [ "$VARIANT" = "cloud" ]; then
-        check "dracut cloud-drivers config exists" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
-        CLOUDDRV="$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
-        check "dracut cloud-drivers has ena" grep -wq 'ena' "$CLOUDDRV"
-        check "dracut cloud-drivers has xen_blkfront" grep -wq 'xen_blkfront' "$CLOUDDRV"
-        check "dracut cloud-drivers has gve" grep -wq 'gve' "$CLOUDDRV"
-    else
-        check_not "no cloud-drivers config for $VARIANT variant" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
-    fi
-else
-    # r[verify image.boot.dracut]
-    check_not "no dracut hostonly fix config on non-noble" test -f "$MNT/etc/dracut.conf.d/01-fix-hostonly.conf"
-    # r[verify image.boot.hardware-drivers+3]
-    check_not "no dracut hardware-drivers config on non-noble" test -f "$MNT/etc/dracut.conf.d/03-hardware-drivers.conf"
-    # r[verify image.boot.cloud-drivers+5]
-    check_not "no dracut cloud-drivers config on non-noble" test -f "$MNT/etc/dracut.conf.d/04-cloud-drivers.conf"
-    # r[verify image.boot.dracut]: portable image config supplies hostonly=no
-    check "dracut portable-image config exists on non-noble" test -f "$MNT/etc/dracut.conf.d/01-portable-image.conf"
-    check "dracut portable-image config sets hostonly=no" grep -q 'hostonly="no"' "$MNT/etc/dracut.conf.d/01-portable-image.conf"
+# Drivers compiled into the kernel, and every module this kernel ships at all.
+# The first set satisfies the requirement; the second only tells a failure
+# apart from an arch that does not build the driver.
+KERNEL_BUILTIN="$(chroot "$MNT" bash -c 'cat /lib/modules/*/modules.builtin 2>/dev/null' \
+    | grep -oE '[^/]+\.ko(\.[a-z]+)?$' \
+    | sed 's/\.ko.*$//' \
+    | tr '-' '_' \
+    | sort -u || true)"
+KERNEL_MODULE_TREE="$(chroot "$MNT" bash -c 'find /lib/modules -name "*.ko*" -printf "%f\n" 2>/dev/null' \
+    | sed 's/\.ko.*$//' \
+    | tr '-' '_' \
+    | sort -u || true)"
+echo "  initramfs carries $(printf '%s\n' "$INITRD_MODULES" | grep -c .) modules; kernel has $(printf '%s\n' "$KERNEL_BUILTIN" | grep -c .) builtins, $(printf '%s\n' "$KERNEL_MODULE_TREE" | grep -c .) modules on disk"
+
+# r[verify image.boot.hardware-drivers+5]
+# The requirement exempts the pi variant: linux-raspi does not ship these
+# x86-server storage and networking modules.
+if [ "$VARIANT" != "pi" ]; then
+    for mod in nvme nvme_core ahci megaraid_sas mpt3sas \
+               virtio_blk virtio_scsi virtio_net virtio_pci \
+               e1000e igb ixgbe i40e ice bnxt_en tg3 mlx5_core \
+               usb_storage uas hv_storvsc hv_netvsc hv_vmbus; do
+        check_initrd_module "$mod"
+    done
+fi
+
+# r[verify image.boot.cloud-drivers+6]
+if [ "$VARIANT" = "cloud" ]; then
+    for mod in ena xen_blkfront gve; do
+        check_initrd_module "$mod"
+    done
 fi
 
 # GRUB doesn't apply to the pi variant (it boots via the Pi 5 firmware).
@@ -739,15 +770,10 @@ check_service_enabled "bes-firstboot-script.service"  "bes-firstboot-script is e
 check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is enabled"
 
 # r[verify image.cloud-init.enabled]
-# On noble, cloud-init.service is the static entry point that gets enabled into
-# multi-user.target.wants. On 26.04+, the unified service was removed and
-# cloud-init.target is wired in dynamically by cloud-init-generator at boot.
-if [ "$SUITE" = "noble" ]; then
-    check_service_enabled "cloud-init.service"            "cloud-init is enabled"
-else
-    check "cloud-init-generator exists" test -x "$MNT/usr/lib/systemd/system-generators/cloud-init-generator"
-    check "cloud-init.target.wants populated" test -d "$MNT/etc/systemd/system/cloud-init.target.wants"
-fi
+# There is no unified cloud-init.service to check for: cloud-init.target is
+# wired in dynamically by cloud-init-generator at boot.
+check "cloud-init-generator exists" test -x "$MNT/usr/lib/systemd/system-generators/cloud-init-generator"
+check "cloud-init.target.wants populated" test -d "$MNT/etc/systemd/system/cloud-init.target.wants"
 
 # r[verify image.packages.chrony]
 check_service_enabled "chrony.service"                "chrony is enabled"

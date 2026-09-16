@@ -1,9 +1,11 @@
 # BES Linux — Raspberry Pi 5 boot config.
 # Read by the Pi 5 firmware (in EEPROM) at boot. The active boot slot is
 # selected by the os_prefix= lines below — see r[image.boot.pi-tryboot-rollback]
-# in docs/spec/disk-images.md. flash-kernel populates the kernel image,
-# initramfs, DTB and overlays under current/ (build-time) and new/ (on
-# every kernel apt upgrade via /etc/kernel/postinst.d/zz-flash-kernel).
+# in docs/spec/disk-images.md. The image build populates current/ itself
+# (see image/configure.sh — flash-kernel cannot run in the build chroot);
+# flash-kernel populates new/ on the running device at every kernel apt
+# upgrade, via /etc/kernel/postinst.d/zz-flash-kernel. Neither of them
+# writes this file, so everything the firmware needs must live here.
 #
 # The watchdog (`dtparam=watchdog=on`) is required by piboot-try's tryboot
 # fallback: if a trial boot from new/ hangs, the BCM2712's hardware
@@ -41,3 +43,14 @@ dtparam=spi=on
 dtparam=pciex1_gen=3
 dtoverlay=tpm-slb9670
 dtparam=watchdog=on
+
+# r[image.boot.pi-firmware]
+# The EEPROM does not go looking for a kernel: given no kernel= it tries
+# its own built-in names (kernel_2712.img, kernel8.img, ...) and fails
+# with "No compatible kernel found" even when the slot is otherwise
+# complete. Both names below are resolved relative to the os_prefix= in
+# effect, so they select current/vmlinuz + current/initrd.img normally
+# and new/* under [tryboot]. Keep them outside any [tryboot] section so
+# both slots inherit them.
+kernel=vmlinuz
+initramfs initrd.img followkernel

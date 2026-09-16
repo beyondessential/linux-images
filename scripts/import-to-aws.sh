@@ -19,7 +19,7 @@ BUCKET_NAME="${4:-bes-image-imports}"
 if [ -z "$ARCH" ] || [ -z "$SUITE" ]; then
     echo "Usage: $0 <arch> <suite> [region] [s3-bucket]"
     echo "  arch:  amd64 or arm64"
-    echo "  suite: noble or resolute"
+    echo "  suite: resolute"
     exit 1
 fi
 
@@ -31,7 +31,6 @@ fi
 # Map suite codename → numeric Ubuntu version. Keep in lockstep with the
 # ubuntu_version mapping in the justfile.
 case "$SUITE" in
-    noble)    UBUNTU_VERSION="24.04" ;;
     resolute) UBUNTU_VERSION="26.04" ;;
     *) echo "ERROR: unknown suite '$SUITE' (add a mapping here and in the justfile)"; exit 1 ;;
 esac

@@ -54,7 +54,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        suite: [noble, resolute]
+        suite: [resolute]
     runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
 
     steps:
@@ -72,7 +72,7 @@ jobs:
             qemu-utils genisoimage zstd squashfs-tools jq
 
       - name: Run shellcheck
-        if: matrix.suite == 'noble'
+        if: matrix.arch == 'amd64'
         run: just test-shellcheck
 
       - name: Build raw image
@@ -164,7 +164,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        suite: [noble, resolute]
+        suite: [resolute]
     runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
 
     steps:
@@ -258,10 +258,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Pi images are arm64-only and currently only built on resolute (26.04).
-  # The matrix is parameterised on suite for future-proofing — adding a
-  # `noble` value (when/if Pi 5 needs an LTS-on-24.04 image) is a one-line
-  # change.
+  # Pi images are arm64-only. The matrix is parameterised on suite for
+  # future-proofing — adding a further suite is a one-line change.
   images-pi:
     needs: [prep]
     env:
@@ -420,12 +418,10 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        suite: [noble, resolute]
-    # The installer links against the runner's glibc, which must be <= the
-    # glibc in the live ISO rootfs. ubuntu-24.04 (glibc 2.39) targets both
-    # noble (2.39) and resolute (≥2.41) cleanly. When bumping the runner
-    # image, verify its glibc does not exceed the lowest target suite's
-    # glibc before merging.
+        suite: [resolute]
+        include:
+          - suite: resolute
+            ubuntu_version: '26.04'
     runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v7
@@ -454,7 +450,7 @@ jobs:
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
+          name: ubuntu-${{ matrix.ubuntu_version }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
           path: output/${{ matrix.arch }}/cloud/
 
       - name: List inputs
@@ -510,8 +506,11 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        suite: [noble, resolute]
+        suite: [resolute]
         shard: [1, 2, 3]
+        include:
+          - suite: resolute
+            ubuntu_version: '26.04'
     runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v7
@@ -537,7 +536,7 @@ jobs:
       - name: Download ISO
         uses: actions/download-artifact@v8
         with:
-          name: bes-installer-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-${{ matrix.arch }}.iso
+          name: bes-installer-${{ matrix.ubuntu_version }}-${{ matrix.arch }}.iso
           path: output/${{ matrix.arch }}/
 
       - name: List ISO
@@ -771,6 +770,9 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           body: |
+            > [!WARNING]
+            > Not yet tested on Tamanu Iti hardware.
+
             **Downloads: <https://tools.ops.tamanu.io/linux-images/${{ env.VERSION }}/>**
 
             ### Variants
@@ -799,7 +801,10 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        suite: [noble, resolute]
+        suite: [resolute]
+        include:
+          - suite: resolute
+            ubuntu_version: '26.04'
     runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v7
@@ -813,7 +818,7 @@ jobs:
       - name: Download cloud raw image
         uses: actions/download-artifact@v8
         with:
-          name: ubuntu-${{ matrix.suite == 'noble' && '24.04' || '26.04' }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
+          name: ubuntu-${{ matrix.ubuntu_version }}-bes-cloud-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
           path: output/${{ matrix.arch }}/cloud/
 
       # The AMI publishing account is dedicated: the only AWS account
@@ -853,7 +858,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-        suite: [noble, resolute]
+        suite: [resolute]
         region: [ap-southeast-6, eu-central-2, ap-south-1, us-east-1]
     runs-on: ubuntu-24.04
     steps:

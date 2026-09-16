@@ -855,11 +855,12 @@ if [ -n "$BTRFS_DEV" ]; then
                     INITRD_CMDLINE_FILE="$WORK_DIR/initrd-cmdline"
                     printf '%s\n' "$INITRD_CMDLINE" > "$INITRD_CMDLINE_FILE"
 
-                    # Dracut on Ubuntu 24.04 only puts rootfstype and rootflags
-                    # in 95root-dev.conf — not a root= device reference. The
-                    # root device is specified via grub.cfg (already verified
-                    # above as "grub.cfg references actual root UUID"). We check
-                    # that 95root-dev.conf does not contain stale references.
+                    # 95root-dev.conf carries rootfstype and rootflags rather
+                    # than a root= device reference; the root device is
+                    # specified via grub.cfg (already verified above as
+                    # "grub.cfg references actual root UUID"). Either way, what
+                    # matters here is that no stale installer-time reference
+                    # survives into the rebuilt initramfs.
                     check "initramfs cmdline does not reference bes-target-root" \
                         test "$(grep -c 'bes-target-root' "$INITRD_CMDLINE_FILE")" -eq 0
                 fi
