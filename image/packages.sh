@@ -96,10 +96,31 @@ case "${VARIANT:-}" in
         # configure.sh can lay out /boot/firmware/current/ before the package
         # is dropped in — the chroot build doesn't run flash-kernel itself
         # (see configure.sh for the A/B layout, r[image.boot.pi-tryboot-rollback]).
+        #
+        # r[image.wireless.pi-bluetooth] r[image.wireless.pi-wifi]
+        # Both radios' firmware already arrives with linux-firmware-raspi, and
+        # the Pi 5 DTB carries the Bluetooth controller as a serdev child of
+        # its UART, so the kernel binds it with no attach helper — the
+        # pi-bluetooth package and its btuart/bthelper serve the older
+        # pre-serdev path and are not needed here. What is missing is purely
+        # userspace: bluez for the host stack, and wpasupplicant because
+        # netplan.io does not depend on, recommend, or even suggest it, so
+        # nothing else in the graph would pull it in. wireless-regdb lets the
+        # kernel apply channel and transmit-power limits once an operator sets
+        # a regulatory domain; without it there is no database to apply.
+        # iw and rfkill are diagnostics, in the same spirit as i2c-tools: on a
+        # headless board they are the only way to see why a radio did not come
+        # up, and a soft block is the usual answer.
         PACKAGES+=(
             linux-raspi
             linux-firmware-raspi
             i2c-tools
+
+            bluez
+            wpasupplicant
+            wireless-regdb
+            iw
+            rfkill
         )
         ;;
     *)

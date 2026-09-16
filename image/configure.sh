@@ -230,6 +230,14 @@ EOF
     # `ignore`).
     mkdir -p /etc/systemd/logind.conf.d
     install -m 644 /tmp/files/pi/50-bes-power.conf /etc/systemd/logind.conf.d/50-bes-power.conf
+
+    # r[image.wireless.pi-bluetooth]
+    # bluez enables this itself, but state it anyway: the requirement is that
+    # the controller comes up with no operator action, and an inherited
+    # package default is not a contract we would notice losing. The unit is
+    # wanted by bluetooth.target, which udev activates only once a controller
+    # appears, so this costs nothing on a board that has no radio.
+    systemctl enable bluetooth.service
 else
     # Ensure /etc/default/grub exists (grub package should create it)
     if [ ! -f /etc/default/grub ]; then
