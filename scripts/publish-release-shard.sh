@@ -11,7 +11,7 @@ set -euo pipefail
 #
 # variant: cloud | metal | pi | installer | pi-eeprom
 # arch:    amd64 | arm64 | "" (pi-eeprom has no arch)
-# suite:   noble | resolute | "" (pi-eeprom has no suite)
+# suite:   resolute | "" (pi-eeprom has no suite)
 # source-dir: directory containing the files to publish
 #
 # Environment (must be set by the workflow):

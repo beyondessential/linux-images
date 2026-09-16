@@ -15,7 +15,7 @@ set -euo pipefail
 #
 # Arguments:
 #   arch       Architecture: amd64 or arm64
-#   suite      Ubuntu suite codename: noble or resolute
+#   suite      Ubuntu suite codename: resolute
 #   version    Release version string (e.g. "1.2.3", without leading "v")
 #   region     AWS region (default: ap-southeast-2)
 #   s3-bucket  S3 bucket for import staging (default: bes-ops-tools)
@@ -44,7 +44,6 @@ esac
 # Map suite codename → numeric Ubuntu version. Keep in lockstep with the
 # ubuntu_version mapping in the justfile.
 case "$SUITE" in
-    noble)    UBUNTU_VERSION="24.04" ;;
     resolute) UBUNTU_VERSION="26.04" ;;
     *) echo "ERROR: unknown suite '$SUITE' (add a mapping here and in the justfile)"; exit 1 ;;
 esac

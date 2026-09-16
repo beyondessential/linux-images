@@ -20,7 +20,7 @@ set -euo pipefail
 #
 # Arguments:
 #   arch           Architecture: amd64 or arm64
-#   suite          Ubuntu suite codename: noble or resolute
+#   suite          Ubuntu suite codename: resolute
 #   version        Release version string (e.g. "1.2.3", without leading "v")
 #   source-region  AWS region where the AMI was originally registered
 #   target-region  AWS region to copy the AMI into
@@ -45,7 +45,6 @@ esac
 
 # Keep in lockstep with register-ami-for-release.sh.
 case "$SUITE" in
-    noble)    UBUNTU_VERSION="24.04" ;;
     resolute) UBUNTU_VERSION="26.04" ;;
     *) echo "ERROR: unknown suite '$SUITE' (add a mapping here and in the justfile)"; exit 1 ;;
 esac

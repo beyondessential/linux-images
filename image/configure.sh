@@ -27,7 +27,7 @@ echo "--- configure.sh: arch=$ARCH variant=$VARIANT grub_target=$GRUB_TARGET ---
 # Apt sources
 # ============================================================
 # Modern Ubuntu (>=24.04) uses DEB822 format.
-UBUNTU_SUITE="${UBUNTU_SUITE:-noble}"
+UBUNTU_SUITE="${UBUNTU_SUITE:-resolute}"
 
 if [ "$ARCH" = "arm64" ]; then
     MIRROR="http://ports.ubuntu.com/ubuntu-ports"
