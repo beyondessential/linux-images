@@ -38,16 +38,15 @@ The following 1 attestation matched the policy criteria
 
 - Attestation #1
   - Build repo:..... beyondessential/linux-images
-  - Build workflow:. .github/workflows/build.yml@refs/tags/v24.04.20260312
+  - Build workflow:. .github/workflows/build.yml@refs/tags/v2026.07.31
   - Signer repo:.... beyondessential/linux-images
-  - Signer workflow: .github/workflows/build.yml@refs/tags/v24.04.20260312
+  - Signer workflow: .github/workflows/build.yml@refs/tags/v2026.07.31
 ```
 
 ## Version
 
-The images are based on **Ubuntu Server 24.04 LTS**.
+The images are based on **Ubuntu Server 26.04 LTS**.
 
-Ubuntu Server 26.04 LTS support is planned for mid-2026.
 Non-LTS versions e.g. 25.10 will not be supported.
 
 ## Boot

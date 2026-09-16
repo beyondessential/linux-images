@@ -32,7 +32,7 @@ with Diagram(
     outformat="png",
     graph_attr=graph_attr,
 ):
-    base = Ubuntu("Ubuntu base\n(noble)")
+    base = Ubuntu("Ubuntu base\n(resolute)")
     release = Github("GitHub release\n(per tag)")
     base >> release
 
