@@ -48,14 +48,22 @@ check_not() {
     fi
 }
 
-# Assert a kernel module is present in the built initramfs. Compares against
-# INITRD_MODULES, which is populated from the image itself further down.
+# Assert a driver is available at boot. A driver compiled into the kernel needs
+# no initramfs entry and is always loaded, so it satisfies the requirement just
+# as an included module does — Ubuntu builds the virtio family that way, and a
+# .ko search can never find those. Both failure branches name the cause: either
+# dracut left out a module the kernel has, or this kernel has no such driver at
+# all (typically an arch that does not build it).
 check_initrd_module() {
     local mod="$1"
     if printf '%s\n' "$INITRD_MODULES" | grep -qxF "$mod"; then
-        pass "initramfs contains $mod"
+        pass "initramfs provides $mod"
+    elif printf '%s\n' "$KERNEL_BUILTIN" | grep -qxF "$mod"; then
+        pass "initramfs provides $mod (built into the kernel)"
+    elif printf '%s\n' "$KERNEL_MODULE_TREE" | grep -qxF "$mod"; then
+        fail "initramfs provides $mod (module exists for this kernel but dracut did not include it)"
     else
-        fail "initramfs contains $mod"
+        fail "initramfs provides $mod (this kernel has no such module or builtin)"
     fi
 }
 
@@ -611,12 +619,22 @@ INITRD_MODULES="$(chroot "$MNT" bash -c 'lsinitrd /boot/initrd.img-* 2>/dev/null
     | tr '-' '_' \
     | sort -u || true)"
 check "initramfs module list is readable" test -n "$INITRD_MODULES"
-# Print the count: a generic initramfs carrying only what dracut picked looks
-# very different from one with the driver lists force-included, and that
-# distinction is what a failure below usually comes down to.
-echo "  initramfs carries $(printf '%s\n' "$INITRD_MODULES" | grep -c .) modules"
 
-# r[verify image.boot.hardware-drivers+4]
+# Drivers compiled into the kernel, and every module this kernel ships at all.
+# The first set satisfies the requirement; the second only tells a failure
+# apart from an arch that does not build the driver.
+KERNEL_BUILTIN="$(chroot "$MNT" bash -c 'cat /lib/modules/*/modules.builtin 2>/dev/null' \
+    | grep -oE '[^/]+\.ko(\.[a-z]+)?$' \
+    | sed 's/\.ko.*$//' \
+    | tr '-' '_' \
+    | sort -u || true)"
+KERNEL_MODULE_TREE="$(chroot "$MNT" bash -c 'find /lib/modules -name "*.ko*" -printf "%f\n" 2>/dev/null' \
+    | sed 's/\.ko.*$//' \
+    | tr '-' '_' \
+    | sort -u || true)"
+echo "  initramfs carries $(printf '%s\n' "$INITRD_MODULES" | grep -c .) modules; kernel has $(printf '%s\n' "$KERNEL_BUILTIN" | grep -c .) builtins, $(printf '%s\n' "$KERNEL_MODULE_TREE" | grep -c .) modules on disk"
+
+# r[verify image.boot.hardware-drivers+5]
 # The requirement exempts the pi variant: linux-raspi does not ship these
 # x86-server storage and networking modules.
 if [ "$VARIANT" != "pi" ]; then
@@ -628,7 +646,7 @@ if [ "$VARIANT" != "pi" ]; then
     done
 fi
 
-# r[verify image.boot.cloud-drivers+5]
+# r[verify image.boot.cloud-drivers+6]
 if [ "$VARIANT" = "cloud" ]; then
     for mod in ena xen_blkfront gve; do
         check_initrd_module "$mod"

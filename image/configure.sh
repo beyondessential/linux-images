@@ -138,13 +138,13 @@ install -m 644 /tmp/files/dracut/01-portable-image.conf \
 # The driver list is x86-server-leaning and many of those modules do not exist
 # in linux-raspi, which is why the requirement exempts the pi variant.
 if [ "$VARIANT" != "pi" ]; then
-    # r[impl image.boot.hardware-drivers+4]
+    # r[impl image.boot.hardware-drivers+5]
     install -m 644 /tmp/files/dracut/03-hardware-drivers.conf \
         /etc/dracut.conf.d/03-hardware-drivers.conf
 fi
 
 if [ "$VARIANT" = "cloud" ]; then
-    # r[impl image.boot.cloud-drivers+5]
+    # r[impl image.boot.cloud-drivers+6]
     install -m 644 /tmp/files/dracut/04-cloud-drivers.conf \
         /etc/dracut.conf.d/04-cloud-drivers.conf
 fi

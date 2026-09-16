@@ -162,10 +162,11 @@ the hardware classes the image is intended to run on (see
 specialises the initramfs to the target machine after install (see
 `installer.write.rebuild-boot-config`).
 
-> r[image.boot.hardware-drivers+4]
-> The initramfs must contain kernel modules for hardware not present at
-> image-build time. For the `metal` and `cloud` variants, the following module
-> categories must be present:
+> r[image.boot.hardware-drivers+5]
+> The image must be able to boot on hardware not present at image-build time.
+> For the `metal` and `cloud` variants, drivers for the following categories
+> must be available at boot, either built into the kernel or included in the
+> initramfs:
 >
 > - **NVMe:** `nvme`, `nvme_core`
 > - **SATA/AHCI:** `ahci`
@@ -181,9 +182,9 @@ specialises the initramfs to the target machine after install (see
 > This does not apply to the `pi` variant, whose target hardware is fixed and
 > whose kernel does not provide these modules.
 
-> r[image.boot.cloud-drivers+5]
-> The cloud variant's initramfs must additionally contain cloud-specific
-> kernel modules:
+> r[image.boot.cloud-drivers+6]
+> The cloud variant must additionally have drivers for cloud-specific hardware
+> available at boot, on the same terms:
 >
 > - **AWS:** `ena`, `xen_blkfront`
 > - **GCP:** `gve`
