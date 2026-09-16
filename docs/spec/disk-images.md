@@ -307,6 +307,11 @@ clean for headless deployments.
 > These images are deployed as headless appliances on networks we do not
 > control, and an adapter that advertises itself is an inbound surface
 > that r[image.firewall.policy] does not cover.
+>
+> This governs the state the image ships in, not what software on the
+> running system may do. An application that manages its own connections
+> or its own Bluetooth Low Energy advertising is configuring the adapter
+> deliberately, which is the action the default exists to require.
 
 > r[image.wireless.pi-wifi]
 > For the `pi` variant, the onboard Wi-Fi controller must be usable from
