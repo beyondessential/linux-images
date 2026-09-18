@@ -97,6 +97,26 @@ case "${VARIANT:-}" in
         # is dropped in — the chroot build doesn't run flash-kernel itself
         # (see configure.sh for the A/B layout, r[image.boot.pi-tryboot-rollback]).
         #
+        # r[image.packages.pi-utils]
+        # raspi-utils-core carries vcgencmd, vclog, vcmailbox and pinctrl.
+        # These are the only way to reach the firmware's own view of the
+        # board — SoC temperature, the sticky throttled/under-voltage flags,
+        # clock and voltage rails, the running firmware build — because that
+        # view lives behind the VideoCore mailbox and no generic Linux tool
+        # speaks to it.
+        #
+        # raspi-utils-dt adds dtoverlay/dtparam/dtmerge, which apply and
+        # inspect an overlay against the running kernel rather than a reboot
+        # per guess. It pulls device-tree-compiler and full perl (~50 MB) —
+        # perl only for ovmerge, but it is a Depends, so the cost comes with
+        # the C tools whether or not ovmerge is ever run.
+        #
+        # The metapackage's other halves stay out: -eeprom programs HAT
+        # identification EEPROMs and -otp burns one-way fuses, neither of
+        # which wants to be sitting on an appliance by default.
+        # libraspberrypi-bin is now just a universe transitional stub for
+        # these, so it is not the name to install.
+
         # r[image.wireless.pi-bluetooth] r[image.wireless.pi-wifi]
         # Both radios' firmware already arrives with linux-firmware-raspi, and
         # the Pi 5 DTB carries the Bluetooth controller as a serdev child of
@@ -125,6 +145,9 @@ case "${VARIANT:-}" in
             linux-raspi
             linux-firmware-raspi
             i2c-tools
+
+            raspi-utils-core
+            raspi-utils-dt
 
             bluetooth
             wpasupplicant
