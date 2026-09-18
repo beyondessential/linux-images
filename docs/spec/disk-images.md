@@ -152,6 +152,22 @@ a shared library it had mapped was replaced by that operation must be
 restarted automatically so it runs the upgraded code. This must happen without
 interactive prompting.
 
+> r[image.packages.pi-utils]
+> For the `pi` variant, the Raspberry Pi firmware and device-tree utilities
+> must be installed. An operator on a deployed board must be able to ask the
+> firmware for the SoC temperature, the throttling and under-voltage flags,
+> the clock and voltage rails, and the running firmware version; read the
+> VideoCore log; inspect and drive the state of individual GPIO pins; and
+> inspect, merge and apply device-tree overlays and parameters against a
+> running system.
+>
+> The device-tree half is required alongside the diagnostics because
+> r[image.boot.pi-peripherals] and r[image.boot.pi-tpm-overlay] put the
+> board's peripherals behind overlays and parameters that `config.txt` sets
+> at boot and nothing on the running system can revisit. Without them, the
+> only way to learn whether a HAT is wired to the pins its overlay claims is
+> one reboot per guess, on a headless board in a place we cannot visit.
+
 ## Bootloader
 
 r[image.boot.dracut]
