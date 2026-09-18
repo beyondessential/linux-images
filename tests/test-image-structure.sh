@@ -478,6 +478,14 @@ if [ "$VARIANT" = "pi" ]; then
     check_not "no GRUB EFI binary on pi (BOOTAA64.EFI)" test -f "$MNT/boot/firmware/EFI/BOOT/BOOTAA64.EFI"
     # r[verify image.boot.pi-peripherals]
     check "i2c-tools installed (i2cdetect)" test -x "$MNT/usr/sbin/i2cdetect"
+
+    # r[verify image.packages.pi-utils]
+    check "firmware query tool installed (vcgencmd)" test -x "$MNT/usr/bin/vcgencmd"
+    check "VideoCore log tool installed (vclog)" test -x "$MNT/usr/bin/vclog"
+    check "GPIO state tool installed (pinctrl)" test -x "$MNT/usr/bin/pinctrl"
+    check "overlay tool installed (dtoverlay)" test -x "$MNT/usr/bin/dtoverlay"
+    check "overlay parameter tool installed (dtparam)" test -x "$MNT/usr/bin/dtparam"
+    check "overlay merge tool installed (dtmerge)" test -x "$MNT/usr/bin/dtmerge"
     # r[verify image.wireless.pi-bluetooth]
     check "Bluetooth host stack installed (bluetoothd)" test -x "$MNT/usr/libexec/bluetooth/bluetoothd"
     check "bluetoothctl installed" test -x "$MNT/usr/bin/bluetoothctl"
