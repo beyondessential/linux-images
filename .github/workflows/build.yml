@@ -118,12 +118,14 @@ jobs:
         run: just ubuntu_suite=${{ matrix.suite }} arch=arm64 variant=cloud test_boot_timeout=3600 test-boot
         timeout-minutes: 65
 
-      - name: Upload boot-test serial log
+      - name: Upload boot-test logs
         if: always() && (steps.boot_test_amd64.outcome == 'failure' || steps.boot_test_arm64.outcome == 'failure')
         uses: actions/upload-artifact@v7
         with:
-          name: test-boot-serial-cloud-${{ matrix.suite }}-${{ matrix.arch }}
-          path: working/${{ matrix.arch }}/test-boot-serial.log
+          name: test-boot-logs-cloud-${{ matrix.suite }}-${{ matrix.arch }}
+          path: |
+            working/${{ matrix.arch }}/test-boot-serial.log
+            working/${{ matrix.arch }}/test-boot-results.log
           if-no-files-found: ignore
           retention-days: 1
 
@@ -270,12 +272,14 @@ jobs:
         run: just ubuntu_suite=${{ matrix.suite }} arch=arm64 variant=metal test_boot_timeout=3600 test-boot
         timeout-minutes: 65
 
-      - name: Upload boot-test serial log
+      - name: Upload boot-test logs
         if: always() && (steps.boot_test_amd64.outcome == 'failure' || steps.boot_test_arm64.outcome == 'failure')
         uses: actions/upload-artifact@v7
         with:
-          name: test-boot-serial-metal-${{ matrix.suite }}-${{ matrix.arch }}
-          path: working/${{ matrix.arch }}/test-boot-serial.log
+          name: test-boot-logs-metal-${{ matrix.suite }}-${{ matrix.arch }}
+          path: |
+            working/${{ matrix.arch }}/test-boot-serial.log
+            working/${{ matrix.arch }}/test-boot-results.log
           if-no-files-found: ignore
           retention-days: 1
 

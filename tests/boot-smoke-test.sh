@@ -13,11 +13,31 @@
 
 # QEMU's aarch64 `virt` machine exposes its UART as ttyAMA0 (PL011), not
 # ttyS0 (8250/16550, x86-only); fall back to the console device if
-# neither shows up.
+# neither shows up. This is a human-readable copy of the output only: a
+# getty starts on this same device once the guest reaches a login prompt
+# and hangs up whoever had it open, silently discarding anything still
+# being written to it — so the pass/fail verdict is never read from here.
 SERIAL_DEV=/dev/ttyS0
 [ -e "$SERIAL_DEV" ] || SERIAL_DEV=/dev/ttyAMA0
 [ -e "$SERIAL_DEV" ] || SERIAL_DEV=/dev/console
-exec > "$SERIAL_DEV" 2>&1
+
+# The dedicated result channel: a virtio-serial port no getty ever touches,
+# so the verdict reaches the host even after the console above is revoked.
+# It's created by udev shortly after the virtio_console driver probes, so
+# wait briefly rather than racing it; fall back to the console alone if it
+# never shows up (e.g. run without the matching QEMU device).
+RESULTS_DEV=/dev/virtio-ports/bes.test-results
+for _ in $(seq 1 20); do
+  [ -e "$RESULTS_DEV" ] && break
+  sleep 0.25
+done
+
+if [ -e "$RESULTS_DEV" ]; then
+  exec > >(tee "$RESULTS_DEV" "$SERIAL_DEV") 2>&1
+else
+  exec > "$SERIAL_DEV" 2>&1
+  echo "WARNING: $RESULTS_DEV not present; results are only on the serial console"
+fi
 
 PASS=0
 FAIL=0
@@ -264,5 +284,6 @@ else
   done
 fi
 
+sync
 sleep 2
 poweroff

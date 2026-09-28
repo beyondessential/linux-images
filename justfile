@@ -768,6 +768,16 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     qemu-img resize "$TEST_IMAGE" 12G
 
     SERIAL_LOG="{{ work_dir }}/test-boot-serial.log"
+    # serial-getty@ttyS0 starts once the guest reaches a login prompt and
+    # hangs up the console device, silently discarding anything the smoke
+    # test still had open on it — so the pass/fail verdict travels over its
+    # own virtio-serial port instead (see tests/boot-smoke-test.sh) and is
+    # graded from this file, never from the serial console. Truncate/remove
+    # it before the run so a stale file from a previous run can never be
+    # mistaken for this one's result; QEMU's file chardev also truncates on
+    # open, but that's not a substitute for starting clean here.
+    RESULTS_LOG="{{ work_dir }}/test-boot-results.log"
+    rm -f "$RESULTS_LOG"
     # The rotation module reboots once on GRUB variants (metal, cloud) to
     # repair grub.cfg after rotating the identifiers it references — see
     # r[image.identity.grub-repair] — so we can't pass QEMU -no-reboot
@@ -783,6 +793,7 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
 
     echo "Booting image in QEMU (timeout: ${TIMEOUT}s)..."
     echo "Serial log: $SERIAL_LOG"
+    echo "Results log: $RESULTS_LOG"
 
     timeout "$TIMEOUT" \
       {{ qemu_command }} {{ qemu_accel }} \
@@ -796,22 +807,27 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
       -drive file="{{ work_dir }}/cidata.iso",format=raw,if=virtio \
       -netdev user,id=net0 \
       -device virtio-net-pci,netdev=net0 \
+      -device virtio-serial-pci \
+      -chardev file,id=results,path="$RESULTS_LOG" \
+      -device virtserialport,chardev=results,name=bes.test-results \
       2>&1 | tee "$SERIAL_LOG" || true
 
     echo ""
     echo "=== Checking test results ==="
 
-    if grep -q "TEST_SUCCESS" "$SERIAL_LOG"; then
+    if grep -q "TEST_SUCCESS" "$RESULTS_LOG" 2>/dev/null; then
       echo "Boot smoke test PASSED"
       exit 0
-    elif grep -q "TEST_FAILURE" "$SERIAL_LOG"; then
+    elif grep -q "TEST_FAILURE" "$RESULTS_LOG" 2>/dev/null; then
       echo "Boot smoke test FAILED"
-      grep "FAIL:" "$SERIAL_LOG" || true
+      grep "FAIL:" "$RESULTS_LOG" || true
       exit 1
     else
       echo "Boot smoke test TIMED OUT or did not complete"
       echo "Last 30 lines of serial log:"
-      tail -30 "$SERIAL_LOG"
+      tail -30 "$SERIAL_LOG" 2>/dev/null || true
+      echo "Last 30 lines of results log:"
+      tail -30 "$RESULTS_LOG" 2>/dev/null || true
       exit 1
     fi
 
