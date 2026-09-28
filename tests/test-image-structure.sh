@@ -48,6 +48,10 @@ check_not() {
     fi
 }
 
+matches() {
+    [[ "$1" =~ $2 ]]
+}
+
 # Assert a driver is available at boot. A driver compiled into the kernel needs
 # no initramfs entry and is always loaded, so it satisfies the requirement just
 # as an included module does — Ubuntu builds the virtio family that way, and a
@@ -427,11 +431,16 @@ if [ -f "$IDENTITY_FILE" ]; then
     check "BTRFS_UUID matches the actual btrfs filesystem ID" [ "${BTRFS_UUID:-}" = "$ACTUAL_BTRFS_UUID" ]
 
     if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
+        # A value the reader failed to extract would match an equally broken
+        # read on first boot, so each must also be well-formed.
         ACTUAL_LUKS_UUID="$(cryptsetup luksUUID "$ROOT_PART" 2>/dev/null || true)"
         check "LUKS_UUID matches the actual LUKS header UUID" [ "${LUKS_UUID:-}" = "$ACTUAL_LUKS_UUID" ]
+        check "LUKS_UUID is a well-formed UUID" \
+            matches "${LUKS_UUID:-}" '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
         ACTUAL_LUKS_DIGEST="$(luks_digest0 "$ROOT_PART")"
         check "LUKS_DIGEST matches the actual LUKS digest 0" [ "${LUKS_DIGEST:-}" = "$ACTUAL_LUKS_DIGEST" ]
+        check "LUKS_DIGEST is a 64-digit hex digest" matches "${LUKS_DIGEST:-}" '^[0-9a-f]{64}$'
     else
         check_not "no LUKS_UUID recorded for cloud" grep -q '^LUKS_UUID=' "$IDENTITY_FILE"
         check_not "no LUKS_DIGEST recorded for cloud" grep -q '^LUKS_DIGEST=' "$IDENTITY_FILE"
