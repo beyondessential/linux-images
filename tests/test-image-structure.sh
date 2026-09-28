@@ -460,6 +460,7 @@ for initrd in "${IDENTITY_INITRDS[@]}"; do
         etc/bes/build-identity \
         usr/bin/bes-identity \
         usr/lib/bes-identity/bes-identity-lib.sh \
+        usr/bin/awk \
         usr/lib/systemd/system/bes-identity-pre.service \
         usr/lib/systemd/system/bes-identity-post.service \
         usr/lib/systemd/system/systemd-cryptsetup@root.service.d/50-bes-identity.conf \

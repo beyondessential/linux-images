@@ -9,7 +9,7 @@ RECORD=/etc/bes/build-identity
 check() {
     # Without a record there is nothing to compare against.
     [[ -f "${dracutsysrootdir-}$RECORD" ]] || return 1
-    require_binaries sgdisk partx blkid btrfs btrfstune e2fsck tune2fs mlabel cryptsetup || return 1
+    require_binaries sgdisk partx blkid btrfs btrfstune e2fsck tune2fs mlabel cryptsetup awk || return 1
     return 0
 }
 

@@ -4,6 +4,10 @@
 # bes-identity script. Needs bash, blkid, cryptsetup, and awk, all of which
 # are present wherever this is sourced (the dracut module installs them into
 # the initramfs alongside this file).
+#
+# The awk here must stay within POSIX awk: the record is written with the
+# build host's awk (typically gawk) and compared against on the image with
+# its own (mawk on Ubuntu), and the two must read a header identically.
 
 # Reads one blkid tag from a device, probing the device itself rather than
 # trusting blkid's cache, which can lag behind a change made seconds ago.
@@ -31,7 +35,7 @@ luks_digest0() {
             capture = 1
             next
         }
-        section && cur == "0" && capture && /^[[:space:]]+[0-9a-f]{2}([[:space:]][0-9a-f]{2})*[[:space:]]*$/ {
+        section && cur == "0" && capture && /^[[:space:]]+[0-9a-f][0-9a-f]([[:space:]][0-9a-f][0-9a-f])*[[:space:]]*$/ {
             digest = digest $0
             next
         }
