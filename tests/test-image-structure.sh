@@ -452,12 +452,9 @@ fi
 # initramfs the machine can boot: each kernel's under /boot, and on the pi
 # also the copy in the firmware slot, which is the one the firmware loads.
 IDENTITY_INITRDS=()
-for initrd in "$MNT"/boot/initrd.img-*; do
+for initrd in "${INITRDS[@]}"; do
     [ -f "$initrd" ] && IDENTITY_INITRDS+=("${initrd#"$MNT"}")
 done
-if [ "$VARIANT" = "pi" ]; then
-    IDENTITY_INITRDS+=(/boot/firmware/current/initrd.img)
-fi
 check "at least one initramfs to inspect for the identity module" test "${#IDENTITY_INITRDS[@]}" -gt 0
 
 for initrd in "${IDENTITY_INITRDS[@]}"; do
