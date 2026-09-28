@@ -434,6 +434,66 @@ if [ -f "$IDENTITY_FILE" ]; then
     fi
 fi
 
+# r[verify image.identity.record] r[verify image.identity.rotate]
+# The rotation module, and the record it compares against, must be in every
+# initramfs the machine can boot: each kernel's under /boot, and on the pi
+# also the copy in the firmware slot, which is the one the firmware loads.
+IDENTITY_INITRDS=()
+for initrd in "$MNT"/boot/initrd.img-*; do
+    [ -f "$initrd" ] && IDENTITY_INITRDS+=("${initrd#"$MNT"}")
+done
+if [ "$VARIANT" = "pi" ]; then
+    IDENTITY_INITRDS+=(/boot/firmware/current/initrd.img)
+fi
+check "at least one initramfs to inspect for the identity module" test "${#IDENTITY_INITRDS[@]}" -gt 0
+
+for initrd in "${IDENTITY_INITRDS[@]}"; do
+    if ! INITRD_LISTING="$(chroot "$MNT" lsinitrd "$initrd" 2>/dev/null)" || [ -z "$INITRD_LISTING" ]; then
+        fail "$initrd is readable by lsinitrd"
+        continue
+    fi
+    for path in \
+        etc/bes/build-identity \
+        usr/bin/bes-identity \
+        usr/lib/bes-identity/bes-identity-lib.sh \
+        usr/lib/systemd/system/bes-identity-pre.service \
+        usr/lib/systemd/system/bes-identity-post.service \
+        usr/lib/systemd/system/systemd-cryptsetup@root.service.d/50-bes-identity.conf \
+        etc/systemd/system/initrd.target.wants/bes-identity-pre.service \
+        etc/systemd/system/initrd.target.wants/bes-identity-post.service; do
+        if grep -qE "[[:space:]]${path}( -> .*)?$" <<<"$INITRD_LISTING"; then
+            pass "$initrd contains /$path"
+        else
+            fail "$initrd contains /$path"
+        fi
+    done
+    # mlabel, which rotates the FAT serial, cannot open a volume without the
+    # converter for its default codepage.
+    if grep -qE '[[:space:]]usr/lib/([^/ ]+/)?gconv/IBM850\.so$' <<<"$INITRD_LISTING"; then
+        pass "$initrd contains the CP850 converter mlabel needs"
+    else
+        fail "$initrd contains the CP850 converter mlabel needs"
+    fi
+    # Arguments stored in the initramfs outlive the identifiers they name: a
+    # stored rd.luks.uuid= keeps dracut waiting for the build-time LUKS UUID
+    # after it has been rotated.
+    INITRD_STORED_ARGS=""
+    while IFS= read -r conf; do
+        INITRD_STORED_ARGS+="$(chroot "$MNT" lsinitrd -f "$conf" "$initrd" 2>/dev/null || true) "
+    done < <(grep -oE 'etc/cmdline\.d/[^ ]+\.conf$' <<<"$INITRD_LISTING" || true)
+    if grep -qE '(^|[[:space:]])(root|rd\.luks\.uuid|rd\.luks\.name)=' <<<"$INITRD_STORED_ARGS"; then
+        fail "$initrd stores no root or LUKS device arguments (has: $INITRD_STORED_ARGS)"
+    else
+        pass "$initrd stores no root or LUKS device arguments"
+    fi
+    INITRD_RECORD="$(chroot "$MNT" lsinitrd -f etc/bes/build-identity "$initrd" 2>/dev/null || true)"
+    if [ -n "$INITRD_RECORD" ] && [ "$INITRD_RECORD" = "$(cat "$IDENTITY_FILE" 2>/dev/null)" ]; then
+        pass "$initrd carries the same build-identity record as the rootfs"
+    else
+        fail "$initrd carries the same build-identity record as the rootfs"
+    fi
+done
+
 # r[verify image.hostname.metal-dhcp+2] r[verify image.hostname.cloud-default+2]
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     HOSTNAME_SIZE="$(stat -c%s "$MNT/etc/hostname" 2>/dev/null || echo "missing")"
