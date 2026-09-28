@@ -87,13 +87,18 @@ r[image.base.debootstrap]
 The base system must be debootstrapped into the `@` subvolume.
 The debootstrap must create the minimal viable bootable system.
 
-r[image.base.machine-id]
+r[image.base.machine-id+2]
 `/etc/machine-id` must be truncated to zero bytes so that systemd generates a
 unique machine ID on each first boot. The image's initramfs must also carry an
 uninitialized `/etc/machine-id` (zero bytes, or a string systemd recognises as
 uninitialized such as the all-zeros UUID): if the initramfs ships a populated
 value, systemd commits it to the root filesystem at switch-root, and every
 install ends up with the same machine ID.
+The image must not carry any other stored machine ID that systemd adopts at
+first boot in place of generating a fresh one.
+In particular, the D-Bus machine ID at `/var/lib/dbus/machine-id` must be
+either absent or a symlink to `/etc/machine-id`: systemd seeds an empty
+`/etc/machine-id` from a regular file there.
 
 r[image.base.resolver]
 systemd-resolved must be enabled and configured as the system DNS resolver.
