@@ -94,11 +94,13 @@ jobs:
 
       # Boots the raw image built above (test-boot copies it first, so the
       # original that `build` below converts/compresses is untouched) and
-      # runs the in-guest first-boot checks. Placed before `build` rather
-      # than after: `build`'s `compress` step removes the raw image
-      # (zstd --rm), and test-boot would otherwise have to decompress it
-      # back from the .zst it just made, for no benefit.
-      - name: Boot-test image (KVM-accelerated) # r[verify image.identity.rotate] r[verify image.identity.grub-repair]
+      # runs the in-guest first-boot checks (tests/boot-smoke-test.sh:
+      # identity rotation, grub.cfg repair, root growth, failed units).
+      # Placed before `build` rather than after: `build`'s `compress` step
+      # removes the raw image (zstd --rm), and test-boot would otherwise
+      # have to decompress it back from the .zst it just made, for no
+      # benefit.
+      - name: Boot-test image (KVM-accelerated)
         id: boot_test_amd64
         if: matrix.arch == 'amd64'
         run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=cloud test-boot
@@ -109,7 +111,7 @@ jobs:
       # acceleration, hence the larger test_boot_timeout and step timeout.
       # continue-on-error so a slow or flaky emulated boot reports without
       # gating merges, unlike the accelerated amd64 run above.
-      - name: Boot-test image (emulated, best-effort) # r[verify image.identity.rotate] r[verify image.identity.grub-repair]
+      - name: Boot-test image (emulated, best-effort)
         id: boot_test_arm64
         if: matrix.arch == 'arm64'
         continue-on-error: true
@@ -243,11 +245,13 @@ jobs:
 
       # Boots the raw image built above (test-boot copies it first, so the
       # original that `build` below converts/compresses is untouched) and
-      # runs the in-guest first-boot checks. Placed before `build` rather
-      # than after: `build`'s `compress` step removes the raw image
-      # (zstd --rm), and test-boot would otherwise have to decompress it
-      # back from the .zst it just made, for no benefit.
-      - name: Boot-test image (KVM-accelerated) # r[verify image.identity.rotate] r[verify image.identity.luks-rekey] r[verify image.identity.grub-repair]
+      # runs the in-guest first-boot checks (tests/boot-smoke-test.sh:
+      # identity rotation, grub.cfg repair, root growth, failed units).
+      # Placed before `build` rather than after: `build`'s `compress` step
+      # removes the raw image (zstd --rm), and test-boot would otherwise
+      # have to decompress it back from the .zst it just made, for no
+      # benefit.
+      - name: Boot-test image (KVM-accelerated)
         id: boot_test_amd64
         if: matrix.arch == 'amd64'
         run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=metal test-boot
@@ -259,7 +263,7 @@ jobs:
       # acceleration, hence the larger test_boot_timeout and step timeout.
       # continue-on-error so a slow or flaky emulated boot reports without
       # gating merges, unlike the accelerated amd64 run above.
-      - name: Boot-test image (emulated, best-effort) # r[verify image.identity.rotate] r[verify image.identity.luks-rekey] r[verify image.identity.grub-repair]
+      - name: Boot-test image (emulated, best-effort)
         id: boot_test_arm64
         if: matrix.arch == 'arm64'
         continue-on-error: true
