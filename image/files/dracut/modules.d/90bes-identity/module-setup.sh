@@ -40,11 +40,20 @@ install() {
     # mlabel converts the volume label through its default codepage, CP850,
     # which glibc loads as a gconv module; without it mlabel cannot open the
     # volume at all.
-    local gconv
-    for gconv in /usr/lib/*/gconv /usr/lib64/gconv /usr/lib/gconv; do
-        [[ -f "${dracutsysrootdir-}$gconv/IBM850.so" ]] || continue
+    # glibc finds IBM850.so through its gconv configuration: the
+    # gconv-modules.cache when present, otherwise the text files, where
+    # current glibc registers IBM850 only in gconv-modules.d/. All of these are
+    # read from the tree being built (which may be a sysroot), and each file is
+    # named to dracut explicitly rather than handed over as a pattern.
+    local sysroot="${dracutsysrootdir-}" dir gconv conf
+    for dir in "$sysroot"/usr/lib/*/gconv "$sysroot"/usr/lib64/gconv "$sysroot"/usr/lib/gconv; do
+        [[ -f "$dir/IBM850.so" ]] || continue
+        gconv="${dir#"$sysroot"}"
         inst_multiple "$gconv/IBM850.so" "$gconv/gconv-modules"
-        inst_multiple -o "$gconv/gconv-modules.d/*.conf"
+        inst_multiple -o "$gconv/gconv-modules.cache"
+        for conf in "$dir"/gconv-modules.d/*.conf; do
+            [[ -f "$conf" ]] && inst_simple "${conf#"$sysroot"}"
+        done
         break
     done
 

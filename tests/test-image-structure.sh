@@ -474,12 +474,23 @@ for initrd in "${IDENTITY_INITRDS[@]}"; do
     else
         fail "$initrd contains the CP850 converter mlabel needs"
     fi
+    # ...and glibc only loads it if its gconv configuration in the initramfs
+    # registers IBM850, which current glibc does in gconv-modules.d/.
+    GCONV_REGISTERS_IBM850=no
+    while IFS= read -r gconv_conf; do
+        if chroot "$MNT" lsinitrd -f "$gconv_conf" "$initrd" </dev/null 2>/dev/null |
+            grep -qE '^[[:space:]]*module[[:space:]]+(INTERNAL[[:space:]]+)?IBM850//'; then
+            GCONV_REGISTERS_IBM850=yes
+            break
+        fi
+    done < <(grep -oE 'usr/lib/([^/ ]+/)?gconv/gconv-modules(\.d/[^ ]+\.conf)?$' <<<"$INITRD_LISTING" || true)
+    check "$initrd has a gconv configuration file registering IBM850" [ "$GCONV_REGISTERS_IBM850" = yes ]
     # Arguments stored in the initramfs outlive the identifiers they name: a
     # stored rd.luks.uuid= keeps dracut waiting for the build-time LUKS UUID
     # after it has been rotated.
     INITRD_STORED_ARGS=""
     while IFS= read -r conf; do
-        INITRD_STORED_ARGS+="$(chroot "$MNT" lsinitrd -f "$conf" "$initrd" 2>/dev/null || true) "
+        INITRD_STORED_ARGS+="$(chroot "$MNT" lsinitrd -f "$conf" "$initrd" </dev/null 2>/dev/null || true) "
     done < <(grep -oE 'etc/cmdline\.d/[^ ]+\.conf$' <<<"$INITRD_LISTING" || true)
     if grep -qE '(^|[[:space:]])(root|rd\.luks\.uuid|rd\.luks\.name)=' <<<"$INITRD_STORED_ARGS"; then
         fail "$initrd stores no root or LUKS device arguments (has: $INITRD_STORED_ARGS)"
