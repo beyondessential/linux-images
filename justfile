@@ -757,8 +757,11 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Make a copy so we don't modify the original
+    # Make a copy so we don't modify the original. The copy grows to the
+    # full resized size as the guest fills it, so it is removed however the
+    # run ends; the serial log is kept.
     TEST_IMAGE="{{ work_dir }}/test-boot.img"
+    trap 'rm -f "$TEST_IMAGE"' EXIT
     cp "{{ output_raw }}" "$TEST_IMAGE"
 
     # Grow the test image so grow-root-filesystem has something to do
