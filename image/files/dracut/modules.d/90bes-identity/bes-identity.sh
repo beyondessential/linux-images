@@ -224,7 +224,8 @@ do_pre() {
 inspect_xboot() {
     XBOOT_HAS_GRUB=unknown
     mkdir -p "$XBOOT_MNT"
-    if ! mount -t ext4 -o ro "$PART2" "$XBOOT_MNT"; then
+    # noload: a read-only mount would otherwise still replay a dirty journal.
+    if ! mount -t ext4 -o ro,noload "$PART2" "$XBOOT_MNT"; then
         warn "could not mount $PART2 to look for GRUB"
         return
     fi
@@ -262,7 +263,7 @@ rotate_btrfs() {
         warn "btrfstune failed; btrfs filesystem ID not rotated"
         return 0
     fi
-    ROTATED_THIS_BOOT=yes
+    BTRFS_ROTATED_THIS_BOOT=yes
     # Drop the kernel's registration of the device under its old ID.
     btrfs device scan --forget >/dev/null 2>&1
     btrfs device scan "$BTRFS_DEV" >/dev/null 2>&1
@@ -279,9 +280,7 @@ rotate_fat_serial() {
     serial="${serial:0:8}"
     # mlabel rewrites the volume label along with the serial; pass the
     # current one back so it is kept.
-    if MTOOLS_SKIP_CHECK=1 mlabel -N "$serial" -i "$PART1" "::$label" </dev/null; then
-        ROTATED_THIS_BOOT=yes
-    else
+    if ! MTOOLS_SKIP_CHECK=1 mlabel -N "$serial" -i "$PART1" "::$label" </dev/null; then
         warn "mlabel failed; FAT volume serial not rotated"
     fi
 }
@@ -298,9 +297,7 @@ rotate_xboot_uuid() {
         warn "e2fsck found errors it could not fix (exit $rc); xboot UUID not rotated"
         return 0
     fi
-    if tune2fs -U "$(random_uuid)" "$PART2"; then
-        ROTATED_THIS_BOOT=yes
-    else
+    if ! tune2fs -U "$(random_uuid)" "$PART2"; then
         warn "tune2fs failed; xboot UUID not rotated"
     fi
 }
@@ -309,9 +306,12 @@ rotate_xboot_uuid() {
 # Rewrites every rotated identifier in grub.cfg to its current value. The new
 # file is made durable before it replaces the old one, so a power cut leaves
 # either the old or the new file, never a mix.
+#
+# Sets GRUB_CFG_REPLACED=yes only when a new grub.cfg is in place.
 repair_grub_cfg() {
     local cfg="$XBOOT_MNT/grub/grub.cfg" tmp key rec cur
     local exprs=()
+    GRUB_CFG_REPLACED=no
 
     mkdir -p "$XBOOT_MNT"
     if ! mount -t ext4 "$PART2" "$XBOOT_MNT"; then
@@ -351,6 +351,7 @@ repair_grub_cfg() {
         mv -f "$tmp" "$cfg" &&
         sync "$XBOOT_MNT/grub"; then
         umount "$XBOOT_MNT"
+        GRUB_CFG_REPLACED=yes
         log "grub.cfg repaired"
         return 0
     fi
@@ -378,7 +379,7 @@ cmdline_references_rotated() {
 
 do_post() {
     local stale_boot=no
-    ROTATED_THIS_BOOT=no
+    BTRFS_ROTATED_THIS_BOOT=no
     resolve_layout || return 0
 
     if cryptsetup isLuks "$PART3"; then
@@ -392,8 +393,11 @@ do_post() {
         BTRFS_DEV="$PART3"
     fi
 
-    # Only look inside xboot when a step that depends on the boot loader has
-    # something to do, so an already-rotated system is not touched.
+    # Whether xboot carries GRUB decides two steps: a btrfs rotation needs a
+    # grub.cfg that can be repaired, and xboot's own UUID is rotated only
+    # without GRUB. Look only while one of those is still to do. On GRUB
+    # variants xboot keeps its recorded UUID for good, so it is looked at on
+    # every boot, read-only and without journal replay, so nothing is written.
     read_current
     XBOOT_HAS_GRUB=unknown
     if [ "$CUR_BTRFS_UUID" = "$BTRFS_UUID" ] || [ "$CUR_XBOOT_UUID" = "$XBOOT_UUID" ] ||
@@ -410,10 +414,13 @@ do_post() {
     read_current
     [ -n "$(rotated_keys)" ] || return 0
     cmdline_references_rotated && stale_boot=yes
-    # grub.cfg can only hold a stale identifier if one was rotated this boot
-    # or an earlier boot was cut off between rotating and repairing, in which
-    # case the boot loader handed this boot a stale command line.
-    if [ "$stale_boot" = no ] && { [ "$XBOOT_HAS_GRUB" != yes ] || [ "$ROTATED_THIS_BOOT" = no ]; }; then
+    # Of the identifiers rotated here only the btrfs ID can appear in grub.cfg
+    # (xboot's is rotated only where there is no GRUB). Beyond that, grub.cfg
+    # can only be stale if an earlier boot was cut off between rotating and
+    # repairing, in which case the boot loader handed this boot a stale
+    # command line.
+    if [ "$stale_boot" = no ] &&
+        { [ "$XBOOT_HAS_GRUB" != yes ] || [ "$BTRFS_ROTATED_THIS_BOOT" = no ]; }; then
         return 0
     fi
 
@@ -421,11 +428,17 @@ do_post() {
         [ "$stale_boot" = yes ] && error "this boot cannot find its root filesystem"
         return 0
     fi
-    if [ "$stale_boot" = yes ]; then
-        log "this boot's command line names a rotated identifier; rebooting into the repaired configuration"
-        sync
-        systemctl --no-block reboot
+    [ "$stale_boot" = yes ] || return 0
+    if [ "$GRUB_CFG_REPLACED" = no ]; then
+        # Rebooting would come back to the same command line: it was not
+        # read from xboot's grub.cfg, or grub.cfg holds none of the stale
+        # values, so there is nothing a reboot would pick up.
+        error "this boot's command line names a rotated identifier that grub.cfg repair cannot fix; not rebooting"
+        return 0
     fi
+    log "this boot's command line names a rotated identifier; rebooting into the repaired configuration"
+    sync
+    systemctl --no-block reboot
 }
 
 if [ ! -f "$RECORD" ]; then
