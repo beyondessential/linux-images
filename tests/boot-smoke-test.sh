@@ -75,16 +75,41 @@ check "tailscaled is active" systemctl is-active tailscaled
 
 ROOT_PART="$(readlink -f /dev/disk/by-partlabel/root)"
 ROOT_NAME="${ROOT_PART##*/}"
-DISK_NAME="$(lsblk -no PKNAME "$ROOT_PART")"
+# -d (nodeps) excludes holder devices from the listing: without it, an
+# encrypted root partition's active crypt mapping is a holder of $ROOT_PART
+# and lsblk prints one PKNAME row per device in the tree (the partition's
+# own parent disk, then the mapping's parent, which is the partition
+# itself) — two lines, not one, silently making DISK_NAME/DISK a bogus
+# multi-line path that every downstream lookup on it fails against.
+DISK_NAME="$(lsblk -ndo PKNAME "$ROOT_PART")"
 DISK="/dev/$DISK_NAME"
+# Branch on the condition directly, not on check()'s exit status: check()
+# always reports PASS/FAIL correctly, but ((FAIL++)) as its last statement
+# makes its own exit status unreliable once FAIL is already nonzero (bash's
+# post-increment `((x++))` from a nonzero x is itself "truthy" as a command).
+if [ -z "$DISK_NAME" ] || [[ "$DISK_NAME" == *$'\n'* ]] || [ ! -b "$DISK" ]; then
+  check "found a single parent disk for $ROOT_PART (got: ${DISK_NAME:-<empty>})" false
+  # Leave DISK_NAME/DISK unusable rather than guessing, so every check that
+  # depends on them below fails loudly (via root_partition_slack's and
+  # identity_read's own strictness) instead of reading a wrong device.
+  DISK_NAME=""
+  DISK=""
+else
+  check "found a single parent disk for $ROOT_PART (got: $DISK_NAME)" true
+fi
 
 # The root partition's end, as a distance in 512-byte sectors from the end of
-# the disk.
+# the disk. Fails (rather than silently treating a failed read as zero) if
+# any read is missing or non-numeric, so a bad $DISK_NAME can't make this
+# check pass vacuously.
 root_partition_slack() {
   local disk_size start size
-  disk_size="$(cat "/sys/block/$DISK_NAME/size")"
-  start="$(cat "/sys/block/$DISK_NAME/$ROOT_NAME/start")"
-  size="$(cat "/sys/block/$DISK_NAME/$ROOT_NAME/size")"
+  disk_size="$(cat "/sys/block/$DISK_NAME/size" 2>/dev/null)" || return 1
+  start="$(cat "/sys/block/$DISK_NAME/$ROOT_NAME/start" 2>/dev/null)" || return 1
+  size="$(cat "/sys/block/$DISK_NAME/$ROOT_NAME/size" 2>/dev/null)" || return 1
+  [[ "$disk_size" =~ ^[0-9]+$ ]] || return 1
+  [[ "$start" =~ ^[0-9]+$ ]] || return 1
+  [[ "$size" =~ ^[0-9]+$ ]] || return 1
   echo $((disk_size - start - size))
 }
 
@@ -168,6 +193,17 @@ rotated() {
 not_referenced() {
   local value="$1" file="$2"
   ! grep -qiF -- "$value" "$file"
+}
+
+# Unlike not_referenced() above (only ever called with a recorded,
+# build-time value, which build-identity guarantees is non-empty), the
+# CUR_* values this guards are read at runtime by identity_read(): an empty
+# pattern matches every line of grep -F, so without this an identity_read
+# failure (e.g. blkid unable to probe a bad device) would make the check
+# pass vacuously instead of failing on the missing value.
+referenced() {
+  local value="$1" file="$2"
+  [ -n "$value" ] && grep -qiF -- "$value" "$file"
 }
 
 # Prints every volume-key digest in the LUKS2 header on $1, one per line,
@@ -266,9 +302,9 @@ if [ -f /etc/bes/build-identity ] && [ -r /root/bes-identity-lib.sh ]; then
       fi
     done
     check "grub.cfg references the current root UUID" \
-      grep -qiF -- "$CUR_BTRFS_UUID" "$GRUB_CFG"
+      referenced "$CUR_BTRFS_UUID" "$GRUB_CFG"
     check "grub.cfg still references the unchanged xboot UUID" \
-      grep -qiF -- "$CUR_XBOOT_UUID" "$GRUB_CFG"
+      referenced "$CUR_XBOOT_UUID" "$GRUB_CFG"
   fi
 else
   echo "FAIL: build-identity record or identity library not available for rotation checks"
