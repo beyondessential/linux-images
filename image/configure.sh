@@ -185,7 +185,7 @@ EOF
 # ============================================================
 # Variant identification
 # ============================================================
-# r[image.variant.types+3]
+# r[image.variant.types+4]
 mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 

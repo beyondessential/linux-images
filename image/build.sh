@@ -26,7 +26,7 @@ case "$ARCH" in
         ;;
 esac
 
-# r[image.variant.types+3]
+# r[image.variant.types+4]
 case "$VARIANT" in
     metal|cloud) ;;
     pi)

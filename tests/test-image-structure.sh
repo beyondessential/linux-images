@@ -319,7 +319,7 @@ echo "Detected suite: ${SUITE:-<unknown>}"
 # r[verify image.base.debootstrap]
 check "/etc/fstab exists" test -f "$MNT/etc/fstab"
 
-# r[verify image.variant.types+3]
+# r[verify image.variant.types+4]
 check "/etc/bes/image-variant exists" test -f "$MNT/etc/bes/image-variant"
 
 # r[verify image.tailscale.ts-up]
@@ -345,7 +345,7 @@ check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/g
 # r[verify image.growth.service+3]
 check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/etc/systemd/system/grow-root-filesystem.service"
 
-# r[verify image.variant.types+3]
+# r[verify image.variant.types+4]
 ACTUAL_VARIANT="$(cat "$MNT/etc/bes/image-variant" 2>/dev/null || true)"
 check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 

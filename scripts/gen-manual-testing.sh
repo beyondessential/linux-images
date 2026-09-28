@@ -416,7 +416,7 @@ MD
 }
 step8
 
-# r[verify image.variant.types+3]
+# r[verify image.variant.types+4]
 # r[verify image.boot.grub-install]
 # r[verify image.boot.grub-timeout]
 # r[verify image.boot.grub-cmdline]
