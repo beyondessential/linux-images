@@ -770,9 +770,11 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     # r[image.identity.grub-repair] — so we can't pass QEMU -no-reboot
     # (it would end the run at that reboot). Instead we let QEMU reboot
     # freely and rely on this timeout to bound a reboot loop, sized for
-    # LUKS re-encryption of the grown root filesystem under emulation
-    # plus that one reboot. Fully-emulated hosts (no KVM, e.g. CI's arm64
-    # runners) run this much slower still, so the bound is overridable:
+    # that one reboot plus, on the encrypted variants, the first-boot
+    # re-encryption of the image-sized LUKS volume (which runs before the
+    # root is grown, so the resize above does not add to it). Fully-emulated
+    # hosts (no KVM, e.g. CI's arm64 runners) run this much slower still,
+    # so the bound is overridable:
     # `just test_boot_timeout=3600 test-boot`.
     TIMEOUT={{ test_boot_timeout }}
 

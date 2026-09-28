@@ -104,9 +104,8 @@ jobs:
         run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=cloud test-boot
         timeout-minutes: 25
 
-      # No KVM here, so QEMU is fully emulated: LUKS re-encryption of the
-      # grown root filesystem plus the grub-repair reboot
-      # (r[image.identity.grub-repair]) run much slower than under
+      # No KVM here, so QEMU is fully emulated: the first boot, including
+      # the grub.cfg repair reboot, runs much slower than under
       # acceleration, hence the larger test_boot_timeout and step timeout.
       # continue-on-error so a slow or flaky emulated boot reports without
       # gating merges, unlike the accelerated amd64 run above.
@@ -254,9 +253,9 @@ jobs:
         run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=metal test-boot
         timeout-minutes: 25
 
-      # No KVM here, so QEMU is fully emulated: LUKS re-encryption of the
-      # grown root filesystem plus the grub-repair reboot
-      # (r[image.identity.grub-repair]) run much slower than under
+      # No KVM here, so QEMU is fully emulated: the first-boot LUKS
+      # re-encryption of the image-sized volume (before the root is grown)
+      # plus the grub.cfg repair reboot run much slower than under
       # acceleration, hence the larger test_boot_timeout and step timeout.
       # continue-on-error so a slow or flaky emulated boot reports without
       # gating merges, unlike the accelerated amd64 run above.
