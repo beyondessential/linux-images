@@ -225,7 +225,11 @@ echo "==> Formatting boot1 partition (FAT32, label=$BOOT1_FSLABEL)..."
 mkfs.vfat -F 32 -n "$BOOT1_FSLABEL" "$EFI_PART" >/dev/null
 
 echo "==> Formatting boot partition (ext4)..."
-mkfs.ext4 -q -L xboot "$BOOT_PART"
+# r[image.identity.rotate]: with a fixed checksum seed, changing xboot's UUID
+# on first boot rewrites only the superblock rather than every checksummed
+# block, so an interrupted change leaves a consistent filesystem. Named
+# explicitly because the default feature set comes from the build host.
+mkfs.ext4 -q -L xboot -O metadata_csum_seed "$BOOT_PART"
 
 # r[image.luks.format]: metal and pi variants get LUKS2 with empty passphrase.
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then

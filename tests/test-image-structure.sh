@@ -223,6 +223,10 @@ check "boot partition is ext4" [ "$BOOT_FSTYPE" = "ext4" ]
 BOOT_FSLABEL="$(blkid -o value -s LABEL "$BOOT_PART" 2>/dev/null || true)"
 check "boot partition label is 'xboot'" [ "$BOOT_FSLABEL" = "xboot" ]
 
+# r[verify image.identity.rotate]
+BOOT_FEATURES="$(dumpe2fs -h "$BOOT_PART" 2>/dev/null | sed -n 's/^Filesystem features:[[:space:]]*//p' || true)"
+check "boot partition has metadata_csum_seed" grep -qw metadata_csum_seed <<<"$BOOT_FEATURES"
+
 # r[verify image.luks.format]
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     ROOT_FSTYPE="$(blkid -o value -s TYPE "$ROOT_PART" 2>/dev/null || true)"
