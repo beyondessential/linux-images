@@ -94,6 +94,36 @@ check_pkg_version() {
     fi
 }
 
+# Extracts the hex digest bytes for LUKS2 digest 0 from `cryptsetup luksDump`
+# text output. Not JSON: jq isn't a guaranteed dependency (see image/build.sh).
+luks_digest0() {
+    cryptsetup luksDump "$1" | awk '
+        /^Digests:/ { section = 1; next }
+        section && /^[[:space:]]*[0-9]+:/ {
+            id = $0
+            sub(/^[[:space:]]*/, "", id)
+            sub(/:.*/, "", id)
+            cur = id
+            capture = 0
+            next
+        }
+        section && cur == "0" && /Digest:/ {
+            line = $0
+            sub(/.*Digest:[[:space:]]*/, "", line)
+            printf "%s", line
+            capture = 1
+            next
+        }
+        section && cur == "0" && capture && /^[[:space:]]+[0-9a-f]{2}([[:space:]][0-9a-f]{2})*[[:space:]]*$/ {
+            line = $0
+            gsub(/^[[:space:]]+/, "", line)
+            printf " %s", line
+            next
+        }
+        { if (capture) capture = 0 }
+    ' | tr -d ' \t\n'
+}
+
 # --- Pre-flight ---
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERROR: must run as root (need losetup/mount)"
@@ -389,6 +419,47 @@ for initrd in "${INITRDS[@]}"; do
             ;;
     esac
 done
+
+# r[verify image.identity.record]
+IDENTITY_FILE="$MNT/etc/bes/build-identity"
+check "/etc/bes/build-identity exists" test -f "$IDENTITY_FILE"
+
+if [ -f "$IDENTITY_FILE" ]; then
+    # shellcheck disable=SC1090 # generated record, shell-sourceable KEY=value lines
+    . "$IDENTITY_FILE"
+
+    ACTUAL_DISK_GUID="$(blkid -o value -s PTUUID "$LOOP_DEVICE" 2>/dev/null || true)"
+    check "DISK_GUID matches the disk's actual GPT GUID" [ "${DISK_GUID:-}" = "$ACTUAL_DISK_GUID" ]
+
+    ACTUAL_PARTUUID_1="$(blkid -o value -s PARTUUID "$EFI_PART" 2>/dev/null || true)"
+    check "PARTUUID_1 matches partition 1's actual GUID" [ "${PARTUUID_1:-}" = "$ACTUAL_PARTUUID_1" ]
+
+    ACTUAL_PARTUUID_2="$(blkid -o value -s PARTUUID "$BOOT_PART" 2>/dev/null || true)"
+    check "PARTUUID_2 matches partition 2's actual GUID" [ "${PARTUUID_2:-}" = "$ACTUAL_PARTUUID_2" ]
+
+    ACTUAL_PARTUUID_3="$(blkid -o value -s PARTUUID "$ROOT_PART" 2>/dev/null || true)"
+    check "PARTUUID_3 matches partition 3's actual GUID" [ "${PARTUUID_3:-}" = "$ACTUAL_PARTUUID_3" ]
+
+    ACTUAL_BOOT1_SERIAL="$(blkid -o value -s UUID "$EFI_PART" 2>/dev/null || true)"
+    check "BOOT1_SERIAL matches boot1's actual FAT volume serial" [ "${BOOT1_SERIAL:-}" = "$ACTUAL_BOOT1_SERIAL" ]
+
+    ACTUAL_XBOOT_UUID="$(blkid -o value -s UUID "$BOOT_PART" 2>/dev/null || true)"
+    check "XBOOT_UUID matches xboot's actual ext4 UUID" [ "${XBOOT_UUID:-}" = "$ACTUAL_XBOOT_UUID" ]
+
+    ACTUAL_BTRFS_UUID="$(blkid -o value -s UUID "$BTRFS_DEV" 2>/dev/null || true)"
+    check "BTRFS_UUID matches the actual btrfs filesystem ID" [ "${BTRFS_UUID:-}" = "$ACTUAL_BTRFS_UUID" ]
+
+    if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
+        ACTUAL_LUKS_UUID="$(cryptsetup luksUUID "$ROOT_PART" 2>/dev/null || true)"
+        check "LUKS_UUID matches the actual LUKS header UUID" [ "${LUKS_UUID:-}" = "$ACTUAL_LUKS_UUID" ]
+
+        ACTUAL_LUKS_DIGEST="$(luks_digest0 "$ROOT_PART")"
+        check "LUKS_DIGEST matches the actual LUKS digest 0" [ "${LUKS_DIGEST:-}" = "$ACTUAL_LUKS_DIGEST" ]
+    else
+        check_not "no LUKS_UUID recorded for cloud" grep -q '^LUKS_UUID=' "$IDENTITY_FILE"
+        check_not "no LUKS_DIGEST recorded for cloud" grep -q '^LUKS_DIGEST=' "$IDENTITY_FILE"
+    fi
+fi
 
 # r[verify image.hostname.metal-dhcp+2] r[verify image.hostname.cloud-default+2]
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
