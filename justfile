@@ -101,7 +101,18 @@ installer_bin := "target" / cargo_target / "release" / "bes-installer"
 # --- QEMU settings for boot tests ---
 
 qemu_command := if arch == "amd64" { "qemu-system-x86_64" } else if arch == "arm64" { "qemu-system-aarch64" } else { error("Unsupported architecture") }
-qemu_accel := if arch == "amd64" { if arch() == "x86_64" { "-accel kvm -accel tcg" } else { "-accel tcg" } } else if arch == "arm64" { if arch() == "aarch64" { "-accel kvm -accel tcg -machine virt" } else { "-accel tcg -machine virt -cpu cortex-a57" } } else { error("Unsupported architecture") }
+
+# arm64: the `virt` machine's default CPU is a 32-bit cortex-a15, so a
+# 64-bit model must be named whenever TCG is in play. Neoverse N1 rather
+# than `max`: on QEMU < 10 `max` defaults FEAT_Pauth to the architected
+# QARMA5 cipher, and Ubuntu's arm64 kernel and userspace sign every return
+# address, so under TCG each function return would run an emulated block
+# cipher. N1 (ARMv8.2, no pauth/SVE/MTE) sidesteps that and still has the
+# LSE atomics and crypto extensions the guest relies on. With KVM on an
+# aarch64 host the choice is made explicitly rather than via
+# `-accel kvm -accel tcg`: `-cpu host` is KVM-only, so a silent fallback to
+# TCG would only fail later and more confusingly.
+qemu_accel := if arch == "amd64" { if arch() == "x86_64" { "-accel kvm -accel tcg" } else { "-accel tcg" } } else if arch == "arm64" { if arch() == "aarch64" { if path_exists("/dev/kvm") == "true" { "-accel kvm -machine virt -cpu host" } else { "-accel tcg -machine virt -cpu neoverse-n1" } } else { "-accel tcg -machine virt -cpu neoverse-n1" } } else { error("Unsupported architecture") }
 qemu_firmware := if arch == "amd64" { work_dir / "OVMF_CODE.fd" } else if arch == "arm64" { work_dir / "AAVMF_CODE.fd" } else { error("Unsupported architecture") }
 qemu_firmvars := if arch == "amd64" { work_dir / "OVMF_VARS.fd" } else if arch == "arm64" { work_dir / "AAVMF_VARS.fd" } else { error("Unsupported architecture") }
 
