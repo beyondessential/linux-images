@@ -23,6 +23,13 @@ try_disk_size := "10G"
 # -no-reboot won't do). Override for a slower host, e.g. CI's emulated
 # arm64 runners: `just test_boot_timeout=3600 test-boot`.
 test_boot_timeout := "1200"
+# When "true", test-boot refuses to start unless /dev/kvm is usable, rather
+# than silently falling back to much-slower TCG emulation (QEMU's
+# "-accel kvm -accel tcg" tries KVM first and moves on to TCG on its own,
+# with no error). CI sets this for its amd64 boot tests, which are meant
+# to run KVM-accelerated and aren't continue-on-error; left off by default
+# so local and arm64 (never KVM-accelerated in CI) runs are unaffected.
+require_kvm := "false"
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 
@@ -43,6 +50,7 @@ _default:
     @echo "Variable: qemu_cores={{ qemu_cores }}"
     @echo "Variable: try_disk_size={{ try_disk_size }}"
     @echo "Variable: test_boot_timeout={{ test_boot_timeout }}"
+    @echo "Variable: require_kvm={{ require_kvm }}"
 
 _validate-variant:
     #!/usr/bin/env bash
@@ -756,6 +764,16 @@ _make-test-cloud-init: _ensure-dirs
 test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     #!/usr/bin/env bash
     set -euo pipefail
+
+    # QEMU's "-accel kvm -accel tcg" falls back to TCG silently on its own
+    # if KVM isn't usable — no error, just a much slower run (a real problem
+    # for a bounded timeout). When the caller asserts KVM is required (CI's
+    # amd64 boot tests), fail fast here instead of finding out from a
+    # timeout after copying and growing the test image.
+    if [ "{{ require_kvm }}" = "true" ] && { [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; }; then
+      echo "ERROR: require_kvm=true but /dev/kvm is not usable (need read+write)" >&2
+      exit 1
+    fi
 
     # Make a copy so we don't modify the original. The copy grows to the
     # full resized size as the guest fills it, so it is removed however the

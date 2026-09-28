@@ -92,6 +92,18 @@ jobs:
       - name: Test image structure
         run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=cloud test-structure
 
+      # Something between the earlier "Enable KVM access" step and here
+      # (possibly the raw-image build's own chroot/udev activity, possibly
+      # the qemu-kvm service) resets /dev/kvm back to root-only, so the
+      # udev rule alone isn't enough — reassert access right before the
+      # boot test needs it, and fail loudly rather than let QEMU silently
+      # fall back to much-slower TCG (see require_kvm below).
+      - name: Ensure /dev/kvm is usable
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo chmod 0666 /dev/kvm
+          [ -r /dev/kvm ] && [ -w /dev/kvm ] || { echo "::error::/dev/kvm is not usable; refusing to run the required boot test under emulation"; exit 1; }
+
       # Boots the raw image built above (test-boot copies it first, so the
       # original that `build` below converts/compresses is untouched) and
       # runs the in-guest first-boot checks (tests/boot-smoke-test.sh:
@@ -100,10 +112,14 @@ jobs:
       # removes the raw image (zstd --rm), and test-boot would otherwise
       # have to decompress it back from the .zst it just made, for no
       # benefit.
+      #
+      # require_kvm=true: this run isn't continue-on-error, so silently
+      # completing under TCG (slow enough to trip the timeout, as seen on
+      # the metal job) is worse than failing fast on a bad /dev/kvm.
       - name: Boot-test image (KVM-accelerated)
         id: boot_test_amd64
         if: matrix.arch == 'amd64'
-        run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=cloud test-boot
+        run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=cloud require_kvm=true test-boot
         timeout-minutes: 25
 
       # No KVM here, so QEMU is fully emulated: the first boot, including
@@ -245,6 +261,18 @@ jobs:
       - name: Test image structure
         run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal test-structure
 
+      # Something between the earlier "Enable KVM access" step and here
+      # (possibly the raw-image build's own chroot/udev activity, possibly
+      # the qemu-kvm service) resets /dev/kvm back to root-only, so the
+      # udev rule alone isn't enough — reassert access right before the
+      # boot test needs it, and fail loudly rather than let QEMU silently
+      # fall back to much-slower TCG (see require_kvm below).
+      - name: Ensure /dev/kvm is usable
+        if: matrix.arch == 'amd64'
+        run: |
+          sudo chmod 0666 /dev/kvm
+          [ -r /dev/kvm ] && [ -w /dev/kvm ] || { echo "::error::/dev/kvm is not usable; refusing to run the required boot test under emulation"; exit 1; }
+
       # Boots the raw image built above (test-boot copies it first, so the
       # original that `build` below converts/compresses is untouched) and
       # runs the in-guest first-boot checks (tests/boot-smoke-test.sh:
@@ -253,10 +281,14 @@ jobs:
       # removes the raw image (zstd --rm), and test-boot would otherwise
       # have to decompress it back from the .zst it just made, for no
       # benefit.
+      #
+      # require_kvm=true: this run isn't continue-on-error, so silently
+      # completing under TCG (slow enough to trip the timeout, as seen on
+      # this job) is worse than failing fast on a bad /dev/kvm.
       - name: Boot-test image (KVM-accelerated)
         id: boot_test_amd64
         if: matrix.arch == 'amd64'
-        run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=metal test-boot
+        run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=metal require_kvm=true test-boot
         timeout-minutes: 25
 
       # No KVM here, so QEMU is fully emulated: the first-boot LUKS
