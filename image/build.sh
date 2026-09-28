@@ -304,6 +304,75 @@ debootstrap \
     "$UBUNTU_SUITE" "$MNT" "$UBUNTU_MIRROR"
 
 # ============================================================
+# Record build-time identity
+# ============================================================
+# Written now, before the chroot runs, so the record is present in the
+# rootfs for configure.sh's dracut run to pick up into the initramfs.
+# Partitions and filesystems are never changed again after this point in
+# the build (growth happens on the deployed device), so these values stay
+# valid for the lifetime of the image.
+
+# Extracts the hex digest bytes for LUKS2 digest 0 from `cryptsetup
+# luksDump` text output. Not JSON: jq isn't a guaranteed build dependency.
+luks_digest0() {
+    cryptsetup luksDump "$1" | awk '
+        /^Digests:/ { section = 1; next }
+        section && /^[[:space:]]*[0-9]+:/ {
+            id = $0
+            sub(/^[[:space:]]*/, "", id)
+            sub(/:.*/, "", id)
+            cur = id
+            capture = 0
+            next
+        }
+        section && cur == "0" && /Digest:/ {
+            line = $0
+            sub(/.*Digest:[[:space:]]*/, "", line)
+            printf "%s", line
+            capture = 1
+            next
+        }
+        section && cur == "0" && capture && /^[[:space:]]+[0-9a-f]{2}([[:space:]][0-9a-f]{2})*[[:space:]]*$/ {
+            line = $0
+            gsub(/^[[:space:]]+/, "", line)
+            printf " %s", line
+            next
+        }
+        { if (capture) capture = 0 }
+    ' | tr -d ' \t\n'
+}
+
+echo "==> Recording build-time identity..."
+mkdir -p "$MNT/etc/bes"
+IDENTITY_FILE="$MNT/etc/bes/build-identity"
+
+DISK_GUID="$(blkid -o value -s PTUUID "$LOOP_DEVICE")"
+PARTUUID_1="$(blkid -o value -s PARTUUID "$EFI_PART")"
+PARTUUID_2="$(blkid -o value -s PARTUUID "$BOOT_PART")"
+PARTUUID_3="$(blkid -o value -s PARTUUID "$ROOT_PART")"
+BOOT1_SERIAL="$(blkid -o value -s UUID "$EFI_PART")"
+XBOOT_UUID="$(blkid -o value -s UUID "$BOOT_PART")"
+BTRFS_UUID="$(blkid -o value -s UUID "$BTRFS_DEV")"
+
+# r[image.identity.record]
+{
+    echo "DISK_GUID=${DISK_GUID,,}"
+    echo "PARTUUID_1=${PARTUUID_1,,}"
+    echo "PARTUUID_2=${PARTUUID_2,,}"
+    echo "PARTUUID_3=${PARTUUID_3,,}"
+    echo "BOOT1_SERIAL=$BOOT1_SERIAL"
+    echo "XBOOT_UUID=${XBOOT_UUID,,}"
+    echo "BTRFS_UUID=${BTRFS_UUID,,}"
+    if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
+        LUKS_UUID="$(cryptsetup luksUUID "$ROOT_PART")"
+        LUKS_DIGEST="$(luks_digest0 "$ROOT_PART")"
+        echo "LUKS_UUID=${LUKS_UUID,,}"
+        echo "LUKS_DIGEST=${LUKS_DIGEST,,}"
+    fi
+} > "$IDENTITY_FILE"
+chmod 0644 "$IDENTITY_FILE"
+
+# ============================================================
 # Phase 5: Prepare chroot environment
 # ============================================================
 echo "==> Mounting virtual filesystems for chroot..."
