@@ -319,30 +319,9 @@ echo "==> Recording build-time identity..."
 mkdir -p "$MNT/etc/bes"
 IDENTITY_FILE="$MNT/etc/bes/build-identity"
 
-DISK_GUID="$(blkid -o value -s PTUUID "$LOOP_DEVICE")"
-PARTUUID_1="$(blkid -o value -s PARTUUID "$EFI_PART")"
-PARTUUID_2="$(blkid -o value -s PARTUUID "$BOOT_PART")"
-PARTUUID_3="$(blkid -o value -s PARTUUID "$ROOT_PART")"
-BOOT1_SERIAL="$(blkid -o value -s UUID "$EFI_PART")"
-XBOOT_UUID="$(blkid -o value -s UUID "$BOOT_PART")"
-BTRFS_UUID="$(blkid -o value -s UUID "$BTRFS_DEV")"
-
 # r[image.identity.record]
-{
-    echo "DISK_GUID=${DISK_GUID,,}"
-    echo "PARTUUID_1=${PARTUUID_1,,}"
-    echo "PARTUUID_2=${PARTUUID_2,,}"
-    echo "PARTUUID_3=${PARTUUID_3,,}"
-    echo "BOOT1_SERIAL=$BOOT1_SERIAL"
-    echo "XBOOT_UUID=${XBOOT_UUID,,}"
-    echo "BTRFS_UUID=${BTRFS_UUID,,}"
-    if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
-        LUKS_UUID="$(cryptsetup luksUUID "$ROOT_PART")"
-        LUKS_DIGEST="$(luks_digest0 "$ROOT_PART")"
-        echo "LUKS_UUID=${LUKS_UUID,,}"
-        echo "LUKS_DIGEST=${LUKS_DIGEST,,}"
-    fi
-} > "$IDENTITY_FILE"
+identity_read "$LOOP_DEVICE" "$EFI_PART" "$BOOT_PART" "$ROOT_PART" "$BTRFS_DEV" \
+    > "$IDENTITY_FILE"
 chmod 0644 "$IDENTITY_FILE"
 
 # ============================================================
