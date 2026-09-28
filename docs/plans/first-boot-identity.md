@@ -160,3 +160,21 @@ holding).
 GRUB variants' planned repair reboot. Allow exactly the reboots the module
 makes (the guest powers off at the end of the script, and the existing
 timeout still bounds a reboot loop).
+
+## Task 5: Boot test in CI
+
+`.github/workflows/build.yml` builds each variant and runs `test-structure`,
+but never boots an image. Add a `test-boot` step to the `metal` and `cloud`
+jobs, after `test-structure`:
+
+- amd64 (`ubuntu-24.04`): required. Enable KVM for the runner user (udev
+  rule granting access to `/dev/kvm`) so QEMU runs accelerated.
+- arm64 (`ubuntu-24.04-arm`): no `/dev/kvm` on GitHub's arm64 runners, so
+  QEMU runs emulated. Run it with `continue-on-error: true` so it reports
+  without gating merges, and a step timeout sized for emulated
+  re-encryption plus the repair reboot.
+- Install what `test-boot` needs that the jobs don't already have (QEMU
+  system emulator for the arch, UEFI firmware for `_prepare-firmware`).
+- Upload the serial log as an artifact when the step fails, so a failed
+  first boot can be diagnosed.
+- The pi variant cannot boot in QEMU (Pi firmware); no boot step there.
