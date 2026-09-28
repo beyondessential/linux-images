@@ -930,8 +930,14 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     qemu-img resize "$TEST_IMAGE" 12G
 
     SERIAL_LOG="{{ work_dir }}/test-boot-serial.log"
-    TIMEOUT={{ qemu_memory }}  # reuse as a rough proxy — actually use 300s
-    TIMEOUT=300
+    # The rotation module reboots once on GRUB variants (metal, cloud) to
+    # repair grub.cfg after rotating the identifiers it references — see
+    # r[image.identity.grub-repair] — so we can't pass QEMU -no-reboot
+    # (it would end the run at that reboot). Instead we let QEMU reboot
+    # freely and rely on this timeout to bound a reboot loop, sized for
+    # LUKS re-encryption of the grown root filesystem under emulation
+    # plus that one reboot (arm64 emulation may run slower still).
+    TIMEOUT=1200
 
     echo "Booting image in QEMU (timeout: ${TIMEOUT}s)..."
     echo "Serial log: $SERIAL_LOG"
@@ -948,7 +954,6 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
       -drive file="{{ work_dir }}/cidata.iso",format=raw,if=virtio \
       -netdev user,id=net0 \
       -device virtio-net-pci,netdev=net0 \
-      -no-reboot \
       2>&1 | tee "$SERIAL_LOG" || true
 
     echo ""
