@@ -40,9 +40,9 @@ if [ -e /dev/mapper/root ]; then
     LUKS_DEV=/dev/disk/by-partlabel/root
     # cryptsetup resize re-derives the master key from a passphrase rather
     # than reusing the open mapping's key. Build-time images ship with an
-    # empty placeholder passphrase in slot 0 (per r[image.variant.types]),
-    # unlocked at boot via the 0-byte /etc/luks/empty-keyfile. Once the
-    # slot is rotated, we can't proceed without the user's key — probe
+    # empty placeholder passphrase (per r[image.variant.types]), unlocked
+    # at boot via the 0-byte /etc/luks/empty-keyfile. Once that passphrase
+    # has been replaced, we can't proceed without the user's key — probe
     # with the same keyfile so we exit cleanly in that case instead of
     # leaving a failed unit on every subsequent boot.
     #
@@ -53,7 +53,7 @@ if [ -e /dev/mapper/root ]; then
     if cryptsetup open --test-passphrase --key-file="$KEYFILE" "$LUKS_DEV"; then
         cryptsetup resize --key-file="$KEYFILE" root
     else
-        echo "LUKS slot 0 placeholder passphrase has been rotated;"
+        echo "LUKS placeholder passphrase has been replaced;"
         echo "skipping resize. To finish manually, run:"
         echo "  cryptsetup resize root   # with your key"
         echo "  btrfs filesystem resize max /"
