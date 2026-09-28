@@ -349,23 +349,46 @@ check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/et
 ACTUAL_VARIANT="$(cat "$MNT/etc/bes/image-variant" 2>/dev/null || true)"
 check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 
-# r[verify image.base.machine-id] r[verify image.cloud-init.no-machineid]
+# r[verify image.base.machine-id+2] r[verify image.cloud-init.no-machineid]
 MACHINE_ID_SIZE="$(stat -c%s "$MNT/etc/machine-id" 2>/dev/null || echo "missing")"
 check "/etc/machine-id is empty (size=0)" [ "$MACHINE_ID_SIZE" = "0" ]
+
+# systemd seeds an empty /etc/machine-id from a regular file here, so a UUID
+# baked in at build time is shared by every install.
+DBUS_MID="$MNT/var/lib/dbus/machine-id"
+if [ ! -e "$DBUS_MID" ] && [ ! -L "$DBUS_MID" ]; then
+    pass "/var/lib/dbus/machine-id is absent"
+elif [ -L "$DBUS_MID" ] && [ "$(readlink "$DBUS_MID")" = "/etc/machine-id" ]; then
+    pass "/var/lib/dbus/machine-id is a symlink to /etc/machine-id"
+else
+    fail "/var/lib/dbus/machine-id is absent or a symlink to /etc/machine-id"
+fi
 
 # A populated machine-id in the initramfs gets committed to the empty rootfs
 # /etc/machine-id at switch-root, producing duplicate IDs across every flashed
 # install. Empty bytes or systemd's all-zeros UUID both register as
-# uninitialized and trigger regeneration on first boot.
-INITRD_MID="$(chroot "$MNT" bash -c 'lsinitrd -f etc/machine-id /boot/initrd.img-* 2>/dev/null' | tr -d '[:space:]' || true)"
-case "$INITRD_MID" in
-    "" | "00000000000000000000000000000000")
-        pass "initramfs /etc/machine-id is uninitialized"
-        ;;
-    *)
-        fail "initramfs /etc/machine-id is uninitialized (got '$INITRD_MID')"
-        ;;
-esac
+# uninitialized and trigger regeneration on first boot. The pi boots the copy
+# staged on the firmware partition, not the one in /boot.
+INITRDS=("$MNT"/boot/initrd.img-*)
+if [ "$VARIANT" = "pi" ]; then
+    INITRDS+=("$MNT/boot/firmware/current/initrd.img")
+fi
+for initrd in "${INITRDS[@]}"; do
+    rel="${initrd#"$MNT"}"
+    if ! INITRD_MID="$(chroot "$MNT" lsinitrd -f etc/machine-id "$rel" 2>/dev/null)"; then
+        fail "initramfs $rel is readable"
+        continue
+    fi
+    INITRD_MID="$(printf '%s' "$INITRD_MID" | tr -d '[:space:]')"
+    case "$INITRD_MID" in
+        "" | "00000000000000000000000000000000")
+            pass "initramfs $rel /etc/machine-id is uninitialized"
+            ;;
+        *)
+            fail "initramfs $rel /etc/machine-id is uninitialized (got '$INITRD_MID')"
+            ;;
+    esac
+done
 
 # r[verify image.hostname.metal-dhcp+2] r[verify image.hostname.cloud-default+2]
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
