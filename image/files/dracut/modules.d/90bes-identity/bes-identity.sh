@@ -220,21 +220,43 @@ do_pre() {
 # ------------------------------------------------------------------
 
 # Sets XBOOT_HAS_GRUB to yes or no from whether xboot carries a grub.cfg,
-# or to unknown when xboot cannot be inspected.
+# or to unknown when xboot cannot be inspected. With a grub.cfg, sets
+# GRUB_CFG_REFS to the record's keys whose recorded value it references.
 inspect_xboot() {
+    local cfg="$XBOOT_MNT/grub/grub.cfg" key rec
     XBOOT_HAS_GRUB=unknown
+    GRUB_CFG_REFS=()
     mkdir -p "$XBOOT_MNT"
     # noload: a read-only mount would otherwise still replay a dirty journal.
     if ! mount -t ext4 -o ro,noload "$PART2" "$XBOOT_MNT"; then
         warn "could not mount $PART2 to look for GRUB"
         return
     fi
-    if [ -f "$XBOOT_MNT/grub/grub.cfg" ]; then
+    if [ -f "$cfg" ]; then
         XBOOT_HAS_GRUB=yes
+        for key in DISK_GUID PARTUUID_1 PARTUUID_2 PARTUUID_3 BOOT1_SERIAL \
+            XBOOT_UUID BTRFS_UUID LUKS_UUID; do
+            rec="${!key:-}"
+            if [ -n "$rec" ] && grep -qiF -- "$rec" "$cfg"; then
+                GRUB_CFG_REFS+=("$key")
+            fi
+        done
     else
         XBOOT_HAS_GRUB=no
     fi
     umount "$XBOOT_MNT"
+}
+
+# Whether any key in GRUB_CFG_REFS has been rotated, so that grub.cfg
+# references a value that no longer resolves.
+grub_cfg_references_rotated() {
+    local key ref
+    for key in $(rotated_keys); do
+        for ref in "${GRUB_CFG_REFS[@]}"; do
+            [ "$key" = "$ref" ] && return 0
+        done
+    done
+    return 1
 }
 
 btrfs_fsid_change_in_progress() {
@@ -248,22 +270,26 @@ rotate_btrfs() {
     if [ "${cur,,}" != "$BTRFS_UUID" ] && ! btrfs_fsid_change_in_progress; then
         return 0
     fi
-    if [ "$XBOOT_HAS_GRUB" = unknown ]; then
-        # With GRUB, a rotated btrfs ID needs grub.cfg rewritten to boot again;
-        # without a readable xboot there is no telling whether that applies.
-        warn "btrfs filesystem ID not rotated, since xboot could not be inspected"
-        return 0
-    fi
+    case "$XBOOT_HAS_GRUB" in
+        yes | no) ;;
+        *)
+            # With GRUB, a rotated btrfs ID needs grub.cfg rewritten to boot
+            # again; without a readable xboot there is no telling whether
+            # that applies.
+            warn "btrfs filesystem ID not rotated, since xboot could not be inspected"
+            return 0
+            ;;
+    esac
     log "rotating the btrfs filesystem ID on $BTRFS_DEV"
-    # An interrupted change is resumed with the ID it was started with, which
-    # btrfstune takes from the filesystem when not given one.
+    # An interrupted change shows as CHANGING_FSID and is finished rather
+    # than restarted. Whichever ID it settles on, grub.cfg is repaired below
+    # against the filesystem's current value.
     local new=(-U "$(random_uuid)")
     btrfs_fsid_change_in_progress && new=(-u)
     if ! btrfstune -f "${new[@]}" "$BTRFS_DEV"; then
         warn "btrfstune failed; btrfs filesystem ID not rotated"
         return 0
     fi
-    BTRFS_ROTATED_THIS_BOOT=yes
     # Drop the kernel's registration of the device under its old ID.
     btrfs device scan --forget >/dev/null 2>&1
     btrfs device scan "$BTRFS_DEV" >/dev/null 2>&1
@@ -379,7 +405,6 @@ cmdline_references_rotated() {
 
 do_post() {
     local stale_boot=no
-    BTRFS_ROTATED_THIS_BOOT=no
     resolve_layout || return 0
 
     if cryptsetup isLuks "$PART3"; then
@@ -397,9 +422,11 @@ do_post() {
     # grub.cfg that can be repaired, and xboot's own UUID is rotated only
     # without GRUB. Look only while one of those is still to do. On GRUB
     # variants xboot keeps its recorded UUID for good, so it is looked at on
-    # every boot, read-only and without journal replay, so nothing is written.
+    # every boot, read-only and without journal replay, so nothing is written;
+    # that same look finds which recorded values grub.cfg still references.
     read_current
-    XBOOT_HAS_GRUB=unknown
+    XBOOT_HAS_GRUB=unchecked
+    GRUB_CFG_REFS=()
     if [ "$CUR_BTRFS_UUID" = "$BTRFS_UUID" ] || [ "$CUR_XBOOT_UUID" = "$XBOOT_UUID" ] ||
         btrfs_fsid_change_in_progress; then
         inspect_xboot
@@ -414,13 +441,22 @@ do_post() {
     read_current
     [ -n "$(rotated_keys)" ] || return 0
     cmdline_references_rotated && stale_boot=yes
-    # Of the identifiers rotated here only the btrfs ID can appear in grub.cfg
-    # (xboot's is rotated only where there is no GRUB). Beyond that, grub.cfg
-    # can only be stale if an earlier boot was cut off between rotating and
-    # repairing, in which case the boot loader handed this boot a stale
-    # command line.
-    if [ "$stale_boot" = no ] &&
-        { [ "$XBOOT_HAS_GRUB" != yes ] || [ "$BTRFS_ROTATED_THIS_BOOT" = no ]; }; then
+    if [ "$stale_boot" = yes ] && [ "$XBOOT_HAS_GRUB" = unchecked ]; then
+        inspect_xboot
+    fi
+    # grub.cfg is rewritten only when it references a rotated value, which
+    # the read-only look above has already established; a steady-state boot
+    # therefore never mounts xboot writable.
+    if [ "$XBOOT_HAS_GRUB" != yes ] || ! grub_cfg_references_rotated; then
+        if [ "$stale_boot" = yes ]; then
+            # Rebooting would come back to the same command line, since
+            # there is no grub.cfg a repair would change.
+            case "$XBOOT_HAS_GRUB" in
+                yes) error "this boot's command line names a rotated identifier that grub.cfg does not reference; not rebooting" ;;
+                no) error "this boot's command line names a rotated identifier and there is no grub.cfg to repair; not rebooting" ;;
+                *) error "this boot's command line names a rotated identifier and xboot could not be inspected; not rebooting" ;;
+            esac
+        fi
         return 0
     fi
 
@@ -430,10 +466,7 @@ do_post() {
     fi
     [ "$stale_boot" = yes ] || return 0
     if [ "$GRUB_CFG_REPLACED" = no ]; then
-        # Rebooting would come back to the same command line: it was not
-        # read from xboot's grub.cfg, or grub.cfg holds none of the stale
-        # values, so there is nothing a reboot would pick up.
-        error "this boot's command line names a rotated identifier that grub.cfg repair cannot fix; not rebooting"
+        error "this boot's command line names a rotated identifier that grub.cfg repair could not substitute; not rebooting"
         return 0
     fi
     log "this boot's command line names a rotated identifier; rebooting into the repaired configuration"
