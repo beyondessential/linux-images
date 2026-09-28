@@ -19,6 +19,10 @@ qemu_memory := "4096"
 qemu_cores := "2"
 container_test_filter := ""
 try_disk_size := "10G"
+# Bounds the reboot loop in `test-boot` (see its recipe for why a plain
+# -no-reboot won't do). Override for a slower host, e.g. CI's emulated
+# arm64 runners: `just test_boot_timeout=3600 test-boot`.
+test_boot_timeout := "1200"
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 
@@ -38,6 +42,7 @@ _default:
     @echo "Variable: qemu_memory={{ qemu_memory }}"
     @echo "Variable: qemu_cores={{ qemu_cores }}"
     @echo "Variable: try_disk_size={{ try_disk_size }}"
+    @echo "Variable: test_boot_timeout={{ test_boot_timeout }}"
 
 _validate-variant:
     #!/usr/bin/env bash
@@ -936,8 +941,10 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     # (it would end the run at that reboot). Instead we let QEMU reboot
     # freely and rely on this timeout to bound a reboot loop, sized for
     # LUKS re-encryption of the grown root filesystem under emulation
-    # plus that one reboot (arm64 emulation may run slower still).
-    TIMEOUT=1200
+    # plus that one reboot. Fully-emulated hosts (no KVM, e.g. CI's arm64
+    # runners) run this much slower still, so the bound is overridable:
+    # `just test_boot_timeout=3600 test-boot`.
+    TIMEOUT={{ test_boot_timeout }}
 
     echo "Booting image in QEMU (timeout: ${TIMEOUT}s)..."
     echo "Serial log: $SERIAL_LOG"
