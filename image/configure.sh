@@ -487,7 +487,7 @@ if [ -z "$KVER" ]; then
 fi
 echo "Kernel version: $KVER"
 
-# r[image.base.machine-id]
+# r[image.base.machine-id+2]
 # dracut's 10systemd module copies /etc/machine-id verbatim into the
 # initramfs. Truncating it earlier in this script is not enough: something
 # between that truncate and this dracut invocation has been observed to
