@@ -48,8 +48,32 @@ check "sshd is active" systemctl is-active ssh
 check "ufw is active" systemctl is-active ufw
 # r[verify image.tailscale.service-enabled]
 check "tailscaled is active" systemctl is-active tailscaled
+
+ROOT_PART="$(readlink -f /dev/disk/by-partlabel/root)"
+ROOT_NAME="${ROOT_PART##*/}"
+DISK_NAME="$(lsblk -no PKNAME "$ROOT_PART")"
+DISK="/dev/$DISK_NAME"
+
+# The root partition's end, as a distance in 512-byte sectors from the end of
+# the disk.
+root_partition_slack() {
+  local disk_size start size
+  disk_size="$(cat "/sys/block/$DISK_NAME/size")"
+  start="$(cat "/sys/block/$DISK_NAME/$ROOT_NAME/start")"
+  size="$(cat "/sys/block/$DISK_NAME/$ROOT_NAME/size")"
+  echo $((disk_size - start - size))
+}
+
 # r[verify image.growth.service+4]
-check "grow-root-filesystem ran" systemctl show -p ActiveState grow-root-filesystem.service | grep -q inactive
+# The unit is a oneshot that remains active once its run has succeeded.
+check "grow-root-filesystem ran" \
+  test "$(systemctl show -p ActiveState --value grow-root-filesystem.service)" = active
+check "grow-root-filesystem succeeded" \
+  test "$(systemctl show -p Result --value grow-root-filesystem.service)" = success
+# test-boot enlarges the disk before booting; allow for the backup GPT and
+# partition alignment.
+check "root partition was grown to the end of the disk" \
+  test "$(root_partition_slack)" -lt 4096
 
 # r[verify image.btrfs.format+2]
 check "root is btrfs" stat -f -c%T /
@@ -59,11 +83,30 @@ check "compression active in /proc/mounts" grep -q 'compress=' /proc/mounts
 # r[verify image.variant.types+4]
 VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "unknown")
 echo "Variant: $VARIANT"
+case "$VARIANT" in
+  metal | cloud | pi | luks-tpm | luks-keyfile | plain) VARIANT_DOCUMENTED=yes ;;
+  *) VARIANT_DOCUMENTED=no ;;
+esac
+check "image-variant is a documented value" test "$VARIANT_DOCUMENTED" = yes
 
-if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
-  # r[verify image.luks.format]
-  check "LUKS volume is active" test -e /dev/mapper/root
-fi
+ROOT_IS_LUKS=no
+cryptsetup isLuks "$ROOT_PART" 2>/dev/null && ROOT_IS_LUKS=yes
+LUKS_ACTIVE=no
+[ "$(lsblk -no TYPE /dev/mapper/root 2>/dev/null)" = crypt ] && LUKS_ACTIVE=yes
+check "LUKS is active exactly when the root partition holds a LUKS volume" \
+  test "$ROOT_IS_LUKS" = "$LUKS_ACTIVE"
+# The spec has runtime code detect LUKS rather than infer it from this file,
+# so only the build-time values, which each fix the volume type, are held to
+# one.
+case "$VARIANT" in
+  metal | pi)
+    # r[verify image.luks.format]
+    check "root partition holds a LUKS volume on $VARIANT" test "$ROOT_IS_LUKS" = yes
+    ;;
+  cloud)
+    check "root partition holds no LUKS volume on cloud" test "$ROOT_IS_LUKS" = no
+    ;;
+esac
 
 # r[verify image.credentials.ubuntu-user]
 check "ubuntu user exists" id ubuntu
@@ -136,18 +179,14 @@ if [ -f /etc/bes/build-identity ] && [ -r /root/bes-identity-lib.sh ]; then
   # shellcheck disable=SC1091 # generated record, shell-sourceable KEY=value lines
   . /etc/bes/build-identity
 
-  ROOT_PART="$(readlink -f /dev/disk/by-partlabel/root)"
   XBOOT_PART="$(readlink -f /dev/disk/by-partlabel/xboot)"
   if [ "$VARIANT" = "pi" ]; then
     BOOT1_PART="$(readlink -f /dev/disk/by-partlabel/firmware)"
   else
     BOOT1_PART="$(readlink -f /dev/disk/by-partlabel/efi)"
   fi
-  DISK="/dev/$(lsblk -no PKNAME "$ROOT_PART")"
 
-  ENCRYPTED=0
-  if cryptsetup isLuks "$ROOT_PART" 2>/dev/null; then
-    ENCRYPTED=1
+  if [ "$ROOT_IS_LUKS" = yes ]; then
     BTRFS_DEV=/dev/mapper/root
   else
     BTRFS_DEV="$ROOT_PART"
@@ -181,7 +220,7 @@ if [ -f /etc/bes/build-identity ] && [ -r /root/bes-identity-lib.sh ]; then
     check "XBOOT_UUID rotated on first boot" rotated XBOOT_UUID
   fi
 
-  if [ "$ENCRYPTED" -eq 1 ]; then
+  if [ "$ROOT_IS_LUKS" = yes ]; then
     # r[verify image.identity.rotate]
     check "LUKS_UUID rotated on first boot" rotated LUKS_UUID
     # r[verify image.identity.luks-rekey]
