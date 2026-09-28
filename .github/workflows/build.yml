@@ -118,7 +118,7 @@ jobs:
         timeout-minutes: 65
 
       - name: Upload boot-test serial log
-        if: steps.boot_test_amd64.outcome == 'failure' || steps.boot_test_arm64.outcome == 'failure'
+        if: always() && (steps.boot_test_amd64.outcome == 'failure' || steps.boot_test_arm64.outcome == 'failure')
         uses: actions/upload-artifact@v7
         with:
           name: test-boot-serial-cloud-${{ matrix.suite }}-${{ matrix.arch }}
@@ -268,7 +268,7 @@ jobs:
         timeout-minutes: 65
 
       - name: Upload boot-test serial log
-        if: steps.boot_test_amd64.outcome == 'failure' || steps.boot_test_arm64.outcome == 'failure'
+        if: always() && (steps.boot_test_amd64.outcome == 'failure' || steps.boot_test_arm64.outcome == 'failure')
         uses: actions/upload-artifact@v7
         with:
           name: test-boot-serial-metal-${{ matrix.suite }}-${{ matrix.arch }}
