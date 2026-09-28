@@ -34,6 +34,10 @@ done
 
 if [ -e "$RESULTS_DEV" ]; then
   exec > >(tee "$RESULTS_DEV" "$SERIAL_DEV") 2>&1
+  # $! is the tee started by the process substitution above (bash sets it
+  # for process substitutions, not just background jobs); captured so the
+  # end of the script can wait for it to drain before poweroff.
+  TEE_PID=$!
 else
   exec > "$SERIAL_DEV" 2>&1
   echo "WARNING: $RESULTS_DEV not present; results are only on the serial console"
@@ -282,6 +286,18 @@ else
   for e in "${ERRORS[@]}"; do
     echo "  - $e"
   done
+fi
+
+# `sync` flushes filesystem writes, but the results here went through the
+# `tee` in the process substitution above, a separate process reading from
+# a pipe — sync knows nothing about it, and it can still be holding
+# unwritten output when the guest powers off. Close our stdout/stderr so
+# tee sees EOF and exits, then wait for it before proceeding. TEE_PID is
+# unset when RESULTS_DEV was never found (serial-console-only fallback,
+# no process substitution to wait for), so guard the wait.
+exec >&- 2>&-
+if [ -n "${TEE_PID:-}" ]; then
+  wait "$TEE_PID" 2>/dev/null || true
 fi
 
 sync
