@@ -725,7 +725,7 @@ _make-test-cloud-init: _ensure-dirs
 
         # r[verify image.credentials.ubuntu-user]
         check "ubuntu user exists" id ubuntu
-        # r[verify image.base.machine-id]
+        # r[verify image.base.machine-id+2]
         check "machine-id is non-empty" test -s /etc/machine-id
 
         # r[verify image.partition.xboot]

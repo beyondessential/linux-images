@@ -349,8 +349,13 @@ echo "==> Post-chroot cleanup..."
 rm -f "$MNT/etc/resolv.conf"
 ln -snf /run/systemd/resolve/stub-resolv.conf "$MNT/etc/resolv.conf"
 
-# r[image.base.machine-id]
+# r[image.base.machine-id+2]
 : > "$MNT/etc/machine-id"
+# dbus's postinst writes a real UUID here as a regular file, and systemd
+# adopts that as the machine ID on first boot instead of generating one.
+# dbus's own tmpfiles rule wants a symlink, but only creates it if nothing
+# is there.
+ln -snf /etc/machine-id "$MNT/var/lib/dbus/machine-id"
 
 # r[impl image.credentials.no-host-keys+2]
 rm -f "$MNT/etc/ssh/ssh_host_"*
