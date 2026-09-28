@@ -94,36 +94,6 @@ check_pkg_version() {
     fi
 }
 
-# Extracts the hex digest bytes for LUKS2 digest 0 from `cryptsetup luksDump`
-# text output. Not JSON: jq isn't a guaranteed dependency (see image/build.sh).
-luks_digest0() {
-    cryptsetup luksDump "$1" | awk '
-        /^Digests:/ { section = 1; next }
-        section && /^[[:space:]]*[0-9]+:/ {
-            id = $0
-            sub(/^[[:space:]]*/, "", id)
-            sub(/:.*/, "", id)
-            cur = id
-            capture = 0
-            next
-        }
-        section && cur == "0" && /Digest:/ {
-            line = $0
-            sub(/.*Digest:[[:space:]]*/, "", line)
-            printf "%s", line
-            capture = 1
-            next
-        }
-        section && cur == "0" && capture && /^[[:space:]]+[0-9a-f]{2}([[:space:]][0-9a-f]{2})*[[:space:]]*$/ {
-            line = $0
-            gsub(/^[[:space:]]+/, "", line)
-            printf " %s", line
-            next
-        }
-        { if (capture) capture = 0 }
-    ' | tr -d ' \t\n'
-}
-
 # --- Pre-flight ---
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERROR: must run as root (need losetup/mount)"
@@ -138,6 +108,9 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PACKAGES_FILE="$REPO_ROOT/image/packages.sh"
+
+# shellcheck source=image/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh
+source "$REPO_ROOT/image/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh"
 
 echo "=============================="
 echo "Image Structure Verification"

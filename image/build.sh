@@ -48,7 +48,7 @@ fi
 
 # --- Dependency checks ---
 MISSING=()
-for cmd in debootstrap sgdisk mkfs.vfat mkfs.ext4 mkfs.btrfs losetup btrfs chroot rsync; do
+for cmd in debootstrap sgdisk mkfs.vfat mkfs.ext4 mkfs.btrfs losetup btrfs chroot rsync blkid; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
@@ -312,35 +312,8 @@ debootstrap \
 # the build (growth happens on the deployed device), so these values stay
 # valid for the lifetime of the image.
 
-# Extracts the hex digest bytes for LUKS2 digest 0 from `cryptsetup
-# luksDump` text output. Not JSON: jq isn't a guaranteed build dependency.
-luks_digest0() {
-    cryptsetup luksDump "$1" | awk '
-        /^Digests:/ { section = 1; next }
-        section && /^[[:space:]]*[0-9]+:/ {
-            id = $0
-            sub(/^[[:space:]]*/, "", id)
-            sub(/:.*/, "", id)
-            cur = id
-            capture = 0
-            next
-        }
-        section && cur == "0" && /Digest:/ {
-            line = $0
-            sub(/.*Digest:[[:space:]]*/, "", line)
-            printf "%s", line
-            capture = 1
-            next
-        }
-        section && cur == "0" && capture && /^[[:space:]]+[0-9a-f]{2}([[:space:]][0-9a-f]{2})*[[:space:]]*$/ {
-            line = $0
-            gsub(/^[[:space:]]+/, "", line)
-            printf " %s", line
-            next
-        }
-        { if (capture) capture = 0 }
-    ' | tr -d ' \t\n'
-}
+# shellcheck source=image/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh
+source "$SCRIPT_DIR/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh"
 
 echo "==> Recording build-time identity..."
 mkdir -p "$MNT/etc/bes"
