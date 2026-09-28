@@ -806,7 +806,7 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
       -drive file="$TEST_IMAGE",format=raw,if=virtio \
       -drive file="{{ work_dir }}/cidata.iso",format=raw,if=virtio \
       -netdev user,id=net0 \
-      -device virtio-net-pci,netdev=net0 \
+      -device virtio-net-pci,netdev=net0,romfile= \
       -device virtio-serial-pci \
       -chardev file,id=results,path="$RESULTS_LOG" \
       -device virtserialport,chardev=results,name=bes.test-results \
