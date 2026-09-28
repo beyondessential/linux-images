@@ -367,7 +367,9 @@ check-deps:
     fi
 
     FIRMWARE_FOUND=0
-    for f in /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.fd /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd; do
+    for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd \
+             /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/edk2/x64/OVMF_CODE.fd \
+             /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd /usr/share/edk2-ovmf/x64/OVMF_CODE.fd; do
       if [ -f "$f" ]; then FIRMWARE_FOUND=1; break; fi
     done
     if [ $FIRMWARE_FOUND -eq 1 ]; then
@@ -633,28 +635,58 @@ _prepare-firmware: _ensure-dirs
     set -euo pipefail
 
     if [ "{{ arch }}" == "amd64" ]; then
-      OVMF_CODE=$(find /usr/share -name 'OVMF_CODE*.fd' -print -quit 2>/dev/null)
+      OVMF_CODE=""
+      OVMF_VARS=""
+      # Preference order: today's Ubuntu/Debian `ovmf` package and Arch's
+      # edk2-ovmf both rebase on 4M-sized images but spell the suffix
+      # differently (OVMF_CODE_4M.fd vs OVMF_CODE.4m.fd); the plain name is
+      # kept for distros that still ship the older 2M image. Matching by
+      # exact basename (not an `OVMF_CODE*.fd` glob) means this never picks
+      # up a Secure Boot, MS, or snakeoil variant, and VARS is always taken
+      # from the same directory as the CODE file just picked, so the pair
+      # can't end up mismatched.
+      code_names=(OVMF_CODE_4M.fd OVMF_CODE.4m.fd OVMF_CODE.fd)
+      vars_names=(OVMF_VARS_4M.fd OVMF_VARS.4m.fd OVMF_VARS.fd)
+      for i in "${!code_names[@]}"; do
+        mapfile -t matches < <(find /usr/share -name "${code_names[$i]}" 2>/dev/null | sort)
+        candidate="${matches[0]:-}"
+        [ -n "$candidate" ] || continue
+        vars_candidate="$(dirname "$candidate")/${vars_names[$i]}"
+        if [ -f "$vars_candidate" ]; then
+          OVMF_CODE="$candidate"
+          OVMF_VARS="$vars_candidate"
+          break
+        fi
+      done
       if [ -z "$OVMF_CODE" ]; then
-        echo "ERROR: OVMF_CODE.fd not found. Install: apt-get install ovmf"
-        exit 1
-      fi
-      OVMF_VARS=$(find /usr/share -name 'OVMF_VARS*.fd' -print -quit 2>/dev/null)
-      if [ -z "$OVMF_VARS" ]; then
-        echo "ERROR: OVMF_VARS.fd not found. Install: apt-get install ovmf"
+        echo "ERROR: no matching OVMF_CODE.fd/OVMF_VARS.fd pair found (tried _4M, .4m, and plain names). Install: apt-get install ovmf (Debian/Ubuntu) or pacman -S edk2-ovmf (Arch)"
         exit 1
       fi
       ln -sf "$OVMF_CODE" "{{ qemu_firmware }}"
       cp "$OVMF_VARS" "{{ qemu_firmvars }}"
 
     elif [ "{{ arch }}" == "arm64" ]; then
-      AAVMF_CODE=$(find /usr/share -name 'QEMU_CODE.fd' -o -name 'AAVMF_CODE.fd' -o -name 'QEMU_EFI.fd' 2>/dev/null | head -1)
+      AAVMF_CODE=""
+      AAVMF_VARS=""
+      # Same pairing hazard as amd64: search exact basenames in preference
+      # order and take VARS from the CODE match's own directory, rather than
+      # an independent search, so CODE and VARS can't come from different
+      # packages or directories.
+      code_names=(AAVMF_CODE.fd QEMU_CODE.fd QEMU_EFI.fd)
+      vars_names=(AAVMF_VARS.fd QEMU_VARS.fd QEMU_VARS.fd)
+      for i in "${!code_names[@]}"; do
+        mapfile -t matches < <(find /usr/share -name "${code_names[$i]}" 2>/dev/null | sort)
+        candidate="${matches[0]:-}"
+        [ -n "$candidate" ] || continue
+        vars_candidate="$(dirname "$candidate")/${vars_names[$i]}"
+        if [ -f "$vars_candidate" ]; then
+          AAVMF_CODE="$candidate"
+          AAVMF_VARS="$vars_candidate"
+          break
+        fi
+      done
       if [ -z "$AAVMF_CODE" ]; then
-        echo "ERROR: AAVMF firmware not found. Install: apt-get install qemu-efi-aarch64"
-        exit 1
-      fi
-      AAVMF_VARS=$(find /usr/share -name 'QEMU_VARS.fd' -o -name 'AAVMF_VARS.fd' 2>/dev/null | head -1)
-      if [ -z "$AAVMF_VARS" ]; then
-        echo "ERROR: AAVMF_VARS not found. Install: apt-get install qemu-efi-aarch64"
+        echo "ERROR: no matching AAVMF/QEMU EFI firmware pair found. Install: apt-get install qemu-efi-aarch64"
         exit 1
       fi
       ln -sf "$AAVMF_CODE" "{{ qemu_firmware }}"
