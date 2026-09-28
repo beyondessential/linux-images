@@ -1,0 +1,32 @@
+# r[image.identity.rotate] r[image.identity.luks-rekey]
+# Rotates the GPT GUIDs and, on encrypted variants, re-encrypts the root
+# volume under a fresh master key, before the volume is unlocked.
+[Unit]
+Description=Rotate build-time partition table and LUKS identifiers
+DefaultDependencies=no
+ConditionPathExists=/etc/initrd-release
+ConditionPathExists=/etc/bes/build-identity
+Wants=dev-disk-by\x2dpartlabel-root.device cryptsetup-pre.target
+After=dev-disk-by\x2dpartlabel-root.device systemd-udev-trigger.service
+Before=cryptsetup-pre.target systemd-cryptsetup@root.service
+Before=sysroot.mount systemd-fsck-root.service initrd-root-fs.target
+# dracut's initqueue gives up on the root device after rd.retry seconds of its
+# own main loop; start that clock only once the volume has been re-encrypted.
+Before=dracut-initqueue.service
+# A re-encryption that stopped part-way is the one failure this unit reports;
+# the root volume is then held locked (see the systemd-cryptsetup@root drop-in).
+OnFailure=emergency.target
+OnFailureJobMode=replace-irreversibly
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bes-identity pre
+StandardOutput=journal+console
+StandardError=journal+console
+# Re-encryption rewrites the whole volume; on slow storage that takes as long
+# as it takes, and killing it only defers the work to the next boot.
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=initrd.target
