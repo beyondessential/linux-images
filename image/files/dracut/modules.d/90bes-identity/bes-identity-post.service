@@ -1,0 +1,26 @@
+# r[image.identity.rotate] r[image.identity.grub-repair]
+# Rotates the filesystem identifiers once the root volume is unlocked and
+# before any of those filesystems is checked or mounted, then repairs
+# grub.cfg and reboots if this boot was started from a stale reference.
+[Unit]
+Description=Rotate build-time filesystem identifiers
+DefaultDependencies=no
+ConditionPathExists=/etc/initrd-release
+ConditionPathExists=/etc/bes/build-identity
+Wants=dev-disk-by\x2dpartlabel-root.device dev-disk-by\x2dpartlabel-xboot.device
+After=bes-identity-pre.service cryptsetup.target systemd-cryptsetup@root.service
+After=dev-disk-by\x2dpartlabel-root.device dev-disk-by\x2dpartlabel-xboot.device
+Before=sysroot.mount systemd-fsck-root.service initrd-root-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bes-identity post
+StandardOutput=journal+console
+StandardError=journal+console
+# Interrupting a filesystem ID change only defers it to the next boot, so
+# there is nothing to gain from a timeout.
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=initrd.target

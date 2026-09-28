@@ -153,6 +153,23 @@ if [ "$VARIANT" = "metal" ]; then
     apt-get install -y -q --no-install-recommends linux-firmware
 fi
 
+# r[image.identity.rotate] r[image.identity.luks-rekey] r[image.identity.grub-repair]
+# The rotation module lives in the rootfs's own dracut module tree, not just
+# in the initramfs built below, so on-device rebuilds keep it. It carries
+# /etc/bes/build-identity (written by build.sh before this script ran) into
+# the initramfs.
+install -d /usr/lib/dracut/modules.d/90bes-identity
+install -m 755 /tmp/files/dracut/modules.d/90bes-identity/module-setup.sh \
+    /tmp/files/dracut/modules.d/90bes-identity/bes-identity.sh \
+    /usr/lib/dracut/modules.d/90bes-identity/
+install -m 644 /tmp/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh \
+    /tmp/files/dracut/modules.d/90bes-identity/bes-identity-pre.service \
+    /tmp/files/dracut/modules.d/90bes-identity/bes-identity-post.service \
+    /tmp/files/dracut/modules.d/90bes-identity/systemd-cryptsetup-root.conf \
+    /usr/lib/dracut/modules.d/90bes-identity/
+install -m 644 /tmp/files/dracut/05-bes-identity.conf \
+    /etc/dracut.conf.d/05-bes-identity.conf
+
 # ============================================================
 # Console font
 # ============================================================
@@ -185,7 +202,7 @@ EOF
 # ============================================================
 # Variant identification
 # ============================================================
-# r[image.variant.types+3]
+# r[image.variant.types+4]
 mkdir -p /etc/bes
 echo "$VARIANT" > /etc/bes/image-variant
 
@@ -394,7 +411,7 @@ systemctl enable bes-ssh-keygen.service
 # ============================================================
 # Disk growth service
 # ============================================================
-# r[impl image.growth.service+3]
+# r[impl image.growth.service+4]
 install -m 755 /tmp/files/grow-root-filesystem /usr/local/bin/grow-root-filesystem
 install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/system/grow-root-filesystem.service
 systemctl enable grow-root-filesystem.service

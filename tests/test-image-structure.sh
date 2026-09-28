@@ -48,6 +48,10 @@ check_not() {
     fi
 }
 
+matches() {
+    [[ "$1" =~ $2 ]]
+}
+
 # Assert a driver is available at boot. A driver compiled into the kernel needs
 # no initramfs entry and is always loaded, so it satisfies the requirement just
 # as an included module does — Ubuntu builds the virtio family that way, and a
@@ -108,6 +112,9 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PACKAGES_FILE="$REPO_ROOT/image/packages.sh"
+
+# shellcheck source=image/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh
+source "$REPO_ROOT/image/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh"
 
 echo "=============================="
 echo "Image Structure Verification"
@@ -220,6 +227,10 @@ check "boot partition is ext4" [ "$BOOT_FSTYPE" = "ext4" ]
 BOOT_FSLABEL="$(blkid -o value -s LABEL "$BOOT_PART" 2>/dev/null || true)"
 check "boot partition label is 'xboot'" [ "$BOOT_FSLABEL" = "xboot" ]
 
+# r[verify image.identity.rotate]
+BOOT_FEATURES="$(dumpe2fs -h "$BOOT_PART" 2>/dev/null | sed -n 's/^Filesystem features:[[:space:]]*//p' || true)"
+check "boot partition has metadata_csum_seed" grep -qw metadata_csum_seed <<<"$BOOT_FEATURES"
+
 # r[verify image.luks.format]
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
     ROOT_FSTYPE="$(blkid -o value -s TYPE "$ROOT_PART" 2>/dev/null || true)"
@@ -319,7 +330,7 @@ echo "Detected suite: ${SUITE:-<unknown>}"
 # r[verify image.base.debootstrap]
 check "/etc/fstab exists" test -f "$MNT/etc/fstab"
 
-# r[verify image.variant.types+3]
+# r[verify image.variant.types+4]
 check "/etc/bes/image-variant exists" test -f "$MNT/etc/bes/image-variant"
 
 # r[verify image.tailscale.ts-up]
@@ -339,13 +350,13 @@ if [ "$VARIANT" = "pi" ]; then
         test -f "$MNT/boot/firmware/firstboot-script" -a ! -s "$MNT/boot/firmware/firstboot-script"
 fi
 
-# r[verify image.growth.service+3]
+# r[verify image.growth.service+4]
 check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/grow-root-filesystem"
 
-# r[verify image.growth.service+3]
+# r[verify image.growth.service+4]
 check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/etc/systemd/system/grow-root-filesystem.service"
 
-# r[verify image.variant.types+3]
+# r[verify image.variant.types+4]
 ACTUAL_VARIANT="$(cat "$MNT/etc/bes/image-variant" 2>/dev/null || true)"
 check "image-variant contains '$VARIANT'" [ "$ACTUAL_VARIANT" = "$VARIANT" ]
 
@@ -388,6 +399,121 @@ for initrd in "${INITRDS[@]}"; do
             fail "initramfs $rel /etc/machine-id is uninitialized (got '$INITRD_MID')"
             ;;
     esac
+done
+
+# r[verify image.identity.record]
+IDENTITY_FILE="$MNT/etc/bes/build-identity"
+check "/etc/bes/build-identity exists" test -f "$IDENTITY_FILE"
+
+if [ -f "$IDENTITY_FILE" ]; then
+    # shellcheck disable=SC1090 # generated record, shell-sourceable KEY=value lines
+    . "$IDENTITY_FILE"
+
+    ACTUAL_DISK_GUID="$(blkid -o value -s PTUUID "$LOOP_DEVICE" 2>/dev/null || true)"
+    check "DISK_GUID matches the disk's actual GPT GUID" [ "${DISK_GUID:-}" = "$ACTUAL_DISK_GUID" ]
+
+    ACTUAL_PARTUUID_1="$(blkid -o value -s PARTUUID "$EFI_PART" 2>/dev/null || true)"
+    check "PARTUUID_1 matches partition 1's actual GUID" [ "${PARTUUID_1:-}" = "$ACTUAL_PARTUUID_1" ]
+
+    ACTUAL_PARTUUID_2="$(blkid -o value -s PARTUUID "$BOOT_PART" 2>/dev/null || true)"
+    check "PARTUUID_2 matches partition 2's actual GUID" [ "${PARTUUID_2:-}" = "$ACTUAL_PARTUUID_2" ]
+
+    ACTUAL_PARTUUID_3="$(blkid -o value -s PARTUUID "$ROOT_PART" 2>/dev/null || true)"
+    check "PARTUUID_3 matches partition 3's actual GUID" [ "${PARTUUID_3:-}" = "$ACTUAL_PARTUUID_3" ]
+
+    ACTUAL_BOOT1_SERIAL="$(blkid -o value -s UUID "$EFI_PART" 2>/dev/null || true)"
+    check "BOOT1_SERIAL matches boot1's actual FAT volume serial" [ "${BOOT1_SERIAL:-}" = "$ACTUAL_BOOT1_SERIAL" ]
+
+    ACTUAL_XBOOT_UUID="$(blkid -o value -s UUID "$BOOT_PART" 2>/dev/null || true)"
+    check "XBOOT_UUID matches xboot's actual ext4 UUID" [ "${XBOOT_UUID:-}" = "$ACTUAL_XBOOT_UUID" ]
+
+    ACTUAL_BTRFS_UUID="$(blkid -o value -s UUID "$BTRFS_DEV" 2>/dev/null || true)"
+    check "BTRFS_UUID matches the actual btrfs filesystem ID" [ "${BTRFS_UUID:-}" = "$ACTUAL_BTRFS_UUID" ]
+
+    if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
+        # A value the reader failed to extract would match an equally broken
+        # read on first boot, so each must also be well-formed.
+        ACTUAL_LUKS_UUID="$(cryptsetup luksUUID "$ROOT_PART" 2>/dev/null || true)"
+        check "LUKS_UUID matches the actual LUKS header UUID" [ "${LUKS_UUID:-}" = "$ACTUAL_LUKS_UUID" ]
+        check "LUKS_UUID is a well-formed UUID" \
+            matches "${LUKS_UUID:-}" '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+
+        ACTUAL_LUKS_DIGEST="$(luks_digest0 "$ROOT_PART")"
+        check "LUKS_DIGEST matches the actual LUKS digest 0" [ "${LUKS_DIGEST:-}" = "$ACTUAL_LUKS_DIGEST" ]
+        check "LUKS_DIGEST is a 64-digit hex digest" matches "${LUKS_DIGEST:-}" '^[0-9a-f]{64}$'
+    else
+        check_not "no LUKS_UUID recorded for cloud" grep -q '^LUKS_UUID=' "$IDENTITY_FILE"
+        check_not "no LUKS_DIGEST recorded for cloud" grep -q '^LUKS_DIGEST=' "$IDENTITY_FILE"
+    fi
+fi
+
+# r[verify image.identity.record] r[verify image.identity.rotate]
+# The rotation module, and the record it compares against, must be in every
+# initramfs the machine can boot: each kernel's under /boot, and on the pi
+# also the copy in the firmware slot, which is the one the firmware loads.
+IDENTITY_INITRDS=()
+for initrd in "${INITRDS[@]}"; do
+    [ -f "$initrd" ] && IDENTITY_INITRDS+=("${initrd#"$MNT"}")
+done
+check "at least one initramfs to inspect for the identity module" test "${#IDENTITY_INITRDS[@]}" -gt 0
+
+for initrd in "${IDENTITY_INITRDS[@]}"; do
+    if ! INITRD_LISTING="$(chroot "$MNT" lsinitrd "$initrd" 2>/dev/null)" || [ -z "$INITRD_LISTING" ]; then
+        fail "$initrd is readable by lsinitrd"
+        continue
+    fi
+    for path in \
+        etc/bes/build-identity \
+        usr/bin/bes-identity \
+        usr/lib/bes-identity/bes-identity-lib.sh \
+        usr/bin/awk \
+        usr/lib/systemd/system/bes-identity-pre.service \
+        usr/lib/systemd/system/bes-identity-post.service \
+        usr/lib/systemd/system/systemd-cryptsetup@root.service.d/50-bes-identity.conf \
+        etc/systemd/system/initrd.target.wants/bes-identity-pre.service \
+        etc/systemd/system/initrd.target.wants/bes-identity-post.service; do
+        if grep -qE "[[:space:]]${path}( -> .*)?$" <<<"$INITRD_LISTING"; then
+            pass "$initrd contains /$path"
+        else
+            fail "$initrd contains /$path"
+        fi
+    done
+    # mlabel, which rotates the FAT serial, cannot open a volume without the
+    # converter for its default codepage.
+    if grep -qE '[[:space:]]usr/lib/([^/ ]+/)?gconv/IBM850\.so$' <<<"$INITRD_LISTING"; then
+        pass "$initrd contains the CP850 converter mlabel needs"
+    else
+        fail "$initrd contains the CP850 converter mlabel needs"
+    fi
+    # ...and glibc only loads it if its gconv configuration in the initramfs
+    # registers IBM850, which current glibc does in gconv-modules.d/.
+    GCONV_REGISTERS_IBM850=no
+    while IFS= read -r gconv_conf; do
+        if chroot "$MNT" lsinitrd -f "$gconv_conf" "$initrd" </dev/null 2>/dev/null |
+            grep -qE '^[[:space:]]*module[[:space:]]+(INTERNAL[[:space:]]+)?IBM850//'; then
+            GCONV_REGISTERS_IBM850=yes
+            break
+        fi
+    done < <(grep -oE 'usr/lib/([^/ ]+/)?gconv/gconv-modules(\.d/[^ ]+\.conf)?$' <<<"$INITRD_LISTING" || true)
+    check "$initrd has a gconv configuration file registering IBM850" [ "$GCONV_REGISTERS_IBM850" = yes ]
+    # Arguments stored in the initramfs outlive the identifiers they name: a
+    # stored rd.luks.uuid= keeps dracut waiting for the build-time LUKS UUID
+    # after it has been rotated.
+    INITRD_STORED_ARGS=""
+    while IFS= read -r conf; do
+        INITRD_STORED_ARGS+="$(chroot "$MNT" lsinitrd -f "$conf" "$initrd" </dev/null 2>/dev/null || true) "
+    done < <(grep -oE 'etc/cmdline\.d/[^ ]+\.conf$' <<<"$INITRD_LISTING" || true)
+    if grep -qE '(^|[[:space:]])(root|rd\.luks\.uuid|rd\.luks\.name)=' <<<"$INITRD_STORED_ARGS"; then
+        fail "$initrd stores no root or LUKS device arguments (has: $INITRD_STORED_ARGS)"
+    else
+        pass "$initrd stores no root or LUKS device arguments"
+    fi
+    INITRD_RECORD="$(chroot "$MNT" lsinitrd -f etc/bes/build-identity "$initrd" 2>/dev/null || true)"
+    if [ -n "$INITRD_RECORD" ] && [ "$INITRD_RECORD" = "$(cat "$IDENTITY_FILE" 2>/dev/null)" ]; then
+        pass "$initrd carries the same build-identity record as the rootfs"
+    else
+        fail "$initrd carries the same build-identity record as the rootfs"
+    fi
 done
 
 # r[verify image.hostname.metal-dhcp+2] r[verify image.hostname.cloud-default+2]
@@ -825,7 +951,7 @@ check_service_enabled "bes-tailscale-firstboot-auth.service" "bes-tailscale-firs
 # r[verify image.firstboot.script]
 check_service_enabled "bes-firstboot-script.service"  "bes-firstboot-script is enabled"
 
-# r[verify image.growth.service+3]
+# r[verify image.growth.service+4]
 check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is enabled"
 
 # r[verify image.cloud-init.enabled]

@@ -19,6 +19,17 @@ qemu_memory := "4096"
 qemu_cores := "2"
 container_test_filter := ""
 try_disk_size := "10G"
+# Bounds the reboot loop in `test-boot` (see its recipe for why a plain
+# -no-reboot won't do). Override for a slower host, e.g. CI's emulated
+# arm64 runners: `just test_boot_timeout=3600 test-boot`.
+test_boot_timeout := "1200"
+# When "true", test-boot refuses to start unless /dev/kvm is usable, rather
+# than silently falling back to much-slower TCG emulation (QEMU's
+# "-accel kvm -accel tcg" tries KVM first and moves on to TCG on its own,
+# with no error). CI sets this for its amd64 boot tests, which are meant
+# to run KVM-accelerated and aren't continue-on-error; left off by default
+# so local and arm64 (never KVM-accelerated in CI) runs are unaffected.
+require_kvm := "false"
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 
@@ -38,6 +49,8 @@ _default:
     @echo "Variable: qemu_memory={{ qemu_memory }}"
     @echo "Variable: qemu_cores={{ qemu_cores }}"
     @echo "Variable: try_disk_size={{ try_disk_size }}"
+    @echo "Variable: test_boot_timeout={{ test_boot_timeout }}"
+    @echo "Variable: require_kvm={{ require_kvm }}"
 
 _validate-variant:
     #!/usr/bin/env bash
@@ -362,7 +375,9 @@ check-deps:
     fi
 
     FIRMWARE_FOUND=0
-    for f in /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.fd /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd; do
+    for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd \
+             /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/edk2/x64/OVMF_CODE.fd \
+             /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd /usr/share/edk2-ovmf/x64/OVMF_CODE.fd; do
       if [ -f "$f" ]; then FIRMWARE_FOUND=1; break; fi
     done
     if [ $FIRMWARE_FOUND -eq 1 ]; then
@@ -628,28 +643,58 @@ _prepare-firmware: _ensure-dirs
     set -euo pipefail
 
     if [ "{{ arch }}" == "amd64" ]; then
-      OVMF_CODE=$(find /usr/share -name 'OVMF_CODE*.fd' -print -quit 2>/dev/null)
+      OVMF_CODE=""
+      OVMF_VARS=""
+      # Preference order: today's Ubuntu/Debian `ovmf` package and Arch's
+      # edk2-ovmf both rebase on 4M-sized images but spell the suffix
+      # differently (OVMF_CODE_4M.fd vs OVMF_CODE.4m.fd); the plain name is
+      # kept for distros that still ship the older 2M image. Matching by
+      # exact basename (not an `OVMF_CODE*.fd` glob) means this never picks
+      # up a Secure Boot, MS, or snakeoil variant, and VARS is always taken
+      # from the same directory as the CODE file just picked, so the pair
+      # can't end up mismatched.
+      code_names=(OVMF_CODE_4M.fd OVMF_CODE.4m.fd OVMF_CODE.fd)
+      vars_names=(OVMF_VARS_4M.fd OVMF_VARS.4m.fd OVMF_VARS.fd)
+      for i in "${!code_names[@]}"; do
+        mapfile -t matches < <(find /usr/share -name "${code_names[$i]}" 2>/dev/null | sort)
+        candidate="${matches[0]:-}"
+        [ -n "$candidate" ] || continue
+        vars_candidate="$(dirname "$candidate")/${vars_names[$i]}"
+        if [ -f "$vars_candidate" ]; then
+          OVMF_CODE="$candidate"
+          OVMF_VARS="$vars_candidate"
+          break
+        fi
+      done
       if [ -z "$OVMF_CODE" ]; then
-        echo "ERROR: OVMF_CODE.fd not found. Install: apt-get install ovmf"
-        exit 1
-      fi
-      OVMF_VARS=$(find /usr/share -name 'OVMF_VARS*.fd' -print -quit 2>/dev/null)
-      if [ -z "$OVMF_VARS" ]; then
-        echo "ERROR: OVMF_VARS.fd not found. Install: apt-get install ovmf"
+        echo "ERROR: no matching OVMF_CODE.fd/OVMF_VARS.fd pair found (tried _4M, .4m, and plain names). Install: apt-get install ovmf (Debian/Ubuntu) or pacman -S edk2-ovmf (Arch)"
         exit 1
       fi
       ln -sf "$OVMF_CODE" "{{ qemu_firmware }}"
       cp "$OVMF_VARS" "{{ qemu_firmvars }}"
 
     elif [ "{{ arch }}" == "arm64" ]; then
-      AAVMF_CODE=$(find /usr/share -name 'QEMU_CODE.fd' -o -name 'AAVMF_CODE.fd' -o -name 'QEMU_EFI.fd' 2>/dev/null | head -1)
+      AAVMF_CODE=""
+      AAVMF_VARS=""
+      # Same pairing hazard as amd64: search exact basenames in preference
+      # order and take VARS from the CODE match's own directory, rather than
+      # an independent search, so CODE and VARS can't come from different
+      # packages or directories.
+      code_names=(AAVMF_CODE.fd QEMU_CODE.fd QEMU_EFI.fd)
+      vars_names=(AAVMF_VARS.fd QEMU_VARS.fd QEMU_VARS.fd)
+      for i in "${!code_names[@]}"; do
+        mapfile -t matches < <(find /usr/share -name "${code_names[$i]}" 2>/dev/null | sort)
+        candidate="${matches[0]:-}"
+        [ -n "$candidate" ] || continue
+        vars_candidate="$(dirname "$candidate")/${vars_names[$i]}"
+        if [ -f "$vars_candidate" ]; then
+          AAVMF_CODE="$candidate"
+          AAVMF_VARS="$vars_candidate"
+          break
+        fi
+      done
       if [ -z "$AAVMF_CODE" ]; then
-        echo "ERROR: AAVMF firmware not found. Install: apt-get install qemu-efi-aarch64"
-        exit 1
-      fi
-      AAVMF_VARS=$(find /usr/share -name 'QEMU_VARS.fd' -o -name 'AAVMF_VARS.fd' 2>/dev/null | head -1)
-      if [ -z "$AAVMF_VARS" ]; then
-        echo "ERROR: AAVMF_VARS not found. Install: apt-get install qemu-efi-aarch64"
+        echo "ERROR: no matching AAVMF/QEMU EFI firmware pair found. Install: apt-get install qemu-efi-aarch64"
         exit 1
       fi
       ln -sf "$AAVMF_CODE" "{{ qemu_firmware }}"
@@ -670,87 +715,44 @@ _make-test-cloud-init: _ensure-dirs
     local-hostname: test-boot
     EOF
 
-    cat > "$CI_DIR/user-data" << 'CLOUDINIT'
+    # The in-guest identity-rotation checks need the same blkid/cryptsetup
+    # reader functions the build and the initramfs rotation module use
+    # (bes-identity-lib.sh), so they aren't re-derived a third time. Dracut
+    # only installs that file into the initramfs (inst_simple in
+    # module-setup.sh), which is discarded after switch-root, so it isn't
+    # on the booted rootfs to source directly — ship the repo's own copy
+    # in over cloud-init instead.
+    IDENTITY_LIB="{{ justfile_directory() }}/image/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh"
+
+    # The smoke test itself lives at tests/boot-smoke-test.sh rather than
+    # inline here: tracey's scan (.config/tracey/config.styx) and
+    # `just test-shellcheck` both cover tests/*.sh but not the justfile, so
+    # a script embedded in this recipe can carry r[verify ...] annotations
+    # that neither tool will ever see.
+    SMOKE_TEST="{{ justfile_directory() }}/tests/boot-smoke-test.sh"
+
+    LIB_B64="$(base64 -w0 "$IDENTITY_LIB")"
+    SCRIPT_B64="$(base64 -w0 "$SMOKE_TEST")"
+
+    # write_files with base64 encoding sidesteps YAML indentation/escaping
+    # entirely for content this size. cloud-init's runcmd module always
+    # wraps every runcmd entry into one /bin/sh script, but a list-form
+    # entry's argv is executed directly rather than interpreted inline —
+    # here that's `bash /root/boot-smoke-test.sh`, which runs the script
+    # under bash regardless of the wrapping sh.
+    cat > "$CI_DIR/user-data" << CLOUDINIT
     #cloud-config
+    write_files:
+      - path: /root/bes-identity-lib.sh
+        encoding: b64
+        content: $LIB_B64
+        permissions: '0644'
+      - path: /root/boot-smoke-test.sh
+        encoding: b64
+        content: $SCRIPT_B64
+        permissions: '0755'
     runcmd:
-      - |
-        #!/bin/bash
-        exec > /dev/ttyS0 2>&1
-
-        PASS=0
-        FAIL=0
-        ERRORS=()
-
-        check() {
-          local desc="$1"; shift
-          if "$@" >/dev/null 2>&1; then
-            echo "PASS: $desc"
-            ((PASS++))
-          else
-            echo "FAIL: $desc"
-            ERRORS+=("$desc")
-            ((FAIL++))
-          fi
-        }
-
-        echo "=== BES Boot Smoke Test ==="
-        echo ""
-
-        check "systemd reached multi-user.target" systemctl is-active multi-user.target
-        FAILED_UNITS=$(systemctl --failed --no-legend --no-pager | wc -l)
-        check "no failed systemd units" test "$FAILED_UNITS" -eq 0
-
-        # r[verify image.credentials.ssh-password-auth]
-        check "sshd is active" systemctl is-active ssh
-        # r[verify image.firewall.enabled]
-        check "ufw is active" systemctl is-active ufw
-        # r[verify image.tailscale.service-enabled]
-        check "tailscaled is active" systemctl is-active tailscaled
-        # r[verify image.growth.service]
-        check "grow-root-filesystem ran" systemctl show -p ActiveState grow-root-filesystem.service | grep -q inactive
-
-        # r[verify image.btrfs.format]
-        check "root is btrfs" stat -f -c%T /
-        # r[verify image.btrfs.compression]
-        check "compression active in /proc/mounts" grep -q 'compress=' /proc/mounts
-
-        # r[verify image.variant.types]
-        VARIANT=$(cat /etc/bes/image-variant 2>/dev/null || echo "unknown")
-        echo "Variant: $VARIANT"
-
-        if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
-          # r[verify image.luks.format]
-          check "LUKS volume is active" test -e /dev/mapper/root
-        fi
-
-        # r[verify image.credentials.ubuntu-user]
-        check "ubuntu user exists" id ubuntu
-        # r[verify image.base.machine-id+2]
-        check "machine-id is non-empty" test -s /etc/machine-id
-
-        # r[verify image.partition.xboot]
-        check "/boot is mounted" mountpoint -q /boot
-        # r[verify image.partition.efi] r[verify image.partition.pi-firmware]
-        if [ "$VARIANT" = "pi" ]; then
-          check "/boot/firmware is mounted" mountpoint -q /boot/firmware
-        else
-          check "/boot/efi is mounted" mountpoint -q /boot/efi
-        fi
-
-        echo ""
-        echo "RESULTS: $PASS passed, $FAIL failed"
-
-        if [ $FAIL -eq 0 ]; then
-          echo "TEST_SUCCESS"
-        else
-          echo "TEST_FAILURE"
-          for e in "${ERRORS[@]}"; do
-            echo "  - $e"
-          done
-        fi
-
-        sleep 2
-        poweroff
+      - [bash, /root/boot-smoke-test.sh]
     CLOUDINIT
 
     # Build the NoCloud ISO
@@ -763,19 +765,53 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     #!/usr/bin/env bash
     set -euo pipefail
 
-    # Make a copy so we don't modify the original
+    # QEMU's "-accel kvm -accel tcg" falls back to TCG silently on its own
+    # if KVM isn't usable — no error, just a much slower run (a real problem
+    # for a bounded timeout). When the caller asserts KVM is required (CI's
+    # amd64 boot tests), fail fast here instead of finding out from a
+    # timeout after copying and growing the test image.
+    if [ "{{ require_kvm }}" = "true" ] && { [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; }; then
+      echo "ERROR: require_kvm=true but /dev/kvm is not usable (need read+write)" >&2
+      exit 1
+    fi
+
+    # Make a copy so we don't modify the original. The copy grows to the
+    # full resized size as the guest fills it, so it is removed however the
+    # run ends; the serial log is kept.
     TEST_IMAGE="{{ work_dir }}/test-boot.img"
+    trap 'rm -f "$TEST_IMAGE"' EXIT
     cp "{{ output_raw }}" "$TEST_IMAGE"
 
     # Grow the test image so grow-root-filesystem has something to do
     qemu-img resize "$TEST_IMAGE" 12G
 
     SERIAL_LOG="{{ work_dir }}/test-boot-serial.log"
-    TIMEOUT={{ qemu_memory }}  # reuse as a rough proxy — actually use 300s
-    TIMEOUT=300
+    # serial-getty@ttyS0 starts once the guest reaches a login prompt and
+    # hangs up the console device, silently discarding anything the smoke
+    # test still had open on it — so the pass/fail verdict travels over its
+    # own virtio-serial port instead (see tests/boot-smoke-test.sh) and is
+    # graded from this file, never from the serial console. Truncate/remove
+    # it before the run so a stale file from a previous run can never be
+    # mistaken for this one's result; QEMU's file chardev also truncates on
+    # open, but that's not a substitute for starting clean here.
+    RESULTS_LOG="{{ work_dir }}/test-boot-results.log"
+    rm -f "$RESULTS_LOG"
+    # The rotation module reboots once on GRUB variants (metal, cloud) to
+    # repair grub.cfg after rotating the identifiers it references — see
+    # r[image.identity.grub-repair] — so we can't pass QEMU -no-reboot
+    # (it would end the run at that reboot). Instead we let QEMU reboot
+    # freely and rely on this timeout to bound a reboot loop, sized for
+    # that one reboot plus, on the encrypted variants, the first-boot
+    # re-encryption of the image-sized LUKS volume (which runs before the
+    # root is grown, so the resize above does not add to it). Fully-emulated
+    # hosts (no KVM, e.g. CI's arm64 runners) run this much slower still,
+    # so the bound is overridable:
+    # `just test_boot_timeout=3600 test-boot`.
+    TIMEOUT={{ test_boot_timeout }}
 
     echo "Booting image in QEMU (timeout: ${TIMEOUT}s)..."
     echo "Serial log: $SERIAL_LOG"
+    echo "Results log: $RESULTS_LOG"
 
     timeout "$TIMEOUT" \
       {{ qemu_command }} {{ qemu_accel }} \
@@ -788,24 +824,28 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
       -drive file="$TEST_IMAGE",format=raw,if=virtio \
       -drive file="{{ work_dir }}/cidata.iso",format=raw,if=virtio \
       -netdev user,id=net0 \
-      -device virtio-net-pci,netdev=net0 \
-      -no-reboot \
+      -device virtio-net-pci,netdev=net0,romfile= \
+      -device virtio-serial-pci \
+      -chardev file,id=results,path="$RESULTS_LOG" \
+      -device virtserialport,chardev=results,name=bes.test-results \
       2>&1 | tee "$SERIAL_LOG" || true
 
     echo ""
     echo "=== Checking test results ==="
 
-    if grep -q "TEST_SUCCESS" "$SERIAL_LOG"; then
+    if grep -q "TEST_SUCCESS" "$RESULTS_LOG" 2>/dev/null; then
       echo "Boot smoke test PASSED"
       exit 0
-    elif grep -q "TEST_FAILURE" "$SERIAL_LOG"; then
+    elif grep -q "TEST_FAILURE" "$RESULTS_LOG" 2>/dev/null; then
       echo "Boot smoke test FAILED"
-      grep "FAIL:" "$SERIAL_LOG" || true
+      grep "FAIL:" "$RESULTS_LOG" || true
       exit 1
     else
       echo "Boot smoke test TIMED OUT or did not complete"
       echo "Last 30 lines of serial log:"
-      tail -30 "$SERIAL_LOG"
+      tail -30 "$SERIAL_LOG" 2>/dev/null || true
+      echo "Last 30 lines of results log:"
+      tail -30 "$RESULTS_LOG" 2>/dev/null || true
       exit 1
     fi
 

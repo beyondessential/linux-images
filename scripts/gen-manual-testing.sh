@@ -192,7 +192,7 @@ step4
 # r[verify installer.tui.ascii-rendering]
 # r[verify installer.tui.error-reboot]
 # r[verify installer.write.expand-root]
-# r[verify image.growth.service+3]
+# r[verify image.growth.service+4]
 # r[verify image.boot.grub-uuids]
 # r[verify iso.vdi+2]
 # r[verify iso.cdrom-partscan+4]
@@ -416,12 +416,12 @@ MD
 }
 step8
 
-# r[verify image.variant.types+3]
+# r[verify image.variant.types+4]
 # r[verify image.boot.grub-install]
 # r[verify image.boot.grub-timeout]
 # r[verify image.boot.grub-cmdline]
 # r[verify image.boot.grub-uuids]
-# r[verify image.growth.service+3]
+# r[verify image.growth.service+4]
 step9() {
     cat << 'MD'
 ## Step 9: Direct Image Write Boot

@@ -25,7 +25,7 @@ done
 
 WORKDIR=""
 DOWNLOAD=""
-cleanup() { [ -n "$WORKDIR" ] && rm -rf "$WORKDIR"; }
+cleanup() { if [ -n "$WORKDIR" ]; then rm -rf "$WORKDIR"; fi; }
 trap cleanup EXIT
 
 if [ -n "$MANIFEST" ]; then

@@ -53,15 +53,16 @@ BTRFS simple quotas must be enabled on the filesystem.
 
 ## Variants
 
-> r[image.variant.types+3]
+> r[image.variant.types+4]
 > Three build-time image variants must be supported: `metal`, `cloud`, and
 > `pi`.
 >
 > The `metal` variant encrypts the root partition with LUKS2. It is intended
 > for bare-metal and on-premise virtualisation. The image ships with a
-> placeholder empty passphrase; the installer is responsible for rotating the
-> master key and enrolling the real unlock mechanism (TPM, keyfile, or
-> recovery passphrase) at install time.
+> placeholder empty passphrase; a directly-booted image rotates its own
+> master key on first boot (see r[image.identity.luks-rekey]), while the
+> installer additionally rotates the master key and enrolls the real unlock
+> mechanism (TPM, keyfile, or recovery passphrase) for installed systems.
 >
 > The `cloud` variant does not encrypt the root partition. It is intended for
 > cloud environments where encryption at rest is provided by the
@@ -71,7 +72,9 @@ BTRFS simple quotas must be enabled on the filesystem.
 > the root partition with LUKS2 (same scheme as `metal`, with an empty
 > placeholder passphrase) but boots via the Pi firmware path rather than
 > UEFI/GRUB — see r[image.boot.pi-firmware]. There is no installer for the
-> `pi` variant; deployment is image-flash to SD/USB/NVMe.
+> `pi` variant; deployment is image-flash to SD/USB/NVMe, and the flashed
+> image rotates its own master key on first boot (see
+> r[image.identity.luks-rekey]).
 >
 > The file `/etc/bes/image-variant` records the disk-encryption mode of the
 > running system. Build-time images write the build variant (`metal`,
@@ -458,10 +461,13 @@ A weekly cron job must be present to run `apt install -y tailscale`.
 
 ## Disk Growth
 
-> r[image.growth.service+3]
-> A systemd service `grow-root-filesystem.service` must run early at boot
-> (before user sessions, before LUKS re-encryption) to expand the root partition
-> and filesystem if additional disk space is available. It must, in order:
+> r[image.growth.service+4]
+> A systemd service `grow-root-filesystem.service` must run early at boot,
+> before user sessions and after first-boot identity rotation has completed
+> (see r[image.identity.luks-rekey]) — this ordering is why that
+> re-encryption is guaranteed to cover only the image-sized area, never any
+> space this service later adds. It expands the root partition and
+> filesystem if additional disk space is available, and must, in order:
 >
 > 1. Move the GPT secondary header to the end of the disk.
 > 2. Expand the root partition to fill available space.
@@ -556,6 +562,39 @@ Dracut must be configured to include this keyfile in the initramfs.
 
 r[image.luks.crypttab]
 `/etc/crypttab` must be configured to automatically decrypt the root on boot.
+
+## First-boot identity
+
+r[image.identity.record]
+The image must carry a record of its build-time identifiers — the GPT disk
+GUID, each partition's PARTUUID, the LUKS UUID and volume-key digest where
+the variant is encrypted, the btrfs filesystem ID, the xboot UUID, and the
+boot1 FAT volume serial — at `/etc/bes/build-identity`. The record must be
+present in both the root filesystem and the initramfs.
+
+r[image.identity.rotate]
+At boot, before the root filesystem is mounted, every identifier that still
+equals its recorded value must be replaced with a fresh random one. The
+xboot UUID is exempt from this on GRUB variants, since the boot loader
+embeds it in a way that cannot be rewritten before the root filesystem is
+mounted without an unrecoverable power-loss window — see
+r[image.identity.grub-repair] for how GRUB variants instead keep booting
+correctly. A system whose identifiers already differ from the record must
+be left untouched.
+
+r[image.identity.luks-rekey]
+On encrypted variants, while the volume's master key is still the one it
+was built with, or while a re-encryption is already in progress, the volume
+must be re-encrypted under a fresh master key before it is unlocked for
+use. Interruption at any point must leave a volume that the next boot can
+unlock and finish re-encrypting. This must complete before the root
+filesystem is grown, so that only the image-sized area is rewritten.
+
+r[image.identity.grub-repair]
+On GRUB variants, a `grub.cfg` that references a recorded identifier must
+be rewritten to the current values, with no window in which it is
+partially written. If the running boot was started from a reference that
+no longer resolves, the system must reboot once the repair is durable.
 
 ## Output
 

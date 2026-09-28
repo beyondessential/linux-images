@@ -78,7 +78,7 @@ PACKAGES=(
     iputils-ping
 )
 
-# r[image.variant.types+3]
+# r[image.variant.types+4]
 case "${VARIANT:-}" in
     metal|cloud)
         PACKAGES+=(

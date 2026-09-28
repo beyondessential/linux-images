@@ -2,7 +2,7 @@
 Description=Grow root partition and filesystem
 DefaultDependencies=no
 After=local-fs.target systemd-remount-fs.service
-Before=systemd-user-sessions.service luks-reencrypt.service
+Before=systemd-user-sessions.service
 
 [Service]
 Type=oneshot

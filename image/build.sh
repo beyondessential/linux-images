@@ -26,7 +26,7 @@ case "$ARCH" in
         ;;
 esac
 
-# r[image.variant.types+3]
+# r[image.variant.types+4]
 case "$VARIANT" in
     metal|cloud) ;;
     pi)
@@ -48,7 +48,7 @@ fi
 
 # --- Dependency checks ---
 MISSING=()
-for cmd in debootstrap sgdisk mkfs.vfat mkfs.ext4 mkfs.btrfs losetup btrfs chroot rsync; do
+for cmd in debootstrap sgdisk mkfs.vfat mkfs.ext4 mkfs.btrfs losetup btrfs chroot rsync blkid; do
     command -v "$cmd" &>/dev/null || MISSING+=("$cmd")
 done
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
@@ -225,7 +225,11 @@ echo "==> Formatting boot1 partition (FAT32, label=$BOOT1_FSLABEL)..."
 mkfs.vfat -F 32 -n "$BOOT1_FSLABEL" "$EFI_PART" >/dev/null
 
 echo "==> Formatting boot partition (ext4)..."
-mkfs.ext4 -q -L xboot "$BOOT_PART"
+# r[image.identity.rotate]: with a fixed checksum seed, changing xboot's UUID
+# on first boot rewrites only the superblock rather than every checksummed
+# block, so an interrupted change leaves a consistent filesystem. Named
+# explicitly because the default feature set comes from the build host.
+mkfs.ext4 -q -L xboot -O metadata_csum_seed "$BOOT_PART"
 
 # r[image.luks.format]: metal and pi variants get LUKS2 with empty passphrase.
 if [ "$VARIANT" = "metal" ] || [ "$VARIANT" = "pi" ]; then
@@ -302,6 +306,27 @@ debootstrap \
     --include=ca-certificates \
     "${DEBOOTSTRAP_EXTRA_ARGS[@]}" \
     "$UBUNTU_SUITE" "$MNT" "$UBUNTU_MIRROR"
+
+# ============================================================
+# Record build-time identity
+# ============================================================
+# Written now, before the chroot runs, so the record is present in the
+# rootfs for configure.sh's dracut run to pick up into the initramfs.
+# Partitions and filesystems are never changed again after this point in
+# the build (growth happens on the deployed device), so these values stay
+# valid for the lifetime of the image.
+
+# shellcheck source=image/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh
+source "$SCRIPT_DIR/files/dracut/modules.d/90bes-identity/bes-identity-lib.sh"
+
+echo "==> Recording build-time identity..."
+mkdir -p "$MNT/etc/bes"
+IDENTITY_FILE="$MNT/etc/bes/build-identity"
+
+# r[image.identity.record]
+identity_read "$LOOP_DEVICE" "$EFI_PART" "$BOOT_PART" "$ROOT_PART" "$BTRFS_DEV" \
+    > "$IDENTITY_FILE"
+chmod 0644 "$IDENTITY_FILE"
 
 # ============================================================
 # Phase 5: Prepare chroot environment
