@@ -103,10 +103,31 @@ not_referenced() {
   ! grep -qiF -- "$value" "$file"
 }
 
+# Prints every volume-key digest in the LUKS2 header on $1, one per line,
+# as lowercase hex. Read from the header's JSON metadata rather than through
+# the text reader the record was made with, so a mismatch between that reader
+# and the header's layout cannot pass for a re-encryption.
+luks_all_digests() {
+  local b64
+  cryptsetup luksDump --dump-json-metadata "$1" | jq -r '.digests[].digest' |
+    while IFS= read -r b64; do
+      printf '%s' "$b64" | base64 -d | od -An -v -tx1 | tr -d ' \n'
+      echo
+    done
+}
+
+# Re-encryption under a fresh master key replaces the volume-key digest, and
+# may renumber it: the header must carry at least one well-formed digest and
+# none of them may be the recorded one.
 luks_digest_rotated() {
-  # Re-encrypting under a fresh master key can renumber digest 0 away
-  # entirely, so its absence counts as rotated evidence too.
-  [ -z "${CUR_LUKS_DIGEST:-}" ] || [ "${LUKS_DIGEST,,}" != "${CUR_LUKS_DIGEST,,}" ]
+  local digests d
+  [[ "${LUKS_DIGEST:-}" =~ ^[0-9a-f]{64}$ ]] || return 1
+  digests="$(luks_all_digests "$1")" || return 1
+  [ -n "$digests" ] || return 1
+  while IFS= read -r d; do
+    [[ "$d" =~ ^([0-9a-f]{2}){16,}$ ]] || return 1
+    [ "$d" != "${LUKS_DIGEST,,}" ] || return 1
+  done <<<"$digests"
 }
 
 if [ -f /etc/bes/build-identity ] && [ -r /root/bes-identity-lib.sh ]; then
@@ -164,7 +185,7 @@ if [ -f /etc/bes/build-identity ] && [ -r /root/bes-identity-lib.sh ]; then
     # r[verify image.identity.rotate]
     check "LUKS_UUID rotated on first boot" rotated LUKS_UUID
     # r[verify image.identity.luks-rekey]
-    check "LUKS_DIGEST rotated (or now absent) on first boot" luks_digest_rotated
+    check "LUKS volume key replaced on first boot" luks_digest_rotated "$ROOT_PART"
   fi
 
   # r[verify image.identity.grub-repair] r[verify image.boot.grub-uuids]
