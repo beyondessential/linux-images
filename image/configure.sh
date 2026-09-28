@@ -394,7 +394,7 @@ systemctl enable bes-ssh-keygen.service
 # ============================================================
 # Disk growth service
 # ============================================================
-# r[impl image.growth.service+3]
+# r[impl image.growth.service+4]
 install -m 755 /tmp/files/grow-root-filesystem /usr/local/bin/grow-root-filesystem
 install -m 644 /tmp/files/systemd/grow-root-filesystem.service /etc/systemd/system/grow-root-filesystem.service
 systemctl enable grow-root-filesystem.service

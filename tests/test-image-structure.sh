@@ -339,10 +339,10 @@ if [ "$VARIANT" = "pi" ]; then
         test -f "$MNT/boot/firmware/firstboot-script" -a ! -s "$MNT/boot/firmware/firstboot-script"
 fi
 
-# r[verify image.growth.service+3]
+# r[verify image.growth.service+4]
 check "/usr/local/bin/grow-root-filesystem exists" test -x "$MNT/usr/local/bin/grow-root-filesystem"
 
-# r[verify image.growth.service+3]
+# r[verify image.growth.service+4]
 check "/etc/systemd/system/grow-root-filesystem.service exists" test -f "$MNT/etc/systemd/system/grow-root-filesystem.service"
 
 # r[verify image.variant.types+4]
@@ -825,7 +825,7 @@ check_service_enabled "bes-tailscale-firstboot-auth.service" "bes-tailscale-firs
 # r[verify image.firstboot.script]
 check_service_enabled "bes-firstboot-script.service"  "bes-firstboot-script is enabled"
 
-# r[verify image.growth.service+3]
+# r[verify image.growth.service+4]
 check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is enabled"
 
 # r[verify image.cloud-init.enabled]

@@ -461,10 +461,13 @@ A weekly cron job must be present to run `apt install -y tailscale`.
 
 ## Disk Growth
 
-> r[image.growth.service+3]
-> A systemd service `grow-root-filesystem.service` must run early at boot
-> (before user sessions, before LUKS re-encryption) to expand the root partition
-> and filesystem if additional disk space is available. It must, in order:
+> r[image.growth.service+4]
+> A systemd service `grow-root-filesystem.service` must run early at boot,
+> before user sessions and after first-boot identity rotation has completed
+> (see r[image.identity.luks-rekey]) — this ordering is why that
+> re-encryption is guaranteed to cover only the image-sized area, never any
+> space this service later adds. It expands the root partition and
+> filesystem if additional disk space is available, and must, in order:
 >
 > 1. Move the GPT secondary header to the end of the disk.
 > 2. Expand the root partition to fill available space.
