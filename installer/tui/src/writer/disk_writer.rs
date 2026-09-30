@@ -459,7 +459,7 @@ impl<'a> DiskWriter<'a> {
                 "-t",
                 "btrfs",
                 "-o",
-                "subvol=@,compress=zstd:6",
+                "subvol=@,compress=zstd:1",
                 btrfs_dev.to_str().unwrap_or_default(),
                 mount_path.to_str().unwrap_or_default(),
             ],
@@ -579,8 +579,8 @@ impl<'a> DiskWriter<'a> {
         };
         let dracut_fstab = format!(
             "# Temporary fstab for dracut initramfs generation\n\
-             {root_device_fstab}  /                    btrfs subvol=@,compress=zstd:6         0 1\n\
-             {root_device_fstab}  /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:6 0 2\n\
+             {root_device_fstab}  /                    btrfs subvol=@,compress=zstd:1         0 1\n\
+             {root_device_fstab}  /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:1 0 2\n\
              UUID={xboot_uuid}    /boot                ext4  defaults                         0 2\n\
              UUID={efi_uuid}      /boot/efi            vfat  umask=0077                       0 1\n",
         );

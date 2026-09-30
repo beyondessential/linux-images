@@ -258,7 +258,7 @@ mkfs.btrfs --quiet \
 # r[image.btrfs.quotas]: Enable simple quotas.
 echo "==> Creating BTRFS subvolumes..."
 mkdir -p "$MNT"
-mount "$BTRFS_DEV" "$MNT" -o compress=zstd:6
+mount "$BTRFS_DEV" "$MNT" -o compress=zstd:1
 btrfs quota enable --simple "$MNT"
 btrfs subvolume create "$MNT/@"
 btrfs subvolume create "$MNT/@postgres"
@@ -269,11 +269,11 @@ umount "$MNT"
 # ============================================================
 echo "==> Mounting filesystems..."
 
-# r[image.btrfs.compression]: zstd:6 on all BTRFS mounts.
-mount "$BTRFS_DEV" "$MNT" -o subvol=@,compress=zstd:6
+# r[image.btrfs.compression]: zstd:1 on all BTRFS mounts.
+mount "$BTRFS_DEV" "$MNT" -o subvol=@,compress=zstd:1
 
 mkdir -p "$MNT/var/lib/postgresql"
-mount "$BTRFS_DEV" "$MNT/var/lib/postgresql" -o subvol=@postgres,compress=zstd:6
+mount "$BTRFS_DEV" "$MNT/var/lib/postgresql" -o subvol=@postgres,compress=zstd:1
 
 mkdir -p "$MNT/boot"
 mount "$BOOT_PART" "$MNT/boot"

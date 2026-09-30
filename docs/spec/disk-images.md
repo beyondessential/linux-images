@@ -45,8 +45,8 @@ The BTRFS filesystem must contain two subvolumes: `@` mounted at `/`, and
 `@postgres` mounted at `/var/lib/postgresql`.
 
 r[image.btrfs.compression]
-All BTRFS mounts must use transparent zstd compression at level 6 via the
-`compress=zstd:6` mount option.
+All BTRFS mounts must use transparent zstd compression at level 1 via the
+`compress=zstd:1` mount option.
 
 r[image.btrfs.quotas]
 BTRFS simple quotas must be enabled on the filesystem.
@@ -263,7 +263,7 @@ r[image.boot.pi-cmdline]
 For the `pi` variant, kernel command-line arguments are read from
 `/boot/firmware/cmdline.txt`. The cmdline must reference the LUKS-mapped
 root device (`root=/dev/mapper/root`) and the BTRFS subvolume
-(`subvol=@,compress=zstd:6`).
+(`subvol=@,compress=zstd:1`).
 
 r[image.boot.pi-firmware-update]
 For the `pi` variant, kernel, initramfs, DTB and overlay updates must be
