@@ -78,6 +78,6 @@ with Diagram(
 
     with Cluster("Annotations"):
         notes = Document(
-            "compress=zstd:6,\nxxhash, simple\nquotas, block-group-tree.\n"
+            "compress=zstd:1,\nxxhash, simple\nquotas, block-group-tree.\n"
             "/etc/bes/image-variant\nrecords runtime mode:\nplain | luks-keyfile |\nluks-tpm."
         )

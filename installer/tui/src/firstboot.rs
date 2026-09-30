@@ -54,7 +54,7 @@ pub fn mount_target(
             "-t",
             "btrfs",
             "-o",
-            "subvol=@,compress=zstd:6",
+            "subvol=@,compress=zstd:1",
             btrfs_dev.to_str().unwrap_or_default(),
             mount_path.to_str().unwrap_or_default(),
         ],

@@ -275,7 +275,7 @@ echo "--- BTRFS Subvolumes ---"
 mkdir -p "$MNT"
 
 # Mount the raw BTRFS (no subvol) to check subvolumes
-mount "$BTRFS_DEV" "$MNT" -o compress=zstd:6
+mount "$BTRFS_DEV" "$MNT" -o compress=zstd:1
 ROOT_MOUNTED=1
 
 # r[verify image.btrfs.subvolumes]
@@ -302,11 +302,11 @@ echo ""
 echo "--- File Checks ---"
 
 # Mount @ subvolume as root
-mount "$BTRFS_DEV" "$MNT" -o subvol=@,compress=zstd:6
+mount "$BTRFS_DEV" "$MNT" -o subvol=@,compress=zstd:1
 ROOT_MOUNTED=1
 
 mkdir -p "$MNT/var/lib/postgresql"
-mount "$BTRFS_DEV" "$MNT/var/lib/postgresql" -o subvol=@postgres,compress=zstd:6
+mount "$BTRFS_DEV" "$MNT/var/lib/postgresql" -o subvol=@postgres,compress=zstd:1
 PG_MOUNTED=1
 
 mkdir -p "$MNT/boot"
@@ -1017,10 +1017,10 @@ if [ -f "$FSTAB" ]; then
     fi
 
     # r[verify image.btrfs.compression]
-    if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q 'compress=zstd:6'; then
-        pass "fstab has compress=zstd:6 on root"
+    if grep -E '^\S+\s+/\s' "$FSTAB" | grep -q 'compress=zstd:1'; then
+        pass "fstab has compress=zstd:1 on root"
     else
-        fail "fstab has compress=zstd:6 on root"
+        fail "fstab has compress=zstd:1 on root"
     fi
 
     # r[verify image.partition.count]

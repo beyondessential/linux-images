@@ -224,7 +224,7 @@ if [ "$VARIANT" = "pi" ]; then
     mkdir -p /boot/firmware
     install -m 644 /tmp/files/pi/config.txt /boot/firmware/config.txt
     cat > /boot/firmware/cmdline.txt << 'EOF'
-console=tty1 console=serial0,115200 root=/dev/mapper/root rootflags=subvol=@,compress=zstd:6 rootfstype=btrfs ro noresume rootwait
+console=tty1 console=serial0,115200 root=/dev/mapper/root rootflags=subvol=@,compress=zstd:1 rootfstype=btrfs ro noresume rootwait
 EOF
 
     # r[image.boot.pi-firmware-update] r[image.boot.pi-tryboot-rollback]
@@ -324,8 +324,8 @@ case "$VARIANT" in
     metal|pi)
         cat > /etc/fstab << EOF
 # <device>                   <mountpoint>         <fs>  <options>                           <dump> <pass>
-/dev/mapper/root             /                    btrfs subvol=@,compress=zstd:6                 0 1
-/dev/mapper/root             /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:6         0 2
+/dev/mapper/root             /                    btrfs subvol=@,compress=zstd:1                 0 1
+/dev/mapper/root             /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:1         0 2
 /dev/disk/by-partlabel/xboot /boot                ext4  defaults                                 0 2
 $BOOT1_FSTAB_LINE
 EOF
@@ -333,8 +333,8 @@ EOF
     cloud)
         cat > /etc/fstab << EOF
 # <device>                   <mountpoint>         <fs>  <options>                           <dump> <pass>
-/dev/disk/by-partlabel/root  /                    btrfs subvol=@,compress=zstd:6                 0 1
-/dev/disk/by-partlabel/root  /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:6         0 2
+/dev/disk/by-partlabel/root  /                    btrfs subvol=@,compress=zstd:1                 0 1
+/dev/disk/by-partlabel/root  /var/lib/postgresql   btrfs subvol=@postgres,compress=zstd:1         0 2
 /dev/disk/by-partlabel/xboot /boot                ext4  defaults                                 0 2
 $BOOT1_FSTAB_LINE
 EOF
