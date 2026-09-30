@@ -374,12 +374,15 @@ jobs:
 
   # First-boot smoke test of the arm64 images, the same tests/boot-smoke-test.sh
   # run the image jobs give amd64 under KVM. GitHub's arm64 runners have no
-  # /dev/kvm, so QEMU runs under TCG here and one first boot takes tens of
-  # minutes to over an hour (the metal variant re-encrypts its whole LUKS
-  # volume before the root is even grown). It therefore lives in its own
-  # job, off the images -> iso -> container-test -> all-green path, and is
-  # deliberately absent from all-green's needs: a failure here is visible
-  # on the run but gates nothing, unlike the KVM-accelerated amd64 runs.
+  # /dev/kvm, so QEMU runs under TCG here: measured at ~5 min for cloud and
+  # ~15 min for metal (which re-encrypts its whole LUKS volume before the
+  # root is even grown), against ~1 and ~5 min under KVM. It lives in its
+  # own job, off the images -> iso -> container-test -> all-green path, and
+  # is deliberately absent from all-green's needs: a failure here is
+  # visible on the run but gates nothing, unlike the KVM-accelerated amd64
+  # runs. The per-variant bounds are about twice the measured times, so a
+  # regression fails in minutes rather than idling a runner; the step
+  # timeout also covers copying and resizing the image before QEMU starts.
   # Logs are kept on success too, so the emulated timings can be read
   # without re-running.
   boot-test-arm64:
@@ -394,6 +397,12 @@ jobs:
         include:
           - suite: resolute
             ubuntu_version: '26.04'
+          - variant: cloud
+            boot_timeout: 600
+            step_timeout: 12
+          - variant: metal
+            boot_timeout: 1800
+            step_timeout: 33
     runs-on: ubuntu-26.04-arm
     steps:
       - uses: actions/checkout@v7
@@ -420,8 +429,8 @@ jobs:
           path: output/arm64/${{ matrix.variant }}/
 
       - name: Boot-test image (emulated)
-        run: just ubuntu_suite=${{ matrix.suite }} arch=arm64 variant=${{ matrix.variant }} test_boot_timeout=5400 test-boot
-        timeout-minutes: 95
+        run: just ubuntu_suite=${{ matrix.suite }} arch=arm64 variant=${{ matrix.variant }} test_boot_timeout=${{ matrix.boot_timeout }} test-boot
+        timeout-minutes: ${{ matrix.step_timeout }}
 
       - name: Upload boot-test logs
         if: always()

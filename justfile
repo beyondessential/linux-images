@@ -21,7 +21,7 @@ container_test_filter := ""
 try_disk_size := "10G"
 # Bounds the reboot loop in `test-boot` (see its recipe for why a plain
 # -no-reboot won't do). Override for a slower host, e.g. CI's emulated
-# arm64 runners: `just test_boot_timeout=3600 test-boot`.
+# arm64 runners: `just test_boot_timeout=1800 test-boot`.
 test_boot_timeout := "1200"
 # When "true", test-boot refuses to start unless /dev/kvm is usable, rather
 # than silently falling back to much-slower TCG emulation (QEMU's
@@ -824,7 +824,7 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     # root is grown, so the resize above does not add to it). Fully-emulated
     # hosts (no KVM, e.g. CI's arm64 runners) run this much slower still,
     # so the bound is overridable:
-    # `just test_boot_timeout=3600 test-boot`.
+    # `just test_boot_timeout=1800 test-boot`.
     TIMEOUT={{ test_boot_timeout }}
 
     echo "Booting image in QEMU (timeout: ${TIMEOUT}s)..."
