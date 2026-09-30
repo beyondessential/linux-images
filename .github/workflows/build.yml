@@ -22,11 +22,12 @@ permissions:
   id-token: write
   attestations: write
 
-# Jobs that run the build/test scripts also set TMPDIR to runner.temp (the
-# runner context isn't available at this level). Ubuntu 26.04 mounts /tmp
-# as a tmpfs of half the RAM, ~7.8G here, and the ISO assembler alone
-# scratches a decompressed 5G source image plus the squashfs staging tree
-# there. The justfile passes TMPDIR through sudo.
+# Every job that runs the build/test scripts points TMPDIR at RUNNER_TEMP
+# in a step right after installing just (the runner context isn't usable
+# in env: blocks). Ubuntu 26.04 mounts /tmp as a tmpfs of half the RAM,
+# ~7.8G here, and the ISO assembler alone scratches a decompressed 5G
+# source image plus the squashfs staging tree there. The justfile passes
+# TMPDIR through sudo.
 env:
   UBUNTU_MIRROR: http://us.archive.ubuntu.com/ubuntu
   UBUNTU_PORTS_MIRROR: http://ports.ubuntu.com/ubuntu-ports
@@ -54,7 +55,6 @@ jobs:
     needs: [prep]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
-      TMPDIR: ${{ runner.temp }}
     # The (arch × suite) matrix produces all four combinations.
     strategy:
       fail-fast: false
@@ -68,6 +68,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # See the TMPDIR note above the top-level env block.
+      - name: Keep scratch off the tmpfs /tmp
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
@@ -217,7 +220,6 @@ jobs:
     needs: [prep]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
-      TMPDIR: ${{ runner.temp }}
     strategy:
       fail-fast: false
       matrix:
@@ -230,6 +232,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # See the TMPDIR note above the top-level env block.
+      - name: Keep scratch off the tmpfs /tmp
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
@@ -395,6 +400,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # See the TMPDIR note above the top-level env block.
+      - name: Keep scratch off the tmpfs /tmp
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
@@ -432,7 +440,6 @@ jobs:
     needs: [prep]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
-      TMPDIR: ${{ runner.temp }}
     strategy:
       fail-fast: false
       matrix:
@@ -444,6 +451,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # See the TMPDIR note above the top-level env block.
+      - name: Keep scratch off the tmpfs /tmp
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
@@ -511,14 +521,15 @@ jobs:
   # Standalone Pi 5 EEPROM-config SD artifact
   pi-eeprom:
     runs-on: ubuntu-26.04-arm
-    env:
-      TMPDIR: ${{ runner.temp }}
 
     steps:
       - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # See the TMPDIR note above the top-level env block.
+      - name: Keep scratch off the tmpfs /tmp
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
@@ -585,7 +596,6 @@ jobs:
     needs: [prep, images-cloud]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
-      TMPDIR: ${{ runner.temp }}
     strategy:
       fail-fast: false
       matrix:
@@ -600,6 +610,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # See the TMPDIR note above the top-level env block.
+      - name: Keep scratch off the tmpfs /tmp
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
@@ -674,8 +687,6 @@ jobs:
 
   container-test:
     needs: [iso]
-    env:
-      TMPDIR: ${{ runner.temp }}
     strategy:
       fail-fast: false
       matrix:
@@ -691,6 +702,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # See the TMPDIR note above the top-level env block.
+      - name: Keep scratch off the tmpfs /tmp
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |

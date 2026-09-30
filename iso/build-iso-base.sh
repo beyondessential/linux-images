@@ -107,8 +107,10 @@ MNT_ROOTFS="$WORK_DIR/rootfs"
 mkdir -p "$MNT_ROOTFS"
 
 # Helper: run a command inside the chroot with a sane PATH and locale.
+# TMPDIR is dropped: it names host scratch (CI points it off the runner's
+# tmpfs /tmp), a path that does not exist inside the chroot.
 run_in_chroot() {
-    chroot "$MNT_ROOTFS" /usr/bin/env \
+    chroot "$MNT_ROOTFS" /usr/bin/env -u TMPDIR \
         PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
         LC_ALL=C \
         "$@"

@@ -30,6 +30,13 @@ test_boot_timeout := "1200"
 # to run KVM-accelerated and aren't continue-on-error; left off by default
 # so local and arm64 (never KVM-accelerated in CI) runs are unaffected.
 require_kvm := "false"
+# sudo resets the environment, and the build/test scripts scratch under
+# mktemp, so their TMPDIR must be handed over explicitly (CI points it off
+# Ubuntu 26.04's RAM-backed /tmp). --preserve-env=TMPDIR is not honoured by
+# the CI runners' sudo policy; a VAR=value argument is, like the other
+# variables the recipes pass this way. Unset locally, this names mktemp's
+# default anyway.
+sudo_tmpdir := 'TMPDIR="${TMPDIR:-/tmp}"'
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 
@@ -145,7 +152,7 @@ iso-base: _validate-arch _ensure-dirs
       echo "ISO base tarball already exists: {{ iso_base_tarball }} (skipping build)"
       exit 0
     fi
-    sudo --preserve-env=TMPDIR ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
@@ -163,7 +170,7 @@ iso-rootfs: _validate-arch iso-base installer-build _ensure-dirs
       exit 0
     fi
     rm -rf "{{ iso_rootfs_dir }}"
-    sudo --preserve-env=TMPDIR ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT_DIR="{{ iso_rootfs_dir }}" \
          BASE_TARBALL="{{ iso_base_tarball }}" \
          INSTALLER_BIN="{{ installer_bin }}" \
@@ -185,7 +192,7 @@ iso: _validate-arch iso-rootfs
       exit 1
     fi
 
-    sudo --preserve-env=TMPDIR ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT="{{ output_iso }}" \
          ROOTFS_DIR="{{ iso_rootfs_dir }}" \
          SOURCE_IMAGE="$SOURCE_IMAGE" \
@@ -289,7 +296,7 @@ iso-base-rebuild: _validate-arch _ensure-dirs
     set -euo pipefail
     sudo rm -f "{{ iso_base_tarball }}"
     sudo rm -rf "{{ iso_rootfs_dir }}"
-    sudo --preserve-env=TMPDIR ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
@@ -301,7 +308,7 @@ iso-rootfs-rebuild: _validate-arch iso-base installer-build _ensure-dirs
     #!/usr/bin/env bash
     set -euo pipefail
     sudo rm -rf "{{ iso_rootfs_dir }}"
-    sudo --preserve-env=TMPDIR ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT_DIR="{{ iso_rootfs_dir }}" \
          BASE_TARBALL="{{ iso_base_tarball }}" \
          INSTALLER_BIN="{{ installer_bin }}" \
@@ -521,7 +528,7 @@ raw: _validate-variant _validate-arch _ensure-dirs
       exit 0
     fi
     echo "Building raw image: {{ output_raw }}"
-    sudo --preserve-env=TMPDIR ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          VARIANT="{{ variant }}" \
          OUTPUT="{{ output_raw }}" \
          IMAGE_SIZE="{{ image_size }}" \
@@ -634,7 +641,7 @@ test-shellcheck:
 
 # Verify image structure by loopback-mounting (requires sudo)
 test-structure: _ensure-raw
-    sudo --preserve-env=TMPDIR tests/test-image-structure.sh "{{ output_raw }}" "{{ variant }}" "{{ arch }}"
+    sudo {{ sudo_tmpdir }} tests/test-image-structure.sh "{{ output_raw }}" "{{ variant }}" "{{ arch }}"
 
 # Verify ISO structure without booting (requires sudo)
 iso-test-structure: _validate-arch
@@ -646,7 +653,7 @@ iso-test-structure: _validate-arch
       echo "Run 'just iso' first to build the ISO."
       exit 1
     fi
-    sudo --preserve-env=TMPDIR tests/test-iso-structure.sh "$ISO" "{{ arch }}" "{{ installer_bin }}"
+    sudo {{ sudo_tmpdir }} tests/test-iso-structure.sh "$ISO" "{{ arch }}" "{{ installer_bin }}"
 
 # Prepare QEMU firmware files for boot tests
 _prepare-firmware: _ensure-dirs
@@ -874,7 +881,7 @@ test-e2e: _validate-variant _validate-arch
       echo "ERROR: KVM required for E2E tests"
       exit 1
     fi
-    sudo --preserve-env=TMPDIR tests/test-e2e-install.sh "$ISO" "{{ variant }}" "{{ arch }}"
+    sudo {{ sudo_tmpdir }} tests/test-e2e-install.sh "$ISO" "{{ variant }}" "{{ arch }}"
 
 # Run container-based installer integration tests.
 # Override filter: just container_test_filter=metal-tpm-swtpm test-container-install
@@ -893,7 +900,7 @@ test-container-install: _validate-arch
       echo "ERROR: systemd-nspawn required (install systemd-container)"
       exit 1
     fi
-    sudo --preserve-env=TMPDIR tests/test-container-install-all.sh "$ISO" "{{ arch }}" "{{ container_test_filter }}"
+    sudo {{ sudo_tmpdir }} tests/test-container-install-all.sh "$ISO" "{{ arch }}" "{{ container_test_filter }}"
 
 # Run container isolation test: verify that no host block devices are
 
@@ -911,7 +918,7 @@ test-container-isolation: _validate-arch
       echo "ERROR: systemd-nspawn required (install systemd-container)"
       exit 1
     fi
-    sudo --preserve-env=TMPDIR tests/test-container-isolation.sh "$ISO"
+    sudo {{ sudo_tmpdir }} tests/test-container-isolation.sh "$ISO"
 
 # Launch the interactive TUI installer inside a systemd-nspawn container
 # with a loopback target disk, for manual testing without a VM.
@@ -932,7 +939,7 @@ try-installer: _validate-arch installer-build
       echo "ERROR: systemd-nspawn required (install systemd-container)"
       exit 1
     fi
-    sudo --preserve-env=TMPDIR tests/try-installer-interactive.sh "$ISO" "{{ arch }}" "{{ try_disk_size }}" "{{ installer_bin }}"
+    sudo {{ sudo_tmpdir }} tests/try-installer-interactive.sh "$ISO" "{{ arch }}" "{{ try_disk_size }}" "{{ installer_bin }}"
 
 # Run all tests (structure + installer + boot if KVM available)
 test: test-shellcheck installer-test test-structure
