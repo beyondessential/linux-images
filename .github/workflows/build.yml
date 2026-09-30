@@ -22,6 +22,11 @@ permissions:
   id-token: write
   attestations: write
 
+# Jobs that run the build/test scripts also set TMPDIR to runner.temp (the
+# runner context isn't available at this level). Ubuntu 26.04 mounts /tmp
+# as a tmpfs of half the RAM, ~7.8G here, and the ISO assembler alone
+# scratches a decompressed 5G source image plus the squashfs staging tree
+# there. The justfile passes TMPDIR through sudo.
 env:
   UBUNTU_MIRROR: http://us.archive.ubuntu.com/ubuntu
   UBUNTU_PORTS_MIRROR: http://ports.ubuntu.com/ubuntu-ports
@@ -38,7 +43,7 @@ jobs:
   # this, a long build crossing midnight UTC would produce inconsistent
   # filenames between parallel matrix entries.
   prep:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       build_date: ${{ steps.d.outputs.value }}
     steps:
@@ -49,13 +54,14 @@ jobs:
     needs: [prep]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
+      TMPDIR: ${{ runner.temp }}
     # The (arch × suite) matrix produces all four combinations.
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
         suite: [resolute]
-    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-26.04' || 'ubuntu-26.04-arm' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -223,12 +229,13 @@ jobs:
     needs: [prep]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
+      TMPDIR: ${{ runner.temp }}
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
         suite: [resolute]
-    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-26.04' || 'ubuntu-26.04-arm' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -391,11 +398,12 @@ jobs:
     needs: [prep]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
+      TMPDIR: ${{ runner.temp }}
     strategy:
       fail-fast: false
       matrix:
         suite: [resolute]
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
 
     steps:
       - uses: actions/checkout@v7
@@ -468,7 +476,9 @@ jobs:
 
   # Standalone Pi 5 EEPROM-config SD artifact
   pi-eeprom:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
+    env:
+      TMPDIR: ${{ runner.temp }}
 
     steps:
       - uses: actions/checkout@v7
@@ -541,6 +551,7 @@ jobs:
     needs: [prep, images-cloud]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
+      TMPDIR: ${{ runner.temp }}
     strategy:
       fail-fast: false
       matrix:
@@ -549,7 +560,7 @@ jobs:
         include:
           - suite: resolute
             ubuntu_version: '26.04'
-    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-26.04' || 'ubuntu-26.04-arm' }}
     steps:
       - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
@@ -629,6 +640,8 @@ jobs:
 
   container-test:
     needs: [iso]
+    env:
+      TMPDIR: ${{ runner.temp }}
     strategy:
       fail-fast: false
       matrix:
@@ -638,7 +651,7 @@ jobs:
         include:
           - suite: resolute
             ubuntu_version: '26.04'
-    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-26.04' || 'ubuntu-26.04-arm' }}
     steps:
       - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
@@ -682,7 +695,7 @@ jobs:
     name: All builds green
     if: always()
     needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso, container-test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Check job results
         run: |
@@ -714,7 +727,7 @@ jobs:
       needs.pi-eeprom.result == 'success' &&
       needs.iso.result == 'success' &&
       needs.register-ami.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -932,7 +945,7 @@ jobs:
         include:
           - suite: resolute
             ubuntu_version: '26.04'
-    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-26.04' || 'ubuntu-26.04-arm' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -987,7 +1000,7 @@ jobs:
         arch: [amd64, arm64]
         suite: [resolute]
         region: [ap-southeast-6, eu-central-2, ap-south-1, us-east-1]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
