@@ -78,17 +78,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             debootstrap gdisk dosfstools e2fsprogs btrfs-progs \
             cryptsetup parted util-linux rsync shellcheck \
-            qemu-utils genisoimage zstd squashfs-tools jq \
-            ${{ matrix.arch == 'amd64' && 'qemu-system-x86 ovmf' || '' }}
-
-      # Only amd64 boot-tests in this job: GitHub's arm64 runners have no
-      # /dev/kvm, so the arm64 first boot runs emulated in boot-test-arm64.
-      - name: Enable KVM access for boot test
-        if: matrix.arch == 'amd64'
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+            qemu-utils genisoimage zstd squashfs-tools jq
 
       - name: Run shellcheck
         if: matrix.arch == 'amd64'
@@ -100,47 +90,6 @@ jobs:
 
       - name: Test image structure
         run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=cloud test-structure
-
-      # Something between the earlier "Enable KVM access" step and here
-      # (possibly the raw-image build's own chroot/udev activity, possibly
-      # the qemu-kvm service) resets /dev/kvm back to root-only, so the
-      # udev rule alone isn't enough — reassert access right before the
-      # boot test needs it, and fail loudly rather than let QEMU silently
-      # fall back to much-slower TCG (see require_kvm below).
-      - name: Ensure /dev/kvm is usable
-        if: matrix.arch == 'amd64'
-        run: |
-          sudo chmod 0666 /dev/kvm
-          [ -r /dev/kvm ] && [ -w /dev/kvm ] || { echo "::error::/dev/kvm is not usable; refusing to run the required boot test under emulation"; exit 1; }
-
-      # Boots the raw image built above (test-boot copies it first, so the
-      # original that `build` below converts/compresses is untouched) and
-      # runs the in-guest first-boot checks (tests/boot-smoke-test.sh:
-      # identity rotation, grub.cfg repair, root growth, failed units).
-      # Placed before `build` rather than after: `build`'s `compress` step
-      # removes the raw image (zstd --rm), and test-boot would otherwise
-      # have to decompress it back from the .zst it just made, for no
-      # benefit.
-      #
-      # require_kvm=true: this run isn't continue-on-error, so silently
-      # completing under TCG (slow enough to trip the timeout, as seen on
-      # the metal job) is worse than failing fast on a bad /dev/kvm.
-      - name: Boot-test image (KVM-accelerated)
-        id: boot_test_amd64
-        if: matrix.arch == 'amd64'
-        run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=cloud require_kvm=true test-boot
-        timeout-minutes: 25
-
-      - name: Upload boot-test logs
-        if: always() && steps.boot_test_amd64.outcome == 'failure'
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-boot-logs-cloud-${{ matrix.suite }}-${{ matrix.arch }}
-          path: |
-            working/${{ matrix.arch }}/test-boot-serial.log
-            working/${{ matrix.arch }}/test-boot-results.log
-          if-no-files-found: ignore
-          retention-days: 1
 
       - name: Produce final artifacts
         run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=cloud build
@@ -242,17 +191,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             debootstrap gdisk dosfstools e2fsprogs btrfs-progs \
             cryptsetup parted util-linux rsync \
-            qemu-utils genisoimage zstd squashfs-tools jq \
-            ${{ matrix.arch == 'amd64' && 'qemu-system-x86 ovmf' || '' }}
-
-      # Only amd64 boot-tests in this job: GitHub's arm64 runners have no
-      # /dev/kvm, so the arm64 first boot runs emulated in boot-test-arm64.
-      - name: Enable KVM access for boot test
-        if: matrix.arch == 'amd64'
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+            qemu-utils genisoimage zstd squashfs-tools jq
 
       - name: Build raw image
         run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal raw
@@ -260,47 +199,6 @@ jobs:
 
       - name: Test image structure
         run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal test-structure
-
-      # Something between the earlier "Enable KVM access" step and here
-      # (possibly the raw-image build's own chroot/udev activity, possibly
-      # the qemu-kvm service) resets /dev/kvm back to root-only, so the
-      # udev rule alone isn't enough — reassert access right before the
-      # boot test needs it, and fail loudly rather than let QEMU silently
-      # fall back to much-slower TCG (see require_kvm below).
-      - name: Ensure /dev/kvm is usable
-        if: matrix.arch == 'amd64'
-        run: |
-          sudo chmod 0666 /dev/kvm
-          [ -r /dev/kvm ] && [ -w /dev/kvm ] || { echo "::error::/dev/kvm is not usable; refusing to run the required boot test under emulation"; exit 1; }
-
-      # Boots the raw image built above (test-boot copies it first, so the
-      # original that `build` below converts/compresses is untouched) and
-      # runs the in-guest first-boot checks (tests/boot-smoke-test.sh:
-      # identity rotation, grub.cfg repair, root growth, failed units).
-      # Placed before `build` rather than after: `build`'s `compress` step
-      # removes the raw image (zstd --rm), and test-boot would otherwise
-      # have to decompress it back from the .zst it just made, for no
-      # benefit.
-      #
-      # require_kvm=true: this run isn't continue-on-error, so silently
-      # completing under TCG (slow enough to trip the timeout, as seen on
-      # this job) is worse than failing fast on a bad /dev/kvm.
-      - name: Boot-test image (KVM-accelerated)
-        id: boot_test_amd64
-        if: matrix.arch == 'amd64'
-        run: just ubuntu_suite=${{ matrix.suite }} arch=amd64 variant=metal require_kvm=true test-boot
-        timeout-minutes: 25
-
-      - name: Upload boot-test logs
-        if: always() && steps.boot_test_amd64.outcome == 'failure'
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-boot-logs-metal-${{ matrix.suite }}-${{ matrix.arch }}
-          path: |
-            working/${{ matrix.arch }}/test-boot-serial.log
-            working/${{ matrix.arch }}/test-boot-results.log
-          if-no-files-found: ignore
-          retention-days: 1
 
       - name: Produce final artifacts
         run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=metal build
@@ -372,26 +270,27 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # First-boot smoke test of the arm64 images, the same tests/boot-smoke-test.sh
-  # run the image jobs give amd64 under KVM. GitHub's arm64 runners have no
-  # /dev/kvm, so QEMU runs under TCG here: measured at ~5 min for cloud and
-  # ~15 min for metal (which re-encrypts its whole LUKS volume before the
-  # root is even grown), against ~1 and ~5 min under KVM. It lives in its
-  # own job, off the images -> iso -> container-test -> all-green path, and
-  # is deliberately absent from all-green's needs: a failure here is
-  # visible on the run but gates nothing, unlike the KVM-accelerated amd64
-  # runs. The per-variant bounds are about twice the measured times, so a
-  # regression fails in minutes rather than idling a runner; the step
-  # timeout also covers copying and resizing the image before QEMU starts.
-  # Logs are kept on success too, so the emulated timings can be read
-  # without re-running.
-  boot-test-arm64:
+  # First-boot smoke test of every image (tests/boot-smoke-test.sh: identity
+  # rotation, grub.cfg repair, root growth, failed units), booting the raw
+  # image artifact the image jobs uploaded. amd64 runs KVM-accelerated, with
+  # require_kvm=true so a bad /dev/kvm fails fast instead of completing
+  # under TCG. GitHub's arm64 runners have no /dev/kvm, so arm64 runs under
+  # TCG: measured at ~5 min for cloud and ~15 min for metal (which
+  # re-encrypts its whole LUKS volume before the root is even grown),
+  # against ~1 and ~5 min under KVM. The per-variant bounds are about twice
+  # the emulated times, so a regression fails in minutes rather than idling
+  # a runner; the step timeout also covers copying and resizing the image
+  # before QEMU starts. A job of its own keeps the image artifacts flowing
+  # to iso while it runs; all-green and release-aggregate gate on it. Logs
+  # are kept on success too, so the timings can be read without re-running.
+  boot-test:
     needs: [prep, images-cloud, images-metal]
     env:
       BUILD_DATE: ${{ needs.prep.outputs.build_date }}
     strategy:
       fail-fast: false
       matrix:
+        arch: [amd64, arm64]
         variant: [cloud, metal]
         suite: [resolute]
         include:
@@ -403,7 +302,7 @@ jobs:
           - variant: metal
             boot_timeout: 1800
             step_timeout: 33
-    runs-on: ubuntu-26.04-arm
+    runs-on: ${{ matrix.arch == 'amd64' && 'ubuntu-26.04' || 'ubuntu-26.04-arm' }}
     steps:
       - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
@@ -417,7 +316,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-arm qemu-efi-aarch64 qemu-utils genisoimage zstd
+            qemu-utils genisoimage zstd \
+            ${{ matrix.arch == 'amd64' && 'qemu-system-x86 ovmf' || 'qemu-system-arm qemu-efi-aarch64' }}
+
+      # The runner image leaves /dev/kvm root-only. The udev rule is backed
+      # by an explicit chmod right before use, since something (possibly the
+      # qemu-kvm service) has been seen to reset the node between the two.
+      # Fail loudly rather than let QEMU silently fall back to TCG.
+      - name: Enable KVM access
+        if: matrix.arch == 'amd64'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo chmod 0666 /dev/kvm
+          [ -r /dev/kvm ] && [ -w /dev/kvm ] || { echo "::error::/dev/kvm is not usable; refusing to run the boot test under emulation"; exit 1; }
 
       # archive: false on the upload names the artifact after the file's
       # basename, and the date suffix comes from prep, so an exact name
@@ -425,21 +338,21 @@ jobs:
       - name: Download raw image
         uses: actions/download-artifact@v8
         with:
-          name: ubuntu-${{ matrix.ubuntu_version }}-bes-${{ matrix.variant }}-arm64-${{ needs.prep.outputs.build_date }}.img.zst
-          path: output/arm64/${{ matrix.variant }}/
+          name: ubuntu-${{ matrix.ubuntu_version }}-bes-${{ matrix.variant }}-${{ matrix.arch }}-${{ needs.prep.outputs.build_date }}.img.zst
+          path: output/${{ matrix.arch }}/${{ matrix.variant }}/
 
-      - name: Boot-test image (emulated)
-        run: just ubuntu_suite=${{ matrix.suite }} arch=arm64 variant=${{ matrix.variant }} test_boot_timeout=${{ matrix.boot_timeout }} test-boot
+      - name: Boot-test image
+        run: just ubuntu_suite=${{ matrix.suite }} arch=${{ matrix.arch }} variant=${{ matrix.variant }} test_boot_timeout=${{ matrix.boot_timeout }} ${{ matrix.arch == 'amd64' && 'require_kvm=true' || '' }} test-boot
         timeout-minutes: ${{ matrix.step_timeout }}
 
       - name: Upload boot-test logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-boot-logs-${{ matrix.variant }}-${{ matrix.suite }}-arm64
+          name: test-boot-logs-${{ matrix.variant }}-${{ matrix.suite }}-${{ matrix.arch }}
           path: |
-            working/arm64/test-boot-serial.log
-            working/arm64/test-boot-results.log
+            working/${{ matrix.arch }}/test-boot-serial.log
+            working/${{ matrix.arch }}/test-boot-results.log
           if-no-files-found: ignore
           retention-days: 3
 
@@ -751,7 +664,7 @@ jobs:
   all-green:
     name: All builds green
     if: always()
-    needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso, container-test]
+    needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso, container-test, boot-test]
     runs-on: ubuntu-26.04
     steps:
       - name: Check job results
@@ -769,7 +682,7 @@ jobs:
   # tag; failed tests on a tagged build are an operator-side abort, same
   # as register-ami already presumes.
   release-aggregate:
-    needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso, register-ami, copy-amis]
+    needs: [images-cloud, images-metal, images-pi, pi-eeprom, iso, boot-test, register-ami, copy-amis]
     # copy-amis is in needs to force a wait, but the AMI section is built from
     # whatever fragments actually upload — a partial satellite-region failure
     # shouldn't block the release. always() lets us run despite a failed
@@ -783,6 +696,7 @@ jobs:
       needs.images-pi.result == 'success' &&
       needs.pi-eeprom.result == 'success' &&
       needs.iso.result == 'success' &&
+      needs.boot-test.result == 'success' &&
       needs.register-ami.result == 'success'
     runs-on: ubuntu-26.04
     steps:
