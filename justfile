@@ -21,7 +21,7 @@ container_test_filter := ""
 try_disk_size := "10G"
 # Bounds the reboot loop in `test-boot` (see its recipe for why a plain
 # -no-reboot won't do). Override for a slower host, e.g. CI's emulated
-# arm64 runners: `just test_boot_timeout=3600 test-boot`.
+# arm64 runners: `just test_boot_timeout=1800 test-boot`.
 test_boot_timeout := "1200"
 # When "true", test-boot refuses to start unless /dev/kvm is usable, rather
 # than silently falling back to much-slower TCG emulation (QEMU's
@@ -30,6 +30,13 @@ test_boot_timeout := "1200"
 # to run KVM-accelerated and aren't continue-on-error; left off by default
 # so local and arm64 (never KVM-accelerated in CI) runs are unaffected.
 require_kvm := "false"
+# sudo resets the environment, and the build/test scripts scratch under
+# mktemp, so their TMPDIR must be handed over explicitly (CI points it off
+# Ubuntu 26.04's RAM-backed /tmp). --preserve-env=TMPDIR is not honoured by
+# the CI runners' sudo policy; a VAR=value argument is, like the other
+# variables the recipes pass this way. Unset locally, this names mktemp's
+# default anyway.
+sudo_tmpdir := 'TMPDIR="${TMPDIR:-/tmp}"'
 
 # Mirror for debootstrap: override via env var or `just ubuntu_mirror=...`
 
@@ -101,7 +108,18 @@ installer_bin := "target" / cargo_target / "release" / "bes-installer"
 # --- QEMU settings for boot tests ---
 
 qemu_command := if arch == "amd64" { "qemu-system-x86_64" } else if arch == "arm64" { "qemu-system-aarch64" } else { error("Unsupported architecture") }
-qemu_accel := if arch == "amd64" { if arch() == "x86_64" { "-accel kvm -accel tcg" } else { "-accel tcg" } } else if arch == "arm64" { if arch() == "aarch64" { "-accel kvm -accel tcg -machine virt" } else { "-accel tcg -machine virt -cpu cortex-a57" } } else { error("Unsupported architecture") }
+
+# arm64: the `virt` machine's default CPU is a 32-bit cortex-a15, so a
+# 64-bit model must be named whenever TCG is in play. Neoverse N1 rather
+# than `max`: on QEMU < 10 `max` defaults FEAT_Pauth to the architected
+# QARMA5 cipher, and Ubuntu's arm64 kernel and userspace sign every return
+# address, so under TCG each function return would run an emulated block
+# cipher. N1 (ARMv8.2, no pauth/SVE/MTE) sidesteps that and still has the
+# LSE atomics and crypto extensions the guest relies on. With KVM on an
+# aarch64 host the choice is made explicitly rather than via
+# `-accel kvm -accel tcg`: `-cpu host` is KVM-only, so a silent fallback to
+# TCG would only fail later and more confusingly.
+qemu_accel := if arch == "amd64" { if arch() == "x86_64" { "-accel kvm -accel tcg" } else { "-accel tcg" } } else if arch == "arm64" { if arch() == "aarch64" { if path_exists("/dev/kvm") == "true" { "-accel kvm -machine virt -cpu host" } else { "-accel tcg -machine virt -cpu neoverse-n1" } } else { "-accel tcg -machine virt -cpu neoverse-n1" } } else { error("Unsupported architecture") }
 qemu_firmware := if arch == "amd64" { work_dir / "OVMF_CODE.fd" } else if arch == "arm64" { work_dir / "AAVMF_CODE.fd" } else { error("Unsupported architecture") }
 qemu_firmvars := if arch == "amd64" { work_dir / "OVMF_VARS.fd" } else if arch == "arm64" { work_dir / "AAVMF_VARS.fd" } else { error("Unsupported architecture") }
 
@@ -134,7 +152,7 @@ iso-base: _validate-arch _ensure-dirs
       echo "ISO base tarball already exists: {{ iso_base_tarball }} (skipping build)"
       exit 0
     fi
-    sudo ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
@@ -152,7 +170,7 @@ iso-rootfs: _validate-arch iso-base installer-build _ensure-dirs
       exit 0
     fi
     rm -rf "{{ iso_rootfs_dir }}"
-    sudo ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT_DIR="{{ iso_rootfs_dir }}" \
          BASE_TARBALL="{{ iso_base_tarball }}" \
          INSTALLER_BIN="{{ installer_bin }}" \
@@ -174,7 +192,7 @@ iso: _validate-arch iso-rootfs
       exit 1
     fi
 
-    sudo ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT="{{ output_iso }}" \
          ROOTFS_DIR="{{ iso_rootfs_dir }}" \
          SOURCE_IMAGE="$SOURCE_IMAGE" \
@@ -278,7 +296,7 @@ iso-base-rebuild: _validate-arch _ensure-dirs
     set -euo pipefail
     sudo rm -f "{{ iso_base_tarball }}"
     sudo rm -rf "{{ iso_rootfs_dir }}"
-    sudo ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT="{{ iso_base_tarball }}" \
          UBUNTU_SUITE="{{ ubuntu_suite }}" \
          UBUNTU_MIRROR="{{ ubuntu_mirror }}" \
@@ -290,7 +308,7 @@ iso-rootfs-rebuild: _validate-arch iso-base installer-build _ensure-dirs
     #!/usr/bin/env bash
     set -euo pipefail
     sudo rm -rf "{{ iso_rootfs_dir }}"
-    sudo ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          OUTPUT_DIR="{{ iso_rootfs_dir }}" \
          BASE_TARBALL="{{ iso_base_tarball }}" \
          INSTALLER_BIN="{{ installer_bin }}" \
@@ -510,7 +528,7 @@ raw: _validate-variant _validate-arch _ensure-dirs
       exit 0
     fi
     echo "Building raw image: {{ output_raw }}"
-    sudo ARCH="{{ arch }}" \
+    sudo {{ sudo_tmpdir }} ARCH="{{ arch }}" \
          VARIANT="{{ variant }}" \
          OUTPUT="{{ output_raw }}" \
          IMAGE_SIZE="{{ image_size }}" \
@@ -623,7 +641,7 @@ test-shellcheck:
 
 # Verify image structure by loopback-mounting (requires sudo)
 test-structure: _ensure-raw
-    sudo tests/test-image-structure.sh "{{ output_raw }}" "{{ variant }}" "{{ arch }}"
+    sudo {{ sudo_tmpdir }} tests/test-image-structure.sh "{{ output_raw }}" "{{ variant }}" "{{ arch }}"
 
 # Verify ISO structure without booting (requires sudo)
 iso-test-structure: _validate-arch
@@ -635,7 +653,7 @@ iso-test-structure: _validate-arch
       echo "Run 'just iso' first to build the ISO."
       exit 1
     fi
-    sudo tests/test-iso-structure.sh "$ISO" "{{ arch }}" "{{ installer_bin }}"
+    sudo {{ sudo_tmpdir }} tests/test-iso-structure.sh "$ISO" "{{ arch }}" "{{ installer_bin }}"
 
 # Prepare QEMU firmware files for boot tests
 _prepare-firmware: _ensure-dirs
@@ -806,7 +824,7 @@ test-boot: _ensure-raw _prepare-firmware _make-test-cloud-init
     # root is grown, so the resize above does not add to it). Fully-emulated
     # hosts (no KVM, e.g. CI's arm64 runners) run this much slower still,
     # so the bound is overridable:
-    # `just test_boot_timeout=3600 test-boot`.
+    # `just test_boot_timeout=1800 test-boot`.
     TIMEOUT={{ test_boot_timeout }}
 
     echo "Booting image in QEMU (timeout: ${TIMEOUT}s)..."
@@ -863,7 +881,7 @@ test-e2e: _validate-variant _validate-arch
       echo "ERROR: KVM required for E2E tests"
       exit 1
     fi
-    sudo tests/test-e2e-install.sh "$ISO" "{{ variant }}" "{{ arch }}"
+    sudo {{ sudo_tmpdir }} tests/test-e2e-install.sh "$ISO" "{{ variant }}" "{{ arch }}"
 
 # Run container-based installer integration tests.
 # Override filter: just container_test_filter=metal-tpm-swtpm test-container-install
@@ -882,7 +900,7 @@ test-container-install: _validate-arch
       echo "ERROR: systemd-nspawn required (install systemd-container)"
       exit 1
     fi
-    sudo tests/test-container-install-all.sh "$ISO" "{{ arch }}" "{{ container_test_filter }}"
+    sudo {{ sudo_tmpdir }} tests/test-container-install-all.sh "$ISO" "{{ arch }}" "{{ container_test_filter }}"
 
 # Run container isolation test: verify that no host block devices are
 
@@ -900,7 +918,7 @@ test-container-isolation: _validate-arch
       echo "ERROR: systemd-nspawn required (install systemd-container)"
       exit 1
     fi
-    sudo tests/test-container-isolation.sh "$ISO"
+    sudo {{ sudo_tmpdir }} tests/test-container-isolation.sh "$ISO"
 
 # Launch the interactive TUI installer inside a systemd-nspawn container
 # with a loopback target disk, for manual testing without a VM.
@@ -921,7 +939,7 @@ try-installer: _validate-arch installer-build
       echo "ERROR: systemd-nspawn required (install systemd-container)"
       exit 1
     fi
-    sudo tests/try-installer-interactive.sh "$ISO" "{{ arch }}" "{{ try_disk_size }}" "{{ installer_bin }}"
+    sudo {{ sudo_tmpdir }} tests/try-installer-interactive.sh "$ISO" "{{ arch }}" "{{ try_disk_size }}" "{{ installer_bin }}"
 
 # Run all tests (structure + installer + boot if KVM available)
 test: test-shellcheck installer-test test-structure

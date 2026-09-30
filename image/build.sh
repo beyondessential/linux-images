@@ -360,7 +360,10 @@ cp -r "$SCRIPT_DIR/files"      "$MNT/tmp/files/"
 # Phase 6: Run in-chroot configuration
 # ============================================================
 echo "==> Running configure.sh inside chroot..."
-chroot "$MNT" /usr/bin/env \
+# TMPDIR names host scratch (CI points it off the runner's tmpfs /tmp); the
+# path does not exist in the chroot, where maintainer scripts would mktemp
+# under it and fail.
+chroot "$MNT" /usr/bin/env -u TMPDIR \
     UBUNTU_SUITE="$UBUNTU_SUITE" \
     TAILSCALE_SUITE="${TAILSCALE_SUITE:-$UBUNTU_SUITE}" \
     /bin/bash /tmp/configure.sh "$ARCH" "$VARIANT" "$GRUB_TARGET"
