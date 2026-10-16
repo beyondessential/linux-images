@@ -1,5 +1,6 @@
 #!/bin/bash
 # r[image.firewall.policy] r[image.firewall.ssh] r[image.firewall.http] r[image.firewall.enabled]
+# r[image.firewall.manageable]
 #
 # UFW firewall configuration for BES images.
 # Writes config files directly rather than running `ufw` commands,
@@ -21,69 +22,54 @@ sed -i \
     -e 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' \
     /etc/default/ufw
 
-# r[image.firewall.ssh]: Allow SSH
-# r[image.firewall.http]: Allow HTTP, HTTPS (TCP+UDP for HTTP/3)
-cat > /etc/ufw/user.rules << 'RULES'
+# r[image.firewall.manageable]: ufw stores each rule's comment hex-encoded in
+# its tuple line; a plain-text comment there makes `ufw status` crash.
+hex() {
+    printf '%s' "$1" | od -An -tx1 | tr -d ' \n'
+}
+
+# Emits one inbound allow rule: ufw's tuple metadata line, then the iptables
+# rule it describes.
+allow_rule() {
+    local prefix="$1" any="$2" proto="$3" port="$4" comment="$5"
+    printf '### tuple ### allow %s %s %s any %s in comment=%s\n' \
+        "$proto" "$port" "$any" "$any" "$(hex "$comment")"
+    printf -- '-A %s-user-input -p %s --dport %s -j ACCEPT\n\n' \
+        "$prefix" "$proto" "$port"
+}
+
+write_rules() {
+    local prefix="$1" any="$2"
+    cat << EOF
 *filter
-:ufw-user-input - [0:0]
-:ufw-user-output - [0:0]
-:ufw-user-forward - [0:0]
-:ufw-user-limit - [0:0]
-:ufw-user-limit-accept - [0:0]
+:${prefix}-user-input - [0:0]
+:${prefix}-user-output - [0:0]
+:${prefix}-user-forward - [0:0]
+:${prefix}-user-limit - [0:0]
+:${prefix}-user-limit-accept - [0:0]
 ### RULES ###
 
-### tuple ### allow tcp 22 0.0.0.0/0 any 0.0.0.0/0 in comment=SSH
--A ufw-user-input -p tcp --dport 22 -j ACCEPT
-
-### tuple ### allow tcp 80 0.0.0.0/0 any 0.0.0.0/0 in comment=HTTP
--A ufw-user-input -p tcp --dport 80 -j ACCEPT
-
-### tuple ### allow tcp 443 0.0.0.0/0 any 0.0.0.0/0 in comment=TCP_HTTPS
--A ufw-user-input -p tcp --dport 443 -j ACCEPT
-
-### tuple ### allow udp 443 0.0.0.0/0 any 0.0.0.0/0 in comment=UDP_HTTPS__HTTP/3_
--A ufw-user-input -p udp --dport 443 -j ACCEPT
-
+EOF
+    # r[image.firewall.ssh]: Allow SSH
+    allow_rule "$prefix" "$any" tcp 22 'SSH'
+    # r[image.firewall.http]: Allow HTTP, HTTPS (TCP+UDP for HTTP/3)
+    allow_rule "$prefix" "$any" tcp 80 'HTTP'
+    allow_rule "$prefix" "$any" tcp 443 'HTTPS'
+    allow_rule "$prefix" "$any" udp 443 'HTTP/3'
+    cat << EOF
 ### END RULES ###
 
 ### LOGGING ###
--A ufw-user-limit -m limit --limit 3/minute -j LOG --log-prefix "[UFW LIMIT BLOCK] "
--A ufw-user-limit -j REJECT
--A ufw-user-limit-accept -j ACCEPT
+-A ${prefix}-user-limit -m limit --limit 3/minute -j LOG --log-prefix "[UFW LIMIT BLOCK] "
+-A ${prefix}-user-limit -j REJECT
+-A ${prefix}-user-limit-accept -j ACCEPT
 ### END LOGGING ###
 COMMIT
-RULES
+EOF
+}
 
-cat > /etc/ufw/user6.rules << 'RULES'
-*filter
-:ufw6-user-input - [0:0]
-:ufw6-user-output - [0:0]
-:ufw6-user-forward - [0:0]
-:ufw6-user-limit - [0:0]
-:ufw6-user-limit-accept - [0:0]
-### RULES ###
-
-### tuple ### allow tcp 22 ::/0 any ::/0 in comment=SSH
--A ufw6-user-input -p tcp --dport 22 -j ACCEPT
-
-### tuple ### allow tcp 80 ::/0 any ::/0 in comment=HTTP
--A ufw6-user-input -p tcp --dport 80 -j ACCEPT
-
-### tuple ### allow tcp 443 ::/0 any ::/0 in comment=TCP_HTTPS
--A ufw6-user-input -p tcp --dport 443 -j ACCEPT
-
-### tuple ### allow udp 443 ::/0 any ::/0 in comment=UDP_HTTPS__HTTP/3_
--A ufw6-user-input -p udp --dport 443 -j ACCEPT
-
-### END RULES ###
-
-### LOGGING ###
--A ufw6-user-limit -m limit --limit 3/minute -j LOG --log-prefix "[UFW LIMIT BLOCK] "
--A ufw6-user-limit -j REJECT
--A ufw6-user-limit-accept -j ACCEPT
-### END LOGGING ###
-COMMIT
-RULES
+write_rules ufw 0.0.0.0/0 > /etc/ufw/user.rules
+write_rules ufw6 ::/0 > /etc/ufw/user6.rules
 
 chmod 640 /etc/ufw/user.rules /etc/ufw/user6.rules
 

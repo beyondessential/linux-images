@@ -371,6 +371,12 @@ allowed.
 r[image.firewall.enabled]
 UFW must be force-enabled during image configuration.
 
+r[image.firewall.manageable]
+The firewall rules shipped in the image must be stored in the form UFW itself
+writes, so that UFW's own commands can list and modify them on a booted
+system. In particular, each rule's comment must be stored in UFW's encoded
+form rather than as plain text.
+
 ## Tailscale
 
 r[image.tailscale.service-enabled]

@@ -70,6 +70,8 @@ check "no failed systemd units" test "$FAILED_UNITS" -eq 0
 check "sshd is active" systemctl is-active ssh
 # r[verify image.firewall.enabled]
 check "ufw is active" systemctl is-active ufw
+# r[verify image.firewall.manageable]
+check "ufw status lists rules" ufw status
 # r[verify image.tailscale.service-enabled]
 check "tailscaled is active" systemctl is-active tailscaled
 

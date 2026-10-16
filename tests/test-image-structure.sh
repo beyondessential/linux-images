@@ -791,6 +791,19 @@ if [ -f "$UFW_USER_RULES" ]; then
     check "ufw allows 443/udp" grep -q '\-p udp --dport 443' "$UFW_USER_RULES"
 fi
 
+# r[verify image.firewall.manageable]
+# Decode every tuple comment with the image's own ufw, as `ufw status` does.
+for rules in "$UFW_USER_RULES" "$UFW_USER6_RULES"; do
+    [ -f "$rules" ] || continue
+    check "ufw can decode rule comments in ${rules#"$MNT"}" \
+        chroot "$MNT" python3 -c '
+import sys, ufw.util
+for line in sys.stdin:
+    if line.startswith("### tuple ###") and " comment=" in line:
+        ufw.util.hex_decode(line.split(" comment=")[1].strip())
+' < "$rules"
+done
+
 # r[verify image.packages.bes-tools]
 check "bes-tools signing key installed" test -f "$MNT/etc/apt/keyrings/bes-tools.gpg"
 check "bes-tools apt repo configured" test -f "$MNT/etc/apt/sources.list.d/bes-tools.list"
