@@ -330,6 +330,13 @@ echo "Detected suite: ${SUITE:-<unknown>}"
 # r[verify image.base.debootstrap]
 check "/etc/fstab exists" test -f "$MNT/etc/fstab"
 
+# r[verify image.base.current-packages]
+# emSign ECC Root CA - G3 ships in the release-pocket ca-certificates of the
+# suites we build and was withdrawn by later updates (Mozilla bug 2083449).
+check "withdrawn root emSign ECC Root CA - G3 not installed" \
+    test ! -e "$MNT/usr/share/ca-certificates/mozilla/emSign_ECC_Root_CA_-_G3.crt" \
+    -a ! -e "$MNT/etc/ssl/certs/emSign_ECC_Root_CA_-_G3.pem"
+
 # r[verify image.variant.types+4]
 check "/etc/bes/image-variant exists" test -f "$MNT/etc/bes/image-variant"
 
