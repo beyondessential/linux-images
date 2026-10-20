@@ -54,6 +54,11 @@ rm -f /etc/apt/sources.list
 
 apt-get update -q
 
+# r[impl image.base.current-packages]
+# debootstrap installs from the release pocket alone, so what it put down stays
+# at release versions unless upgraded from the updates and security pockets.
+apt-get dist-upgrade -y -q --no-install-recommends
+
 # ============================================================
 # Bootstrap essential packages
 # ============================================================
