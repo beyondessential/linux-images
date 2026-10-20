@@ -90,6 +90,13 @@ r[image.base.debootstrap]
 The base system must be debootstrapped into the `@` subvolume.
 The debootstrap must create the minimal viable bootable system.
 
+r[image.base.current-packages]
+Every package installed in the image must be at the newest version its
+configured archives offer at build time, including the suite's updates and
+security pockets, not only the version the suite was released with. In
+particular, the image must not trust a root certificate authority that those
+archives have already withdrawn.
+
 r[image.base.machine-id+2]
 `/etc/machine-id` must be truncated to zero bytes so that systemd generates a
 unique machine ID on each first boot. The image's initramfs must also carry an
