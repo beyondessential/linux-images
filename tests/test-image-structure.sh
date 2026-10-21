@@ -973,6 +973,10 @@ check_service_enabled "grow-root-filesystem.service"  "grow-root-filesystem is e
 check "cloud-init-generator exists" test -x "$MNT/usr/lib/systemd/system-generators/cloud-init-generator"
 check "cloud-init.target.wants populated" test -d "$MNT/etc/systemd/system/cloud-init.target.wants"
 
+# r[verify image.packages.upki]
+check "upki binary exists" test -x "$MNT/usr/bin/upki"
+check_service_enabled "upki-fetch.timer"              "upki-fetch.timer is enabled"
+
 # r[verify image.packages.chrony]
 check_service_enabled "chrony.service"                "chrony is enabled"
 check "chrony binary exists" test -x "$MNT/usr/sbin/chronyd"
