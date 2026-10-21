@@ -16,10 +16,11 @@ echo "deb [signed-by=/etc/apt/keyrings/bes-tools.gpg] https://tools.ops.tamanu.i
 
 # r[image.packages.bes-tools]: Pin bes-tools so the right packages come from
 # the right place. `bestool` is always preferred from bes-tools (it is only
-# published there). The Ubuntu archive ships a sufficiently recent podman, so
-# everything else is preferred from the archive.
+# published there), and so is `upki` (the archive has none before 26.10). The
+# Ubuntu archive ships a sufficiently recent podman, so everything else is
+# preferred from the archive.
 cat > /etc/apt/preferences.d/99-bes-tools << 'EOF'
-Package: bestool
+Package: bestool upki
 Pin: origin tools.ops.tamanu.io
 Pin-Priority: 999
 
@@ -31,4 +32,6 @@ EOF
 apt-get update -q
 # r[image.packages.podman]
 # r[image.packages.bestool+2]
-apt-get install -y podman bestool
+# r[image.packages.upki]
+# upki's postinst enables upki-fetch.timer, which works offline in the chroot.
+apt-get install -y podman bestool upki
