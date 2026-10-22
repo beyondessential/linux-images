@@ -156,6 +156,10 @@ The official Tailscale apt repository must be configured and preferred.
 r[image.packages.bestool+2]
 bestool version >=1.4.0 must be pre-installed.
 
+r[image.packages.upki]
+upki must be pre-installed from the bes-tools repo, with its periodic refresh
+of certificate revocation data enabled.
+
 r[image.packages.chrony]
 Chrony must be installed and enabled as the system time synchronization
 daemon. No other time synchronization daemon (in particular,
